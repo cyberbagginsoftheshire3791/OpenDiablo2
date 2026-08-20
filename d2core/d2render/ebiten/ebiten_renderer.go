@@ -137,6 +137,18 @@ func (r *Renderer) CreateSurface(surface d2interface.Surface) (d2interface.Surfa
 
 // NewSurface creates a new surface
 func (r *Renderer) NewSurface(width, height int) d2interface.Surface {
+	// ebiten >= v2.1 panics when either dimension is non-positive; the
+	// v2.0.2 this engine was written against tolerated it. Empty labels
+	// and zero-size layouts legitimately request a 0-width surface, so
+	// clamp to a 1x1 transparent image to preserve the original behavior.
+	if width < 1 {
+		width = 1
+	}
+
+	if height < 1 {
+		height = 1
+	}
+
 	img := ebiten.NewImage(width, height)
 
 	return createEbitenSurface(r, img)
