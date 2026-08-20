@@ -2,7 +2,6 @@ package d2parser
 
 import (
 	"math"
-	"math/rand"
 	"testing"
 )
 
@@ -268,20 +267,24 @@ func TestRandFunction(t *testing.T) {
 	parser := New()
 	c := parser.Parse("rand(1,5)")
 
-	rand.Seed(1)
+	// rand(v1,v2) is implemented as a coin flip between its two operands.
+	// The old test re-seeded the global math/rand source and compared two
+	// sequences, but top-level rand.Seed is a no-op for go >= 1.24 (see the
+	// Go 1.24 release notes), so assert the contract instead of a fixed
+	// sequence: every result is one of the operands, and both sides occur.
+	seen := map[int]int{}
 
-	res1 := []int{c.Eval(), c.Eval(), c.Eval(), c.Eval(), c.Eval()}
-
-	rand.Seed(1)
-
-	res2 := []int{c.Eval(), c.Eval(), c.Eval(), c.Eval(), c.Eval()}
-
-	for i := 0; i < len(res1); i++ {
-		t.Logf("%d, %d", res1[i], res2[i])
-
-		if res1[i] != res2[i] {
-			t.Error("Results not equal.")
+	for i := 0; i < 1000; i++ {
+		v := c.Eval()
+		if v != 1 && v != 5 {
+			t.Fatalf("rand(1,5) returned %d; want 1 or 5", v)
 		}
+
+		seen[v]++
+	}
+
+	if len(seen) != 2 {
+		t.Errorf("rand(1,5) returned only %v over 1000 evals; want both 1 and 5", seen)
 	}
 }
 
