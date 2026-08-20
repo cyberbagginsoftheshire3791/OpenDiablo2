@@ -14,3 +14,26 @@ tags
 heap.out
 heap.pdf
 .DS_Store
+
+# ---- Project Strigoi: Blizzard content never enters the repo (load-bearing) ----
+# MPQs and anything extracted or derived from them are barred by project law
+# (Constitution, Article V). Builds go only to people who own D2.
+*.mpq
+*.MPQ
+*.dc6
+*.DC6
+*.dcc
+*.DCC
+*.ds1
+*.DS1
+*.dt1
+*.DT1
+*.cof
+*.COF
+*.pl2
+*.PL2
+*.tbl
+*.TBL
+*.d2
+/extracted/
+/assets-d2/
