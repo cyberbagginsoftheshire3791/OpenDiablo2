@@ -1,0 +1,16 @@
+# Go tooling requires LF; keep the tree LF on every platform.
+# (The repo was hitting global core.autocrlf=true on Windows, which
+# checked out CRLF and made gofmt flag every file.)
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Binary assets stay untouched
+*.png binary
+*.ico binary
+*.icns binary
+*.zip binary
