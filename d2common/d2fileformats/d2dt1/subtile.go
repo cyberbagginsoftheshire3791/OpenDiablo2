@@ -64,6 +64,7 @@ func (s *SubTileFlags) DebugString() string {
 }
 
 // NewSubTileFlags returns a list of new subtile flags
+//
 //nolint:gomnd // binary flags
 func NewSubTileFlags(data byte) SubTileFlags {
 	return SubTileFlags{

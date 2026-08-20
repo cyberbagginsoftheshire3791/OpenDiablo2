@@ -7,6 +7,7 @@ import (
 // IndexedObjects is a slice of object records for quick lookups.
 // nil checks should be done for uninitialized values at each level.
 // [Act 1-5][Type 1-2][ID 0-855]
+//
 //nolint:gochecknoglobals // Currently global by design
 type IndexedObjects [][][]*ObjectLookupRecord
 

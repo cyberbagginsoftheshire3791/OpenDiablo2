@@ -6,7 +6,7 @@ import (
 
 // https://docs.google.com/spreadsheets/d/13Wo58CNxDQlQiZm066dAWVVU4kmgKayn0zdyvmU18AM/edit#gid=330752700
 
-//nolint // This is a data dump file.
+// nolint // This is a data dump file.
 var objectLookups = []ObjectLookupRecord{
 	{Act: 1, Type: d2enum.ObjectTypeCharacter, Id: 0, Description: "gheed-ACT 1 TABLE", ObjectsTxtId: -1, MonstatsTxtId: -1, Direction: -1, Base: "/Data/Global/Monsters", Token: "GH", Mode: "NU", Class: "HTH", TR: "LIT", Index: -1},
 	{Act: 1, Type: d2enum.ObjectTypeCharacter, Id: 1, Description: "cain1-ACT 1 TABLE", ObjectsTxtId: -1, MonstatsTxtId: -1, Direction: -1, Base: "/Data/Global/Monsters", Token: "DC", Mode: "NU", Class: "HTH", TR: "LIT", Index: -1},

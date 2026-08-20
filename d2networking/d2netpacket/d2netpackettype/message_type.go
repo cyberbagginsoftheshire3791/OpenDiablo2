@@ -11,7 +11,7 @@ type NetPacketType uint32
 // (Except NetPacket which declares a NetPacketType to specify the packet body
 // type. See d2netpackettype.NetPacket.)
 //
-// Warning
+// # Warning
 //
 // Do NOT re-arrange the order of these packet values unless you want to
 // break compatibility between clients of slightly different versions.

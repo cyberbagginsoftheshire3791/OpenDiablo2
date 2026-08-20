@@ -1,5 +1,7 @@
 // Package d2netpackettype defines types which are encoded to JSON and sent in  network
-//  packet payloads.
+//
+//	packet payloads.
+//
 // Package d2netpacket/d2netpackettype defines a uint32 enumerable representing each
 // packet type.
 //

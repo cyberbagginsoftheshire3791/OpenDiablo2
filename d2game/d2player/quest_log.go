@@ -176,9 +176,13 @@ type questEntire struct {
 	sockets []*d2ui.Sprite
 }
 
-/* questIconTab returns path to quest animation using its
+/*
+	questIconTab returns path to quest animation using its
+
 act and number. From d2resource:
-        QuestLogAQuestAnimation = "/data/global/ui/MENU/a%dq%d.dc6"*/
+
+	QuestLogAQuestAnimation = "/data/global/ui/MENU/a%dq%d.dc6"
+*/
 func (s *QuestLog) questIconsTable(act, number int) string {
 	return fmt.Sprintf(d2resource.QuestLogAQuestAnimation, act, number+1)
 }
@@ -532,7 +536,6 @@ func (s *QuestLog) onQuestClicked(number int) {
 	s.Infof("Quest number %d in tab %d clicked", number, s.selectedTab)
 }
 
-//
 func (s *QuestLog) onDescrClicked() {
 	s.Info("Quest description button clicked")
 }

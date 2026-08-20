@@ -4,7 +4,6 @@ package d2clientconnectiontype
 // d2server.ClientConnection and d2client.ClientConnection.
 type ClientConnectionType int
 
-//
 const (
 	Local     ClientConnectionType = iota // Local client
 	LANServer                             // Server

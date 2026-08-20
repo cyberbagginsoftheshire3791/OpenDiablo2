@@ -9,6 +9,7 @@ import (
 )
 
 // LoadSkills loads skills.txt file contents into a skill record map
+//
 //nolint:funlen // Makes no sense to split
 func skillDetailsLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(map[int]*SkillRecord)

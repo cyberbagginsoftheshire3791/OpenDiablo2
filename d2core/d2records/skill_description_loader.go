@@ -6,6 +6,7 @@ import (
 )
 
 // Loadrecords loads skill description records from skilldesc.txt
+//
 //nolint:funlen // doesn't make sense to split
 func skillDescriptionLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(map[string]*SkillDescriptionRecord)

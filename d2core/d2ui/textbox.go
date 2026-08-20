@@ -158,6 +158,7 @@ func (v *TextBox) GetText() string {
 }
 
 // SetText sets the text box's text
+//
 //nolint:gomnd // Built-in values
 func (v *TextBox) SetText(newText string) {
 	result := ""
@@ -197,6 +198,7 @@ func (v *TextBox) GetSize() (width, height int) {
 }
 
 // SetPosition sets the position of the text box
+//
 //nolint:gomnd // Built-in values
 func (v *TextBox) SetPosition(x, y int) {
 	lw, _ := v.textLabel.GetSize()

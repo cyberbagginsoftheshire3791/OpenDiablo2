@@ -23,17 +23,19 @@ const (
 	Act5
 )
 
-/* I think, It should looks like that:
-   each quest has its own position in questStatus map
-   which should come from save file.
-   quests status values:
-           - -2 - done
-           - -1 - done, need to play animation
-           -  0 - not started yet
-           - and after that we have "in progress status"
-             so for status (from 1 to n) we have appropriate
-             quest descriptions and we'll have appropriate
-             actions
+/*
+I think, It should looks like that:
+
+	each quest has its own position in questStatus map
+	which should come from save file.
+	quests status values:
+	        - -2 - done
+	        - -1 - done, need to play animation
+	        -  0 - not started yet
+	        - and after that we have "in progress status"
+	          so for status (from 1 to n) we have appropriate
+	          quest descriptions and we'll have appropriate
+	          actions
 */
 const (
 	QuestStatusCompleted  = iota - 2 // quest completed

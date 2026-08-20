@@ -8,6 +8,7 @@ import (
 )
 
 // LoadMonStats2 loads MonStat2Records from monstats2.txt
+//
 //nolint:funlen //just a big data loader
 func monsterStats2Loader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(MonStats2)

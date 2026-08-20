@@ -68,8 +68,9 @@ type Logger struct {
 
 // SetPrefix sets a prefix for the message.
 // example:
-// 		logger.SetPrefix("XYZ")
-// 		logger.Debug("ABC") will print "[XYZ] [DEBUG] ABC"
+//
+//	logger.SetPrefix("XYZ")
+//	logger.Debug("ABC") will print "[XYZ] [DEBUG] ABC"
 func (l *Logger) SetPrefix(s string) {
 	l.prefix = s
 }

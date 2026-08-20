@@ -7,9 +7,10 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
 )
 
-//nolint:gochecknoglobals // These variables are assigned to in benchmark functions to avoid compiler optimisations
 // lowering the runtime of the benchmark. See: https://dave.cheney.net/2013/06/30/how-to-write-benchmarks-in-go (A note
 // on compiler optimisations)
+//
+//nolint:gochecknoglobals // These variables are assigned to in benchmark functions to avoid compiler optimisations
 var (
 	outVector Vector
 	outFloat  float64

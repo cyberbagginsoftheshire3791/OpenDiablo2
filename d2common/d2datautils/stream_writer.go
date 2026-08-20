@@ -99,7 +99,7 @@ func (v *StreamWriter) PushInt16(val int16) {
 }
 
 // PushUint16 writes an uint16 word to the stream
-//nolint
+// nolint
 func (v *StreamWriter) PushUint16(val uint16) {
 	v.data.WriteByte(byte(val))
 	v.data.WriteByte(byte(val >> 8))
@@ -111,7 +111,7 @@ func (v *StreamWriter) PushInt32(val int32) {
 }
 
 // PushUint32 writes a uint32 dword to the stream
-//nolint
+// nolint
 func (v *StreamWriter) PushUint32(val uint32) {
 	v.data.WriteByte(byte(val))
 	v.data.WriteByte(byte(val >> 8))
@@ -125,7 +125,7 @@ func (v *StreamWriter) PushInt64(val int64) {
 }
 
 // PushUint64 writes a uint64 qword to the stream
-//nolint
+// nolint
 func (v *StreamWriter) PushUint64(val uint64) {
 	v.data.WriteByte(byte(val))
 	v.data.WriteByte(byte(val >> 8))

@@ -5,6 +5,7 @@ import (
 )
 
 // WavDecompress decompresses wav files
+//
 //nolint:gomnd // binary decode magic
 func WavDecompress(data []byte, channelCount int) ([]byte, error) { //nolint:funlen,gocognit,gocyclo // can't reduce
 	Array1 := []int{0x2c, 0x2c}

@@ -3,7 +3,7 @@ package d2stats
 // StatNumberType is a value type for a stat value
 type StatNumberType int
 
-//  Stat value types
+// Stat value types
 const (
 	StatValueInt StatNumberType = iota
 	StatValueFloat

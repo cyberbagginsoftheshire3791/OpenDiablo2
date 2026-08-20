@@ -21,6 +21,7 @@ const (
 )
 
 // LoadSetRecords loads set records from sets.txt
+//
 //nolint:funlen // doesn't make sense to split
 func setLoader(r *RecordManager, d *d2txt.DataDictionary) error {
 	records := make(Sets)
