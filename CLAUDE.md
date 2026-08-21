@@ -71,9 +71,9 @@ capitalized `Docs/`, it aliases on Windows and collides on Linux).
   code in the repo). `d2networking/` — single-player runs an in-process
   TCP server on 127.0.0.1:6669; local packets are direct calls.
 - `d2script/` — otto VM, wired to nothing but the `js` console command.
-- Dead: `d2thread/`, `d2udpclientconnection`, `BlizzardIntro`, `rh.exe`
-  (Resource Hacker, 5.5 MB, unreferenced), `build.sh`, `tagdev.bat`,
-  `docs/status.md` (2021 AbyssEngine notice — do not follow).
+- Dead: `d2thread/`, `d2udpclientconnection`, `BlizzardIntro`, `build.sh`,
+  `tagdev.bat`, `docs/status.md` (2021 AbyssEngine notice — do not follow).
+  `rh.exe` (an orphaned Resource Hacker binary) was removed 21 Aug.
 
 ## Engine truths that size the work (do not re-derive; see the doc)
 
@@ -87,9 +87,11 @@ capitalized `Docs/`, it aliases on Windows and collides on Linux).
   type; there is no pickup code.
 - Loader bugs to fix before loose assets (Phase 5): `filesystem.Source.Exists`
   always false; `Loader.Cache` unused; `LoadDS1` uses the DT1 cache.
-- **Article V flag:** three tracked files match the Strigoi .gitignore block
-  (`d2animdata/testdata/AnimData.d2`, `BadData.d2` — Blizzard-derived;
-  `d2loader/testdata/D.mpq` — synthesized). Pending Josh's decision at M2.3;
-  do not add more, and do not copy them anywhere.
+- **Fixtures (Article V):** decoder tests synthesize their bytes in code;
+  every file under `testdata/` is listed in `docs/fixtures-manifest.md` with
+  origin and justification. The only tracked file matching the .gitignore
+  block is `d2loader/testdata/D.mpq` (hand-built, not extracted). The
+  inherited Blizzard-derived AnimData fixtures were removed 21 Aug (M2.3);
+  check compliance with `git ls-files`, never by reading `.gitignore`.
 - No CI runs (`.circleci` template-broken; `.golangci.yml` names dead
   linters). The green gate is the only gate until M2.4 adds a workflow.
