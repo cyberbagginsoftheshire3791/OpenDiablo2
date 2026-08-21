@@ -24,7 +24,8 @@ folder root; the Constitution governs every session on any surface.
    grows; new content never targets D2 binary formats.
 6. Case-against rule: no major direction change without the strongest
    honest case against it written down first. Binds Claude and Josh.
-7. One dep bump per commit. Never `go get -u ./...`. akara stays pinned.
+7. One dep bump per commit. Never `go get -u ./...`. akara stays pinned
+   (it is only a BitSet in two files; removal is an M2.5 decision).
 
 ## Verified facts (2026-08-20, Josh's machine, Windows/amd64)
 
@@ -47,10 +48,48 @@ folder root; the Constitution governs every session on any surface.
     ./OpenDiablo2.exe -l 4          # run with info logging (-l 5 debug)
     go build ./... && go vet ./... && go test ./...   # the green gate
 
-## Map of the code (as-found; archaeology pass pending, Phase 2)
+## Map of the code — verified by the M2.1 archaeology pass (2026-08-21)
 
-- `d2app/` boot, flags, config load · `d2core/d2config/` defaults
-- `d2common/d2fileformats/` MPQ/DC6/DCC/DS1/DT1/COF/TBL decoders
-- `d2common/d2loader/` archive + filesystem asset sources (loose files
-  already work) · `d2script/` embedded JS engine · `d2networking/`
-  client/server scaffolding · `docs/status.md` upstream's 2021 state
+Full map with `path:line` evidence: **`docs/architecture-as-found.md`**
+(note: the docs directory is lowercase `docs/` — upstream's; never create a
+capitalized `Docs/`, it aliases on Windows and collides on Linux).
+
+- `main.go` → `d2app/` (flags, config, engine assembly, update/render
+  callbacks, terminal commands). Loader sources in precedence order: exe
+  dir → `%AppData%\OpenDiablo2\` → the 11 MPQs in `MpqLoadOrder`. Loose
+  files beside the exe already shadow MPQ content.
+- `d2common/` — enums, interfaces, math, bit/byte streams, the loader
+  (`d2loader`), and every decoder (`d2fileformats/`: MPQ, DC6, DCC, DS1,
+  DT1, COF, TBL, font, PL2, DAT, TXT, AnimData). The stable, testable floor.
+- `d2core/` — `d2asset` (asset manager, the hub), `d2records` (76 TXT tables
+  → typed records; the layer our own data replaces), `d2map/*` (engine,
+  Act-1-only generator, DS1 stamps, four-pass renderer), `d2mapentity`
+  (plain structs — **there is no ECS**; akara is used only for a BitSet),
+  `d2hero` (JSON `.od2` saves in `%AppData%\OpenDiablo2\Saves`), `d2ui` +
+  `d2gui` (two toolkits), `d2term` (in-game console — the proto-harness).
+- `d2game/` — screens and the HUD/panels (`d2player`, the most finished
+  code in the repo). `d2networking/` — single-player runs an in-process
+  TCP server on 127.0.0.1:6669; local packets are direct calls.
+- `d2script/` — otto VM, wired to nothing but the `js` console command.
+- Dead: `d2thread/`, `d2udpclientconnection`, `BlizzardIntro`, `rh.exe`
+  (Resource Hacker, 5.5 MB, unreferenced), `build.sh`, `tagdev.bat`,
+  `docs/status.md` (2021 AbyssEngine notice — do not follow).
+
+## Engine truths that size the work (do not re-derive; see the doc)
+
+- **No lighting exists** (renderer has no light radius/ambient/day-night;
+  hook = `Surface.PushBrightness/PushColor`). **No combat, AI, or monster
+  type** (NPC walks DS1 waypoints; `monai`/spawn tables are parsed, unread).
+  **No pathfinder** (raycast to the last unblocked tile) and no entity
+  collision. Game logic runs on a wall-clock variable delta — no fixed step.
+- Inventory is split: `d2core/d2inventory` is a paperdoll DTO; the working
+  grid lives in `d2game/d2player/inventory_grid.go` under a second item
+  type; there is no pickup code.
+- Loader bugs to fix before loose assets (Phase 5): `filesystem.Source.Exists`
+  always false; `Loader.Cache` unused; `LoadDS1` uses the DT1 cache.
+- **Article V flag:** three tracked files match the Strigoi .gitignore block
+  (`d2animdata/testdata/AnimData.d2`, `BadData.d2` — Blizzard-derived;
+  `d2loader/testdata/D.mpq` — synthesized). Pending Josh's decision at M2.3;
+  do not add more, and do not copy them anywhere.
+- No CI runs (`.circleci` template-broken; `.golangci.yml` names dead
+  linters). The green gate is the only gate until M2.4 adds a workflow.
