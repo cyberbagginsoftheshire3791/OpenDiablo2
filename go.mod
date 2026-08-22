@@ -9,8 +9,8 @@ require (
 	github.com/gravestench/akara v0.0.0-20201014060234-a64208a7fd3c
 	github.com/hajimehoshi/ebiten/v2 v2.9.10
 	github.com/pkg/profile v1.5.0
-	github.com/robertkrimen/otto v0.0.0-20200922221731-ef014fd054ac
-	github.com/stretchr/testify v1.7.0
+	github.com/robertkrimen/otto v0.5.1
+	github.com/stretchr/testify v1.8.1
 	golang.org/x/image v0.43.0
 )
 
@@ -27,7 +27,8 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b // indirect
 	gopkg.in/sourcemap.v1 v1.0.5 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
