@@ -64,7 +64,11 @@ capitalized `Docs/`, it aliases on Windows and collides on Linux).
   files beside the exe already shadow MPQ content.
 - `d2common/` — enums, interfaces, math, bit/byte streams, the loader
   (`d2loader`), and every decoder (`d2fileformats/`: MPQ, DC6, DCC, DS1,
-  DT1, COF, TBL, font, PL2, DAT, TXT, AnimData). The stable, testable floor.
+  DT1, COF, TBL, font, PL2, DAT, TXT, AnimData). The stable, testable floor
+  — but not display-free: `d2util/debug_print.go` imports ebiten, ebiten's
+  init initialises GLFW, so on Linux anything that imports `d2util` (the
+  logger) panics without a DISPLAY. CI runs Linux tests under xvfb; moving
+  `debug_print.go` out of `d2util` would remove the need (small, unclaimed).
 - `d2core/` — `d2asset` (asset manager, the hub), `d2records` (76 TXT tables
   → typed records; the layer our own data replaces), `d2map/*` (engine,
   Act-1-only generator, DS1 stamps, four-pass renderer), `d2mapentity`
