@@ -13,8 +13,9 @@ passed.
 
 Next (Josh's calls, or pick one): akara remove-or-keep; the remaining
 synthesized decoder tests (DCC, MPQ, DAT, TXT, font, DT1); research
-bursts per S1 §12 (D4, E2, N1, E6) before Phase 4 content; optional
-one-liner — move debug_print.go out of d2util (drops CI's xvfb need).
+bursts per S1 §12 (D4, E2, N1, E6) before Phase 4 content. (Done 22 Aug:
+GlyphPrinter moved out of d2util — d2common is now ebiten-free — and
+CI's xvfb dropped; both CI-green.)
 
 Parked for Josh: history rewrite before friends build #1; removal of
 d2logo.ico / d2discord.png / build.sh / tagdev.bat / .github/FUNDING.yml /
