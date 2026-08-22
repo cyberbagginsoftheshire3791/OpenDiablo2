@@ -12,13 +12,13 @@ clean write passed.
 
 Next: research bursts per S1 §12 (D4, E2, N1, E6) before Phase 4 content.
 Deep-decode follow-ups (parked, pull into a future burst): DCC direction
-bitstream, MPQ full-archive, DT1 block graphics, and fixing Font.Marshal's
-13-vs-12-byte header (found this burst; round-trip test is t.Skip'd until then).
+bitstream, MPQ full-archive, DT1 block graphics.
 
 Done 22 Aug (post-M2.5): GlyphPrinter out of d2util → d2common ebiten-free,
 CI xvfb dropped (both CI-green); akara KEPT (decision logged); synthesized
 tests added for d2txt, d2dat, d2mpq crypto, d2font, d2dt1, d2dcc — every
-decoder package now has tests (deep decode paths per the follow-ups above).
+decoder package now has tests (deep decode paths per the follow-ups above);
+fixed d2font.Marshal's 12-byte header, round-trip test now passing.
 
 Parked for Josh: history rewrite before friends build #1; removal of
 d2logo.ico / d2discord.png / build.sh / tagdev.bat / .github/FUNDING.yml /
