@@ -1,16 +1,20 @@
 # Focus — printed into every session by the SessionStart hook
 
-Updated: 2026-08-21 (M2.4 hooks + CI). Keep this to a screen; the full
+Updated: 2026-08-22 (M2.5 done, M2.4 proven). Keep this to a screen; the full
 state lives in `state.md` in the claude.ai project and in Notion.
 
 Phase 2 (ground truth), lane WS-GroundTruth. Done: M2.1 archaeology,
-M2.3 fixtures, M2.2 d2-formats skill, M2.4 hooks + CI (this file,
-`.claude/settings.json`, `tools/strigoihook`, `.github/workflows/ci.yml`).
+M2.3 fixtures, M2.2 d2-formats skill, M2.4 hooks + CI, M2.5 dep bumps
+(otto, uuid, profile, testify, restruct, blast — one commit each, gate
+green after each; akara left pinned). BOTH lane exit criteria are met:
+the hooks have now fired inside a live Claude Code session — SessionStart
+printed, a planted Write to extracted/x.txt was refused, a clean write
+passed.
 
-Next: **M2.5 dependency bumps** — one module per commit (otto, uuid,
-profile, testify, restruct, blast; akara remove-or-keep is Josh's call),
-build + vet + test after each, then a play-to-town pass. Then the
-remaining M2.3 tests (synthesized DCC, MPQ, DAT, TXT, font, DT1).
+Next (Josh's calls, or pick one): akara remove-or-keep; the remaining
+synthesized decoder tests (DCC, MPQ, DAT, TXT, font, DT1); research
+bursts per S1 §12 (D4, E2, N1, E6) before Phase 4 content; optional
+one-liner — move debug_print.go out of d2util (drops CI's xvfb need).
 
 Parked for Josh: history rewrite before friends build #1; removal of
 d2logo.ico / d2discord.png / build.sh / tagdev.bat / .github/FUNDING.yml /
