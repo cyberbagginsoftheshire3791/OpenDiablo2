@@ -3,7 +3,7 @@ module github.com/OpenDiablo2/OpenDiablo2
 go 1.25.0
 
 require (
-	github.com/JoshVarga/blast v0.0.0-20180421040937-681c804fb9f0
+	github.com/JoshVarga/blast v0.0.0-20210808061142-eadad17358e8
 	github.com/go-restruct/restruct v1.2.0-alpha.0.20220331023924-1bb20937bae4
 	github.com/google/uuid v1.6.0
 	github.com/gravestench/akara v0.0.0-20201014060234-a64208a7fd3c
