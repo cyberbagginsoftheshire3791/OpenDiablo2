@@ -1,4 +1,4 @@
-package d2util
+package ebiten
 
 import (
 	"image"
