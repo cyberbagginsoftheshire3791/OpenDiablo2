@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gravestench/akara v0.0.0-20201014060234-a64208a7fd3c
 	github.com/hajimehoshi/ebiten/v2 v2.9.10
-	github.com/pkg/profile v1.5.0
+	github.com/pkg/profile v1.7.0
 	github.com/robertkrimen/otto v0.5.1
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/image v0.43.0
@@ -20,6 +20,8 @@ require (
 	github.com/ebitengine/hideconsole v1.0.0 // indirect
 	github.com/ebitengine/oto/v3 v3.4.1 // indirect
 	github.com/ebitengine/purego v0.9.0 // indirect
+	github.com/felixge/fgprof v0.9.3 // indirect
+	github.com/google/pprof v0.0.0-20211214055906-6f57359322fd // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
