@@ -3,16 +3,15 @@
 Updated: 2026-08-22 (M2.5 done, M2.4 proven). Keep this to a screen; the full
 state lives in `state.md` in the claude.ai project and in Notion.
 
-Phase 2 (ground truth), lane WS-GroundTruth. Done: M2.1 archaeology,
-M2.3 fixtures, M2.2 d2-formats skill, M2.4 hooks + CI, M2.5 dep bumps
-(otto, uuid, profile, testify, restruct, blast — one commit each, gate
-green after each; akara left pinned). BOTH lane exit criteria are met:
-the hooks have now fired inside a live Claude Code session — SessionStart
-printed, a planted Write to extracted/x.txt was refused, a clean write
-passed.
+Phase 2 (ground truth) — WS-GroundTruth CLOSED (Complete), 22 Aug. Done:
+M2.1 archaeology, M2.3 fixtures (+ decoder tests below), M2.2 d2-formats
+skill, M2.4 hooks + CI, M2.5 dep bumps (akara KEPT). Both lane exit
+criteria are met: the hooks fired inside a live Claude Code session —
+SessionStart printed, a planted Write to extracted/x.txt was refused, a
+clean write passed.
 
 Next: research bursts per S1 §12 (D4, E2, N1, E6) before Phase 4 content.
-Deep-decode follow-ups (optional, before/at lane close): DCC direction
+Deep-decode follow-ups (parked, pull into a future burst): DCC direction
 bitstream, MPQ full-archive, DT1 block graphics, and fixing Font.Marshal's
 13-vs-12-byte header (found this burst; round-trip test is t.Skip'd until then).
 
