@@ -1,6 +1,6 @@
 # Focus — printed into every session by the SessionStart hook
 
-Updated: 2026-08-22 (M2.4 hooks + CI). Keep this to a screen; the full
+Updated: 2026-08-21 (M2.4 hooks + CI). Keep this to a screen; the full
 state lives in `state.md` in the claude.ai project and in Notion.
 
 Phase 2 (ground truth), lane WS-GroundTruth. Done: M2.1 archaeology,

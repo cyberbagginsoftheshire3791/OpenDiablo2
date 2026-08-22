@@ -101,7 +101,7 @@ capitalized `Docs/`, it aliases on Windows and collides on Linux).
   block is `d2loader/testdata/D.mpq` (hand-built, not extracted). The
   inherited Blizzard-derived AnimData fixtures were removed 21 Aug (M2.3);
   check compliance with `git ls-files`, never by reading `.gitignore`.
-- **CI (M2.4, 22 Aug):** `.github/workflows/ci.yml` runs gofmt, vet, build,
+- **CI (M2.4, 21 Aug):** `.github/workflows/ci.yml` runs gofmt, vet, build,
   test and the Article V check on ubuntu and windows for every push and PR.
   The inherited `.circleci/`, `.golangci.yml` and auto-author-assign
   workflow were deleted (dead). **Hooks:** `.claude/settings.json` runs

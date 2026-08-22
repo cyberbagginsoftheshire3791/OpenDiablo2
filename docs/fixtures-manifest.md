@@ -12,7 +12,7 @@
 
    Expected output today: exactly one line, `d2common/d2loader/testdata/D.mpq` (row 2 below). Anything else is a violation to fix in the same burst.
 
-   Since M2.4 (22 Aug 2026) the same check is automated: `docs/fixtures-allowlist.txt` is the machine-readable list of tracked protected-extension files (one path per line; it must match the rows below), and `go run ./tools/strigoihook check-fixtures` fails when `git ls-files` shows a protected file that is not in it. CI runs it on every push and pull request; the Claude Code SessionStart hook prints its result. Adding a fixture is therefore three edits in one commit: the file, its row here, its line in the allowlist.
+   Since M2.4 (21 Aug 2026) the same check is automated: `docs/fixtures-allowlist.txt` is the machine-readable list of tracked protected-extension files (one path per line; it must match the rows below), and `go run ./tools/strigoihook check-fixtures` fails when `git ls-files` shows a protected file that is not in it. CI runs it on every push and pull request; the Claude Code SessionStart hook prints its result. Adding a fixture is therefore three edits in one commit: the file, its row here, its line in the allowlist.
 4. **Changing this rule** (for example, to allow a justified extracted slice under a fair-use posture, as the original d2-formats scaffold contemplated) is a Constitution amendment — a logged decision first, then the edit, in the same burst.
 
 ## Tracked fixtures
