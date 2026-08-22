@@ -190,14 +190,15 @@ func (f *Font) initGlyphs(sr *d2datautils.StreamReader) error {
 func (f *Font) Marshal() []byte {
 	sw := d2datautils.CreateStreamWriter()
 
-	sw.PushBytes([]byte("Woo!\x01")...)
+	sw.PushBytes([]byte(knownSignature)...)
 
-	// unknown header bytes - constant
-	sw.PushBytes([]byte{1, 0, 0, 0, 0, 1}...)
-
-	// Expected Height of character cell and Expected Width of character cell
-	// not used in decoder
-	sw.PushBytes([]byte{0, 0}...)
+	// Load reads a numHeaderBytes (12) header: the 5-byte signature above plus
+	// unknownHeaderBytesCount (7) bytes it skips. These must total 7, or Load
+	// and Marshal disagree on where glyphs start and every glyph shifts (the
+	// TestMarshalLoad_RoundTrip regression guards this). The trailing bytes were
+	// the "expected cell height/width" the decoder ignores; their values are
+	// opaque to Load.
+	sw.PushBytes([]byte{1, 0, 0, 0, 0, 1, 0}...)
 
 	for c, i := range f.Glyphs {
 		sw.PushUint16(uint16(c))

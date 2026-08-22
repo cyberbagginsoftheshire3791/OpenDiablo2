@@ -66,31 +66,31 @@ func TestLoad_RejectsBadSignature(t *testing.T) {
 	assert.Error(err)
 }
 
-// KNOWN DEFECT (skipped): Font.Marshal writes a 13-byte header — the 5-byte
-// signature, 6 constant bytes, and a 2-byte cell size — but Load consumes only
-// 12 (5-byte signature + 7 skipped bytes). A Marshal->Load round-trip therefore
-// misaligns every glyph by one byte and loses them. Load is the correct side:
-// real D2 font files decode and render in game, so the 12-byte header is right
-// and Marshal is one byte long. Unskip this and assert a real round-trip once
-// Marshal is fixed against the format spec (d2mods.info glyph-table layout).
+// Marshal writes the numHeaderBytes header Load reads back, so a full
+// Marshal->Load round-trip preserves every glyph. Regression guard for the
+// former 13-vs-12-byte header mismatch (Marshal used to be one byte too long,
+// which shifted every glyph).
 func TestMarshalLoad_RoundTrip(t *testing.T) {
-	t.Skip("Font.Marshal writes a 13-byte header but Load reads 12; round-trip is broken until Marshal is fixed")
-
 	assert := testify.New(t)
 
-	specs := []glyphSpec{{code: 'A', width: 7, height: 12, frame: 0}}
+	specs := []glyphSpec{
+		{code: 'A', width: 7, height: 12, frame: 0},
+		{code: 'b', width: 5, height: 10, frame: 3},
+		{code: '1', width: 6, height: 11, frame: 42},
+	}
 
 	font, err := Load(buildFont(specs))
 	assert.NoError(err)
 
 	reloaded, err := Load(font.Marshal())
 	assert.NoError(err)
+	assert.Len(reloaded.Glyphs, len(specs))
 
-	g, ok := reloaded.Glyphs['A']
-	assert.True(ok)
-
-	if ok {
-		assert.Equal(7, g.Width())
-		assert.Equal(12, g.Height())
+	for _, s := range specs {
+		g, ok := reloaded.Glyphs[s.code]
+		assert.Truef(ok, "glyph %q should survive the round-trip", s.code)
+		assert.Equalf(s.width, g.Width(), "width of %q", s.code)
+		assert.Equalf(s.height, g.Height(), "height of %q", s.code)
+		assert.Equalf(s.frame, g.FrameIndex(), "frame of %q", s.code)
 	}
 }
