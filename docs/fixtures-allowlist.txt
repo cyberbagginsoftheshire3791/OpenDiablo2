@@ -1,0 +1,11 @@
+# Article V allowlist — machine-readable companion of docs/fixtures-manifest.md.
+#
+# Every tracked file whose extension is a Diablo II binary format
+# (.mpq .dc6 .dcc .ds1 .dt1 .cof .pl2 .tbl .d2 — the Strigoi block of
+# .gitignore) must appear here, one repo-relative path per line, and must
+# have a row in the manifest saying where it came from and why it is safe.
+# `go run ./tools/strigoihook check-fixtures` (run by CI and at every
+# session start) fails on any tracked protected file that is not listed.
+#
+# Adding a line here is a fixture decision: manifest row first, then the line.
+d2common/d2loader/testdata/D.mpq

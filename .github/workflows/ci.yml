@@ -1,0 +1,70 @@
+# The green gate, run by GitHub on every push and pull request.
+#
+# Mirrors the command in CLAUDE.md (gofmt · go vet · go build · go test)
+# and adds the Article V check: every tracked file with a Diablo II
+# extension must be in docs/fixtures-allowlist.txt. Linux needs the
+# ebitengine system headers (cgo + X11/GL/ALSA); Windows needs nothing.
+# Windows is the platform the first friends build targets.
+name: gate
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: ebitengine build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libc6-dev libgl1-mesa-dev libxcursor-dev libxi-dev libxinerama-dev \
+            libxrandr-dev libxxf86vm-dev libasound2-dev pkg-config
+
+      - name: gofmt
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt: these files are not formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: Article V — tracked fixtures match the allowlist
+        run: go run ./tools/strigoihook check-fixtures
+
+      - name: go.mod and go.sum are tidy
+        run: go mod tidy -diff

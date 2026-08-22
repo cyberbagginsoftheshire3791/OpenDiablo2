@@ -7,7 +7,10 @@ scaffolding and design reference, not the destination.
 **Read first, every session:** `state.md` in the claude.ai project ("Dunno
 Yet") + the Notion Strigoi Project Center (workstreams, gates, decisions).
 The plan (`Project Plan.md`) and Constitution live at Josh's Video Game
-folder root; the Constitution governs every session on any surface.
+folder root; the Constitution governs every session on any surface. In
+Claude Code the SessionStart hook prints the live facts (branch, tree,
+build, Article V status) and `.claude/FOCUS.md` — trust those over the
+frozen numbers below.
 
 ## The law (condensed — Constitution is canonical)
 
@@ -47,6 +50,7 @@ folder root; the Constitution governs every session on any surface.
     go build -o OpenDiablo2.exe .   # build the game
     ./OpenDiablo2.exe -l 4          # run with info logging (-l 5 debug)
     go build ./... && go vet ./... && go test ./...   # the green gate
+    go run ./tools/strigoihook check-fixtures         # Article V (CI runs it too)
 
 ## Map of the code — verified by the M2.1 archaeology pass (2026-08-21)
 
@@ -93,5 +97,15 @@ capitalized `Docs/`, it aliases on Windows and collides on Linux).
   block is `d2loader/testdata/D.mpq` (hand-built, not extracted). The
   inherited Blizzard-derived AnimData fixtures were removed 21 Aug (M2.3);
   check compliance with `git ls-files`, never by reading `.gitignore`.
-- No CI runs (`.circleci` template-broken; `.golangci.yml` names dead
-  linters). The green gate is the only gate until M2.4 adds a workflow.
+- **CI (M2.4, 22 Aug):** `.github/workflows/ci.yml` runs gofmt, vet, build,
+  test and the Article V check on ubuntu and windows for every push and PR.
+  The inherited `.circleci/`, `.golangci.yml` and auto-author-assign
+  workflow were deleted (dead). **Hooks:** `.claude/settings.json` runs
+  `go run ./tools/strigoihook <event>` — SessionStart prints live facts +
+  FOCUS.md; PreToolUse denies D2-format writes, the `/extracted/` and
+  `/assets-d2/` drop zones, `go get -u`, `git add -f`, and *asks* before
+  destructive git (force-push, reset --hard, clean -f, filter-repo) or an
+  edit to the guardrails themselves; PostToolUse runs gofmt/build/vet after
+  a Go edit and reminds about d2-formats after a `d2common/` edit. The rules
+  are unit-tested (`tools/strigoihook/guard_test.go`). A hook that cannot
+  run (no Go on PATH) fails open with a warning; CI is the backstop.

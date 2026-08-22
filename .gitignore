@@ -37,3 +37,6 @@ heap.pdf
 *.d2
 /extracted/
 /assets-d2/
+
+# Claude Code per-user permissions (the shared hooks live in .claude/settings.json)
+.claude/settings.local.json
