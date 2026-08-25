@@ -37,6 +37,9 @@ heap.pdf
 *.d2
 /extracted/
 /assets-d2/
+# Playtest-harness outputs (screenshots render Blizzard art; default run dir is
+# outside the repo — this line is belt-and-braces for a relative -harness-out)
+/harness-runs/
 
 # Claude Code per-user permissions (the shared hooks live in .claude/settings.json)
 .claude/settings.local.json

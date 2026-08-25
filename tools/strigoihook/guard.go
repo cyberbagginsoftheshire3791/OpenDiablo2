@@ -40,9 +40,10 @@ var protectedExt = map[string]bool{
 }
 
 // protectedDirs mirrors the root-anchored directories of the same block: the
-// drop zones for extracted Blizzard content. Nothing is written there from
-// Claude Code.
-var protectedDirs = []string{"extracted", "assets-d2"}
+// drop zones for extracted Blizzard content, plus the playtest harness's
+// output drop zone (screenshots are renders of Blizzard art — P3 spec §3.9).
+// Nothing is written there from Claude Code.
+var protectedDirs = []string{"extracted", "assets-d2", "harness-runs"}
 
 // guardFiles are the guardrails themselves. Editing them is Josh's call, so
 // the hook asks instead of deciding.

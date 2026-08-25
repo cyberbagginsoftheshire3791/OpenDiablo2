@@ -36,6 +36,7 @@ func TestClassifyWrite(t *testing.T) {
 		{"d2s is not protected", testRoot, "/repo/save.d2s", allow},
 		{"extracted drop zone", testRoot, "/repo/extracted/data/global/readme.txt", deny},
 		{"assets-d2 drop zone", testRoot, "/repo/assets-d2/notes.md", deny},
+		{"harness-runs drop zone", testRoot, "/repo/harness-runs/20260824-220000/shot.png", deny},
 		{"extracted nested elsewhere is fine", testRoot, "/repo/docs/extracted/notes.md", allow},
 		{"gitignore asks", testRoot, "/repo/.gitignore", ask},
 		{"settings asks", testRoot, "/repo/.claude/settings.json", ask},

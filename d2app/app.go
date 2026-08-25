@@ -114,6 +114,7 @@ func Create(gitBranch, gitCommit string) *App {
 			Server: &d2networking.ServerOptions{},
 		},
 	}
+	app.harnessEarlyInit() // no-op unless built with -tags harness
 	app.Infof("OpenDiablo2 - Open source Diablo 2 engine")
 
 	app.parseArguments()
@@ -216,6 +217,7 @@ func (a *App) parseArguments() {
 		fmt.Printf("usage: %s [<flags>]\n\nFlags:\n", os.Args[0])
 		flag.PrintDefaults()
 	}
+	a.harnessRegisterFlags() // no-op unless built with -tags harness
 	flag.Parse()
 
 	if *a.Options.LogLevel >= d2util.LogLevelUnspecified {
@@ -314,6 +316,8 @@ func (a *App) Run() (err error) {
 
 	a.ToMainMenu()
 
+	a.harnessStart() // no-op unless built with -tags harness and run with -harness
+
 	if err := a.renderer.Run(a.update, a.advance, 800, 600, windowTitle); err != nil {
 		return err
 	}
@@ -398,9 +402,13 @@ func (a *App) render(target d2interface.Surface) {
 	if err := a.terminal.Render(target); err != nil {
 		return
 	}
+
+	a.harnessDrainDraw(target) // no-op unless built with -tags harness
 }
 
 func (a *App) advance() error {
+	a.harnessDrainUpdate() // no-op unless built with -tags harness
+
 	current := d2util.Now()
 	elapsedUnscaled := current - a.lastTime
 	elapsed := elapsedUnscaled * a.timeScale
@@ -604,6 +612,7 @@ func (a *App) ToMainMenu(errorMessageOptional ...string) {
 	}
 
 	a.screen.SetNextScreen(mainMenu)
+	a.harnessNoteScreen("main_menu") // no-op unless built with -tags harness
 }
 
 // ToSelectHero forces the game to transition to the Select Hero (create character) screen
@@ -642,6 +651,7 @@ func (a *App) ToCreateGame(filePath string, connType d2clientconnectiontype.Clie
 		}
 
 		a.screen.SetNextScreen(game)
+		a.harnessNoteGame(gameClient, game) // no-op unless built with -tags harness
 	}
 }
 
