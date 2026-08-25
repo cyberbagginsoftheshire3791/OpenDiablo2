@@ -73,10 +73,36 @@ untagged builds. The log ring tees the stdlib `log` writer, which every
 compiles everywhere; Phase-4 systems register into it — *a system is not done
 until its provider exposes what its S1 §12 assertion needs.*
 
-## Findings log
+## Findings log (M3.2 first runs, 24 Aug 2026)
 
-- **Minimized / locked-session behaviour:** RECORDED AT M3.2 RUN — see below.
-- (M3.2 run notes land here.)
+- **The black town floor is INTERMITTENT per process launch — and the harness
+  caught it.** Four launches the same evening: two rendered the full scene,
+  two rendered sprite+HUD on black (runs `20260824-222411` healthy vs
+  `20260824-222604` and `20260824-222748` black, in
+  `<Projects>\strigoi-harness-runs\`). In the black runs `strigoi_dump_surface`
+  shows the cached floor tiles FULLY COLORED (6400/6400 opaque, ~6k non-black):
+  the content exists and `Screenshot()`/ReadPixels sees it, but compositing
+  draws none of it, while `NewImageFromImage` sprites (player, HUD) draw fine.
+  So the 22 Aug diagnosis narrows to: per-launch-intermittent, content present,
+  `DrawImage` of `NewSurface`+`ReplacePixels` surfaces yields nothing.
+  Suspicion for the eventual fix (NOT Phase 3 work): those surfaces are built
+  on the Game screen's OnLoad goroutine (the screen manager loads screens off
+  the main goroutine) — an off-main-goroutine image upload race in ebiten
+  would be launch-intermittent exactly like this. `town_walk_test.go` records
+  a floor-luminance observation every run (~1% lit = black, ~50%+ = healthy).
+- **Minimized window: the loop keeps ticking** (~63 ticks/s over a 5 s
+  minimize; `TestMinimizedTick`, opt-in via `STRIGOI_TEST_MINIMIZED=1`).
+  Locked-session behaviour still UNKNOWN (needs a deliberate lock test).
+- **Claude Code attach works end-to-end**: with the game running `-harness`,
+  a headless `claude -p` session in the repo used the `.mcp.json` server
+  (with `enableAllProjectMcpServers` in `.claude/settings.json`) to ping,
+  create a hero, read state, screenshot, and quit the game.
+- **Known benign log lines during normal play**: `[UI Manager][ERROR] Error
+  while setting frame (N): invalid frame index` (HUD frame setting;
+  pre-existing). The town-walk script allowlists exactly this.
+- **`strigoi_ping` reports commit "build"** when the binary is built without
+  the ldflags injection (`go build` plain, as the playtest launcher does) —
+  the flag-injected build stamps a real commit.
 
 ## Determinism leak register (opens at M3.3)
 
