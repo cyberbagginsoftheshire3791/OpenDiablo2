@@ -1,6 +1,7 @@
 package d2mapengine
 
 import (
+	"math/rand"
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
@@ -26,6 +27,8 @@ type MapEngine struct {
 	*d2mapstamp.StampFactory
 	*d2mapentity.MapEntityFactory
 	seed          int64                            // The map seed
+	rand          *rand.Rand                       // The world RNG, seeded from seed (P3 E4; rand.go)
+	randSource    *countingSource                  // Its draw-counting source (digest input)
 	entities      map[string]d2interface.MapEntity // Entities on the map
 	tiles         []MapTile
 	size          d2geom.Size               // Size of the map, in tiles
@@ -133,10 +136,16 @@ func (m *MapEngine) LevelType() d2records.LevelTypeRecord {
 	return m.levelType
 }
 
-// SetSeed sets the seed of the map for generation.
+// SetSeed sets the seed of the map for generation and (re)builds the world
+// RNG from it, so every simulation consumer — map generation, stamp
+// selection, NPC behaviour seeding — draws from one seeded stream (P3 E4).
 func (m *MapEngine) SetSeed(seed int64) {
-	m.Infof("Setting map engine seed to %d", seed)
+	if m.Logger != nil {
+		m.Infof("Setting map engine seed to %d", seed)
+	}
+
 	m.seed = seed
+	m.initRand(seed)
 }
 
 // Size returns the size of the map in sub-tiles.

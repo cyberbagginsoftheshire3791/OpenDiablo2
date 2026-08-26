@@ -1,6 +1,8 @@
 package d2mapgen
 
 import (
+	"math/rand"
+
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -32,6 +34,7 @@ func NewMapGenerator(a *d2asset.AssetManager, l d2util.LogLevel, e *d2mapengine.
 type MapGenerator struct {
 	asset  *d2asset.AssetManager
 	engine *d2mapengine.MapEngine
+	rng    *rand.Rand // the world RNG, taken from the engine at generation time (P3 E4)
 
 	*d2util.Logger
 }

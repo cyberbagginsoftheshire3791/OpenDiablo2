@@ -33,8 +33,25 @@ func NewStampFactory(asset *d2asset.AssetManager, l d2util.LogLevel, entity *d2m
 type StampFactory struct {
 	asset  *d2asset.AssetManager
 	entity *d2mapentity.MapEntityFactory
+	rng    *rand.Rand // the world RNG (P3 E4); nil falls back to the global generator
 
 	*d2util.Logger
+}
+
+// SetRand hands the factory the world RNG, so random stamp selection is
+// seeded by the map seed instead of the (unseeded) global generator.
+// MapEngine.SetSeed calls it.
+func (f *StampFactory) SetRand(r *rand.Rand) {
+	f.rng = r
+}
+
+func (f *StampFactory) randFloat64() float64 {
+	if f.rng != nil {
+		return f.rng.Float64()
+	}
+
+	// nolint:gosec // not cryptographic; pre-seed fallback only
+	return rand.Float64()
 }
 
 // LoadStamp loads the Stamp data from file, using the given level type, level preset index, and
@@ -70,8 +87,7 @@ func (f *StampFactory) LoadStamp(levelType d2enum.RegionIdType, levelPreset, fil
 		}
 	}
 
-	// nolint:gosec // not a big deal for now
-	levelIndex := int(math.Round(float64(len(levelFilesToPick)-1) * rand.Float64()))
+	levelIndex := int(math.Round(float64(len(levelFilesToPick)-1) * f.randFloat64()))
 	if fileIndex >= 0 && fileIndex < len(levelFilesToPick) {
 		levelIndex = fileIndex
 	}

@@ -2,6 +2,7 @@ package d2mapentity
 
 import (
 	"fmt"
+	"math/rand"
 
 	"github.com/google/uuid"
 
@@ -35,9 +36,9 @@ func NewMapEntityFactory(asset *d2asset.AssetManager) (*MapEntityFactory, error)
 	}
 
 	entityFactory := &MapEntityFactory{
-		stateFactory,
-		asset,
-		itemFactory,
+		HeroStateFactory: stateFactory,
+		asset:            asset,
+		item:             itemFactory,
 	}
 
 	return entityFactory, nil
@@ -48,6 +49,32 @@ type MapEntityFactory struct {
 	*d2hero.HeroStateFactory
 	asset *d2asset.AssetManager
 	item  *diablo2item.ItemFactory
+	rng   *rand.Rand // the world RNG (P3 E4); nil falls back to the global generator
+}
+
+// SetRand hands the factory the world RNG, so entity creation rolls
+// (equipment variants) and per-entity behaviour seeds derive from the map
+// seed. MapEngine.SetSeed calls it.
+func (f *MapEntityFactory) SetRand(r *rand.Rand) {
+	f.rng = r
+}
+
+func (f *MapEntityFactory) randIntn(n int) int {
+	if f.rng != nil {
+		return f.rng.Intn(n)
+	}
+
+	// nolint:gosec // not cryptographic; pre-seed fallback only
+	return rand.Intn(n)
+}
+
+func (f *MapEntityFactory) randInt63() int64 {
+	if f.rng != nil {
+		return f.rng.Int63()
+	}
+
+	// nolint:gosec // not cryptographic; pre-seed fallback only
+	return rand.Int63()
 }
 
 // NewAnimatedEntity creates an instance of AnimatedEntity
@@ -189,10 +216,15 @@ func (f *MapEntityFactory) NewNPC(x, y int, monstat *d2records.MonStatRecord, di
 		monstatEx:     f.asset.Records.Monster.Stats2[monstat.ExtraDataKey],
 	}
 
+	// Per-entity behaviour RNG, seeded from the world RNG at creation time
+	// (creation order is deterministic under a seeded map), so idle-timing
+	// draws never interleave across entities via a shared stream (P3 E4).
+	result.rng = rand.New(rand.NewSource(f.randInt63()))
+
 	var equipment [16]string
 
 	for compType, opts := range result.monstatEx.EquipmentOptions {
-		equipment[compType] = selectEquip(opts)
+		equipment[compType] = f.selectEquip(opts)
 	}
 
 	composite, err := f.asset.LoadComposite(d2enum.ObjectTypeCharacter, monstat.AnimationDirectoryToken,

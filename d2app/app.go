@@ -409,15 +409,24 @@ func (a *App) render(target d2interface.Surface) {
 func (a *App) advance() error {
 	a.harnessDrainUpdate() // no-op unless built with -tags harness
 
+	// While the harness holds the simulation paused, frames advance with zero
+	// deltas and a frozen clock (P3 spec §3.4); stepping happens inside the
+	// harness's queued commands via advanceOnce, never through the wall clock.
+	if u, s, scr, cur, held := a.harnessStepDeltas(); held {
+		return a.advanceOnce(u, s, scr, cur)
+	}
+
 	current := d2util.Now()
-	elapsedUnscaled := current - a.lastTime
-	elapsed := elapsedUnscaled * a.timeScale
-
+	elapsedUnscaled, elapsed, elapsedLastScreenAdvance := d2util.FrameDeltas(current, a.lastTime, a.lastScreenAdvance, a.timeScale)
 	a.lastTime = current
-
-	elapsedLastScreenAdvance := (current - a.lastScreenAdvance) * a.timeScale
 	a.lastScreenAdvance = current
 
+	return a.advanceOnce(elapsedUnscaled, elapsed, elapsedLastScreenAdvance, current)
+}
+
+// advanceOnce runs one simulation tick with the given deltas (seconds) and
+// clock reading. The playtest harness drives it directly when stepping.
+func (a *App) advanceOnce(elapsedUnscaled, elapsed, elapsedLastScreenAdvance, current float64) error {
 	if err := a.screen.Advance(elapsedLastScreenAdvance); err != nil {
 		return err
 	}

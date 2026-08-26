@@ -22,6 +22,7 @@ type NPC struct {
 	action        int
 	path          int
 	repetitions   int
+	rng           *rand.Rand // per-entity behaviour RNG, seeded by the factory (P3 E4)
 	monstatRecord *d2records.MonStatRecord
 	monstatEx     *d2records.MonStat2Record
 	HasPaths      bool
@@ -36,13 +37,23 @@ const (
 	maxAnimationRepetitions = 5
 )
 
-func selectEquip(slice []string) string {
+// selectEquip picks an equipment variant with the world RNG (falling back to
+// the global generator before the factory is seeded).
+func (f *MapEntityFactory) selectEquip(slice []string) string {
 	if len(slice) != 0 {
-		// nolint:gosec // not concerned with crypto-strong randomness
-		return slice[rand.Intn(len(slice))]
+		return slice[f.randIntn(len(slice))]
 	}
 
 	return ""
+}
+
+func (v *NPC) randIntn(n int) int {
+	if v.rng != nil {
+		return v.rng.Intn(n)
+	}
+
+	// nolint:gosec // not cryptographic; pre-seed fallback only
+	return rand.Intn(n)
 }
 
 // ID returns the NPC uuid
@@ -122,8 +133,7 @@ func (v *NPC) next() {
 
 	v.isDone = true
 
-	// nolint:gosec // not concerned with crypto-strong randomness
-	v.repetitions = minAnimationRepetitions + rand.Intn(maxAnimationRepetitions)
+	v.repetitions = minAnimationRepetitions + v.randIntn(maxAnimationRepetitions)
 
 	switch d2enum.NPCActionType(v.action) {
 	case d2enum.NPCActionSkill1:

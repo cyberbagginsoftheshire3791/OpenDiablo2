@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/robertkrimen/otto"
 
@@ -96,7 +95,7 @@ func NewGameServer(asset *d2asset.AssetManager,
 		packetManagerChan: make(chan ReceivedPacket),
 		mapEngines:        make([]*d2mapengine.MapEngine, 0),
 		scriptEngine:      d2script.CreateScriptEngine(),
-		seed:              time.Now().UnixNano(),
+		seed:              takeNextGameSeed(), // wall clock unless the harness set one (seed.go, P3 E3)
 		heroStateFactory:  heroStateFactory,
 	}
 

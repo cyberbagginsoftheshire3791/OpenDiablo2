@@ -4,7 +4,6 @@ package d2mapgen
 // is experiemental, and mapgen will likely change dramatically in the future.
 
 import (
-	"math/rand"
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -36,7 +35,11 @@ const (
 
 // GenerateAct1Overworld generates the map and entities for the first town and surrounding area.
 func (g *MapGenerator) GenerateAct1Overworld() {
-	rand.Seed(g.engine.Seed())
+	// The world RNG derives from the engine seed (P3 E4). The old
+	// rand.Seed(g.engine.Seed()) had been a silent no-op since Go 1.24, so
+	// stamp placement was unseeded and the server's and client's wilderness
+	// could diverge; drawing from the engine's own generator fixes both.
+	g.rng = g.engine.Rand()
 
 	wilderness1Details := g.asset.Records.GetLevelDetails(wildernessDetailsRecordID)
 
@@ -126,20 +129,20 @@ func (g *MapGenerator) generateWilderness1TownEast(startX, startY int) {
 
 	// Draw the north and south fence
 	for i := 0; i < 9; i++ {
-		g.engine.PlaceStamp(fenceNorthStamp[rand.Intn(3)], startX+(i*9), startY)
-		g.engine.PlaceStamp(fenceSouthStamp[rand.Intn(3)], startX+(i*9),
+		g.engine.PlaceStamp(fenceNorthStamp[g.rng.Intn(3)], startX+(i*9), startY)
+		g.engine.PlaceStamp(fenceSouthStamp[g.rng.Intn(3)], startX+(i*9),
 			startY+(levelDetails.SizeYNormal+6))
 	}
 
 	// West fence
 	for i := 1; i < 6; i++ {
-		g.engine.PlaceStamp(fenceWestStamp[rand.Intn(3)], startX,
+		g.engine.PlaceStamp(fenceWestStamp[g.rng.Intn(3)], startX,
 			startY+(levelDetails.SizeYNormal+6)-(i*9))
 	}
 
 	// East Fence
 	for i := 1; i < 10; i++ {
-		g.engine.PlaceStamp(fenceEastStamp[rand.Intn(3)], startX+levelDetails.SizeXNormal, startY+(i*9))
+		g.engine.PlaceStamp(fenceEastStamp[g.rng.Intn(3)], startX+levelDetails.SizeXNormal, startY+(i*9))
 	}
 
 	g.engine.PlaceStamp(fenceSouthWestStamp, startX, startY+levelDetails.SizeYNormal+6)
@@ -184,17 +187,17 @@ func (g *MapGenerator) generateWilderness1TownSouth(startX, startY int) {
 
 	// Draw the north fence
 	for i := 0; i < 4; i++ {
-		g.engine.PlaceStamp(fenceNorthStamp[rand.Intn(3)], startX+(i*9)+5, startY-6)
+		g.engine.PlaceStamp(fenceNorthStamp[g.rng.Intn(3)], startX+(i*9)+5, startY-6)
 	}
 
 	// Draw the west fence
 	for i := 0; i < 8; i++ {
-		g.engine.PlaceStamp(fenceWestStamp[rand.Intn(3)], startX, startY+(i*9)+3)
+		g.engine.PlaceStamp(fenceWestStamp[g.rng.Intn(3)], startX, startY+(i*9)+3)
 	}
 
 	// Draw the south fence
 	for i := 1; i < 9; i++ {
-		g.engine.PlaceStamp(fenceSouthStamp[rand.Intn(3)], startX+(i*9), startY+(8*9)+3)
+		g.engine.PlaceStamp(fenceSouthStamp[g.rng.Intn(3)], startX+(i*9), startY+(8*9)+3)
 	}
 
 	g.engine.PlaceStamp(fenceNorthWestStamp, startX, startY-6)
@@ -238,20 +241,20 @@ func (g *MapGenerator) generateWilderness1TownWest(startX, startY int) {
 	// Draw the north and south fences
 	for i := 0; i < 9; i++ {
 		if i > 0 && i < 8 {
-			g.engine.PlaceStamp(fenceNorthStamp[rand.Intn(3)], startX+(i*9)-1, startY-15)
+			g.engine.PlaceStamp(fenceNorthStamp[g.rng.Intn(3)], startX+(i*9)-1, startY-15)
 		}
 
-		g.engine.PlaceStamp(fenceSouthStamp[rand.Intn(3)], startX+(i*9)-1, startY+levelDetails.SizeYNormal-12)
+		g.engine.PlaceStamp(fenceSouthStamp[g.rng.Intn(3)], startX+(i*9)-1, startY+levelDetails.SizeYNormal-12)
 	}
 
 	// Draw the east fence
 	for i := 0; i < 6; i++ {
-		g.engine.PlaceStamp(fenceEastStamp[rand.Intn(3)], startX+levelDetails.SizeXNormal-9, startY+(i*9)-6)
+		g.engine.PlaceStamp(fenceEastStamp[g.rng.Intn(3)], startX+levelDetails.SizeXNormal-9, startY+(i*9)-6)
 	}
 
 	// Draw the west fence
 	for i := 0; i < 9; i++ {
-		g.engine.PlaceStamp(fenceWestStamp[rand.Intn(3)], startX, startY+(i*9)-6)
+		g.engine.PlaceStamp(fenceWestStamp[g.rng.Intn(3)], startX, startY+(i*9)-6)
 	}
 
 	// Draw the west fence
@@ -275,8 +278,8 @@ func (g *MapGenerator) generateWilderness1Contents(rect d2geom.Rectangle) {
 
 	denOfEvil := g.loadPreset(d2wilderness.DenOfEvilEntrance, 0)
 	denOfEvilLoc := d2geom.Point{
-		X: rect.Left + (rect.Width / 2) + rand.Intn(10),
-		Y: rect.Top + (rect.Height / 2) + rand.Intn(10),
+		X: rect.Left + (rect.Width / 2) + g.rng.Intn(10),
+		Y: rect.Top + (rect.Height / 2) + g.rng.Intn(10),
 	}
 
 	// Fill in the grass
@@ -317,11 +320,11 @@ func (g *MapGenerator) generateWilderness1Contents(rect d2geom.Rectangle) {
 
 	numPlaced := 0
 	for numPlaced < 25 {
-		stamp := stuff[rand.Intn(len(stuff))]
+		stamp := stuff[g.rng.Intn(len(stuff))]
 
 		stampRect := d2geom.Rectangle{
-			Left:   rect.Left + rand.Intn(rect.Width) - stamp.Size().Width,
-			Top:    rect.Top + rand.Intn(rect.Height) - stamp.Size().Height,
+			Left:   rect.Left + g.rng.Intn(rect.Width) - stamp.Size().Width,
+			Top:    rect.Top + g.rng.Intn(rect.Height) - stamp.Size().Height,
 			Width:  stamp.Size().Width,
 			Height: stamp.Size().Height,
 		}
