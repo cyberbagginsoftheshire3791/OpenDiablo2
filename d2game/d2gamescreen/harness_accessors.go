@@ -13,6 +13,14 @@ func (v *Game) HarnessMapRenderer() *d2maprenderer.MapRenderer {
 	return v.mapRenderer
 }
 
+// HarnessControlsBound reports whether the game controls exist — they are
+// created at the end of the first Advance that finds the local player, so
+// true means the world has run at least one frame with the player in it
+// (first-frame initialisations such as the player's animation mode are done).
+func (v *Game) HarnessControlsBound() bool {
+	return v.gameControls != nil
+}
+
 // HarnessLocalPlayerID returns the local player's entity ID, or "" before the
 // player exists.
 func (v *Game) HarnessLocalPlayerID() string {

@@ -32,7 +32,16 @@ type Panel interface {
 	Close()
 }
 
+// mouseBtnActionsThreshold is the minimum spacing, in seconds of the controls'
+// own clock, between two click-and-hold actions (move or cast).
 const mouseBtnActionsThreshold = 0.25
+
+// repeatDue reports whether a held-button action may fire again: the first
+// action always fires (last starts at -threshold), later ones wait the
+// threshold. now and last are readings of the controls' accumulated clock.
+func repeatDue(now, last float64) bool {
+	return now-last >= mouseBtnActionsThreshold
+}
 
 const (
 	// Since they require special handling, not considering (1) globes, (2) content of the mini panel, (3) belt
@@ -228,8 +237,8 @@ func NewGameControls(
 			Height: menuRightRectH,
 		},
 		actionableRegions:      actionableRegions,
-		lastLeftBtnActionTime:  0,
-		lastRightBtnActionTime: 0,
+		lastLeftBtnActionTime:  -mouseBtnActionsThreshold, // the first held-click action fires at once
+		lastRightBtnActionTime: -mouseBtnActionsThreshold,
 		isSinglePlayer:         isSinglePlayer,
 	}
 
@@ -292,6 +301,13 @@ type GameControls struct {
 	lastRightBtnActionTime float64
 	FreeCam                bool
 	isSinglePlayer         bool
+
+	// clock is the controls' own monotonic clock in seconds, accumulated from
+	// the deltas Advance receives. It replaces wall-clock reads for click
+	// repeat timing, so scripted input under the harness's stepped clock is
+	// deterministic and the same script replays the same actions (P3 spec
+	// §2.2, §3.4). In live play it advances exactly as wall time does.
+	clock float64
 
 	*d2util.Logger
 }
@@ -440,15 +456,13 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 	px = truncateFloat64(px)
 	py = truncateFloat64(py)
 
-	now := d2util.Now()
+	now := g.clock
 	button := event.Button()
 	isLeft := button == d2enum.MouseButtonLeft
 	isRight := button == d2enum.MouseButtonRight
-	lastLeft := now - g.lastLeftBtnActionTime
-	lastRight := now - g.lastRightBtnActionTime
 	inRect := !g.isInActiveMenusRect(event.X(), event.Y())
-	shouldDoLeft := lastLeft >= mouseBtnActionsThreshold
-	shouldDoRight := lastRight >= mouseBtnActionsThreshold
+	shouldDoLeft := repeatDue(now, g.lastLeftBtnActionTime)
+	shouldDoRight := repeatDue(now, g.lastRightBtnActionTime)
 
 	if isLeft && shouldDoLeft && inRect && !g.hero.IsCasting() {
 		g.lastLeftBtnActionTime = now
@@ -531,7 +545,7 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	}
 
 	if g.hud.skillSelectMenu.IsOpen() && event.Button() == d2enum.MouseButtonLeft {
-		g.lastLeftBtnActionTime = d2util.Now()
+		g.lastLeftBtnActionTime = g.clock
 		g.hud.skillSelectMenu.HandleClick(mx, my)
 		g.hud.skillSelectMenu.ClosePanels()
 
@@ -543,7 +557,7 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	py = truncateFloat64(py)
 
 	if event.Button() == d2enum.MouseButtonLeft && !g.isInActiveMenusRect(mx, my) && !g.hero.IsCasting() {
-		g.lastLeftBtnActionTime = d2util.Now()
+		g.lastLeftBtnActionTime = g.clock
 
 		if event.KeyMod() == d2enum.KeyModShift {
 			g.inputListener.OnPlayerCast(g.hero.LeftSkill.ID, px, py)
@@ -555,7 +569,7 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	}
 
 	if event.Button() == d2enum.MouseButtonRight && !g.isInActiveMenusRect(mx, my) && !g.hero.IsCasting() {
-		g.lastRightBtnActionTime = d2util.Now()
+		g.lastRightBtnActionTime = g.clock
 
 		g.inputListener.OnPlayerCast(g.hero.RightSkill.ID, px, py)
 
@@ -714,6 +728,8 @@ func (g *GameControls) Load() {
 
 // Advance advances the state of the GameControls
 func (g *GameControls) Advance(elapsed float64) error {
+	g.clock += elapsed
+
 	g.mapRenderer.Advance(elapsed)
 	g.hud.Advance(elapsed)
 	g.inventory.Advance(elapsed)

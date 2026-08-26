@@ -21,9 +21,21 @@ type inputManager struct {
 
 // NewInputManager returns a new input manager instance
 func NewInputManager() d2interface.InputManager {
+	return NewInputManagerWithService(DefaultInputService())
+}
+
+// NewInputManagerWithService returns an input manager polling the given
+// service — the seam the playtest harness's scripted overlay plugs into
+// (P3 spec §2.5, E6).
+func NewInputManagerWithService(service d2interface.InputService) d2interface.InputManager {
 	return &inputManager{
-		inputService: ebiten_input.InputService{},
+		inputService: service,
 	}
+}
+
+// DefaultInputService is the real keyboard and mouse (ebiten).
+func DefaultInputService() d2interface.InputService {
+	return ebiten_input.InputService{}
 }
 
 // Advance advances the inputManager
@@ -54,6 +66,12 @@ func (im *inputManager) Advance(_, _ float64) error {
 	}
 
 	im.updateCursor(cursorX, cursorY, eventBase)
+
+	// A service with per-poll edge state (the scripted overlay) closes its
+	// cycle here; the real ebiten service has none and skips this.
+	if t, ok := im.inputService.(TickEnder); ok {
+		t.EndTick()
+	}
 
 	return nil
 }

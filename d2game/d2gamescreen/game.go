@@ -16,6 +16,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
@@ -157,6 +158,8 @@ func (v *Game) OnLoad(_ d2screen.LoadingState) {
 
 // OnUnload releases the resources of Gameplay screen
 func (v *Game) OnUnload() error {
+	d2harness.Unregister(v.gameControls) // the "ui" provider dies with the screen
+
 	if err := v.gameControls.UnbindTerminalCommands(v.terminal); err != nil {
 		return err
 	}
@@ -310,6 +313,10 @@ func (v *Game) bindGameControls() error {
 		if err := v.inputManager.BindHandler(v.gameControls); err != nil {
 			v.Error(bindControlsErrStr + player.ID())
 		}
+
+		// The controls are the harness's "ui" system while this screen lives
+		// (P3 spec §3.5); OnUnload unregisters them.
+		d2harness.Register(v.gameControls)
 
 		break
 	}

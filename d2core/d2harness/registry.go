@@ -9,16 +9,26 @@
 // until its provider exposes every value its S1 §12 playtest assertion needs.
 package d2harness
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
+
+// Stateful is the entity-level half of the contract: anything that exposes
+// kind-specific observable state as a JSON-encodable map (P3 spec §3.5 —
+// Player, NPC, and every future entity kind). The harness reads it for
+// strigoi_get_entity and hashes it into the state digest, so "observable" and
+// "deterministic" are one checklist. Called on the game goroutine.
+type Stateful interface {
+	HarnessState() map[string]interface{}
+}
 
 // Provider exposes a named system's observable state to the playtest harness.
 type Provider interface {
+	Stateful
+
 	// HarnessName identifies the system: "clock", "meters", "light", "spawns", ...
 	HarnessName() string
-
-	// HarnessState returns the system's observable state. Values must be
-	// JSON-encodable. Called on the game goroutine.
-	HarnessState() map[string]interface{}
 }
 
 // Settable is optionally implemented by providers that allow test setup to
@@ -28,6 +38,12 @@ type Settable interface {
 
 	// HarnessSet writes one allow-listed field. Called on the game goroutine.
 	HarnessSet(field string, value interface{}) error
+}
+
+// FieldLister is optionally implemented by a Settable provider to advertise
+// its allow-listed field names (strigoi_list_systems shows them).
+type FieldLister interface {
+	HarnessSettableFields() []string
 }
 
 // nolint:gochecknoglobals // the registry is deliberately process-global
@@ -43,6 +59,24 @@ func Register(p Provider) {
 	defer mu.Unlock()
 
 	providers = append(providers, p)
+}
+
+// Unregister removes a previously registered provider (all occurrences). A
+// screen that owns a provider calls it on unload so a stale registration
+// never shadows a live one.
+func Unregister(p Provider) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	kept := providers[:0]
+
+	for _, q := range providers {
+		if q != p {
+			kept = append(kept, q)
+		}
+	}
+
+	providers = kept
 }
 
 // Providers returns a snapshot of the registered providers.
@@ -68,4 +102,27 @@ func Lookup(name string) (Provider, bool) {
 	}
 
 	return nil, false
+}
+
+// Names returns the distinct registered system names, sorted.
+func Names() []string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	seen := map[string]bool{}
+	names := make([]string, 0, len(providers))
+
+	for _, p := range providers {
+		n := p.HarnessName()
+		if seen[n] {
+			continue
+		}
+
+		seen[n] = true
+		names = append(names, n)
+	}
+
+	sort.Strings(names)
+
+	return names
 }
