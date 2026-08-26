@@ -473,6 +473,20 @@ func (v *MainMenu) onCinematicsButtonClicked() {
 	v.navigator.ToCinematics()
 }
 
+// OnUnload releases the main menu's input handler when another screen takes
+// over (https://github.com/OpenDiablo2/OpenDiablo2/issues/792 — the other
+// screens already do this). Without it the unloaded menu kept hearing keys
+// in-game: found by the M3.4 UI playtest script, where the second Escape's
+// key-up reached the stale menu's "exit on Escape" branch and the process
+// exited with code 0 and no message.
+func (v *MainMenu) OnUnload() error {
+	if err := v.inputManager.UnbindHandler(v); err != nil {
+		v.Errorf("main menu: unbinding the input handler: %v", err)
+	}
+
+	return nil
+}
+
 // Render renders the main menu
 func (v *MainMenu) Render(screen d2interface.Surface) {
 	v.renderBackgrounds(screen)
