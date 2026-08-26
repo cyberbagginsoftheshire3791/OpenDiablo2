@@ -33,6 +33,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2config"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2input"
+	ebiteninput "github.com/OpenDiablo2/OpenDiablo2/d2core/d2input/ebiten"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2render/ebiten"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2term"
@@ -174,7 +175,7 @@ func (a *App) loadEngine() error {
 
 	// The harness build wraps the real keyboard/mouse in a scripted overlay
 	// (P3 spec E6); untagged builds get the real service back unchanged.
-	inputManager := d2input.NewInputManagerWithService(a.harnessInputService(d2input.DefaultInputService()))
+	inputManager := d2input.NewInputManagerWithService(a.harnessInputService(ebiteninput.InputService{}))
 
 	term, err := d2term.New(inputManager)
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
-	ebiten_input "github.com/OpenDiablo2/OpenDiablo2/d2core/d2input/ebiten"
 )
 
 type inputManager struct {
@@ -19,23 +18,15 @@ type inputManager struct {
 	entries handlerEntryList
 }
 
-// NewInputManager returns a new input manager instance
-func NewInputManager() d2interface.InputManager {
-	return NewInputManagerWithService(DefaultInputService())
-}
-
 // NewInputManagerWithService returns an input manager polling the given
 // service — the seam the playtest harness's scripted overlay plugs into
-// (P3 spec §2.5, E6).
+// (P3 spec §2.5, E6). The real keyboard and mouse live in the ebiten
+// sub-package; the app wires them in, so this package (and its tests) never
+// link ebiten, whose package init needs a display.
 func NewInputManagerWithService(service d2interface.InputService) d2interface.InputManager {
 	return &inputManager{
 		inputService: service,
 	}
-}
-
-// DefaultInputService is the real keyboard and mouse (ebiten).
-func DefaultInputService() d2interface.InputService {
-	return ebiten_input.InputService{}
 }
 
 // Advance advances the inputManager
