@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +42,8 @@ type session struct {
 	attached bool
 	stopped  bool
 	RunBase  string
+	LogPath  string // the launched game's stdout+stderr (panics land here)
+	logFile  *os.File
 }
 
 // start builds and launches the harness build (or attaches to a running one)
@@ -84,9 +87,25 @@ func start(t *testing.T) *session {
 		s.cmd = exec.Command(exe, "-harness", "-harness-addr", addr, "-harness-out", s.RunBase, "-l", "4")
 		s.cmd.Dir = repoRoot
 
+		// Keep the game's own output: a script that dies with a transport
+		// error usually died because the game panicked, and the panic is here.
+		if err := os.MkdirAll(s.RunBase, 0o750); err != nil {
+			t.Fatalf("run base: %v", err)
+		}
+
+		s.LogPath = filepath.Join(s.RunBase, "game-"+time.Now().Format("20060102-150405")+".log")
+
+		if f, err := os.Create(s.LogPath); err == nil {
+			s.logFile = f
+			s.cmd.Stdout = f
+			s.cmd.Stderr = f
+		}
+
 		if err := s.cmd.Start(); err != nil {
 			t.Fatalf("launching the game: %v", err)
 		}
+
+		t.Logf("game output -> %s", s.LogPath)
 	}
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "strigoi-playtest", Version: "0.1.0"}, nil)
@@ -155,6 +174,31 @@ func (s *session) kill() {
 	case <-time.After(5 * time.Second):
 		_ = s.cmd.Process.Kill()
 	}
+
+	if s.logFile != nil {
+		_ = s.logFile.Close()
+		s.logFile = nil
+	}
+}
+
+// gameTail returns the last n lines of the launched game's output, for
+// failure messages. Empty when attached to a hand-started game.
+func (s *session) gameTail(n int) string {
+	if s.LogPath == "" {
+		return ""
+	}
+
+	data, err := os.ReadFile(s.LogPath)
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // call invokes a tool and fails the test on transport or tool errors.
@@ -166,7 +210,7 @@ func (s *session) call(name string, args map[string]any) map[string]any {
 
 	res, err := s.sess.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
-		s.t.Fatalf("%s: transport error: %v", name, err)
+		s.t.Fatalf("%s: transport error: %v\n--- game output (tail) ---\n%s", name, err, s.gameTail(40))
 	}
 
 	if res.IsError {
@@ -200,7 +244,7 @@ func (s *session) callErr(name string, args map[string]any) string {
 
 	res, err := s.sess.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
-		s.t.Fatalf("%s: transport error: %v", name, err)
+		s.t.Fatalf("%s: transport error: %v\n--- game output (tail) ---\n%s", name, err, s.gameTail(40))
 	}
 
 	if res.IsError {

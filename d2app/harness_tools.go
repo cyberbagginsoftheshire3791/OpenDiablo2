@@ -89,6 +89,9 @@ func (a *App) harnessServe() {
 	a.harnessAddObservationTools(srv)
 	a.harnessAddActionTools(srv)
 	a.harnessAddTimeTools(srv)
+	a.harnessAddProviderTools(srv) // harness_providers.go (M3.4)
+	a.harnessAddInputTools(srv)    // harness_input.go (M3.4)
+	a.harnessAddSpawnTools(srv)    // harness_spawn.go (M3.4)
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, &mcp.StreamableHTTPOptions{})
 
@@ -370,16 +373,23 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			return nil, out, startErr
 		}
 
-		// step 2: poll until the world is ready
+		// step 2: poll until the world is ready. "Ready" means the local player
+		// exists AND the game screen has advanced at least one frame with it
+		// (the controls bind at the end of that frame): first-frame
+		// initialisations — the player's animation mode, the "ui" provider —
+		// are then done, so a digest taken right after start_game is stable
+		// across launches (leak register, docs/harness.md, 26 Aug 2026).
 		deadline := time.Now().Add(time.Duration(wait * float64(time.Second)))
 		begin := time.Now()
 
 		for {
 			ready := false
 
+			var readyTick int64
+
 			err := harnessOnUpdate(func() {
-				client, _ := harnessGame()
-				if client == nil || client.PlayerID == "" {
+				client, game := harnessGame()
+				if client == nil || client.PlayerID == "" || game == nil {
 					return
 				}
 
@@ -388,11 +398,12 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 					return
 				}
 
-				if a.screen.IsLoading() || a.screen.CurrentScreen() == nil {
+				if a.screen.IsLoading() || a.screen.CurrentScreen() == nil || !game.HarnessControlsBound() {
 					return
 				}
 
 				ready = true
+				readyTick = atomic.LoadInt64(&harness.tick)
 				out.Player = harnessHandleFor(client.PlayerID, client.PlayerID)
 				out.Seed = client.Seed
 				out.SavePath = savePath
@@ -405,7 +416,13 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			}
 
 			if ready {
+				// one more full frame: the controls' own first Advance has now run too
+				if err := harnessWaitFrameAfter(readyTick); err != nil {
+					return nil, out, err
+				}
+
 				out.WaitedS = time.Since(begin).Seconds()
+
 				return harnessText("in game · player %s at tile %.1f,%.1f · seed %d", out.Player, out.Spawn[0], out.Spawn[1], out.Seed), out, nil
 			}
 

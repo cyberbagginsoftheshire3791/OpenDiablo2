@@ -172,7 +172,9 @@ func (a *App) loadEngine() error {
 
 	audio := ebiten2.CreateAudio(*a.Options.LogLevel, a.asset)
 
-	inputManager := d2input.NewInputManager()
+	// The harness build wraps the real keyboard/mouse in a scripted overlay
+	// (P3 spec E6); untagged builds get the real service back unchanged.
+	inputManager := d2input.NewInputManagerWithService(a.harnessInputService(d2input.DefaultInputService()))
 
 	term, err := d2term.New(inputManager)
 	if err != nil {

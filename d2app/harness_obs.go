@@ -26,16 +26,7 @@ import (
 )
 
 func harnessSystemNames() []string {
-	providers := d2harness.Providers()
-	names := make([]string, 0, len(providers))
-
-	for _, p := range providers {
-		names = append(names, p.HarnessName())
-	}
-
-	sort.Strings(names)
-
-	return names
+	return d2harness.Names()
 }
 
 // ---------------------------------------------------------------- entities --
@@ -52,6 +43,11 @@ type harnessEntityInfo struct {
 	Target  *[2]float64            `json:"target,omitempty"`
 	PathLen int                    `json:"path_len,omitempty"`
 	State   map[string]interface{} `json:"state,omitempty"`
+
+	// Screen is the entity's current screen-pixel position (camera-relative;
+	// presentation, so it is filled only by get_entity/get_player and never
+	// by the digest). Use it to aim strigoi_click at an entity.
+	Screen *[2]int `json:"screen,omitempty"`
 }
 
 type harnessGetEntitiesIn struct {
@@ -106,26 +102,23 @@ func harnessEntityInfoFor(id string, e interface{}, localPlayerID string, deep b
 		info.Layer = me.GetLayer()
 	}
 
+	// Kind-specific state comes from the entity itself (d2harness.Stateful,
+	// P3 spec §3.5): the entity decides what is observable, the harness only
+	// relays it. The player's class is relayed as its name.
+	if deep {
+		if st, ok := e.(d2harness.Stateful); ok {
+			info.State = st.HarnessState()
+		}
+	}
+
 	if pl, ok := e.(*d2mapentity.Player); ok {
 		world := pl.Position.World()
 		info.X, info.Y = world.X(), world.Y()
 		tile := pl.Position.Tile()
 		info.Tile = [2]int{int(tile.X()), int(tile.Y())}
 
-		if deep {
-			info.State = map[string]interface{}{
-				"name":        pl.Name(),
-				"class":       harnessHeroName(pl.Class),
-				"act":         pl.Act,
-				"gold":        pl.Gold,
-				"stamina":     pl.Stats.Stamina,
-				"max_stamina": pl.Stats.MaxStamina,
-				"health":      pl.Stats.Health,
-				"max_health":  pl.Stats.MaxHealth,
-				"in_town":     pl.IsInTown(),
-				"running":     pl.IsRunning(),
-				"casting":     pl.IsCasting(),
-			}
+		if info.State != nil {
+			info.State["class"] = harnessHeroName(pl.Class)
 		}
 
 		return info
@@ -136,13 +129,6 @@ func harnessEntityInfoFor(id string, e interface{}, localPlayerID string, deep b
 		info.X, info.Y = world.X(), world.Y()
 		tile := npc.Position.Tile()
 		info.Tile = [2]int{int(tile.X()), int(tile.Y())}
-
-		if deep {
-			info.State = map[string]interface{}{
-				"has_paths": npc.HasPaths,
-				"paths":     len(npc.Paths),
-			}
-		}
 
 		return info
 	}
@@ -348,6 +334,14 @@ func (a *App) harnessAddObservationTools(srv *mcp.Server) {
 			}
 
 			out = harnessEntityInfoFor(id, e, client.PlayerID, true)
+
+			// Presentation extra for input scripts (never part of the digest).
+			if _, game := harnessGame(); game != nil {
+				if mr := game.HarnessMapRenderer(); mr != nil {
+					sx, sy := mr.WorldToScreen(out.X, out.Y)
+					out.Screen = &[2]int{sx, sy}
+				}
+			}
 		})
 		if err != nil {
 			return nil, out, err

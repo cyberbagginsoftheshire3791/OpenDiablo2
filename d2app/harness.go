@@ -27,12 +27,13 @@ import (
 	"time"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2input"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client"
 )
 
 const (
-	harnessVersion     = "0.2.0"          // M3.2 spine
+	harnessVersion     = "0.4.0"          // M3.4: providers, input, spawn
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64
@@ -124,6 +125,7 @@ type harnessState struct {
 	app    *App
 	runDir string
 	ring   *harnessRing
+	input  *d2input.ScriptedInputService // the E6 overlay (harness_input.go)
 
 	updateQ    chan harnessCmd
 	drawQ      chan harnessCmd
@@ -171,6 +173,15 @@ func (a *App) harnessEarlyInit() {
 	// log.Writer() at construction, so this must run before other subsystems
 	// build their loggers (Create calls it first).
 	log.SetOutput(io.MultiWriter(log.Writer(), harness.ring))
+}
+
+// harnessInputService installs the scripted overlay at the d2input seam
+// (P3 spec §3.7, E6). With nothing scripted it is a pass-through, so the
+// harness build plays normally even without -harness.
+func (a *App) harnessInputService(real d2interface.InputService) d2interface.InputService {
+	harness.input = d2input.NewScriptedInputService(real)
+
+	return harness.input
 }
 
 func (a *App) harnessRegisterFlags() {

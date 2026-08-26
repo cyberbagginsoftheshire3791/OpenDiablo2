@@ -29,3 +29,7 @@ func (a *App) harnessDrainDraw(_ d2interface.Surface) {}
 func (a *App) harnessNoteScreen(_ string) {}
 
 func (a *App) harnessNoteGame(_ *d2client.GameClient, _ *d2gamescreen.Game) {}
+
+func (a *App) harnessInputService(real d2interface.InputService) d2interface.InputService {
+	return real
+}
