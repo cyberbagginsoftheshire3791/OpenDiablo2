@@ -20,6 +20,10 @@ func (a *App) harnessStart() {}
 
 func (a *App) harnessDrainUpdate() {}
 
+func (a *App) harnessStepDeltas() (elapsedUnscaled, elapsed, elapsedScreen, current float64, held bool) {
+	return 0, 0, 0, 0, false
+}
+
 func (a *App) harnessDrainDraw(_ d2interface.Surface) {}
 
 func (a *App) harnessNoteScreen(_ string) {}

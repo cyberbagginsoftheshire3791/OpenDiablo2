@@ -39,6 +39,7 @@ type session struct {
 	sess     *mcp.ClientSession
 	cmd      *exec.Cmd
 	attached bool
+	stopped  bool
 	RunBase  string
 }
 
@@ -117,6 +118,12 @@ func start(t *testing.T) *session {
 }
 
 func (s *session) stop() {
+	if s.stopped {
+		return
+	}
+
+	s.stopped = true
+
 	if s.sess != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, _ = s.sess.CallTool(ctx, &mcp.CallToolParams{

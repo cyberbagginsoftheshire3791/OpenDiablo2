@@ -9,6 +9,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	mrand "math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -23,6 +26,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2term"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket"
+	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2server"
 )
 
 func harnessBoolPtr(b bool) *bool { return &b }
@@ -84,6 +88,7 @@ func (a *App) harnessServe() {
 	a.harnessAddSessionTools(srv)
 	a.harnessAddObservationTools(srv)
 	a.harnessAddActionTools(srv)
+	a.harnessAddTimeTools(srv)
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, &mcp.StreamableHTTPOptions{})
 
@@ -144,7 +149,7 @@ type harnessStartGameIn struct {
 	SavePath    string  `json:"save_path,omitempty" jsonschema:"path to an existing .od2 save; mutually exclusive with hero"`
 	HeroName    string  `json:"hero_name,omitempty" jsonschema:"with hero_class: create a fresh hero and save it first"`
 	HeroClass   string  `json:"hero_class,omitempty" jsonschema:"one of: amazon, assassin, barbarian, druid, necromancer, paladin, sorceress"`
-	Seed        *int64  `json:"seed,omitempty" jsonschema:"NOT_IMPLEMENTED until M3.3 (engine change E3)"`
+	Seed        *int64  `json:"seed,omitempty" jsonschema:"nonzero: seed map generation, the world RNG, and entity IDs for a reproducible run (P3 E3/E5); overrides a pending set_seed"`
 	WaitSeconds float64 `json:"wait_seconds,omitempty" jsonschema:"how long to wait for the world to be ready; default 25"`
 }
 
@@ -182,7 +187,7 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			Commit:  a.gitCommit,
 			Branch:  a.gitBranch,
 			Version: harnessVersion,
-			Mode:    "live",
+			Mode:    harnessTimeSnapshot().Mode,
 			Tick:    atomic.LoadInt64(&harness.tick),
 			UptimeS: time.Since(harness.started).Seconds(),
 			InGame:  client != nil,
@@ -205,7 +210,7 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			client, _ := harnessGame()
 			out.Screen = harnessScreenHint()
 			out.Loading = a.screen.IsLoading()
-			out.TimeMode = "live"
+			out.TimeMode = harnessTimeSnapshot().Mode
 			out.Tick = atomic.LoadInt64(&harness.tick)
 			out.RunDir = harness.runDir
 			out.Systems = harnessSystemNames()
@@ -284,10 +289,6 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 
 		var out harnessStartGameOut
 
-		if in.Seed != nil {
-			return nil, out, harnessErr("NOT_IMPLEMENTED", "seed injection lands at M3.3 (engine change E3)", "call without seed for now; the observed seed is reported")
-		}
-
 		hasHero := in.HeroName != "" || in.HeroClass != ""
 		if (in.SavePath == "") == !hasHero {
 			return nil, out, harnessErr("BAD_ARGUMENT", "provide exactly one of save_path or hero_name+hero_class", "")
@@ -302,11 +303,23 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 		var startErr error
 
 		savePath := in.SavePath
+		seed := harnessConsumeStartSeed(in.Seed)
 
 		err := harnessOnUpdate(func() {
 			if client, _ := harnessGame(); client != nil {
 				startErr = harnessErr("ALREADY_IN_GAME", "a game is already running", "strigoi_navigate to main_menu first")
 				return
+			}
+
+			// Seed the in-process server's map generation (one-shot, E3) and
+			// make entity IDs reproducible (E5). Unseeded runs restore the
+			// default crypto-random IDs and the wall-clock map seed.
+			if seed != 0 {
+				d2server.SetNextGameSeed(seed)
+				uuid.SetRand(mrand.New(mrand.NewSource(seed)))
+			} else {
+				d2server.SetNextGameSeed(0)
+				uuid.SetRand(nil)
 			}
 
 			if hasHero {
@@ -499,13 +512,37 @@ type harnessRunConsoleOut struct {
 }
 
 type harnessMoveIn struct {
-	X float64 `json:"x" jsonschema:"target world-tile x"`
-	Y float64 `json:"y" jsonschema:"target world-tile y"`
+	X        float64 `json:"x" jsonschema:"target world-tile x"`
+	Y        float64 `json:"y" jsonschema:"target world-tile y"`
+	Wait     bool    `json:"wait,omitempty" jsonschema:"block until arrived/stuck/timeout; steps the sim when paused, polls the wall clock when live"`
+	MaxTicks int     `json:"max_ticks,omitempty" jsonschema:"wait budget in simulation ticks; default 1800 (30 sim-seconds)"`
 }
 
 type harnessMoveOut struct {
 	Outcome  string     `json:"outcome"`
 	Position [2]float64 `json:"position_tile"`
+	Ticks    int        `json:"ticks,omitempty"`
+}
+
+// harnessPlayerPos reads the local player's world-tile position on the game
+// goroutine. ok is false when no game or player exists.
+func harnessPlayerPos() (x, y float64, ok bool) {
+	_ = harnessOnUpdate(func() {
+		client, _ := harnessGame()
+		if client == nil || client.PlayerID == "" {
+			return
+		}
+
+		player, exists := client.Players[client.PlayerID]
+		if !exists || player == nil {
+			return
+		}
+
+		world := player.Position.World()
+		x, y, ok = world.X(), world.Y(), true
+	})
+
+	return x, y, ok
 }
 
 func (a *App) harnessAddActionTools(srv *mcp.Server) {
@@ -595,6 +632,58 @@ func (a *App) harnessAddActionTools(srv *mcp.Server) {
 			return nil, out, moveErr
 		}
 
-		return harnessText("move sent toward %.1f,%.1f from %.1f,%.1f", in.X, in.Y, out.Position[0], out.Position[1]), out, nil
+		if !in.Wait {
+			return harnessText("move sent toward %.1f,%.1f from %.1f,%.1f", in.X, in.Y, out.Position[0], out.Position[1]), out, nil
+		}
+
+		// Wait for arrival: stepped when the clock is paused (deterministic),
+		// wall-clock polling when live. The raycast pathfinder stops at the
+		// first blocked point, so "stuck" is a normal outcome, not an error.
+		const (
+			checkEvery   = 30  // ticks between position checks [DIAL]
+			arriveWithin = 0.3 // world tiles [DIAL]
+		)
+
+		maxTicks := in.MaxTicks
+		if maxTicks <= 0 {
+			maxTicks = 1800
+		}
+
+		paused := harnessTimeSnapshot().Mode == "paused"
+		lastX, lastY := out.Position[0], out.Position[1]
+
+		for used := 0; used < maxTicks; used += checkEvery {
+			if paused {
+				if err := a.harnessStep(checkEvery, harnessTimeSnapshot().DT); err != nil {
+					return nil, out, err
+				}
+			} else {
+				harnessSleep(checkEvery * time.Second / 60)
+			}
+
+			x, y, ok := harnessPlayerPos()
+			if !ok {
+				return nil, out, harnessErr("NOT_IN_GAME", "the player vanished mid-wait", "")
+			}
+
+			out.Position = [2]float64{x, y}
+			out.Ticks = used + checkEvery
+
+			if math.Hypot(x-in.X, y-in.Y) <= arriveWithin {
+				out.Outcome = "arrived"
+				return harnessText("arrived at %.2f,%.2f after %d ticks", x, y, out.Ticks), out, nil
+			}
+
+			if math.Hypot(x-lastX, y-lastY) < 1e-9 {
+				out.Outcome = "stuck"
+				return harnessText("stuck at %.2f,%.2f after %d ticks (raycast pathing stops at the first blocked point)", x, y, out.Ticks), out, nil
+			}
+
+			lastX, lastY = x, y
+		}
+
+		out.Outcome = "timeout"
+
+		return harnessText("timeout at %.2f,%.2f after %d ticks", out.Position[0], out.Position[1], out.Ticks), out, nil
 	})
 }

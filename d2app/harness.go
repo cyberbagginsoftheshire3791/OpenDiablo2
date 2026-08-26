@@ -140,6 +140,16 @@ type harnessState struct {
 	rhandles   map[string]string // handle -> entity uuid
 	handleSeq  int
 	toolCalls  []string
+
+	// M3.3 time + seed state (harness_time.go). Guarded by mu; the sim
+	// fields are written only on the game goroutine.
+	timeMode    string  // "live" | "paused"
+	timeDT      float64 // seconds per stepped tick, default 1/60 [DIAL]
+	simNow      float64 // the frozen/stepped clock handed to advanceOnce
+	simSeconds  float64 // simulated seconds accumulated by stepping (digest input)
+	stepping    bool    // a step call is currently executing batches
+	pendingSeed int64   // set_seed value awaiting the next start_game (0 = none)
+	currentSeed int64   // the seed the current game was started with (0 = unseeded)
 }
 
 // nolint:gochecknoglobals // one App per process; the harness mirrors that
@@ -154,6 +164,8 @@ func (a *App) harnessEarlyInit() {
 	harness.rhandles = make(map[string]string)
 	harness.screenHint = "boot"
 	harness.started = time.Now()
+	harness.timeMode = "live"
+	harness.timeDT = 1.0 / 60 // [DIAL] P3 §3.4
 
 	// Tee everything the loggers write into the ring. d2util.NewLogger copies
 	// log.Writer() at construction, so this must run before other subsystems
