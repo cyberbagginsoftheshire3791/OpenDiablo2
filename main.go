@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2app"
 )
@@ -21,7 +22,10 @@ func main() {
 
 	instance := d2app.Create(GitBranch, GitCommit)
 
+	// A loop error used to end the process in silence (M3.4 finding: a
+	// playtest script watched the game vanish with no trace). Say why.
 	if err := instance.Run(); err != nil {
-		return
+		log.Printf("OpenDiablo2 exited with error: %v", err)
+		os.Exit(1)
 	}
 }
