@@ -50,7 +50,10 @@ frozen numbers below.
     go build -o OpenDiablo2.exe .   # build the game
     ./OpenDiablo2.exe -l 4          # run with info logging (-l 5 debug)
     go build ./... && go vet ./... && go test ./...   # the green gate
+    go vet -tags harness ./... && go vet -tags "harness playtest" ./...   # the gate, tagged
     go run ./tools/strigoihook check-fixtures         # Article V (CI runs it too)
+    go build -tags harness -o od2-harness.exe . && ./od2-harness.exe -harness   # the playtest harness (docs/harness.md)
+    go test -tags playtest ./playtest/... -v -count=1  # playtest scripts: laptop only, never CI
 
 ## Map of the code — verified by the M2.1 archaeology pass (2026-08-21)
 
