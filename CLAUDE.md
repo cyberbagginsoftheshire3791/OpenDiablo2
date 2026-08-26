@@ -67,11 +67,14 @@ capitalized `Docs/`, it aliases on Windows and collides on Linux).
   files beside the exe already shadow MPQ content.
 - `d2common/` — enums, interfaces, math, bit/byte streams, the loader
   (`d2loader`), and every decoder (`d2fileformats/`: MPQ, DC6, DCC, DS1,
-  DT1, COF, TBL, font, PL2, DAT, TXT, AnimData). The stable, testable floor
-  — but not display-free: `d2util/debug_print.go` imports ebiten, ebiten's
-  init initialises GLFW, so on Linux anything that imports `d2util` (the
-  logger) panics without a DISPLAY. CI runs Linux tests under xvfb; moving
-  `debug_print.go` out of `d2util` would remove the need (small, unclaimed).
+  DT1, COF, TBL, font, PL2, DAT, TXT, AnimData). The stable, testable floor.
+  **Headless rule (CI ubuntu has no display; xvfb was dropped at M2.5):**
+  ebiten's package init calls GLFW, so any *test binary* that links ebiten
+  panics on Linux. Keep ebiten adapters in leaf packages the app wires
+  (`d2render/ebiten`, `d2audio/ebiten`, `d2input/ebiten`); before adding tests
+  to a package, `go list -deps <pkg> | grep hajimehoshi/ebiten` must be empty
+  (the M3.3 FrameDeltas placement, the GlyphPrinter move, and the M3.4
+  d2input fix were all this rule).
 - `d2core/` — `d2asset` (asset manager, the hub), `d2records` (76 TXT tables
   → typed records; the layer our own data replaces), `d2map/*` (engine,
   Act-1-only generator, DS1 stamps, four-pass renderer), `d2mapentity`
