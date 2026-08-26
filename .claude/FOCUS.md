@@ -1,42 +1,49 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-08-24 (late evening CT). Keep this to a screen; the full state
-lives in `state.md` in the claude.ai project and in Notion.
+Updated: 2026-08-26 (morning CT). Keep this to a screen; the full state lives
+in `state.md` in the claude.ai project and in Notion.
 
-PHASE 3 -- the playtest harness -- P3 spec SIGNED by Josh 24 Aug (all seven
-sec. 8 asks as recommended) and **M3.2 (the spine) SHIPPED the same night**:
-the MCP Go SDK server behind build tag `harness` on 127.0.0.1:6670, update/
-draw queues in d2app, 16 strigoi_* tools, .mcp.json + settings attach,
-playtest/ Go tests, docs/harness.md. town_walk_test PASSES on the laptop;
-Claude Code attached headless and drove the game (hero created, screenshot,
-quit). Run artifacts: <Projects>\strigoi-harness-runs\ (never the repo).
+PHASE 3: M3.1 (design, SIGNED 24 Aug) + M3.2 (spine, 24 Aug) + **M3.3
+(determinism, 26 Aug) DONE. The harness is deterministic and PROVEN:**
+TestTownWalkDeterministic ran the seeded town walk (seed 1462) in two
+separate process launches -- identical spawn, identical walk (stuck at the
+same wall after exactly 150 ticks), byte-identical state digests at all
+three checkpoints. **The leak register opened EMPTY** (docs/harness.md).
 
-FINDINGS (24 Aug, docs/harness.md): the black town floor is INTERMITTENT per
-process launch -- two healthy and two black launches the same evening; in the
-black runs strigoi_dump_surface proves the cached floor tiles are FULLY
-COLORED, so content exists but DrawImage of NewSurface+ReplacePixels surfaces
-composites nothing while NewImageFromImage sprites draw. Suspect the OnLoad-
-goroutine image build (screens load off the main goroutine). Fix is NOT
-Phase 3 work; the town-walk script records floor luminance every run.
-Minimized window: the loop keeps ticking (~63/s). Benign known error line:
-"[UI Manager][ERROR] ... invalid frame index" (allowlisted in the script).
+What M3.3 landed (commits 36a514c8 engine + 005e31de harness): E1 the
+paused/stepped clock (d2util.FrameDeltas pinned by test; advanceOnce driven
+directly at dt 1/60, 600 ticks/frame batches); E3 one-shot server seed
+(d2server.SetNextGameSeed; wall clock unchanged when unset); E4 the world
+RNG on MapEngine behind a draw-counting source, feeding mapgen, stamp
+selection, NPC equip variants, and per-NPC behaviour rngs -- ALSO fixes the
+old client/server wilderness divergence (rand.Seed no-op since Go 1.24);
+E5 uuid.SetRand for reproducible entity IDs (crypto-random restored when
+unseeded). Tools: get_time_mode, pause, resume, step, step_world,
+set_seed, reseed_world, get_state_digest (per-part sha256: sim/world/
+entities/rng/systems; NO raw frame ticks -- comparable across launches);
+move_player_to{wait,max_ticks}. Recipe for reproducible runs: pause BEFORE
+start_game{seed}, then advance only with step.
 
-Next: **M3.3 -- determinism** (P3 sec. 6.1): TimeSource (live|paused|
-stepping, dt 1/60); seed into NewGameServer (E3) so start_game{seed} works;
-world RNG on MapEngine for mapgen/mapstamp/npc (fixes the client/server
-wilderness divergence -- rand.Seed is a no-op since Go 1.24); uuid.SetRand +
-handles; tools pause/resume/step/step_world/set_seed/reseed_world/
-get_state_digest; move_player_to{wait}; the town walk run TWICE with seed
-1462 and matching digests. Then M3.4 (providers, input overlay, spawn).
+Next: **M3.4 -- providers, input, spawn** (P3 sec. 6.1, the last Phase 3
+milestone): the d2harness Provider tools (list_systems, get_system_state,
+set_system_field), the InputService overlay (key/click/move_cursor/
+type_text at the d2input seam; game_controls wall-clock reads move to the
+injected clock), spawn_entity/remove_entity, one UI script (open inventory
+with 'i'), docs/harness.md v1, then the Phase 3 DoD audit (spec 6.4) ->
+WS-Harness closes, WS-Wallachia re-entry ("harness usable") unlocks M4.1.
 
-Parked for Josh: history rewrite before friends build #1; removal of
-d2logo.ico / d2discord.png / build.sh / tagdev.bat / .github/FUNDING.yml /
-upstream issue templates / README rewrite; the skill trigger test; the
-deep-decode test paths; the S1 sec. 5/9.1 game-scope annotation; the "what
-Vlad knew" premise thread (his separate chat -- do not pre-empt); the
-black-floor FIX (diagnostic-only in Phase 3, evidence now in hand).
+Standing findings: the black floor is INTERMITTENT per launch with the
+cache provably colored (init-race suspect, OnLoad-goroutine image builds);
+fix stays parked (spec 5.3) -- town_walk logs floor luminance every run
+(98% on 26 Aug's run). Benign log line "invalid frame index" allowlisted.
+Minimized window keeps ticking (~63/s).
+
+Parked for Josh: history rewrite before friends build #1; dead-file
+removals; the skill trigger test; deep-decode test paths; the S1
+sec. 5/9.1 game-scope annotation; the "what Vlad knew" thread (his
+separate chat -- do not pre-empt); the black-floor FIX.
 
 Do not: `go get -u`; write any *.mpq/*.dc6/*.dcc/*.ds1/*.dt1/*.cof/*.pl2/
-*.tbl/*.d2; write into /harness-runs/ or the run dirs from Claude Code;
-create a capitalised `Docs/`; commit CRLF; claim "on disk" or "pushed"
-without a same-burst listing; put gameplay logic in the harness.
+*.tbl/*.d2; write into /harness-runs/ or run dirs from Claude Code; create
+a capitalised `Docs/`; commit CRLF; claim "on disk"/"pushed" without a
+same-burst listing; put gameplay logic in the harness.

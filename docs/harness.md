@@ -58,10 +58,44 @@ always handle `p:1`. Errors come back as `CODE: message — hint`.
 | `strigoi_screenshot` | PNG of the next frame; crop; inline image |
 | `strigoi_dump_surface` | floor_tile: the black-floor diagnostic (spec §5.3) |
 
-M3.3 adds the time tools (`pause/resume/step/step_world/set_seed/reseed_world/
-get_state_digest`) and seed injection; M3.4 adds providers
+**M3.3 (26 Aug 2026) added the determinism layer:**
+
+| Tool | What |
+|---|---|
+| `strigoi_get_time_mode` | live or paused; dt; stepped sim_seconds |
+| `strigoi_pause` / `strigoi_resume` | Freeze / release the simulation clock |
+| `strigoi_step` | Advance exactly N fixed-dt ticks (600/frame batches) |
+| `strigoi_step_world` | Advance by sim seconds (world_minutes waits for M4.4) |
+| `strigoi_set_seed` | One-shot seed for the next start_game |
+| `strigoi_reseed_world` | Reseed the world RNG mid-game (repeated-roll tests) |
+| `strigoi_get_state_digest` | Per-part SHA-256: sim · world · entities · rng · systems |
+
+`strigoi_start_game{seed}` now seeds map generation (server + client), the
+world RNG, per-NPC behaviour, and entity IDs; `strigoi_move_player_to` gains
+`wait`/`max_ticks` (stepped when paused, polled when live; `stuck` is a
+normal outcome of the raycast pather). M3.4 adds providers
 (`list_systems/get_system_state/set_system_field`), low-level input, and
 spawn/remove. Contract details: the P3 spec §4.
+
+## Determinism (M3.3)
+
+The contract (spec §3.3): same script + same seed + same build → the same
+state digest at every checkpoint, across separate process launches. Scoped to
+the simulation; pixels, animation, audio, logs, and raw frame ticks are
+excluded from digests by design. The recipe: `pause` BEFORE `start_game`
+(zero simulated time passes during loading), then advance only with `step`.
+
+The proof, first run 26 Aug 2026 (`TestTownWalkDeterministic`, seed 1462, two
+launches): identical spawn (31,14 — the E1 town variant), identical walk
+(east, stuck at 33.80,14.00 after exactly 150 ticks), and byte-identical
+digests at all three checkpoints — after load `b0cae4bd…`, after the walk
+`79688e9f…`, after 600 idle ticks `461e72a5…`.
+
+Notes: `sim_seconds` accumulates float error in display (2.4999…96 for 150
+ticks at 1/60) — deterministic, identical across runs, harmless. Entity
+handles (`e:N`) are per-process; digests compare across fresh launches, not
+across two games inside one process. An unseeded `start_game` restores
+crypto-random entity IDs and the wall-clock map seed.
 
 ## Architecture in one breath
 
@@ -104,6 +138,8 @@ until its provider exposes what its S1 §12 assertion needs.*
   the ldflags injection (`go build` plain, as the playtest launcher does) —
   the flag-injected build stamps a real commit.
 
-## Determinism leak register (opens at M3.3)
+## Determinism leak register (opened 26 Aug 2026)
 
-Empty until the digest test exists. A leak is a bug with a name, never a flake.
+**EMPTY.** The two-launch digest proof passed on its first attempt. A future
+mismatch names its part (sim/world/entities/rng/systems) in the test output;
+record it here as a bug with a name, never a flake to retry.
