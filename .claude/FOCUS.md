@@ -93,7 +93,39 @@ delta the game screen already gets, no wall clock, no renderer.
   before measuring a drain, and must measure against the clock's own elapsed
   minutes rather than the hours it asked step_world for.**
 
-**NEXT: M4.3, night spawns** (hostile tables keyed to the clock).
+**NEXT: M4.3a, PATHFINDING AND PURSUIT** -- a milestone that did not exist
+this morning. Its build-shape note is written and is **AWAITING JOSH'S
+SIGNATURE on its 6 (six asks). No engine code until he signs.**
+**WHY M4.3 SPLIT (decision 3c9ff9f3-d21e-813d-afdd-d24d48b408f8):** told that
+M4.3 as scoped would ship spawn tables with nothing that moves, Josh said "we
+dont need a diorama we are trying to make a game that works", and chasing that
+objection found a hole in the plan. A working night is spawn -> notice ->
+approach -> fight; plan v1.4 5 owns only spawn (M4.3) and fight (M4.5);
+nobody owned notice or approach, and **THE ENGINE CANNOT DO APPROACH.**
+`MapEngine.PathFind` (d2core/d2map/d2mapengine/pathfind.go) is NOT a
+pathfinder -- it is one line-of-sight raycast returning ONE point, the
+destination if nothing blocks, else the last walkable point before the first
+BlockWalk. No A*, no route around anything. The repo already knew and had
+filed it as normal: harness_tools.go:657 calls "stuck" a normal outcome,
+town_walk_test.go:64 tries directions until one moves the player, and the
+determinism proof's "stuck at 33.80,14.00" IS that raycast meeting a fence.
+It is load-bearing beyond wolves -- S1 12's M4.6 assertion ("paths toward
+the camp"), R2 3 ("the dead pursue"), S1 9.1's palisaded village -- and it
+is a works-TODAY defect: clicking across town gets stuck at the first fence.
+**THREE LATENT BUGS in the same code, to be FIXED in M4.3a with unit tests:**
+`SubTileAt` dereferences a possibly-nil tile (engine.go:212 -- an off-map move
+target can panic today); `TileExists` is off by one (engine.go:315, index ==
+length, the DT1 panic's signature, and strigoi_spawn_entity inherits it);
+`tileCoordinateToIndex` does not bound x (engine.go:207, so x = -1 aliases
+onto the previous row). That is the OPPOSITE call to parking addDT1, from the
+same principle: d2mapengine links 0 ebiten, has tests, and its grid is
+constructible with no MPQs, where addDT1 had no seam. **NAMED CONSEQUENCE:**
+replacing PathFind changes PLAYER movement, so the digests move again and
+town_walk_test.go and determinism_test.go -- which encode "stuck" as the
+expected outcome -- get rewritten.
+**THEN M4.3b, night spawns** (hostile tables keyed to the clock). Its note is
+drafted and needs a v1.1: it is now the SECOND half, and notice/awareness
+moves into it because M4.3a ships pursuit only.
 **THE RESEARCH GATE, checked 27 Aug against Notion and NOT what an earlier
 note in this file said:** M4.3's BEAST table is UNBLOCKED -- N1 is Verified
 and its 5 explicitly closes S1 6.4's beast content (feral dogs, wolves, boar,
