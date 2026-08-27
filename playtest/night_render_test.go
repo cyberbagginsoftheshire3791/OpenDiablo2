@@ -5,9 +5,7 @@ package playtest
 import (
 	"fmt"
 	"image"
-	"image/png"
 	"math"
-	"os"
 	"strings"
 	"testing"
 )
@@ -207,31 +205,13 @@ func (f frameLight) String() string {
 		f.name, f.play, f.playPix, f.near, f.nearPix, f.far, f.farPix, f.skipped)
 }
 
-// shot takes a screenshot, decodes it, and measures the three regions.
+// shot takes a screenshot, decodes it, and measures the three regions around
+// one centre. The decode itself lives in frame (night_placed_test.go), which
+// measures the same frame from two.
 func (s *session) shot(t *testing.T, name string, px, py, nearTiles, farTiles float64) frameLight {
 	t.Helper()
 
-	out := s.call("strigoi_screenshot", map[string]any{"name": name})
-
-	path := str(out, "path")
-
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatalf("screenshot %s missing on disk: %v", name, err)
-	}
-
-	img, err := png.Decode(f)
-	_ = f.Close()
-
-	if err != nil {
-		t.Fatalf("screenshot %s decode: %v", name, err)
-	}
-
-	if b := img.Bounds(); b.Dx() != 800 || b.Dy() != 600 {
-		t.Fatalf("screenshot %s: want 800x600, got %dx%d", name, b.Dx(), b.Dy())
-	}
-
-	return measure(name, img, px, py, nearTiles, farTiles)
+	return measure(name, s.frame(t, name), px, py, nearTiles, farTiles)
 }
 
 // measure walks the play area and sorts each sampled pixel by how far its
