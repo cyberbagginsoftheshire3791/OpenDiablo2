@@ -93,9 +93,19 @@ delta the game screen already gets, no wall clock, no renderer.
   before measuring a drain, and must measure against the clock's own elapsed
   minutes rather than the hours it asked step_world for.**
 
-**NEXT: M4.3, night spawns** (hostile tables keyed to the clock; N1 signed).
-But M11 and C3 research land before M4.3/M4.6 CONTENT (S1 12), so check that
-first. Inherited rules, unchanged: register a provider at construction, ship a
+**NEXT: M4.3, night spawns** (hostile tables keyed to the clock).
+**THE RESEARCH GATE, checked 27 Aug against Notion and NOT what an earlier
+note in this file said:** M4.3's BEAST table is UNBLOCKED -- N1 is Verified
+and its 5 explicitly closes S1 6.4's beast content (feral dogs, wolves, boar,
+bear, lynx-as-atmosphere; carrion- and noise-driven; every quantity a [DIAL]
+"the M4.3 build sets"). E3 (arms) is In progress and gates only the HUMAN
+row's kit. H4 (Radu's men) is Campaign priority and S1 3.3 has the riders as
+rumor-level presence anyway. **M11 and C3 do NOT gate M4.3** -- S1 12's
+"Must close before" column reads "M4.6 placeholder is fine; Phase 6 needs
+M11", and the M11/C3 pairing comes from S1 12's research-ORDER line, which
+is labelled "for the R-track lane, not a decision" and puts them in the
+PHASE-6-WRITING group. The Phase-4 group is D4, E2, N1 (+E6) -- all four
+signed. Inherited rules, unchanged: register a provider at construction, ship a
 playtest script, stay inside the digest, build on the stepped clock. THREE
 PROVIDER RULES now, all earned the hard way: (1) a provider that reports a
 COLLECTION needs a verb that can put something in it -- and one that can take
