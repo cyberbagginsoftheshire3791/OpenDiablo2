@@ -43,9 +43,18 @@ func TestUIInventory(t *testing.T) {
 		t.Fatalf("fresh game: want all panels closed, got %v", ui)
 	}
 
-	// a planned system answers with its milestone, not a bare unknown
-	if msg := s.callErr("strigoi_get_system_state", map[string]any{"system": "meters"}); !strings.Contains(msg, "NOT_IMPLEMENTED") || !strings.Contains(msg, "M4.2") {
-		t.Fatalf("meters: want NOT_IMPLEMENTED naming M4.2, got %q", msg)
+	// A planned system answers with its milestone, not a bare unknown. This
+	// used to ask about "meters" and passed until M4.2 shipped them, which
+	// is the assertion doing its job: it pins the ABSENCE of a system, so
+	// it must move to one still absent as each milestone lands. Next after
+	// spawns: dead (M4.3 / M4.6), then combat (M4.5).
+	if msg := s.callErr("strigoi_get_system_state", map[string]any{"system": "spawns"}); !strings.Contains(msg, "NOT_IMPLEMENTED") || !strings.Contains(msg, "M4.3") {
+		t.Fatalf("spawns: want NOT_IMPLEMENTED naming M4.3, got %q", msg)
+	}
+
+	// ...and a system that has landed answers with its state.
+	if !hasSystem(systems, "meters") {
+		t.Fatalf("meters registered at M4.2; list_systems does not show it: %v", systems["systems"])
 	}
 
 	if msg := s.callErr("strigoi_set_system_field", map[string]any{"system": "ui", "field": "inventory_open", "value": true}); !strings.Contains(msg, "FIELD_NOT_SETTABLE") {
