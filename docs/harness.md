@@ -36,8 +36,9 @@ hand. The six scripts: `town_walk_test.go` (live mode, §5.1),
 `night_light_test.go` (S1 §4's night-and-light assertion, M4.1),
 `night_render_test.go` (M4.1's second half: the same darkness, measured in
 pixels off four screenshots) and `night_placed_test.go` (M4.1's placed
-sources: a hearth nine tiles away lights its own ground and not the
-player's, asserted in the model and in pixels off the same frames).
+sources: a hearth nine tiles away lights its own ground and not the player's,
+asserted in the model and in pixels off the same frames, then put out so the
+dark closes back in).
 
 ## Outputs (Article V)
 
@@ -68,7 +69,7 @@ with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING 
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 
-## The tools (33; harness 0.5.1)
+## The tools (33; harness 0.5.2)
 
 ### Session (M3.2)
 
@@ -159,12 +160,18 @@ and `source_list` sorted by id so the digest is stable — each entry carrying
 `x`/`y` (where it shines FROM: a carried light reports the player's position,
 not the one it was lit at) and `level_here` (`Level` on its own tile).
 Settable: `carried_source` (`"torch"`, `"hearth"`, or `""` to take it away —
-the give-the-player-a-light verb), `carried_burn`, `carried_lit`, and
-`place_source`.
+the give-the-player-a-light verb), `carried_burn`, `carried_lit`,
+`place_source` and `remove_source`.
 
 **`place_source`** is the put-a-fire-over-there verb, and its value is an
 object rather than a scalar: `{"kind": "hearth", "x": 22, "y": 14}`, x and y
-in world tiles. It is a settable field and not a tool of its own on purpose —
+in world tiles. **`remove_source`** is its other half — value a source id from
+`source_list` — and it earns its place twice over: `Light.Remove` had been an
+exported method with no non-test caller since M4.1, which is the shape
+unreachable wiring takes just before it rots, and a hearth is fuel-fed and
+never burns down (S1 §4), so *put the fire out and the dark closes back in* is
+unprovable for a placed light without it. Both are settable fields and not
+tools of their own on purpose —
 the three provider tools are the only ones that know about providers and do
 not change as systems are added, `carried_source` was already a verb wearing a
 field's clothes, and a field shows up in `strigoi_list_systems`'
@@ -288,6 +295,25 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
 
 **M4.1, placed sources (27 Aug 2026) — the reopening closed**
 
+- **The intermittent map-load crash has a SECOND face, and this one names a
+  one-line defect.** One full-suite run in two today died in 2.5 s during
+  `strigoi_start_game` — not the filed `d2dt1.DecodeTileGfxData` index panic
+  but `runtime error: invalid memory address or nil pointer dereference` in
+  `d2mapengine.(*MapEngine).addDT1` (`engine.go:107`), from `ResetMap`
+  (`:86`) by way of `game_server.go:108`. Upstream of every line this burst
+  touched; the re-run passed all six scripts. The immediate cause is visible
+  in five lines: `addDT1` calls `m.asset.LoadDT1(fileName)`, and on error
+  calls `m.Error(err.Error())` **and then falls through** to
+  `append(m.dt1TileData, dt1.Tiles...)` — there is no `return`, so a failed
+  load dereferences nil and takes the process down instead of leaving one
+  tileset missing. It sits directly downstream of the asset-cache defect
+  already on file: `LoadDS1` reads AND writes `am.dt1s`, the DT1 cache
+  (`asset_manager.go:511`, `:526`), so DS1 entries evict DT1s, `LoadDT1`
+  re-decodes under pressure, and its `dt1Value.(*d2dt1.DT1)` assertion at
+  `:489` is unchecked. **Filed, not fixed — the DT1 work is parked and this
+  is Josh's to scope.** For a session that hits it: a playtest run that dies
+  in ~3 s with a game-output tail is one of these two; re-run before
+  investigating.
 - **The assertion that would have caught it, written as the negative control
   it deserves.** Before `night_placed_test.go` landed, `place_source` was
   reverted to the old shape (`carried=true` at the player) and the script run
@@ -312,8 +338,18 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
   the pixels assert that the light on screen is centred away from the player.
   Worth knowing before M4.3 writes anything else that wants a light and a dark
   place in one frame.
+- **An exported method with no non-test caller is the same defect one step
+  earlier.** `Light.Remove` had been exactly that since M4.1 — the shape
+  `Light.Add`'s placed path was in, one week before it was found. `remove_source`
+  (Josh's call, same day) makes it reachable and buys the act a fuel-fed hearth
+  cannot otherwise perform: the fire goes out and the hearth's ground returns
+  to the plain night, measured at 23.1 → 3.5 of 255 against an unlit baseline
+  of 3.5. The carried torch proves the same thing by burning down; a hearth
+  never burns down (S1 §4), so without the verb there was no way to show that
+  the light stops when the source does.
 - **Two provider rules, now mechanical.** A provider that reports a collection
-  needs a verb that can put something in it. And a provider whose value is
+  needs a verb that can put something in it — and, the corollary that cost a
+  milestone, one that can take it back out. And a provider whose value is
   read *per position* has to report it at the positions its assertion names —
   `radius` is player-centric by construction, so a light the player stands
   outside of moved nothing the provider reported, and the placed source was

@@ -15,7 +15,11 @@ hardcodes carried=true at the player, so source_list could never hold anything
 but the player's torch. `light.place_source` is the verb that fills it: a
 settable field whose value is an object, {"kind","x","y"} in world tiles, a
 field rather than a tool because the three provider tools are the only ones
-that know about providers and do not change as systems are added. The provider
+that know about providers and do not change as systems are added.
+`light.remove_source` (value: a source id) is its other half -- Light.Remove
+had been an exported method with no non-test caller, the same unreachable
+shape one step earlier, and a fuel-fed hearth never burns down, so it is the
+only way to show the dark closing back in around a placed light. The provider
 now also reports `player_level` and per-source `level_here`, because `radius`
 is player-centric and a light the player stands outside of moved nothing it
 reported. Two rules to carry into M4.2+: **a provider that reports a
@@ -43,13 +47,14 @@ delta the game screen already gets, no wall clock, no renderer.
   d2maprenderer imports no world code and links no ebiten. **No sampler set
   = 1.0 = the pre-M4.1 renderer, pixel for pixel.**
 - Both are harness providers (`clock`, `light`); step_world{world_minutes}
-  works (harness 0.5.1); `night_light_test.go` runs S1 4's assertion verbatim,
+  works (harness 0.5.2); `night_light_test.go` runs S1 4's assertion verbatim,
   `night_render_test.go` measures it off four screenshots (night 88% dimmer
   than noon; unlit night falls uniformly near x0.119 / far x0.118; a carried
   torch breaks that uniformity near x8.35 / far x1.63) and
   `night_placed_test.go` proves a PLACED hearth nine tiles west lights its own
   ground x6.65 while the player's stays at x1.00 (model: hearth tile 1.000,
-  player tile 0.125, radius 1.5). **Nine tiles, not three: the hearth's radius
+  player tile 0.125, radius 1.5), then puts it out and watches the dark close
+  back in (23.1 -> 3.5 of 255, the unlit night was 3.5). **Nine tiles, not three: the hearth's radius
   is 8, so anything closer engulfs the player -- and no placement puts a
   source's own tile on screen while leaving the player's ground dark, since 5
   tiles already spans the viewport.** Determinism proved across two launches
@@ -67,8 +72,15 @@ Standing findings: the black floor is INTERMITTENT per launch with the cache
 provably colored; fix stays parked (P3 5.3) -- and from here on a NIGHT
 screenshot is useless as black-floor evidence (town_walk samples a daylight
 frame, which still tells them apart). **New and intermittent, filed not
-fixed:** a panic in `d2dt1.DecodeTileGfxData` from `generateWallCache` during
-map load (1 full-suite run in 4 on 26 Aug), upstream of all M4.1 code. The
+fixed, and it has TWO faces:** (a) 27 Aug, 1 full-suite run in 2 -- a nil
+dereference in `d2mapengine.addDT1` (engine.go:107) from ResetMap during
+start_game. One line causes it: addDT1 logs LoadDT1's error and then FALLS
+THROUGH to `dt1.Tiles` instead of returning, so a failed load kills the
+process rather than leaving a tileset missing. Downstream of the asset-cache
+defect below. (b) 26 Aug, 1 run in 4 -- a panic in
+`d2dt1.DecodeTileGfxData` from `generateWallCache` during
+map load, upstream of all M4.1 code. Either way: a playtest run that dies in
+~3 s with a game-output tail is one of these; RE-RUN before investigating. The
 index EQUALS the length, which points at the source buffer, not the
 destination: the decoder walks `block.EncodedData` off its end when an RLE
 run claims more pixels than remain. Every access in that function is
