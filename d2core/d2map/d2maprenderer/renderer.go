@@ -64,6 +64,10 @@ type MapRenderer struct {
 	lastFrameTime       float64 // The last time the map was rendered
 	currentFrame        int     // Current render frame (for animations)
 
+	// lightSampler is how lit each tile is (M4.1). nil is full daylight,
+	// which is exactly how this renderer behaved before there was light.
+	lightSampler LightSampler
+
 	*d2util.Logger
 }
 
@@ -233,7 +237,9 @@ func (mr *MapRenderer) renderPass1(target d2interface.Surface, startX, startY, e
 		for tileX := startX; tileX < endX; tileX++ {
 			tile := mr.mapEngine.TileAt(tileX, tileY)
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
+			mr.pushTileLight(target, tileX, tileY)
 			mr.renderTilePass1(tile, target)
+			target.Pop()
 			mr.viewport.PopTranslation()
 		}
 	}
@@ -244,6 +250,7 @@ func (mr *MapRenderer) renderPass2(target d2interface.Surface, startX, startY, e
 	for tileY := startY; tileY < endY; tileY++ {
 		for tileX := startX; tileX < endX; tileX++ {
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
+			mr.pushTileLight(target, tileX, tileY)
 
 			tileEnt := mr.getEntitiesBelowWalls(tileX, tileY)
 
@@ -262,6 +269,7 @@ func (mr *MapRenderer) renderPass2(target d2interface.Surface, startX, startY, e
 				}
 			}
 
+			target.Pop()
 			mr.viewport.PopTranslation()
 		}
 	}
@@ -297,6 +305,7 @@ func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, e
 		for tileX := startX; tileX < endX; tileX++ {
 			tile := mr.mapEngine.TileAt(tileX, tileY)
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
+			mr.pushTileLight(target, tileX, tileY)
 			mr.renderTilePass2(tile, target)
 
 			entities := mr.getEntitiesAboveWalls(tileX, tileY)
@@ -316,6 +325,7 @@ func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, e
 				}
 			}
 
+			target.Pop()
 			mr.viewport.PopTranslation()
 		}
 	}
@@ -351,7 +361,9 @@ func (mr *MapRenderer) renderPass4(target d2interface.Surface, startX, startY, e
 		for tileX := startX; tileX < endX; tileX++ {
 			tile := mr.mapEngine.TileAt(tileX, tileY)
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
+			mr.pushTileLight(target, tileX, tileY)
 			mr.renderTilePass3(tile, target)
+			target.Pop()
 			mr.viewport.PopTranslation()
 		}
 	}

@@ -95,6 +95,10 @@ func CreateGame(
 	game.light = d2world.NewLight(game.worldClock, d2world.DefaultLightDials())
 	game.light.SetPlayer(startX, startY)
 
+	// The renderer asks the light model how lit each tile is; it knows the
+	// model only as a LightSampler, so d2maprenderer imports no world code.
+	game.mapRenderer.SetLightSampler(game.light)
+
 	game.Logger = d2util.NewLogger()
 	game.Logger.SetLevel(l)
 	game.Logger.SetPrefix(logPrefix)
