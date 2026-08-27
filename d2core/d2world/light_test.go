@@ -273,3 +273,120 @@ func TestLightHarnessStateIsEncodableAndOrdered(t *testing.T) {
 		t.Fatal("source_list must be ordered by id so the digest is stable")
 	}
 }
+
+// TestPlaceSourceLightsWhereItStandsAndNotOnThePlayer is the model half of
+// the assertion M4.1 shipped without: at deep night with no carried light, a
+// hearth placed away from the player lights its own ground and leaves his at
+// the night floor.
+//
+// Nine tiles, not three. The hearth's radius is 8, so a hearth three tiles
+// away engulfs the player, and a placed source that engulfs the player is
+// indistinguishable from a carried one — which is exactly the failure this
+// test exists to catch. Nine is the first whole tile past the radius.
+func TestPlaceSourceLightsWhereItStandsAndNotOnThePlayer(t *testing.T) {
+	dials := DefaultLightDials()
+	c, l := deepNightNewMoon(t)
+
+	defer c.Close()
+	defer l.Close()
+
+	l.SetPlayer(31.5, 14.5)
+
+	if err := l.HarnessSet("place_source", map[string]interface{}{
+		"kind": "hearth", "x": 22.5, "y": 14.5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	floor := l.quantise(l.Ambient())
+
+	if got := l.Level(22, 14); got < 0.9 {
+		t.Fatalf("on the hearth's own tile: level %v, want ~1 — a placed light must light where it stands", got)
+	}
+
+	if got := l.Level(31, 14); math.Abs(got-floor) > 1e-9 {
+		t.Fatalf("on the player's tile: level %v, want the night floor %v — the light is following the player",
+			got, floor)
+	}
+
+	if got := l.Radius(); math.Abs(got-dials.FloorRadius) > 1e-9 {
+		t.Fatalf("a hearth nine tiles away gave the player radius %v, want the floor %v", got, dials.FloorRadius)
+	}
+
+	state := l.HarnessState()
+
+	if got, ok := state["player_level"].(float64); !ok || math.Abs(got-floor) > 1e-9 {
+		t.Fatalf("player_level %v, want the night floor %v", state["player_level"], floor)
+	}
+
+	list, ok := state["source_list"].([]map[string]interface{})
+	if !ok || len(list) != 1 {
+		t.Fatalf("source_list: %v", state["source_list"])
+	}
+
+	src := list[0]
+	if src["carried"] != false || src["x"] != 22.5 || src["y"] != 14.5 {
+		t.Fatalf("the placed hearth reports itself as %v", src)
+	}
+
+	if lvl, _ := src["level_here"].(float64); lvl < 0.9 {
+		t.Fatalf("level_here at the hearth is %v, want ~1", lvl)
+	}
+}
+
+// TestCarriedSourceReportsWhereThePlayerIsNow pins the other half of the
+// reporting fix: a carried light's stored X/Y is the position it was lit at
+// and never moves, so the provider must report the player's instead.
+func TestCarriedSourceReportsWhereThePlayerIsNow(t *testing.T) {
+	c, l := deepNightNewMoon(t)
+
+	defer c.Close()
+	defer l.Close()
+
+	l.SetPlayer(10.5, 10.5)
+
+	if err := l.HarnessSet("carried_source", "torch"); err != nil {
+		t.Fatal(err)
+	}
+
+	l.SetPlayer(20.5, 20.5)
+
+	list, _ := l.HarnessState()["source_list"].([]map[string]interface{})
+	if len(list) != 1 {
+		t.Fatalf("source_list: %v", list)
+	}
+
+	if list[0]["x"] != 20.5 || list[0]["y"] != 20.5 {
+		t.Fatalf("a carried torch must report where the player is now, not where it was lit: %v", list[0])
+	}
+}
+
+// TestPlaceSourceRejectsBadShapes: the verb takes an object, so its errors
+// have to name the shape, and a rejected placement must leave nothing behind.
+func TestPlaceSourceRejectsBadShapes(t *testing.T) {
+	c, l := deepNightNewMoon(t)
+
+	defer c.Close()
+	defer l.Close()
+
+	cases := []struct {
+		name  string
+		value interface{}
+	}{
+		{"not an object", "hearth"},
+		{"no kind", map[string]interface{}{"x": 1.0, "y": 2.0}},
+		{"unknown kind", map[string]interface{}{"kind": "bonfire", "x": 1.0, "y": 2.0}},
+		{"no x", map[string]interface{}{"kind": "hearth", "y": 2.0}},
+		{"y is a string", map[string]interface{}{"kind": "hearth", "x": 1.0, "y": "over there"}},
+	}
+
+	for _, tc := range cases {
+		if err := l.HarnessSet("place_source", tc.value); err == nil {
+			t.Errorf("%s: want an error, got none", tc.name)
+		}
+	}
+
+	if n := len(l.sources); n != 0 {
+		t.Fatalf("a rejected placement left %d source(s) behind", n)
+	}
+}

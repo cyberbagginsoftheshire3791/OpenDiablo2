@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.5.0"          // M4.1: step_world in world minutes
+	harnessVersion     = "0.5.1"          // M4.1: light.place_source, light levels in the provider
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64

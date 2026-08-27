@@ -230,10 +230,7 @@ func (l *Light) Level(tileX, tileY int) float64 {
 			continue
 		}
 
-		x, y := s.X, s.Y
-		if s.Carried {
-			x, y = l.playerX, l.playerY
-		}
+		x, y := l.at(s)
 
 		if c := l.contribution(float64(tileX)+0.5, float64(tileY)+0.5, x, y, s.Radius); c > best {
 			best = c
@@ -242,6 +239,19 @@ func (l *Light) Level(tileX, tileY int) float64 {
 
 	return l.quantise(clamp01(best))
 }
+
+// at is where a source actually shines from: a carried light is wherever the
+// player is now, not where it was lit.
+func (l *Light) at(s *Source) (x, y float64) {
+	if s.Carried {
+		return l.playerX, l.playerY
+	}
+
+	return s.X, s.Y
+}
+
+// tileOf is the index of the tile containing a world-tile coordinate.
+func tileOf(v float64) int { return int(math.Floor(v)) }
 
 // contribution is a source's light at a point: full inside FalloffStart of
 // the radius, falling linearly to nothing at the edge.
@@ -284,10 +294,7 @@ func (l *Light) Radius() float64 {
 			continue
 		}
 
-		x, y := s.X, s.Y
-		if s.Carried {
-			x, y = l.playerX, l.playerY
-		}
+		x, y := l.at(s)
 
 		// A placed light only helps if the player is inside it.
 		if !s.Carried && math.Hypot(l.playerX-x, l.playerY-y) > s.Radius {
@@ -332,11 +339,18 @@ func (l *Light) HarnessName() string { return "light" }
 // HarnessState exposes everything S1 §4's assertion needs: the visible
 // radius, the carried source and its remaining fuel, and the ambient the
 // radius came from.
+//
+// It also reports Level where it matters, because Radius() is player-centric
+// by construction and a light the player is standing outside of moves none of
+// it: without player_level and each source's level_here, a placed source is
+// unassertable in the model and only the pixels can see it. That was half of
+// what M4.1 shipped wrong (reopening 3c9ff9f3-d21e-81e2-aed3-e78a47cd9a40).
 func (l *Light) HarnessState() map[string]interface{} {
 	state := map[string]interface{}{
 		"radius":         l.Radius(),
 		"ambient":        l.Ambient(),
 		"night_floor":    l.nightFloor(),
+		"player_level":   l.Level(tileOf(l.playerX), tileOf(l.playerY)),
 		"stage":          l.clock.Stage().String(),
 		"moon":           l.clock.Moon(),
 		"sources":        len(l.sources),
@@ -360,10 +374,16 @@ func (l *Light) HarnessState() map[string]interface{} {
 	list := make([]map[string]interface{}, 0, len(sorted))
 
 	for _, s := range sorted {
+		// x/y is where the source shines from, not where it was created: a
+		// carried light reports the player's position, which is the only
+		// position it has ever had.
+		x, y := l.at(s)
+
 		list = append(list, map[string]interface{}{
 			"id": s.ID, "kind": string(s.Kind), "lit": s.Lit,
 			"burn": s.Burn, "radius": s.Radius, "carried": s.Carried,
-			"x": s.X, "y": s.Y,
+			"x": x, "y": y,
+			"level_here": l.Level(tileOf(x), tileOf(y)),
 		})
 	}
 
@@ -386,7 +406,7 @@ func (l *Light) litCount() int {
 
 // HarnessSettableFields lists the test-setup writes the light system allows.
 func (l *Light) HarnessSettableFields() []string {
-	return []string{"carried_burn", "carried_lit", "carried_source"}
+	return []string{"carried_burn", "carried_lit", "carried_source", "place_source"}
 }
 
 // HarnessSet writes one allow-listed field. "carried_source" is the harness's
@@ -447,7 +467,54 @@ func (l *Light) HarnessSet(field string, value interface{}) error {
 
 		return nil
 
+	case "place_source":
+		return l.placeSource(value)
+
 	default:
 		return fmt.Errorf("no settable field %q", field)
 	}
+}
+
+// placeSource is the harness's put-a-fire-over-there verb: the value is an
+// object, {"kind": "hearth", "x": 22, "y": 14}, in world tiles.
+//
+// It exists because M4.1 shipped without it. Add has always taken a position
+// and light_test.go has always exercised placed sources, but the only
+// non-test caller was carried_source, which hardcodes the player's — so the
+// source_list this provider reports could never hold anything but the
+// player's own torch, and the camp's campfire stayed dark. A provider that
+// reports a collection needs a verb that can put something in it, or the
+// reporting is decoration (reopening 3c9ff9f3-d21e-81e2-aed3-e78a47cd9a40).
+//
+// Placed lights are not carried: they stay where they are put, and they help
+// the player only when he walks into them.
+func (l *Light) placeSource(value interface{}) error {
+	fields, ok := value.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf(`place_source wants an object like {"kind": "hearth", "x": 22, "y": 14} `+
+			`with x and y in world tiles, got %T`, value)
+	}
+
+	kind, ok := fields["kind"].(string)
+	if !ok {
+		return fmt.Errorf(`place_source: "kind" wants a string (torch, hearth), got %T`, fields["kind"])
+	}
+
+	if kind != string(SourceTorch) && kind != string(SourceHearth) {
+		return fmt.Errorf("no light source %q (torch, hearth)", kind)
+	}
+
+	x, ok := toFloat(fields["x"])
+	if !ok {
+		return fmt.Errorf(`place_source: "x" wants a number of world tiles, got %T`, fields["x"])
+	}
+
+	y, ok := toFloat(fields["y"])
+	if !ok {
+		return fmt.Errorf(`place_source: "y" wants a number of world tiles, got %T`, fields["y"])
+	}
+
+	l.Add(SourceKind(kind), false, x, y)
+
+	return nil
 }
