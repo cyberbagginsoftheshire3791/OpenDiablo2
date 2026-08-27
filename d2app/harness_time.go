@@ -287,13 +287,14 @@ type harnessStepIn struct {
 
 type harnessStepWorldIn struct {
 	SimSeconds float64 `json:"sim_seconds,omitempty" jsonschema:"simulated seconds to advance (converted to ticks at dt)"`
-	WorldMin   float64 `json:"world_minutes,omitempty" jsonschema:"NOT_IMPLEMENTED until the M4.4 clock provider exists"`
+	WorldMin   float64 `json:"world_minutes,omitempty" jsonschema:"world minutes to advance; steps until the clock provider reports the target (needs a running game)"`
 }
 
 type harnessStepOut struct {
-	Ticks      int     `json:"ticks"`
-	SimSeconds float64 `json:"sim_seconds"`
-	Digest     string  `json:"digest"`
+	Ticks        int     `json:"ticks"`
+	SimSeconds   float64 `json:"sim_seconds"`
+	WorldMinutes float64 `json:"world_minutes,omitempty"`
+	Digest       string  `json:"digest"`
 }
 
 type harnessSeedIn struct {
@@ -404,7 +405,7 @@ func (a *App) harnessAddTimeTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_step_world",
-		Description: "Advance by simulated seconds (converted to ticks at dt). world_minutes waits for the M4.4 clock provider.",
+		Description: "Advance by simulated seconds, or by world_minutes — which steps until the world clock reports the target (the clock's own compression decides how many ticks that takes, and it differs between day and night).",
 		Annotations: harnessAnnMut(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessStepWorldIn) (*mcp.CallToolResult, harnessStepOut, error) {
 		harnessLogCall("strigoi_step_world")
@@ -412,7 +413,7 @@ func (a *App) harnessAddTimeTools(srv *mcp.Server) {
 		var out harnessStepOut
 
 		if in.WorldMin > 0 {
-			return nil, out, harnessErr("NOT_IMPLEMENTED", "world_minutes needs the clock provider (arrives at M4.4)", "use sim_seconds for now")
+			return a.harnessStepWorldMinutes(in.WorldMin)
 		}
 
 		if in.SimSeconds <= 0 {
@@ -537,3 +538,122 @@ func harnessConsumeStartSeed(explicit *int64) int64 {
 
 // harnessWaitDeadline is a small helper for live-mode waits.
 func harnessSleep(d time.Duration) { time.Sleep(d) }
+
+// harnessStepWorldMinutes advances the simulation until the world clock says
+// the requested number of world minutes has passed (P3 spec §3.4). It never
+// sets the clock — it steps it, so what a script asserts about a date is the
+// clock's arithmetic and not the test's (§4.5). The compression differs
+// between day and night, so the tick count is estimated from the clock's
+// current rate and re-estimated after every batch.
+func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult, harnessStepOut, error) {
+	var out harnessStepOut
+
+	const (
+		maxTicks = 200000
+		minBatch = 10
+		// Aim slightly SHORT and converge from below: each pass closes 98% of
+		// what is left, so a 1110-minute step lands in about three passes and
+		// the final one overshoots by at most minBatch ticks' worth.
+		fudge = 0.98
+	)
+
+	dt := harnessTimeSnapshot().DT
+
+	start, ok := harnessClockMinutes()
+	if !ok {
+		return nil, out, harnessErr("NOT_IMPLEMENTED",
+			"no clock provider is registered — the world clock lives on the game screen (M4.1)",
+			"call strigoi_start_game first, or use sim_seconds")
+	}
+
+	target := start + worldMinutes
+
+	for out.Ticks < maxTicks {
+		now, ok := harnessClockMinutes()
+		if !ok {
+			return nil, out, harnessErr("INTERNAL", "the clock provider vanished mid-step", "")
+		}
+
+		remaining := target - now
+		if remaining <= 0 {
+			break
+		}
+
+		rate, _ := harnessClockRate()
+		if rate <= 0 {
+			return nil, out, harnessErr("INTERNAL", "the clock reports a zero rate — is it frozen?",
+				"a frozen clock cannot be stepped in world minutes; release it with strigoi_set_system_field clock.frozen=false")
+		}
+
+		batch := int(remaining/(rate*dt)*fudge) + 1
+		if batch < minBatch {
+			batch = minBatch
+		}
+
+		if out.Ticks+batch > maxTicks {
+			batch = maxTicks - out.Ticks
+		}
+
+		if err := a.harnessStep(batch, dt); err != nil {
+			return nil, out, err
+		}
+
+		out.Ticks += batch
+	}
+
+	end, _ := harnessClockMinutes()
+	out.WorldMinutes = end - start
+	out.SimSeconds = harnessTimeSnapshot().SimSeconds
+
+	parts, err := a.harnessDigestParts()
+	if err != nil {
+		return nil, out, err
+	}
+
+	out.Digest = harnessTotalDigest(parts)
+
+	if out.WorldMinutes < worldMinutes {
+		return nil, out, harnessErr("TIMEOUT_LOADING",
+			fmt.Sprintf("stepped %d ticks and the clock advanced only %s of %s world minutes",
+				out.Ticks, harnessFmtFloat(out.WorldMinutes), harnessFmtFloat(worldMinutes)),
+			"is the clock frozen, or the step batch capped?")
+	}
+
+	return harnessText("stepped %d ticks · %s world minutes · digest %s",
+		out.Ticks, harnessFmtFloat(out.WorldMinutes), out.Digest[:12]), out, nil
+}
+
+// harnessClockMinutes reads world_minutes off the registered clock provider,
+// on the game goroutine. ok is false when no clock is registered.
+func harnessClockMinutes() (minutes float64, ok bool) {
+	return harnessClockField("world_minutes")
+}
+
+// harnessClockRate reads the clock's current compression (world minutes per
+// simulated second).
+func harnessClockRate() (rate float64, ok bool) {
+	return harnessClockField("rate")
+}
+
+func harnessClockField(field string) (value float64, ok bool) {
+	_ = harnessOnUpdate(func() {
+		p, found := d2harness.Lookup("clock")
+		if !found {
+			return
+		}
+
+		v, present := p.HarnessState()[field]
+		if !present {
+			return
+		}
+
+		f, isFloat := v.(float64)
+		if !isFloat {
+			return
+		}
+
+		value, ok = f, true
+	})
+
+	return value, ok
+}

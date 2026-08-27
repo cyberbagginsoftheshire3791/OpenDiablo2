@@ -23,11 +23,11 @@ import (
 // assertions will need, so an early call fails with the milestone in the
 // message instead of a bare "unknown" (P3 spec §3.10).
 var harnessPlannedSystems = map[string]string{
-	"light":         "M4.1",
+	// "clock" and "light" registered at M4.1 — they are live whenever a game
+	// screen exists, so they are absent from this map on purpose.
 	"meters":        "M4.2",
 	"spawns":        "M4.3",
 	"dead":          "M4.3 / M4.6",
-	"clock":         "M4.4",
 	"combat":        "M4.5",
 	"reputation":    "Phase 6",
 	"inventory":     "Phase 6",

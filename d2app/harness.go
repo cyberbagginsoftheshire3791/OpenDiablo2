@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.4.0"          // M3.4: providers, input, spawn
+	harnessVersion     = "0.5.0"          // M4.1: step_world in world minutes
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64
