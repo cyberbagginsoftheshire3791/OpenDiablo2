@@ -1,11 +1,27 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-08-26 (night CT). Keep this to a screen; the full state lives
+Updated: 2026-08-26 (late night CT). Keep this to a screen; the full state lives
 in `state.md` in the claude.ai project and in Notion.
 
 **PHASE 3 IS DONE** (M3.1-M3.4, DoD audit passed 26 Aug on 2c1b2124; the
 harness has 33 tools, five playtest scripts, docs/harness.md v1 with a leak
-register). **PHASE 4 IS OPEN: M4.1 "make night real" -- BOTH HALVES SHIPPED.**
+register). **PHASE 4 IS OPEN: M4.1 "make night real" -- THE CLOCK, THE LIGHT AND
+THE RENDERER SHIPPED; M4.1 IS REOPENED FOR PLACED LIGHT SOURCES.**
+
+**The gap, found by Josh looking at the torch screenshot:** the light follows
+the PLAYER because a carried source is the only kind the game can make. S1 4
+says "carried AND PLACED sources restore a radius around themselves", and the
+build note's scope fence never excluded placed ones. Light.Add(kind, carried,
+x, y) supports them and light_test.go exercises them -- but the only non-test
+caller is light.go:415 inside HarnessSet("carried_source"), which hardcodes
+carried=true at the player. Nothing in the game or the harness can put a light
+anywhere else, so the camp's own fires stay dark and the provider reports a
+source_list that can never hold anything but the player's torch. A unit test
+passing on an unreachable path is exactly what the provider contract exists to
+prevent. NEXT BURST FINISHES IT: a harness place-light verb, a script
+assertion that a placed hearth lights where it stands and not on the player.
+Lighting the MAP's own fires is a separate, larger job (which D2 object ids
+count as fire is content work against E6) and is scoped later.
 
 `d2core/d2world` is the world's own package -- plain arithmetic over the
 delta the game screen already gets, no wall clock, no renderer.
@@ -33,16 +49,24 @@ delta the game screen already gets, no wall clock, no renderer.
   by the renderer (22b54a6ff64c / a9ada311d3f1 / 827268ad303d, identical
   across launches on both halves) -- presentation is outside the digest.
 
-**NEXT: M4.2, the meters** (hunger/warmth/fatigue, D4). Same inherited rules:
-register a provider at construction, ship a playtest script, stay inside the
-digest, build on the stepped clock.
+**NEXT: finish M4.1** (the place-light verb + its script assertion), THEN M4.2,
+the meters (hunger/warmth/fatigue, D4). Same inherited rules for both: register
+a provider at construction, ship a playtest script, stay inside the digest,
+build on the stepped clock.
 
 Standing findings: the black floor is INTERMITTENT per launch with the cache
 provably colored; fix stays parked (P3 5.3) -- and from here on a NIGHT
 screenshot is useless as black-floor evidence (town_walk samples a daylight
 frame, which still tells them apart). **New and intermittent, filed not
 fixed:** a panic in `d2dt1.DecodeTileGfxData` from `generateWallCache` during
-map load (1 full-suite run in 4 on 26 Aug), upstream of all M4.1 code.
+map load (1 full-suite run in 4 on 26 Aug), upstream of all M4.1 code. The
+index EQUALS the length, which points at the source buffer, not the
+destination: the decoder walks `block.EncodedData` off its end when an RLE
+run claims more pixels than remain. Every access in that function is
+unchecked. Two more real bugs sit beside it in tile_cache.go: the wall pixel
+buffer is sized from whichever of two tiles is SHORTER and then both are
+decoded into it (:178-218), and `newTileOptions` is indexed with a
+RandomIndex chosen against a different options array (:174).
 Benign log line "invalid frame index" allowlisted. Minimized window keeps
 ticking (~63/s). Recipe: pause BEFORE start_game{seed}, advance only with
 step/step_world; digests are build-specific. `gate.ps1` and `playtest.ps1`

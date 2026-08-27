@@ -157,6 +157,14 @@ Settable: `carried_source` (`"torch"`, `"hearth"`, or `""` to take it away —
 this is the harness's give-the-player-a-light verb), `carried_burn`,
 `carried_lit`.
 
+**Known gap, M4.1 reopened 26 Aug:** the model supports PLACED sources
+(`Light.Add(kind, carried, x, y)`, unit-tested in `d2core/d2world/light_test.go`)
+but nothing can create one. The only non-test caller is inside
+`HarnessSet("carried_source")`, which hardcodes `carried=true` at the player, so
+`source_list` can never hold anything but the player's own torch and the map's
+fires stay dark at night. S1 §4's design says carried *and placed*. The next
+burst adds the place-light verb and a script assertion for it.
+
 The map renderer reads the same model, one tile at a time, through a
 one-method interface it declares itself (`d2maprenderer.LightSampler`, which
 `Level(tileX, tileY int) float64` already satisfied). So the pixels on screen
@@ -253,6 +261,16 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
 
 **M4.1, the renderer half (26 Aug 2026, night)**
 
+- **The screenshot found the hole the tests could not: placed light sources
+  were shipped unreachable.** Every assertion in both night scripts lights a
+  CARRIED torch, because that is the only source the game can make — so the
+  scripts agreed with each other and with the model, and all of them missed
+  that the camp's own campfire and wall torches stay dark. The unit tests DO
+  cover placed sources; the wiring to reach them does not exist. The lesson is
+  narrower than "look at the screen": a provider that reports a collection
+  (`source_list`, with per-source `x`, `y`, `carried`) needs a verb that can
+  put something in it, or the reporting is decoration. M4.1 reopened.
+
 - **Night reads as night, and the numbers say so without a monitor.** Deep
   night at a new moon is **88% dimmer** than the same frame at noon (play-area
   mean 30.1 → 3.5 of 255) while the world is still drawn, not black. The
@@ -281,9 +299,29 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
   (`tile_cache.go:214`) inside `CreateMapRenderer` — i.e. before a single line
   of light code runs. Both town_walk scripts died with it; re-running each
   alone passed, the clean pre-M4.1 head passed a full suite, and the M4.1 head
-  passed two more. Filed as observed, not fixed. Suspicion: the known loader
-  defect where `LoadDS1` uses the DT1 cache (CLAUDE.md) — which would also
-  put it in the same neighbourhood as the black floor.
+  passed two more. Filed as observed, not fixed.
+- **Read afterwards, and it changes the diagnosis: the index EQUALS the
+  length**, which is the signature of a cursor walking off the end of the
+  SOURCE buffer, not of a 2D offset landing on the end of the destination.
+  `d2dt1.go:235` fills `block.EncodedData` with exactly `block.Length` bytes,
+  and the RLE loop advances `idx` in lockstep with `length`; a final run whose
+  `b2` claims more pixels than remain reads one past the end. **Every access in
+  `DecodeTileGfxData` is unchecked** — the `EncodedData[idx]` reads and the
+  `(*pixels)[offset]` writes, in both branches — so a bounds guard there
+  (a pure `d2common` function, unit-testable with synthesized bytes, no
+  ebiten) turns a dead process into one mis-drawn wall. Two further real bugs
+  sit beside it: the wall pixel buffer is sized from `target.Blocks` where
+  `target` is whichever of two tiles is SHORTER, and then BOTH are decoded
+  into it (`tile_cache.go:178-218`); and `newTileData = &newTileOptions[
+  tile.RandomIndex]` (`:174`) indexes the left-part options with an index
+  chosen against the right-part options, unchecked and un-nil-checked. For the
+  intermittency itself the first question is whether the map engine's seed is
+  applied before `generateTileCache` runs — `RandomIndex` comes from
+  `getRandomTile(options, x, y, me.seed)` and is deterministic if it is. If it
+  is, the next suspect is the asset cache: `LoadDS1` reads AND writes
+  `am.dt1s`, the DT1 cache (`asset_manager.go:511`, `:526`), so DS1s evict
+  DT1s under pressure and `LoadDT1`'s `dt1Value.(*d2dt1.DT1)` assertion is
+  unchecked.
 - **`gate.ps1` needs `-ExecutionPolicy Bypass`.** Without it PowerShell
   refuses the script and `Start-Process` fails *silently* — the log never
   appears and it looks like the gate is still running. Both reusable scripts
