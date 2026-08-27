@@ -1,4 +1,4 @@
-# The playtest harness (Phase 3) — v1, M3.4 (+ the M4.1 world clock)
+# The playtest harness (Phase 3) — v1, M3.4 (+ M4.1's night and light)
 
 An MCP (Model Context Protocol) server compiled into the game behind the
 `harness` build tag, so an agent (Claude Code) or a Go test can start a game,
@@ -30,10 +30,12 @@ Scripts build + launch the harness binary themselves and keep the game's own
 stdout/stderr in `<Projects>\strigoi-harness-runs\game-<stamp>.log` (a script
 that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
-hand. The three scripts: `town_walk_test.go` (live mode, §5.1),
+hand. The five scripts: `town_walk_test.go` (live mode, §5.1),
 `determinism_test.go` (the two-launch digest proof, §5.2),
 `ui_inventory_test.go` (scripted input through the `ui` provider, M3.4),
-`night_light_test.go` (S1 §4's night-and-light assertion, M4.1).
+`night_light_test.go` (S1 §4's night-and-light assertion, M4.1) and
+`night_render_test.go` (M4.1's second half: the same darkness, measured in
+pixels off four screenshots).
 
 ## Outputs (Article V)
 
@@ -155,6 +157,13 @@ Settable: `carried_source` (`"torch"`, `"hearth"`, or `""` to take it away —
 this is the harness's give-the-player-a-light verb), `carried_burn`,
 `carried_lit`.
 
+The map renderer reads the same model, one tile at a time, through a
+one-method interface it declares itself (`d2maprenderer.LightSampler`, which
+`Level(tileX, tileY int) float64` already satisfied). So the pixels on screen
+and the number the provider reports come from one source of truth, and
+`d2maprenderer` still imports no world code — set no sampler and every tile
+reports full daylight, which is what the engine did before M4.1.
+
 **`ui`** — the game controls:
 `inventory_open`, `skilltree_open`, `hero_stats_open`, `quest_log_open`,
 `party_open`, `help_open`, `escape_menu_open`, `skill_select_open`,
@@ -200,6 +209,12 @@ inside those digests, which is what keeps M4.1 deterministic. (Earlier
 builds, same scenario: M3.4 `bb00c5aef522` / `c10fd2968b04` / `ef0c2a80f237`;
 M3.3 `b0cae4bd` / `79688e9f` / `461e72a5` on the leaner digest.)
 
+**The renderer half did not move them.** Re-proved on `ebcc01d3` after the
+map renderer began dimming every tile: the same three digests, byte for byte.
+That is the digest's scope working as designed — brightness is presentation,
+and presentation is excluded (spec §3.6). A renderer change that HAD moved a
+digest would have been a leak worth a register entry.
+
 Notes: `sim_seconds` accumulates float error in display (2.4999…96 for 150
 ticks at 1/60) — deterministic, identical across runs, harmless. Entity
 handles (`e:N`) are per-process; digests compare across fresh launches, not
@@ -236,7 +251,45 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
 
 ## Findings log
 
-**M4.1 (26 Aug 2026, evening)**
+**M4.1, the renderer half (26 Aug 2026, night)**
+
+- **Night reads as night, and the numbers say so without a monitor.** Deep
+  night at a new moon is **88% dimmer** than the same frame at noon (play-area
+  mean 30.1 → 3.5 of 255) while the world is still drawn, not black. The
+  unlit night dims **uniformly** — the tiles around the player fall to ×0.116
+  of their daylight value, the tiles beyond a torch's reach to ×0.118 — which
+  is the measurement that separates real per-tile light from a vignette
+  painted over the frame. A lit torch then breaks that uniformity in exactly
+  one place: near ×8.59, far ×1.63.
+- **The lit region has visible tile edges.** Brightness is per tile (the
+  signed shape, ask 2), a tile is an 80×40 px diamond, and a 5-tile torch
+  whose falloff starts at 60% of its radius has about two tiles of gradient to
+  work with — so the boundary steps rather than fades, and the mid-zone shows
+  a faint diamond moiré between the 16 quantisation steps and the tile grid.
+  It is the cost of the chosen shape, not a defect in it. Cheapest softening
+  if it ever matters: drop `FalloffStart` so the gradient spans more tiles.
+  **Josh's call, deliberately not taken here** — readability is D5's question.
+- **The "far" bucket is thin, and tall sprites leak into it.** A 5-tile radius
+  covers nearly the whole 800×600 viewport, so only ~335 of 86,000 sampled
+  pixels sit beyond 5.5 tiles. Those far pixels still brightened ×1.63 with
+  the torch, because a wall or tent sprite anchored on a *lit* tile paints
+  pixels far up the screen. Pixel distance is not tile distance; the script
+  says so where it matters.
+- **A new intermittent engine bug, upstream of everything M4.1 touched.** One
+  full-suite run in four panicked during map load: `index out of range [1152]
+  with length 1152` in `d2dt1.DecodeTileGfxData`, from `generateWallCache`
+  (`tile_cache.go:214`) inside `CreateMapRenderer` — i.e. before a single line
+  of light code runs. Both town_walk scripts died with it; re-running each
+  alone passed, the clean pre-M4.1 head passed a full suite, and the M4.1 head
+  passed two more. Filed as observed, not fixed. Suspicion: the known loader
+  defect where `LoadDS1` uses the DT1 cache (CLAUDE.md) — which would also
+  put it in the same neighbourhood as the black floor.
+- **`gate.ps1` needs `-ExecutionPolicy Bypass`.** Without it PowerShell
+  refuses the script and `Start-Process` fails *silently* — the log never
+  appears and it looks like the gate is still running. Both reusable scripts
+  are affected.
+
+**M4.1, the model half (26 Aug 2026, evening)**
 
 - **The world clock is a harness citizen from its first line.** `clock` and
   `light` (`d2core/d2world`) register as providers at construction, so

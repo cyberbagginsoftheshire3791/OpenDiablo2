@@ -43,3 +43,7 @@ heap.pdf
 
 # Claude Code per-user permissions (the shared hooks live in .claude/settings.json)
 .claude/settings.local.json
+
+# Resource Hacker's settings file. rh.exe (an orphaned binary) was removed on
+# 21 Aug; this is the .ini it leaves beside wherever it ran.
+rh.ini
