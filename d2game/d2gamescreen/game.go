@@ -95,6 +95,11 @@ func CreateGame(
 	game.light = d2world.NewLight(game.worldClock, d2world.DefaultLightDials())
 	game.light.SetPlayer(startX, startY)
 
+	// The survival meters (M4.2, S1 §5) read the same clock. The health they
+	// spend belongs to a player entity that does not exist yet, so the body
+	// is attached on the first frame that has one — see advanceWorld.
+	game.meters = d2world.NewMeters(game.worldClock, d2world.DefaultMeterDials())
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -131,11 +136,16 @@ type Game struct {
 	guiManager           *d2gui.GuiManager
 	keyMap               *d2player.KeyMap
 
-	// The simulated world's own systems (M4.1). They advance from the same
-	// delta this screen receives — the harness's when it is stepping — and
-	// register themselves as the "clock" and "light" harness providers.
-	worldClock *d2world.Clock
-	light      *d2world.Light
+	// The simulated world's own systems (M4.1, M4.2). They advance from the
+	// same delta this screen receives — the harness's when it is stepping —
+	// and register themselves as the "clock", "light" and "meters" harness
+	// providers. metersBodied records that the local player's health has
+	// been handed to the meters, which cannot happen at construction because
+	// the player entity does not exist yet.
+	worldClock   *d2world.Clock
+	light        *d2world.Light
+	meters       *d2world.Meters
+	metersBodied bool
 
 	renderer      d2interface.Renderer
 	inputManager  d2interface.InputManager
@@ -185,6 +195,10 @@ func (v *Game) OnUnload() error {
 
 	if v.light != nil {
 		v.light.Close()
+	}
+
+	if v.meters != nil {
+		v.meters.Close()
 	}
 
 	if err := v.gameControls.UnbindTerminalCommands(v.terminal); err != nil {
@@ -339,13 +353,34 @@ func (v *Game) advanceWorld(elapsed float64) {
 
 		v.light.Advance(worldMinutes)
 	}
+
+	if v.meters != nil {
+		if !v.metersBodied && v.localPlayer != nil && v.localPlayer.Stats != nil {
+			v.meters.SetBody(playerBody{player: v.localPlayer})
+			v.metersBodied = true
+		}
+
+		v.meters.Advance(worldMinutes)
+	}
 }
+
+// playerBody adapts the local player's hero stats to d2world.Body, so the
+// meters can spend health without d2world knowing what a hero is (M4.2).
+// It is the first thing in this codebase to write Stats.Health.
+type playerBody struct{ player *d2mapentity.Player }
+
+func (b playerBody) CurrentHealth() int { return b.player.Stats.Health }
+func (b playerBody) MaxHealth() int     { return b.player.Stats.MaxHealth }
+func (b playerBody) SetHealth(h int)    { b.player.Stats.Health = h }
 
 // WorldClock returns the screen's world clock, or nil before it exists.
 func (v *Game) WorldClock() *d2world.Clock { return v.worldClock }
 
 // Light returns the screen's light model, or nil before it exists.
 func (v *Game) Light() *d2world.Light { return v.light }
+
+// Meters returns the screen's survival meters, or nil before they exist.
+func (v *Game) Meters() *d2world.Meters { return v.meters }
 
 func (v *Game) bindGameControls() error {
 	for _, player := range v.gameClient.Players {
