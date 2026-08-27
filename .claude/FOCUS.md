@@ -77,7 +77,13 @@ dereference in `d2mapengine.addDT1` (engine.go:107) from ResetMap during
 start_game. One line causes it: addDT1 logs LoadDT1's error and then FALLS
 THROUGH to `dt1.Tiles` instead of returning, so a failed load kills the
 process rather than leaving a tileset missing. Downstream of the asset-cache
-defect below. (b) 26 Aug, 1 run in 4 -- a panic in
+defect below. **DO NOT "just add the return" -- Josh parked it 27 Aug on two
+counts: MapEngine.asset is a CONCRETE *d2asset.AssetManager (engine.go:26), so
+there is no seam to test the error path without extracting an interface or
+using real MPQs (Article V bars that from CI) -- a behaviour change with no
+test, against VI.1; and it makes the game QUIET, not correct (a silently
+wrong region instead of a crash, harder to tell from the parked black floor).
+It goes in the DT1 milestone with the rest.** (b) 26 Aug, 1 run in 4 -- a panic in
 `d2dt1.DecodeTileGfxData` from `generateWallCache` during
 map load, upstream of all M4.1 code. Either way: a playtest run that dies in
 ~3 s with a game-output tail is one of these; RE-RUN before investigating. The

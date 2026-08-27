@@ -310,10 +310,26 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
   already on file: `LoadDS1` reads AND writes `am.dt1s`, the DT1 cache
   (`asset_manager.go:511`, `:526`), so DS1 entries evict DT1s, `LoadDT1`
   re-decodes under pressure, and its `dt1Value.(*d2dt1.DT1)` assertion at
-  `:489` is unchecked. **Filed, not fixed — the DT1 work is parked and this
-  is Josh's to scope.** For a session that hits it: a playtest run that dies
-  in ~3 s with a game-output tail is one of these two; re-run before
-  investigating.
+  `:489` is unchecked. **Filed, not fixed.** For a session that hits it: a
+  playtest run that dies in ~3 s with a game-output tail is one of these two;
+  re-run before investigating.
+- **And the one-liner is NOT a free win — this is the stop sign.** The missing
+  `return` above reads like a fifteen-minute fix. It is not, for two reasons,
+  and Josh parked it on both (27 Aug). **First, it cannot be tested:**
+  `MapEngine.asset` is a concrete `*d2asset.AssetManager` (`engine.go:26`,
+  `CreateMapEngine` at `:52`), not an interface, so there is no seam to inject
+  a loader that fails — proving the error path needs either a small extracted
+  interface or a real `AssetManager` pointed at the MPQs, and Article V bars
+  the second from CI. One line of code, but a behaviour change with no test,
+  against Constitution VI.1. (`d2mapengine` links **0** ebiten, so tests there
+  would otherwise be headless-safe; that is not the obstacle.) **Second, it
+  makes the game quiet rather than correct:** a hard crash becomes a region
+  with wrong-looking walls and nothing that flags it — and with the black
+  floor still parked, trading a loud intermittent failure for a silent one
+  costs diagnostic signal in a project whose main instrument is screenshots
+  measured in ratios. It goes into the **DT1 milestone** with the decoder
+  bounds-guard, the two `tile_cache.go` bugs and the asset-cache defect, where
+  the interface extraction is worth doing once for the whole set.
 - **The assertion that would have caught it, written as the negative control
   it deserves.** Before `night_placed_test.go` landed, `place_source` was
   reverted to the old shape (`carried=true` at the player) and the script run
