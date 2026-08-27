@@ -32,6 +32,11 @@ import (
 // that the hearth's own tile is lit — and the pixel half asserts the thing
 // the camera is good for: that the light on screen is centred away from the
 // player.
+//
+// The last act puts the fire out. A hearth is fuel-fed and never burns down
+// (S1 §4), so unlike the carried torch's burn-out this cannot happen on the
+// clock: remove_source is the only way to show the dark closing back in
+// around a placed light, which is the assertion that verb was added for.
 func TestPlacedLightLightsWhereItStands(t *testing.T) {
 	const (
 		dawnMinute  = 165.0  // 02:45, the epoch
@@ -218,7 +223,33 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 	t.Logf("the pixels: the hearth's ground x%.2f, the player's x%.2f, beyond the radius x%.2f",
 		hearthGain, playerGain, beyondGain)
 
-	// 4. no unexpected error lines (the known one is allowlisted)
+	// 4. and it can be put out. A hearth is fuel-fed and never burns down
+	//    (S1 §4), so this is the only way to show the dark coming back for a
+	//    placed light — the mirror of the carried torch's burn-out act.
+	out := sub(s.call("strigoi_set_system_field", map[string]any{
+		"system": "light", "field": "remove_source", "value": num(src, "id"),
+	}), "state")
+
+	if n := num(out, "sources"); n != 0 {
+		t.Fatalf("removing the only source left %.0f behind: %v", n, out)
+	}
+
+	if got := num(out, "player_level"); math.Abs(got-floor) > 1e-9 {
+		t.Fatalf("with every fire out the player's tile is at %.3f, want the night floor %.3f", got, floor)
+	}
+
+	dead := measure("out/hearth", s.frame(t, "placed-night-doused"), hx, hy, hearthBand, beyondBand)
+	t.Logf("out:    %s", dead)
+
+	if drift := math.Abs(dead.near-darkH.near) / darkH.near; drift > 0.25 {
+		t.Fatalf("after the fire went out the hearth's ground sits at %.1f, but the plain night was %.1f "+
+			"(%.0f%% off) — light is outliving the source that made it", dead.near, darkH.near, 100*drift)
+	}
+
+	t.Logf("the fire went out and the dark closed back in (%.1f -> %.1f, the unlit night was %.1f)",
+		litH.near, dead.near, darkH.near)
+
+	// 5. no unexpected error lines (the known one is allowlisted)
 	logs := s.call("strigoi_read_log", map[string]any{"pattern": `\[(ERROR|FATAL)\]`, "limit": 50})
 
 	if lines, ok := logs["lines"].([]any); ok {

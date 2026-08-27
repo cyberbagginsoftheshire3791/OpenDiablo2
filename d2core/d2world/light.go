@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 )
@@ -406,7 +408,7 @@ func (l *Light) litCount() int {
 
 // HarnessSettableFields lists the test-setup writes the light system allows.
 func (l *Light) HarnessSettableFields() []string {
-	return []string{"carried_burn", "carried_lit", "carried_source", "place_source"}
+	return []string{"carried_burn", "carried_lit", "carried_source", "place_source", "remove_source"}
 }
 
 // HarnessSet writes one allow-listed field. "carried_source" is the harness's
@@ -470,6 +472,9 @@ func (l *Light) HarnessSet(field string, value interface{}) error {
 	case "place_source":
 		return l.placeSource(value)
 
+	case "remove_source":
+		return l.removeSource(value)
+
 	default:
 		return fmt.Errorf("no settable field %q", field)
 	}
@@ -517,4 +522,46 @@ func (l *Light) placeSource(value interface{}) error {
 	l.Add(SourceKind(kind), false, x, y)
 
 	return nil
+}
+
+// removeSource is the harness's put-that-fire-out verb: the value is a source
+// id from source_list.
+//
+// It is the other half of place_source, and it exists for the same reason:
+// Remove has been an exported method with no non-test caller since M4.1, which
+// is the shape unreachable wiring takes just before it rots. It also buys an
+// assertion nothing else can make — a hearth is fuel-fed and never burns down
+// (S1 §4), so "put the fire out and the dark closes back in" is unprovable for
+// a placed light without a verb that puts it out.
+func (l *Light) removeSource(value interface{}) error {
+	f, ok := toFloat(value)
+	if !ok {
+		return fmt.Errorf("remove_source wants a source id (a number from source_list), got %T", value)
+	}
+
+	id := int(f)
+	if float64(id) != f {
+		return fmt.Errorf("remove_source wants a whole source id, got %v", f)
+	}
+
+	if l.Remove(id) {
+		return nil
+	}
+
+	return fmt.Errorf("no source with id %d (lit or not); source_list has %s", id, l.idList())
+}
+
+// idList renders the live source ids for an error message. The slice is in
+// creation order, which is id order: Add appends and Remove preserves it.
+func (l *Light) idList() string {
+	if len(l.sources) == 0 {
+		return "no sources"
+	}
+
+	ids := make([]string, 0, len(l.sources))
+	for _, s := range l.sources {
+		ids = append(ids, strconv.Itoa(s.ID))
+	}
+
+	return strings.Join(ids, ", ")
 }

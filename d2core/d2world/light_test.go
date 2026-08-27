@@ -390,3 +390,59 @@ func TestPlaceSourceRejectsBadShapes(t *testing.T) {
 		t.Fatalf("a rejected placement left %d source(s) behind", n)
 	}
 }
+
+// TestRemoveSourcePutsTheFireOut is the other half of place_source: a hearth
+// is fuel-fed and never burns down (S1 §4), so without a verb that puts it
+// out there is no way to show that the dark comes back.
+func TestRemoveSourcePutsTheFireOut(t *testing.T) {
+	c, l := deepNightNewMoon(t)
+
+	defer c.Close()
+	defer l.Close()
+
+	l.SetPlayer(31.5, 14.5)
+
+	if err := l.HarnessSet("place_source", map[string]interface{}{
+		"kind": "hearth", "x": 22.5, "y": 14.5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	floor := l.quantise(l.Ambient())
+
+	if got := l.Level(22, 14); got < 0.9 {
+		t.Fatalf("the hearth should be lit before we put it out: level %v", got)
+	}
+
+	list, _ := l.HarnessState()["source_list"].([]map[string]interface{})
+	if len(list) != 1 {
+		t.Fatalf("source_list: %v", list)
+	}
+
+	id, _ := list[0]["id"].(int)
+
+	if err := l.HarnessSet("remove_source", float64(id)); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := l.Level(22, 14); math.Abs(got-floor) > 1e-9 {
+		t.Fatalf("after the fire went out the hearth's tile is at %v, want the night floor %v", got, floor)
+	}
+
+	state := l.HarnessState()
+	if state["sources"] != 0 || state["lit_sources"] != 0 {
+		t.Fatalf("removing the only source should leave none: %v", state)
+	}
+
+	if err := l.HarnessSet("remove_source", float64(id)); err == nil {
+		t.Error("removing the same source twice must fail")
+	}
+
+	if err := l.HarnessSet("remove_source", "the hearth"); err == nil {
+		t.Error("remove_source must reject a non-numeric id")
+	}
+
+	if err := l.HarnessSet("remove_source", 1.5); err == nil {
+		t.Error("remove_source must reject a fractional id")
+	}
+}
