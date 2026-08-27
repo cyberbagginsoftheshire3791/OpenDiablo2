@@ -20,6 +20,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket"
@@ -87,6 +88,13 @@ func CreateGame(
 		keyMap:        keyMap,
 		logLevel:      l,
 	}
+	// The world clock and the light it drives (M4.1, S1 §3–§4). Built here,
+	// at construction, so they are registered providers from the screen's
+	// first frame; Game.OnUnload closes them.
+	game.worldClock = d2world.NewClock(d2world.DefaultClockDials())
+	game.light = d2world.NewLight(game.worldClock, d2world.DefaultLightDials())
+	game.light.SetPlayer(startX, startY)
+
 	game.Logger = d2util.NewLogger()
 	game.Logger.SetLevel(l)
 	game.Logger.SetPrefix(logPrefix)
@@ -118,6 +126,12 @@ type Game struct {
 	soundEnv             d2audio.SoundEnvironment
 	guiManager           *d2gui.GuiManager
 	keyMap               *d2player.KeyMap
+
+	// The simulated world's own systems (M4.1). They advance from the same
+	// delta this screen receives — the harness's when it is stepping — and
+	// register themselves as the "clock" and "light" harness providers.
+	worldClock *d2world.Clock
+	light      *d2world.Light
 
 	renderer      d2interface.Renderer
 	inputManager  d2interface.InputManager
@@ -159,6 +173,15 @@ func (v *Game) OnLoad(_ d2screen.LoadingState) {
 // OnUnload releases the resources of Gameplay screen
 func (v *Game) OnUnload() error {
 	d2harness.Unregister(v.gameControls) // the "ui" provider dies with the screen
+
+	// The world's systems die with it too (M4.1).
+	if v.worldClock != nil {
+		v.worldClock.Close()
+	}
+
+	if v.light != nil {
+		v.light.Close()
+	}
 
 	if err := v.gameControls.UnbindTerminalCommands(v.terminal); err != nil {
 		return err
@@ -228,6 +251,8 @@ func (v *Game) Render(screen d2interface.Surface) {
 // Advance runs the update logic on the Gameplay screen
 // nolint:gocyclo // not need to change
 func (v *Game) Advance(elapsed float64) error {
+	v.advanceWorld(elapsed)
+
 	v.soundEngine.Advance(elapsed)
 
 	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
@@ -290,6 +315,33 @@ func (v *Game) Advance(elapsed float64) error {
 
 	return nil
 }
+
+// advanceWorld moves the world clock and everything that hangs off it
+// (M4.1). It is driven by the same delta the rest of the screen receives, so
+// under the playtest harness's stepped clock the world is reproducible and
+// nothing here ever reads the wall clock.
+func (v *Game) advanceWorld(elapsed float64) {
+	if v.worldClock == nil {
+		return
+	}
+
+	worldMinutes := v.worldClock.Advance(elapsed)
+
+	if v.light != nil {
+		if v.localPlayer != nil {
+			world := v.localPlayer.Position.World()
+			v.light.SetPlayer(world.X(), world.Y())
+		}
+
+		v.light.Advance(worldMinutes)
+	}
+}
+
+// WorldClock returns the screen's world clock, or nil before it exists.
+func (v *Game) WorldClock() *d2world.Clock { return v.worldClock }
+
+// Light returns the screen's light model, or nil before it exists.
+func (v *Game) Light() *d2world.Light { return v.light }
 
 func (v *Game) bindGameControls() error {
 	for _, player := range v.gameClient.Players {
