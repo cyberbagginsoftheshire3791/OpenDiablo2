@@ -30,12 +30,14 @@ Scripts build + launch the harness binary themselves and keep the game's own
 stdout/stderr in `<Projects>\strigoi-harness-runs\game-<stamp>.log` (a script
 that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
-hand. The five scripts: `town_walk_test.go` (live mode, §5.1),
+hand. The six scripts: `town_walk_test.go` (live mode, §5.1),
 `determinism_test.go` (the two-launch digest proof, §5.2),
 `ui_inventory_test.go` (scripted input through the `ui` provider, M3.4),
-`night_light_test.go` (S1 §4's night-and-light assertion, M4.1) and
+`night_light_test.go` (S1 §4's night-and-light assertion, M4.1),
 `night_render_test.go` (M4.1's second half: the same darkness, measured in
-pixels off four screenshots).
+pixels off four screenshots) and `night_placed_test.go` (M4.1's placed
+sources: a hearth nine tiles away lights its own ground and not the
+player's, asserted in the model and in pixels off the same frames).
 
 ## Outputs (Article V)
 
@@ -66,7 +68,7 @@ with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING 
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 
-## The tools (33; harness 0.5.0)
+## The tools (33; harness 0.5.1)
 
 ### Session (M3.2)
 
@@ -150,20 +152,37 @@ clock is stepped, never set (P3 §4.5), so `set_system_field clock.world_minutes
 fails and tells you to use `strigoi_step_world`.
 
 **`light`** (M4.1): `radius` (what the player can see, in world tiles — the
-value S1 §4's assertion is written in), `ambient`, `night_floor`, `stage`,
-`moon`, `sources` / `lit_sources`, `carried_source` / `carried_burn` /
-`carried_lit`, and `source_list` sorted by id so the digest is stable.
+value S1 §4's assertion is written in), `ambient`, `night_floor`,
+`player_level` (`Level` on the tile the player stands on), `stage`, `moon`,
+`sources` / `lit_sources`, `carried_source` / `carried_burn` / `carried_lit`,
+and `source_list` sorted by id so the digest is stable — each entry carrying
+`x`/`y` (where it shines FROM: a carried light reports the player's position,
+not the one it was lit at) and `level_here` (`Level` on its own tile).
 Settable: `carried_source` (`"torch"`, `"hearth"`, or `""` to take it away —
-this is the harness's give-the-player-a-light verb), `carried_burn`,
-`carried_lit`.
+the give-the-player-a-light verb), `carried_burn`, `carried_lit`, and
+`place_source`.
 
-**Known gap, M4.1 reopened 26 Aug:** the model supports PLACED sources
-(`Light.Add(kind, carried, x, y)`, unit-tested in `d2core/d2world/light_test.go`)
-but nothing can create one. The only non-test caller is inside
-`HarnessSet("carried_source")`, which hardcodes `carried=true` at the player, so
-`source_list` can never hold anything but the player's own torch and the map's
-fires stay dark at night. S1 §4's design says carried *and placed*. The next
-burst adds the place-light verb and a script assertion for it.
+**`place_source`** is the put-a-fire-over-there verb, and its value is an
+object rather than a scalar: `{"kind": "hearth", "x": 22, "y": 14}`, x and y
+in world tiles. It is a settable field and not a tool of its own on purpose —
+the three provider tools are the only ones that know about providers and do
+not change as systems are added, `carried_source` was already a verb wearing a
+field's clothes, and a field shows up in `strigoi_list_systems`'
+`settable_fields` for free. The cost is real and worth naming: `value` is
+typed `interface{}`, so the object shape has no JSON schema and a malformed
+call is a runtime error rather than a schema error. The errors name the shape.
+
+**The gap this closed (M4.1 reopened 26 Aug, closed 27 Aug):** the model had
+always supported PLACED sources (`Light.Add(kind, carried, x, y)`, unit-tested
+in `d2core/d2world/light_test.go`) but nothing could create one — the only
+non-test caller was inside `HarnessSet("carried_source")`, which hardcodes
+`carried=true` at the player, so `source_list` could never hold anything but
+the player's own torch. Two rules came out of it and both are now mechanical:
+**a provider that reports a collection needs a verb that can put something in
+it**, and **a provider whose value is read per-position has to report it at
+the positions its assertion names** — `radius` is player-centric by
+construction, so without `player_level` and `level_here` a placed light was
+unassertable in the model and only the pixels could see it.
 
 The map renderer reads the same model, one tile at a time, through a
 one-method interface it declares itself (`d2maprenderer.LightSampler`, which
@@ -208,14 +227,22 @@ excluded by design. Digests are build-specific: a change to what entities or
 providers expose changes the numbers (they did between M3.3 and M3.4) — the
 proof is that two launches of the same build agree, not the value.
 
-**The proof, M4.1 build, 26 Aug 2026** (`TestTownWalkDeterministic`, seed
+**The proof, M4.1 build, 27 Aug 2026** (`TestTownWalkDeterministic`, seed
 1462, two launches): identical spawn (31,14), identical walk (east, stuck at
 33.80,14.00 after exactly 150 ticks), byte-identical digests at all three
-checkpoints — after load `22b54a6ff64c…`, after the walk `a9ada311d3f1…`,
-after 600 idle ticks `827268ad303d…`. The world clock and the light model are
-inside those digests, which is what keeps M4.1 deterministic. (Earlier
-builds, same scenario: M3.4 `bb00c5aef522` / `c10fd2968b04` / `ef0c2a80f237`;
-M3.3 `b0cae4bd` / `79688e9f` / `461e72a5` on the leaner digest.)
+checkpoints — after load `b9d8e7168236…`, after the walk `ac13cd808406…`,
+after 600 idle ticks `ec66a1ed93d1…`. The world clock and the light model are
+inside those digests, which is what keeps M4.1 deterministic.
+
+**Those numbers moved on 27 Aug, and that is the rule, not an exception.**
+The `light` provider gained `player_level` and a per-source `level_here`, and
+the `systems` part of the digest hashes what each provider reports — so the
+digest changed by construction. It is build-specific by design: the proof is
+that two launches of the same build agree, never that a value matches
+yesterday's. (Earlier builds, same scenario: M4.1 before placed sources
+`22b54a6ff64c` / `a9ada311d3f1` / `827268ad303d`; M3.4 `bb00c5aef522` /
+`c10fd2968b04` / `ef0c2a80f237`; M3.3 `b0cae4bd` / `79688e9f` / `461e72a5` on
+the leaner digest.)
 
 **The renderer half did not move them.** Re-proved on `ebcc01d3` after the
 map renderer began dimming every tile: the same three digests, byte for byte.
@@ -259,6 +286,39 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
 
 ## Findings log
 
+**M4.1, placed sources (27 Aug 2026) — the reopening closed**
+
+- **The assertion that would have caught it, written as the negative control
+  it deserves.** Before `night_placed_test.go` landed, `place_source` was
+  reverted to the old shape (`carried=true` at the player) and the script run
+  against it: it fails at the first model assertion and dumps `carried:true`,
+  `x:31 y:14`, `player_level:1`, `radius:8` — the pathology itself. With the
+  verb correct: the hearth's own tile at level 1.000, the player's at 0.125
+  (the night floor), radius still 1.5, and on screen the hearth's ground
+  ×6.64 against the unlit night while the player's stays at ×1.00 and the
+  ground beyond the radius at ×1.00. The same instrument on a *carried* torch
+  puts the player's own ground at ×8.59, which is what makes ×1.00 evidence
+  rather than a shrug.
+- **The dials, not the wish, set the test's geometry.** Josh's assertion was
+  "a hearth three tiles east". It cannot be written: the hearth's radius is 8
+  and its falloff does not start until 4.8, so a hearth three tiles away lights
+  the player *fully* — in the model as well as the pixels — and a placed
+  source that engulfs the player is indistinguishable from a carried one.
+  Nine tiles is the first whole tile past the radius. It is also past what the
+  camera can hold: one tile is (80, 40) screen pixels and 5 tiles already
+  spans the viewport, so **no placement exists that puts a source's own tile
+  on screen while leaving the player's ground at the night floor**. Hence the
+  split — the model asserts the hearth's own tile (the camera cannot see it),
+  the pixels assert that the light on screen is centred away from the player.
+  Worth knowing before M4.3 writes anything else that wants a light and a dark
+  place in one frame.
+- **Two provider rules, now mechanical.** A provider that reports a collection
+  needs a verb that can put something in it. And a provider whose value is
+  read *per position* has to report it at the positions its assertion names —
+  `radius` is player-centric by construction, so a light the player stands
+  outside of moved nothing the provider reported, and the placed source was
+  unassertable in the model until `player_level` and `level_here` existed.
+
 **M4.1, the renderer half (26 Aug 2026, night)**
 
 - **The screenshot found the hole the tests could not: placed light sources
@@ -270,6 +330,9 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
   narrower than "look at the screen": a provider that reports a collection
   (`source_list`, with per-source `x`, `y`, `carried`) needs a verb that can
   put something in it, or the reporting is decoration. M4.1 reopened.
+  **Closed 27 Aug by `place_source` and `night_placed_test.go`.** Still out of
+  scope and unscoped: lighting the *map's own* fires, which is content work
+  against E6 (which D2 object ids count as fire) and needs Josh first.
 
 - **Night reads as night, and the numbers say so without a monitor.** Deep
   night at a new moon is **88% dimmer** than the same frame at noon (play-area

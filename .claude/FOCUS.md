@@ -1,27 +1,28 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-08-26 (late night CT). Keep this to a screen; the full state lives
-in `state.md` in the claude.ai project and in Notion.
+Updated: 2026-08-27 (late morning CT). Keep this to a screen; the full state
+lives in `state.md` in the claude.ai project and in Notion.
 
 **PHASE 3 IS DONE** (M3.1-M3.4, DoD audit passed 26 Aug on 2c1b2124; the
-harness has 33 tools, five playtest scripts, docs/harness.md v1 with a leak
-register). **PHASE 4 IS OPEN: M4.1 "make night real" -- THE CLOCK, THE LIGHT AND
-THE RENDERER SHIPPED; M4.1 IS REOPENED FOR PLACED LIGHT SOURCES.**
+harness has 33 tools, six playtest scripts, docs/harness.md v1 with a leak
+register). **M4.1 "MAKE NIGHT REAL" IS DONE** -- the clock, the light model,
+the renderer, and (27 Aug) placed sources, which reopened it.
 
-**The gap, found by Josh looking at the torch screenshot:** the light follows
-the PLAYER because a carried source is the only kind the game can make. S1 4
-says "carried AND PLACED sources restore a radius around themselves", and the
-build note's scope fence never excluded placed ones. Light.Add(kind, carried,
-x, y) supports them and light_test.go exercises them -- but the only non-test
-caller is light.go:415 inside HarnessSet("carried_source"), which hardcodes
-carried=true at the player. Nothing in the game or the harness can put a light
-anywhere else, so the camp's own fires stay dark and the provider reports a
-source_list that can never hold anything but the player's torch. A unit test
-passing on an unreachable path is exactly what the provider contract exists to
-prevent. NEXT BURST FINISHES IT: a harness place-light verb, a script
-assertion that a placed hearth lights where it stands and not on the player.
-Lighting the MAP's own fires is a separate, larger job (which D2 object ids
-count as fire is content work against E6) and is scoped later.
+**The reopening, closed.** Josh saw the torch screenshot and said the light
+came from the player; it did, structurally -- Light.Add always took a
+position, but the only non-test caller was HarnessSet("carried_source"), which
+hardcodes carried=true at the player, so source_list could never hold anything
+but the player's torch. `light.place_source` is the verb that fills it: a
+settable field whose value is an object, {"kind","x","y"} in world tiles, a
+field rather than a tool because the three provider tools are the only ones
+that know about providers and do not change as systems are added. The provider
+now also reports `player_level` and per-source `level_here`, because `radius`
+is player-centric and a light the player stands outside of moved nothing it
+reported. Two rules to carry into M4.2+: **a provider that reports a
+collection needs a verb that can put something in it**, and **a provider read
+per-position must report it at the positions its assertion names.**
+Still out of scope and UNSCOPED: lighting the MAP's own fires -- which D2
+object ids count as fire is content work against E6; ask Josh before starting.
 
 `d2core/d2world` is the world's own package -- plain arithmetic over the
 delta the game screen already gets, no wall clock, no renderer.
@@ -42,17 +43,25 @@ delta the game screen already gets, no wall clock, no renderer.
   d2maprenderer imports no world code and links no ebiten. **No sampler set
   = 1.0 = the pre-M4.1 renderer, pixel for pixel.**
 - Both are harness providers (`clock`, `light`); step_world{world_minutes}
-  works (harness 0.5.0); `night_light_test.go` runs S1 4's assertion verbatim
-  and `night_render_test.go` measures it off four screenshots (night 88%
-  dimmer than noon; unlit night falls uniformly near x0.116 / far x0.118; a
-  torch breaks that uniformity near x8.59 / far x1.63). Determinism unmoved
-  by the renderer (22b54a6ff64c / a9ada311d3f1 / 827268ad303d, identical
-  across launches on both halves) -- presentation is outside the digest.
+  works (harness 0.5.1); `night_light_test.go` runs S1 4's assertion verbatim,
+  `night_render_test.go` measures it off four screenshots (night 88% dimmer
+  than noon; unlit night falls uniformly near x0.119 / far x0.118; a carried
+  torch breaks that uniformity near x8.35 / far x1.63) and
+  `night_placed_test.go` proves a PLACED hearth nine tiles west lights its own
+  ground x6.65 while the player's stays at x1.00 (model: hearth tile 1.000,
+  player tile 0.125, radius 1.5). **Nine tiles, not three: the hearth's radius
+  is 8, so anything closer engulfs the player -- and no placement puts a
+  source's own tile on screen while leaving the player's ground dark, since 5
+  tiles already spans the viewport.** Determinism proved across two launches
+  on 27 Aug: b9d8e7168236 / ac13cd808406 / ec66a1ed93d1 (they MOVED from
+  22b54a6ff64c / a9ada311d3f1 / 827268ad303d because the light provider
+  reports more -- digests are build-specific by design; the proof is that two
+  launches agree, not that a value matches yesterday's).
 
-**NEXT: finish M4.1** (the place-light verb + its script assertion), THEN M4.2,
-the meters (hunger/warmth/fatigue, D4). Same inherited rules for both: register
-a provider at construction, ship a playtest script, stay inside the digest,
-build on the stepped clock.
+**NEXT: M4.2, the meters** (hunger/warmth/fatigue, D4). Inherited rules,
+unchanged: register a provider at construction, ship a playtest script, stay
+inside the digest, build on the stepped clock -- and expose every value the
+assertion names, at the positions it names them.
 
 Standing findings: the black floor is INTERMITTENT per launch with the cache
 provably colored; fix stays parked (P3 5.3) -- and from here on a NIGHT
