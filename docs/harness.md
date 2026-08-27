@@ -30,7 +30,7 @@ Scripts build + launch the harness binary themselves and keep the game's own
 stdout/stderr in `<Projects>\strigoi-harness-runs\game-<stamp>.log` (a script
 that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
-hand. The six scripts: `town_walk_test.go` (live mode, §5.1),
+hand. The seven scripts: `town_walk_test.go` (live mode, §5.1),
 `determinism_test.go` (the two-launch digest proof, §5.2),
 `ui_inventory_test.go` (scripted input through the `ui` provider, M3.4),
 `night_light_test.go` (S1 §4's night-and-light assertion, M4.1),
@@ -38,7 +38,10 @@ hand. The six scripts: `town_walk_test.go` (live mode, §5.1),
 pixels off four screenshots) and `night_placed_test.go` (M4.1's placed
 sources: a hearth nine tiles away lights its own ground and not the player's,
 asserted in the model and in pixels off the same frames, then put out so the
-dark closes back in).
+dark closes back in) and `meters_test.go` (M4.2's survival meters: they drain
+on the world clock, the fatigue and thirst thresholds flip the flags M4.5
+will read, consuming moves them back the other way, and neglect runs the body
+to zero health).
 
 ## Outputs (Article V)
 
@@ -69,7 +72,7 @@ with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING 
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 
-## The tools (33; harness 0.5.2)
+## The tools (33; harness 0.6.0)
 
 ### Session (M3.2)
 
@@ -135,13 +138,14 @@ are one checklist.
 
 **The rule, from Phase 4 on: a system is not done until its provider exposes
 every value its S1 §12 playtest assertion needs** (Constitution VI.2, made
-mechanical). The planned names the tools already know: `meters` (M4.2),
-`spawns` / `dead` (M4.3, M4.6), `combat` (M4.5), `reputation` / `inventory` /
-`region` (Phase 6), `soul_pressure` (Phase 4 dashboard sim). Asking for one
-early returns `NOT_IMPLEMENTED` with the milestone.
+mechanical). The planned names the tools already know: `spawns` / `dead`
+(M4.3, M4.6), `combat` (M4.5), `reputation` / `inventory` / `region` (Phase
+6), `soul_pressure` (Phase 4 dashboard sim). Asking for one early returns
+`NOT_IMPLEMENTED` with the milestone. A name leaves this map in the same
+commit its provider registers — `meters` did at M4.2.
 
-Registered today — **`clock`**, **`light`** and **`ui`**, all while a game
-screen is live.
+Registered today — **`clock`**, **`light`**, **`meters`** and **`ui`**, all
+while a game screen is live.
 
 **`clock`** (M4.1, `d2core/d2world`): `world_minutes` since the epoch,
 `minute_of_day`, `time_of_day`, `date` + `year`/`month`/`day` in the Julian
@@ -198,6 +202,43 @@ and the number the provider reports come from one source of truth, and
 `d2maprenderer` still imports no world code — set no sampler and every tile
 reports full daylight, which is what the engine did before M4.1.
 
+**`meters`** (M4.2, `d2core/d2world`): the three survival meters and
+everything S1 §5's assertion is written in — `food`, `water`, `fatigue`,
+`activity`, the warning and death bands (`hungry` / `starving` / `thirsty` /
+`parched`), the two states R2's combat rules need (`reaction_available`,
+`shaken`, plus the `shaken_threshold` thirst lowers), `dying`, `dead`,
+`neglect_damage`, `has_body`, and `health` / `max_health` when a body is
+attached. Settable: `food`, `water`, `fatigue`, `activity`, and `consume`
+(`{"kind": "food"|"water"|"rest", "amount": <points>}`).
+
+**Direction, because it is the easiest thing here to get backwards:** Food
+and Water run 100 (full) down to 0 (empty); **Fatigue runs the other way**,
+0 (rested) up to 100 (exhausted), because S1 §5's thresholds are written as
+"at fatigue ≥ 75%" and "at food = 0". Resting lowers fatigue.
+
+The meters are directly settable *and* have `consume` on purpose. A script
+has to be able to stand the body at a threshold without stepping a day to get
+there — and separately, **a provider that reports a value needs a verb that
+can move it in both directions**, or the script can only ever watch the number
+fall and "eating restores Food" is untested wiring. That is the third rule in
+the set the M4.1 reopening started; `consume` is also the method Phase 6's
+inventory item will drive, so the game verb and the test verb are one.
+
+`health` is reported here *and* by the player entity. The duplication is
+deliberate: the meters' own assertion ("at food = 0 health decrements per hour
+until death") is written in it, and both readings come from the same field, so
+they cannot drift. The meters reach it through a `d2world.Body` interface the
+package declares and the game screen satisfies — which is how `d2core/d2world`
+still imports no entity or hero code and links zero ebiten.
+
+**What M4.2 deliberately does not do**, per its signed build note: no meter
+HUD (the meters are readable only through the harness; a HUD is wanted and
+its home is undecided), no inventory or item consumption (Phase 6 — `consume`
+stands in), no combat use of the flags (M4.5 reads them), and **no death
+screen** (M4.6's, on S1 §6.5 and R2 §3 — ordinary deaths reload). A body at
+zero health stops draining and nothing else happens, which is correct and
+named rather than missing.
+
 **`ui`** — the game controls:
 `inventory_open`, `skilltree_open`, `hero_stats_open`, `quest_log_open`,
 `party_open`, `help_open`, `escape_menu_open`, `skill_select_open`,
@@ -234,22 +275,27 @@ excluded by design. Digests are build-specific: a change to what entities or
 providers expose changes the numbers (they did between M3.3 and M3.4) — the
 proof is that two launches of the same build agree, not the value.
 
-**The proof, M4.1 build, 27 Aug 2026** (`TestTownWalkDeterministic`, seed
+**The proof, M4.2 build, 27 Aug 2026** (`TestTownWalkDeterministic`, seed
 1462, two launches): identical spawn (31,14), identical walk (east, stuck at
 33.80,14.00 after exactly 150 ticks), byte-identical digests at all three
-checkpoints — after load `b9d8e7168236…`, after the walk `ac13cd808406…`,
-after 600 idle ticks `ec66a1ed93d1…`. The world clock and the light model are
-inside those digests, which is what keeps M4.1 deterministic.
+checkpoints — after load `5dc478f8b7c2…`, after the walk `8b22345a3241…`,
+after 600 idle ticks `c6e9b2317361…`. The world clock, the light model and
+now the meters are inside those digests, which is what keeps Phase 4
+deterministic by construction rather than by retrofit.
 
-**Those numbers moved on 27 Aug, and that is the rule, not an exception.**
-The `light` provider gained `player_level` and a per-source `level_here`, and
-the `systems` part of the digest hashes what each provider reports — so the
-digest changed by construction. It is build-specific by design: the proof is
-that two launches of the same build agree, never that a value matches
-yesterday's. (Earlier builds, same scenario: M4.1 before placed sources
-`22b54a6ff64c` / `a9ada311d3f1` / `827268ad303d`; M3.4 `bb00c5aef522` /
-`c10fd2968b04` / `ef0c2a80f237`; M3.3 `b0cae4bd` / `79688e9f` / `461e72a5` on
-the leaner digest.)
+**Those numbers moved twice on 27 Aug, and that is the rule, not an
+exception.** The `systems` part of the digest hashes what each provider
+reports, so it changes whenever a provider reports more: first when `light`
+gained `player_level` and a per-source `level_here`, then when the `meters`
+provider registered at all. (It did *not* move for `remove_source`, because
+that added a settable field and no state — the digest hashes state, not
+capability.) Digests are build-specific by design: the proof is that two
+launches of the same build agree, never that a value matches yesterday's.
+(Earlier builds, same scenario: M4.1 with placed sources `b9d8e7168236` /
+`ac13cd808406` / `ec66a1ed93d1`; M4.1 before them `22b54a6ff64c` /
+`a9ada311d3f1` / `827268ad303d`; M3.4 `bb00c5aef522` / `c10fd2968b04` /
+`ef0c2a80f237`; M3.3 `b0cae4bd` / `79688e9f` / `461e72a5` on the leaner
+digest.)
 
 **The renderer half did not move them.** Re-proved on `ebcc01d3` after the
 map renderer began dimming every tile: the same three digests, byte for byte.
@@ -292,6 +338,41 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
 `d2core/d2map/d2maprenderer`.
 
 ## Findings log
+
+**M4.2, survival meters (27 Aug 2026)**
+
+- **Reading the engine before building found a scope failure worth a whole
+  burst.** S1 §5's signed playtest assertion is three clauses, and at the
+  time only ONE was buildable: there is no combat state machine until M4.5,
+  nothing in the tree wrote `Stats.Health` (a grep for assignments returned
+  zero), there was no player death path or death screen, and no
+  item-consumption verb existed for "replenished by items". That is the M4.1
+  trap one milestone early — build the meters, assert clause 1, and the
+  milestone looks done with two thirds of a signed sentence unbuilt. The
+  split was written into the build note, signed, and is now in the
+  milestone's DoD instead of waiting to be discovered from a screenshot.
+- **A script that walks to nightfall must top the body up before measuring a
+  drain.** The first run of `meters_test.go` failed at its own setup: getting
+  to a deep night costs ~43 world hours, and at the shipped dials that empties
+  every meter twice over — water goes in 22 hours, food in 33. The dials are
+  working (S1 §5 wants eating and drinking to be a daily cost); the script was
+  measuring a corpse. **M4.3 will hit this too** — anything that steps to a
+  night and then asserts a rate needs a known body first, which is what the
+  settable meters are for.
+- **The measurement is taken against the clock's own elapsed minutes, not the
+  hours the script asked for.** `strigoi_step_world` overshoots its target by
+  a fraction of a tick, so a script that assumes it got exactly four hours is
+  wrong by a hair every time. Read `world_minutes` before and after and divide.
+  Measured, seed 1462, over 4.01 night hours: food 87.98, water 81.98, fatigue
+  14.02 — each on its dial. The Reaction goes at 75 fatigue, Shaken at 90, and
+  at 80 when thirsty. Neglect took 166 → 156 health over 2.54 starving,
+  parched hours and ran the body to zero, where the meters stop.
+- **An assertion that pins the ABSENCE of a system has to move as milestones
+  land.** `ui_inventory_test.go` checked that `meters` answered
+  `NOT_IMPLEMENTED` naming M4.2; it failed the moment M4.2 shipped, which is
+  the assertion doing its job rather than a regression. It now asks about
+  `spawns` (M4.3) and separately asserts that `meters` IS registered. Next in
+  the queue: `dead` (M4.3 / M4.6), then `combat` (M4.5).
 
 **M4.1, placed sources (27 Aug 2026) — the reopening closed**
 

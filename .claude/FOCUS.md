@@ -1,12 +1,31 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-08-27 (late morning CT). Keep this to a screen; the full state
+Updated: 2026-08-27 (afternoon CT). Keep this to a screen; the full state
 lives in `state.md` in the claude.ai project and in Notion.
 
 **PHASE 3 IS DONE** (M3.1-M3.4, DoD audit passed 26 Aug on 2c1b2124; the
-harness has 33 tools, six playtest scripts, docs/harness.md v1 with a leak
+harness has 33 tools, SEVEN playtest scripts, docs/harness.md v1 with a leak
 register). **M4.1 "MAKE NIGHT REAL" IS DONE** -- the clock, the light model,
-the renderer, and (27 Aug) placed sources, which reopened it.
+the renderer, and (27 Aug) placed sources, which reopened it. **M4.2
+"SURVIVAL METERS v0" IS DONE** (27 Aug, build-shape note signed first).
+
+**M4.2 in one paragraph.** d2core/d2world gains Meters beside Clock and
+Light: Food and Water run 100 (full) to 0 (empty), **FATIGUE RUNS THE OTHER
+WAY**, 0 (rested) to 100 (exhausted), because S1 5's thresholds read "fatigue
+>= 75%" and "food = 0". Daylight costs more water, hunger tires you faster,
+labour and the night watch cost more. ReactionAvailable (R2 1) and Shaken
+(R2 3, its threshold lowered by thirst) are computed HERE so M4.5's resolver
+reads the body's fact instead of recomputing it. Neglect spends health per
+world hour per empty meter through a d2world.Body interface the game screen
+satisfies -- playerBody in d2gamescreen is the first thing in this codebase to
+write Stats.Health. **THE NOTE FOUND A SCOPE FAILURE BEFORE IT WAS BUILT:**
+S1 5's signed assertion is three clauses and only ONE was buildable (no
+combat state machine until M4.5; nothing wrote Stats.Health; no player death
+or death screen; no item-consumption verb). The signed split gives M4.2
+clause 1 whole, the METERS half of clause 2, and health-to-death without the
+screen (M4.6's, per S1 6.5 and R2 3) -- every deferral named in the DoD.
+NOT in M4.2, by signature: a meter HUD (wanted -- Josh confirmed -- home
+undecided between M4.4 and its own milestone), inventory, combat use.
 
 **The reopening, closed.** Josh saw the torch screenshot and said the light
 came from the player; it did, structurally -- Light.Add always took a
@@ -47,7 +66,7 @@ delta the game screen already gets, no wall clock, no renderer.
   d2maprenderer imports no world code and links no ebiten. **No sampler set
   = 1.0 = the pre-M4.1 renderer, pixel for pixel.**
 - Both are harness providers (`clock`, `light`); step_world{world_minutes}
-  works (harness 0.5.2); `night_light_test.go` runs S1 4's assertion verbatim,
+  works (harness 0.6.0); `night_light_test.go` runs S1 4's assertion verbatim,
   `night_render_test.go` measures it off four screenshots (night 88% dimmer
   than noon; unlit night falls uniformly near x0.119 / far x0.118; a carried
   torch breaks that uniformity near x8.35 / far x1.63) and
@@ -58,15 +77,38 @@ delta the game screen already gets, no wall clock, no renderer.
   is 8, so anything closer engulfs the player -- and no placement puts a
   source's own tile on screen while leaving the player's ground dark, since 5
   tiles already spans the viewport.** Determinism proved across two launches
-  on 27 Aug: b9d8e7168236 / ac13cd808406 / ec66a1ed93d1 (they MOVED from
-  22b54a6ff64c / a9ada311d3f1 / 827268ad303d because the light provider
-  reports more -- digests are build-specific by design; the proof is that two
-  launches agree, not that a value matches yesterday's).
+  on 27 Aug, now 5dc478f8b7c2 / 8b22345a3241 / c6e9b2317361. They MOVED TWICE
+  today -- when the light provider gained player_level/level_here, and again
+  when the meters provider registered -- because the digest's `systems` part
+  hashes what providers REPORT. (remove_source did NOT move it: a settable
+  field is capability, not state.) Digests are build-specific by design; the
+  proof is that two launches agree, not that a value matches yesterday's.
+- **`meters_test.go`** measures M4.2, seed 1462: over 4.01 night hours food
+  87.98 / water 81.98 / fatigue 14.02, each on its dial; eating and sleeping
+  move them back; Reaction lost at 75, Shaken at 90 and at 80 when thirsty;
+  neglect took health 166 -> 156 in 2.54 starving+parched hours and ran the
+  body to 0, where the meters stop. **Trap it found: getting to a deep night
+  costs ~43 world hours, which empties every meter (water goes in 22 hours,
+  food in 33) -- any script that walks to nightfall must top the body up
+  before measuring a drain, and must measure against the clock's own elapsed
+  minutes rather than the hours it asked step_world for.**
 
-**NEXT: M4.2, the meters** (hunger/warmth/fatigue, D4). Inherited rules,
-unchanged: register a provider at construction, ship a playtest script, stay
-inside the digest, build on the stepped clock -- and expose every value the
-assertion names, at the positions it names them.
+**NEXT: M4.3, night spawns** (hostile tables keyed to the clock; N1 signed).
+But M11 and C3 research land before M4.3/M4.6 CONTENT (S1 12), so check that
+first. Inherited rules, unchanged: register a provider at construction, ship a
+playtest script, stay inside the digest, build on the stepped clock. THREE
+PROVIDER RULES now, all earned the hard way: (1) a provider that reports a
+COLLECTION needs a verb that can put something in it -- and one that can take
+it back out; (2) a provider read PER POSITION must report it at the positions
+its assertion names; (3) a provider that reports a VALUE needs a verb that can
+move it in BOTH directions, or a script can only ever watch the number fall.
+Two more habits: read the engine BEFORE writing the build note (M4.2's found
+a scope failure that would have cost a reopening), and check that a signed
+assertion is actually buildable clause by clause.
+
+Also queued, both Josh's call on timing: the map-fire scoping note (which D2
+object ids count as fire; no engine code until signed), and where the meter
+HUD lands.
 
 Standing findings: the black floor is INTERMITTENT per launch with the cache
 provably colored; fix stays parked (P3 5.3) -- and from here on a NIGHT
