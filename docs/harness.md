@@ -1,4 +1,4 @@
-# The playtest harness (Phase 3) — v1, M3.4
+# The playtest harness (Phase 3) — v1, M3.4 (+ the M4.1 world clock)
 
 An MCP (Model Context Protocol) server compiled into the game behind the
 `harness` build tag, so an agent (Claude Code) or a Go test can start a game,
@@ -32,7 +32,8 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand. The three scripts: `town_walk_test.go` (live mode, §5.1),
 `determinism_test.go` (the two-launch digest proof, §5.2),
-`ui_inventory_test.go` (scripted input through the `ui` provider, M3.4).
+`ui_inventory_test.go` (scripted input through the `ui` provider, M3.4),
+`night_light_test.go` (S1 §4's night-and-light assertion, M4.1).
 
 ## Outputs (Article V)
 
@@ -63,7 +64,7 @@ with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING 
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 
-## The tools (33)
+## The tools (33; harness 0.5.0)
 
 ### Session (M3.2)
 
@@ -83,7 +84,7 @@ FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 | `strigoi_get_time_mode` | live or paused; dt; stepped sim_seconds |
 | `strigoi_pause` / `strigoi_resume` | Freeze / release the simulation clock (frames still render and poll input) |
 | `strigoi_step` | Advance exactly N fixed-dt ticks (600/frame batches); returns the digest |
-| `strigoi_step_world` | Advance by sim seconds (`world_minutes` waits for the M4.4 clock provider) |
+| `strigoi_step_world` | Advance by sim seconds, or by `world_minutes` — steps until the world clock reports the target (M4.1) |
 | `strigoi_set_seed` | One-shot seed for the next start_game |
 | `strigoi_reseed_world` | Reseed the world RNG mid-game (repeated-roll tests) |
 | `strigoi_get_state_digest` | Per-part SHA-256: sim · world · entities · rng · systems |
@@ -129,18 +130,38 @@ are one checklist.
 
 **The rule, from Phase 4 on: a system is not done until its provider exposes
 every value its S1 §12 playtest assertion needs** (Constitution VI.2, made
-mechanical). The planned names the tools already know: `light` (M4.1),
-`meters` (M4.2), `spawns` / `dead` (M4.3, M4.6), `clock` (M4.4), `combat`
-(M4.5), `reputation` / `inventory` / `region` (Phase 6), `soul_pressure`
-(Phase 4 dashboard sim). Asking for one early returns `NOT_IMPLEMENTED` with
-the milestone.
+mechanical). The planned names the tools already know: `meters` (M4.2),
+`spawns` / `dead` (M4.3, M4.6), `combat` (M4.5), `reputation` / `inventory` /
+`region` (Phase 6), `soul_pressure` (Phase 4 dashboard sim). Asking for one
+early returns `NOT_IMPLEMENTED` with the milestone.
 
-Registered today: **`ui`** — the game controls, while a game screen is live:
+Registered today — **`clock`**, **`light`** and **`ui`**, all while a game
+screen is live.
+
+**`clock`** (M4.1, `d2core/d2world`): `world_minutes` since the epoch,
+`minute_of_day`, `time_of_day`, `date` + `year`/`month`/`day` in the Julian
+calendar, `weekday`, `day_index`, `stage` (dawn/day/dusk/night), `rate` (world
+minutes per simulated second — day and night differ), `moon`, `frozen`.
+Settable: `frozen` (D7's hearth time-freeze; nothing but the harness sets it
+until houses exist) and `moon`. **The time itself is not settable** — the
+clock is stepped, never set (P3 §4.5), so `set_system_field clock.world_minutes`
+fails and tells you to use `strigoi_step_world`.
+
+**`light`** (M4.1): `radius` (what the player can see, in world tiles — the
+value S1 §4's assertion is written in), `ambient`, `night_floor`, `stage`,
+`moon`, `sources` / `lit_sources`, `carried_source` / `carried_burn` /
+`carried_lit`, and `source_list` sorted by id so the digest is stable.
+Settable: `carried_source` (`"torch"`, `"hearth"`, or `""` to take it away —
+this is the harness's give-the-player-a-light verb), `carried_burn`,
+`carried_lit`.
+
+**`ui`** — the game controls:
 `inventory_open`, `skilltree_open`, `hero_stats_open`, `quest_log_open`,
 `party_open`, `help_open`, `escape_menu_open`, `skill_select_open`,
 `left_panel_open`, `right_panel_open`, `free_cam`, `clock` (the controls' own
-accumulated seconds). Read-only. It registers in `bindGameControls` and
-unregisters in `Game.OnUnload`.
+accumulated seconds — not the world clock). Read-only. It registers in
+`bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
+register when the game screen is constructed and close on unload.
 
 Entity state today — `Player`: name, class, act, gold, level, experience,
 health/mana/stamina with maxima, the four attributes, in_town, running,
@@ -170,12 +191,14 @@ excluded by design. Digests are build-specific: a change to what entities or
 providers expose changes the numbers (they did between M3.3 and M3.4) — the
 proof is that two launches of the same build agree, not the value.
 
-**The proof, M3.4 build, 26 Aug 2026** (`TestTownWalkDeterministic`, seed
+**The proof, M4.1 build, 26 Aug 2026** (`TestTownWalkDeterministic`, seed
 1462, two launches): identical spawn (31,14), identical walk (east, stuck at
 33.80,14.00 after exactly 150 ticks), byte-identical digests at all three
-checkpoints — after load `bb00c5aef522…`, after the walk `c10fd2968b04…`,
-after 600 idle ticks `ef0c2a80f237…`. (M3.3's first proof, same scenario,
-was `b0cae4bd…` / `79688e9f…` / `461e72a5…` on the leaner digest.)
+checkpoints — after load `22b54a6ff64c…`, after the walk `a9ada311d3f1…`,
+after 600 idle ticks `827268ad303d…`. The world clock and the light model are
+inside those digests, which is what keeps M4.1 deterministic. (Earlier
+builds, same scenario: M3.4 `bb00c5aef522` / `c10fd2968b04` / `ef0c2a80f237`;
+M3.3 `b0cae4bd` / `79688e9f` / `461e72a5` on the leaner digest.)
 
 Notes: `sim_seconds` accumulates float error in display (2.4999…96 for 150
 ticks at 1/60) — deterministic, identical across runs, harmless. Entity
@@ -212,6 +235,22 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
 `d2core/d2map/d2maprenderer`.
 
 ## Findings log
+
+**M4.1 (26 Aug 2026, evening)**
+
+- **The world clock is a harness citizen from its first line.** `clock` and
+  `light` (`d2core/d2world`) register as providers at construction, so
+  `step_world{world_minutes}` and the S1 §4 assertion worked the day the
+  systems existed rather than needing a retrofit. The Phase 3 provider
+  contract paid for itself immediately.
+- **`Level()` is quantised, `Ambient()` and `Radius()` are not.** The first
+  M4.1 test failure was the test's fault: it compared a 16-step quantised
+  tile level (0.125) against the continuous ambient (0.10). The rule is now
+  in the code comment — the renderer sees bands, the dials stay exact.
+- **A stale `.git/index.lock`** left by a device-VM git call (which cannot
+  unlink it — "Operation not permitted" on the mounted filesystem) silently
+  made every `git add` fail while builds and tests still passed. If staging
+  seems to do nothing, look for the lock.
 
 **M3.4 (26 Aug 2026)**
 

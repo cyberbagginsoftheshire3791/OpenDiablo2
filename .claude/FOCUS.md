@@ -1,51 +1,56 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-08-26 (midday CT). Keep this to a screen; the full state lives
+Updated: 2026-08-26 (evening CT). Keep this to a screen; the full state lives
 in `state.md` in the claude.ai project and in Notion.
 
-**PHASE 3 IS DONE.** M3.1 (design, SIGNED 24 Aug) + M3.2 (spine, 24 Aug) +
-M3.3 (determinism, 26 Aug) + **M3.4 (providers, input, spawn, 26 Aug)**. The
-harness has 33 tools, three playtest scripts (town_walk live, determinism
-two-launch proof, ui_inventory scripted input), and docs/harness.md v1 with
-the leak register. The DoD audit (P3 spec sec. 6.4) is in the closeout of the
-26 Aug burst; WS-Harness closes, WS-Wallachia re-enters ("harness usable").
+**PHASE 3 IS DONE** (M3.1-M3.4, DoD audit passed 26 Aug on 2c1b2124; the
+harness has 33 tools, four playtest scripts, docs/harness.md v1 with a leak
+register). **PHASE 4 IS OPEN: M4.1 "make night real" -- FIRST HALF SHIPPED.**
 
-What M3.4 landed: the d2harness registry grew Stateful (entity half),
-FieldLister, Unregister; Player/NPC expose HarnessState; GameControls is the
-first real provider ("ui": panel/menu states) and keeps its OWN clock for
-click-repeat timing (no wall clock in input handling); the
-d2input.ScriptedInputService overlay (E6) at NewInputManagerWithService --
-a scripted tap is just-pressed for exactly one poll, merged with the real
-devices; tools list_systems / get_system_state / set_system_field / key /
-click / move_cursor / type_text / spawn_entity / remove_entity; get_entity
-gained a `screen` pixel position for aiming clicks; start_game now returns
-after the first game frame (leak register #1, closed same day).
+M4.1 so far (build note SIGNED 26 Aug evening, four asks as recommended):
+d2core/d2world is the world's own package -- plain arithmetic over the delta
+the game screen already gets, no wall clock, no renderer.
+- **Clock**: world minutes since 17 June 1462 dawn; Julian date + weekday
+  (pinned by tests to 29 May 1453 = Tuesday and 17 Jun 1462 = Thursday, so
+  the run's Saturday and Tuesday can never drift); stage dawn/day/dusk/night;
+  compression by stage (day 4 world-min/s, night 2.5 -- the night dilated);
+  moon thinning each night; D7's hearth-freeze flag (harness-only for now).
+  **Stepped, never set** (P3 4.5) -- HarnessSet refuses the time.
+- **Light**: ambient falls to a moon-set floor; sources restore a radius and
+  burn per world minute; torch 5 tiles / 60 world-min, hearth 8 tiles
+  fuel-fed, floor 1.5 tiles. Level() quantised into 16 bands for the eye;
+  Radius() continuous so the dials stay exact. ONE source of truth -- M4.5's
+  combat resolver reads these same values (S1 4).
+- Both are harness providers (`clock`, `light`); step_world{world_minutes}
+  works (harness 0.5.0); `playtest/night_light_test.go` runs S1 4's assertion
+  verbatim and passes; determinism re-proven with both in the digest
+  (22b54a6ff64c / a9ada311d3f1 / 827268ad303d, identical across launches).
 
-Two engine bugs the harness found, fixed as their own commits: MainMenu
-never unbound its input handler (#792) -- a second Escape in-game hit the
-stale menu's exit branch and killed the process silently; main.go swallowed
-Run()'s error. Neither reproduces now.
+**NEXT: M4.1's second half -- the renderer.** The four map-render passes are
+already per-tile loops; each wraps its existing body in
+`target.PushBrightness(level)` / `Pop()`, fed by a one-method LightSampler
+interface set on the MapRenderer (so d2maprenderer never imports d2world and
+no import cycle appears). Verified hooks: PushBrightness reaches every draw
+via ColorM.ChangeHSV (ebiten_surface.go:111, :153-163) and entity sprites
+inherit it (animation.go:161-179). With no sampler set every call returns 1.0
+and the renderer behaves exactly as today. Then the screenshots and the eye
+test, and the readability question is D5's (campaign).
 
-Next: **Phase 4 -- M4.1 (light/night)** on the stepped clock, per plan v1.4
-and the signed D4/D7/E6 briefs. Every Phase 4 system registers a provider
-at construction (the rule: not done until the provider exposes what its
-S1 sec. 12 assertion needs) and ships with a playtest script. Interleave
-research when low-energy: M11 first.
+Standing findings: the black floor is INTERMITTENT per launch with the cache
+provably colored; fix stays parked (P3 5.3) -- and from here on a NIGHT
+screenshot is useless as black-floor evidence (town_walk samples a daylight
+frame, which still tells them apart). Benign log line "invalid frame index"
+allowlisted. Minimized window keeps ticking (~63/s). Recipe: pause BEFORE
+start_game{seed}, advance only with step/step_world; digests are
+build-specific.
 
-Standing findings: the black floor is INTERMITTENT per launch with the
-cache provably colored (init-race suspect, OnLoad-goroutine image builds);
-fix stays parked (spec 5.3) -- town_walk logs floor luminance every run
-(96-98% on 26 Aug). Benign log line "invalid frame index" allowlisted.
-Minimized window keeps ticking (~63/s). Recipe: pause BEFORE
-start_game{seed}, advance only with step; digests are build-specific.
-
-Parked for Josh: history rewrite before friends build #1; dead-file
-removals; the skill trigger test; deep-decode test paths; the S1
-sec. 5/9.1 game-scope annotation; the "what Vlad knew" thread (his
-separate chat -- do not pre-empt); the black-floor FIX; the locked-session
-tick test.
+Parked for Josh: history rewrite before friends build #1; dead-file removals;
+the skill trigger test; deep-decode test paths; the S1 sec. 5/9.1 game-scope
+annotation; the "what Vlad knew" thread (his separate chat -- do not
+pre-empt); the black-floor FIX; the locked-session tick test; `rh.ini`.
 
 Do not: `go get -u`; write any *.mpq/*.dc6/*.dcc/*.ds1/*.dt1/*.cof/*.pl2/
 *.tbl/*.d2; write into /harness-runs/ or run dirs from Claude Code; create
-a capitalised `Docs/`; commit CRLF; claim "on disk"/"pushed" without a
-same-burst listing; put gameplay logic in the harness.
+a capitalised `Docs/`; commit CRLF; let a test binary link ebiten (check
+`go list -deps`); claim "on disk"/"pushed" without a same-burst listing; put
+gameplay logic in the harness; read the wall clock in a world system.
