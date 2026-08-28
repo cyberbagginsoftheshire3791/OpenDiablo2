@@ -93,9 +93,47 @@ delta the game screen already gets, no wall clock, no renderer.
   before measuring a drain, and must measure against the clock's own elapsed
   minutes rather than the hours it asked step_world for.**
 
-**NEXT: M4.3a, PATHFINDING AND PURSUIT -- SIGNED, BUILD IT.** Josh took all
-six section-6 asks of the build-shape note as recommended on 27 Aug
-(decision 3caff9f3-d21e-817a-aa42-f1c1f3c6a7c7). Nothing is waiting on him.
+**M4.3a IS HALF BUILT. NEXT: a path-reporting harness verb, then the
+playtest script, then pursuit.** Josh signed all six section-6 asks on
+27 Aug (decision 3caff9f3-d21e-817a-aa42-f1c1f3c6a7c7); nothing waits on him.
+
+**SHIPPED (asks 1-4), CI green on both:**
+- `cafe22f6` -- the three accessor bugs, each with a unit test on a
+  hand-built grid. tileCoordinateToIndex returns -1 off the map instead of
+  wrapping x onto the neighbouring row; TileExists bounds half-open;
+  SubTileAt floors its division (new floorDivMod) and returns nil rather
+  than dereferencing a nil tile; checkLos treats off-map as blocked.
+  **PROVEN BY REVERTING ALL THREE:** the tests then fail with exactly
+  "index out of range [16] with length 16", "index out of range [-1]", and
+  a nil pointer dereference.
+- `f894e5df` -- **a real A\* replaces the raycast** (d2mapengine/astar.go).
+  Subtile resolution; queue on the total key (f, h, y, x); fixed compass
+  neighbour order; no map iteration anywhere; INTEGER step costs 10/14 so
+  nothing floating-point can reach the digest; bounded at 4000 expanded
+  nodes [DIAL] with a best-partial fallback; no corner cutting; routes
+  collapsed to corners, final waypoint the caller's own dest.
+  **Measured in the running game at seed 1462, and the digests moved as
+  named in advance:** A after load UNCHANGED 5dc478f8b7c2; B after the walk
+  8b22345a3241 -> 52c1559da938; C after 600 idle ticks c6e9b2317361 ->
+  9931ffb10d91 -- all three agreeing across two separate launches.
+
+**AN HONEST CORRECTION:** the note predicted town_walk_test.go and
+determinism_test.go would need rewriting. They did NOT -- both pass
+unchanged, because they were written to tolerate a blocked direction rather
+than to require one. Their stale raycast comments are fixed in f894e5df.
+
+**WHAT REMAINS, AND WHY THE ORDER MATTERS.** Ask 5 (pursuit) is not built,
+and the Constitution VI.2 playtest script is not written -- because writing
+it surfaced the provider rule A FOURTH TIME. Section 3.2's signed assertion
+is "the same start and goal produce a byte-identical path across two
+launches", and **nothing reports a path**. The harness can move the player
+and read where it stopped, but the route is invisible, so a script could
+only assert arrival and the digest -- weaker than what was signed. Build a
+read-only harness verb returning the waypoint list for a start/goal pair
+FIRST (no state change, no new system: the same shape as place_source
+earning level_here), then the script, then pursuit. The rule in its fourth
+costume: an assertion that names a path needs a provider that reports the
+path.
 **THE FINDING THAT ARRIVED WITH THE SIGNATURE, and it changes what this
 milestone is FOR.** Josh asked how much of a priority it really is that you
 cannot walk out of the village. Read from the repo rather than assumed:
