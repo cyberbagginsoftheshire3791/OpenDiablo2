@@ -1,7 +1,15 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-08-27 (afternoon CT). Keep this to a screen; the full state
+Updated: 2026-08-28 (late morning CT). Keep this to a screen; the full state
 lives in `state.md` in the claude.ai project and in Notion.
+
+**THE PLAN IS v1.5 (28 Aug).** Every "plan v1.4 5" reference below still
+points at the right paragraph, but 5 Phase 4 now carries the M4.3a/M4.3b
+split and its reason, the world clock is named in M4.1 where it shipped
+(M4.4 is the clock's UI and the first scripted event), and 8 no longer
+restates status -- it points at Notion, state.md and this file instead.
+Lesson: **a stable document that also carries status has two writable homes
+for one truth, and the stale one is what a cold session reads first.**
 
 **PHASE 3 IS DONE** (M3.1-M3.4, DoD audit passed 26 Aug on 2c1b2124; the
 harness has 33 tools, SEVEN playtest scripts, docs/harness.md v1 with a leak
@@ -44,8 +52,8 @@ is player-centric and a light the player stands outside of moved nothing it
 reported. Two rules to carry into M4.2+: **a provider that reports a
 collection needs a verb that can put something in it**, and **a provider read
 per-position must report it at the positions its assertion names.**
-Still out of scope and UNSCOPED: lighting the MAP's own fires -- which D2
-object ids count as fire is content work against E6; ask Josh before starting.
+Lighting the MAP's own fires is now SCOPED but NOT decided -- see the
+map-fire scoping note near the end of this file; still no engine code.
 
 `d2core/d2world` is the world's own package -- plain arithmetic over the
 delta the game screen already gets, no wall clock, no renderer.
@@ -93,8 +101,13 @@ delta the game screen already gets, no wall clock, no renderer.
   before measuring a drain, and must measure against the clock's own elapsed
   minutes rather than the hours it asked step_world for.**
 
-**M4.3a IS DONE. NEXT: M4.3b, night spawns — and its build-shape note is a
-DRAFT written before the split, so it needs a v1.1 before Josh can sign it.**
+**M4.3a IS DONE. NEXT: M4.3b, night spawns -- and ITS NOTE IS NOW v1.1 AND
+READY TO SIGN. THE ASKS ARE AT 8 AND THERE ARE EIGHT, NOT SIX AT 6.**
+Asks 5 (where the notice model lives and what it may know: line of sight,
+distance, and the light level at the quarry -- nothing else), 6 (the provider
+reports a per-group `notice` block, drivable both directions) and 7 (rate
+units, with their frame cost written beside them) are NEW, and they are why
+it was rewritten rather than restamped. **Do not build until 8 is signed.**
 
 M4.3a closed 28 Aug (decision 3caff9f3-d21e-8102-aec3-c35f401ec6c8) in four
 commits: cafe22f6 the three accessor bugs · f894e5df the A* · 309193a8
@@ -218,8 +231,27 @@ replacing PathFind changes PLAYER movement, so the digests move again and
 town_walk_test.go and determinism_test.go -- which encode "stuck" as the
 expected outcome -- get rewritten.
 **THEN M4.3b, night spawns** (hostile tables keyed to the clock). Its note is
-drafted and needs a v1.1: it is now the SECOND half, and notice/awareness
-moves into it because M4.3a ships pursuit only.
+now v1.1 (28 Aug): it is the SECOND half, and notice/awareness is in it
+because M4.3a ships pursuit only. **THE COMPRESSION RUNS OPPOSITE TO
+INTUITION AND M4.3b SHIPS AT LEAST THREE RATES:** DayRate 4.0 / NightRate 2.5
+(d2core/d2world/clock.go:98-99), so a world-minute-denominated rate is
+TIGHTEST IN DAYLIGHT, not at night -- at the harness default tick of 1/60 s,
+one world minute is **15 stepped frames by day and 24 at night**. The note
+wrote its own fence against this backwards on the first pass and caught it
+against the code: the 218-solve unit error, one costume on. Write every rate
+down with its frame cost beside it.
+**THREE M4.3b SEAMS M4.3a LEFT NAMED IN THE CODE:** pursuit.go:15 ("it is
+deliberately NOT awareness"), pathfind.go:87-98 (`LineOfSight` -- "whether a
+thing can SEE you is not whether it can WALK to you"; the sight test already
+exists and is exported), and game.go:499 (`Game.Pursue` -- "the seam the
+harness, and at M4.3b the awareness model, uses to start a chase"). M4.3b
+supplies the DECISION, not the mechanism.
+**VERIFIED BLAST RADIUS, read not predicted:** playtest/ui_inventory_test.go:51
+pins the ABSENCE of the spawns system and WILL fail the moment a spawns
+provider registers -- point it at "dead" (one word; the substring check still
+passes). harness_providers.go:29 must lose its "spawns" row. The digest's
+`systems` part WILL move by construction. Whether `entities` also moves is a
+MEASUREMENT, not a prediction.
 **THE RESEARCH GATE, checked 27 Aug against Notion and NOT what an earlier
 note in this file said:** M4.3's BEAST table is UNBLOCKED -- N1 is Verified
 and its 5 explicitly closes S1 6.4's beast content (feral dogs, wolves, boar,
@@ -242,9 +274,22 @@ Two more habits: read the engine BEFORE writing the build note (M4.2's found
 a scope failure that would have cost a reopening), and check that a signed
 assertion is actually buildable clause by clause.
 
-Also queued, both Josh's call on timing: the map-fire scoping note (which D2
-object ids count as fire; no engine code until signed), and where the meter
-HUD lands.
+**THE MAP-FIRE SCOPING NOTE IS DELIVERED (28 Aug) and awaits Josh's answers
+to its 8** -- "Map Fires - Scoping Note.md", five asks, no engine code
+written and none until he answers. **Its headline: D2's object table ALREADY
+declares which objects emit light** -- LightDiameter [8]int, LightRed/Green/
+Blue, Flicker bool, BlocksLight [8]bool, all **PER ANIMATION MODE**, all read
+by object_details_loader.go:72/82/146-148/196 and consumed by NOTHING outside
+d2core/d2records. The map walk already exists (d2mapstamp/stamp.go:130-149)
+and a map fire is structurally a hearth with Burn negative. **So the unit of
+any fire list is (object id, MODE), not id** -- a lit and an unlit brazier are
+usually one id in two modes. `Light.Level(x,y)` loops EVERY source and the
+renderer samples it per tile across four passes, so the placed-source COUNT
+decides the design, and it is UNKNOWN (objects.txt lives in the MPQs).
+**Ask 1 is the cheap one and blocks nothing: a counting pass that reports how
+many placed objects declare a light, how many also flicker, and what the
+per-frame source count would be -- changing no lighting behaviour.**
+Still Josh's call on timing: where the meter HUD lands.
 
 Standing findings: the black floor is INTERMITTENT per launch with the cache
 provably colored; fix stays parked (P3 5.3) -- and from here on a NIGHT
