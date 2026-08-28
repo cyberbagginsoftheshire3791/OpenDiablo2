@@ -84,14 +84,24 @@ func waypoints(from subTile, steps []subTile, dest d2vector.Position, exact bool
 	return points
 }
 
-// checkLos finds out if there is a clear line of sight between two points.
+// LineOfSight reports whether the straight line between two positions is
+// unobstructed. It is precisely what PathFind used to answer before M4.3a
+// replaced it with a real search, and it is still a real question -- just a
+// different one: whether a thing can SEE you is not whether it can WALK to
+// you, and M4.3b's awareness model needs the first.
 //
-// PathFind no longer uses it -- M4.3a replaced the raycast with a real search
-// -- but line of sight is a different question from reachability, and M4.3b's
-// awareness model is the intended caller: whether a thing can SEE you is not
-// whether it can WALK to you. If M4.3b ends up not needing it, delete it
-// rather than leaving an exported-looking helper with no caller, which is the
-// shape of defect the M4.1 reopening was.
+// It also has an immediate use as a negative control. A path assertion that
+// only shows the mover arriving cannot tell a genuine detour from a walk that
+// never needed one; asking whether the straight line was clear is what makes
+// "it went around something" evidence rather than a hope. strigoi_find_path
+// reports both for exactly that reason.
+func (m *MapEngine) LineOfSight(start, end d2vector.Position) bool {
+	clear, _ := m.checkLos(start, end)
+
+	return clear
+}
+
+// checkLos finds out if there is a clear line of sight between two points.
 func (m *MapEngine) checkLos(start, end d2vector.Position) (bool, d2vector.Position) {
 	dv := d2vector.Position{Vector: *end.Clone()}
 	dv.Subtract(&start.Vector)

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 )
@@ -158,6 +160,47 @@ type harnessGetTileOut struct {
 	Floors    int    `json:"floors"`
 	Walls     int    `json:"walls"`
 	Shadows   int    `json:"shadows"`
+}
+
+// harnessFindPathIn asks for a route WITHOUT walking it. Coordinates are world
+// tiles, matching strigoi_move_player_to and every other tool a script writes;
+// the search itself works in subtiles and the conversion happens here, so a
+// script never has to remember which space it is in.
+type harnessFindPathIn struct {
+	// omitempty is what makes these OPTIONAL in the generated JSON schema: the
+	// go-sdk marks every field without it as required, and a start point that
+	// must always be supplied would defeat the point of defaulting it.
+	FromX float64 `json:"from_x,omitempty" jsonschema:"start x in world tiles; defaults to the player's position"`
+	FromY float64 `json:"from_y,omitempty" jsonschema:"start y in world tiles; defaults to the player's position"`
+	ToX   float64 `json:"to_x" jsonschema:"goal x in world tiles"`
+	ToY   float64 `json:"to_y" jsonschema:"goal y in world tiles"`
+}
+
+// harnessPathPoint is one waypoint, reported in both spaces because assertions
+// want different ones: world tiles read naturally, subtiles are what the search
+// actually computed and are therefore what a byte-identical comparison should
+// be made on.
+type harnessPathPoint struct {
+	X     float64 `json:"x"`
+	Y     float64 `json:"y"`
+	SubX  float64 `json:"sub_x"`
+	SubY  float64 `json:"sub_y"`
+	Index int     `json:"index"`
+}
+
+type harnessFindPathOut struct {
+	FromX     float64            `json:"from_x"`
+	FromY     float64            `json:"from_y"`
+	ToX       float64            `json:"to_x"`
+	ToY       float64            `json:"to_y"`
+	Reachable bool               `json:"reachable"`
+	Waypoints []harnessPathPoint `json:"waypoints"`
+	Count     int                `json:"waypoint_count"`
+	// StraightLineClear reports whether the OLD raycast would have made it:
+	// the negative control for "this route goes around something". Without it
+	// a passing path assertion cannot tell a real detour from an unobstructed
+	// walk that never needed one.
+	StraightLineClear bool `json:"straight_line_clear"`
 }
 
 type harnessDumpMapIn struct {
@@ -428,6 +471,84 @@ func (a *App) harnessAddObservationTools(srv *mcp.Server) {
 		}
 
 		return harnessText("tile %d,%d exists=%v region=%d %s", in.X, in.Y, out.Exists, out.Region, out.LevelName), out, nil
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "strigoi_find_path",
+		Description: "The route the pathfinder would take between two points, WITHOUT walking it. " +
+			"Coordinates are world tiles; from_x/from_y default to the player. Returns the waypoints in " +
+			"travel order (world tiles and subtiles), whether the goal is reachable, and whether the straight " +
+			"line between the two points is clear -- that last one is the negative control, because a route " +
+			"that arrives proves nothing unless the straight line did not.",
+		Annotations: harnessAnnRO(false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessFindPathIn) (*mcp.CallToolResult, harnessFindPathOut, error) {
+		harnessLogCall("strigoi_find_path")
+
+		var out harnessFindPathOut
+
+		var toolErr error
+
+		err := harnessOnUpdate(func() {
+			client, _ := harnessGame()
+			if client == nil {
+				toolErr = harnessErr("NOT_IN_GAME", "no game is running", "call strigoi_start_game first")
+				return
+			}
+
+			fromX, fromY := in.FromX, in.FromY
+
+			// Defaulting to the player is the common case by a wide margin,
+			// and a script that has to read its own position first to ask a
+			// question about it is a script with a race in it.
+			if fromX == 0 && fromY == 0 {
+				if p, ok := client.Players[client.PlayerID]; ok && p != nil {
+					world := p.Position.World()
+					fromX, fromY = world.X(), world.Y()
+				}
+			}
+
+			start := d2vector.NewPositionTile(fromX, fromY)
+			goal := d2vector.NewPositionTile(in.ToX, in.ToY)
+
+			engine := client.MapEngine
+			path := engine.PathFind(start, goal)
+
+			out.FromX, out.FromY = fromX, fromY
+			out.ToX, out.ToY = in.ToX, in.ToY
+			out.StraightLineClear = engine.LineOfSight(start, goal)
+			out.Waypoints = make([]harnessPathPoint, 0, len(path))
+
+			for i := range path {
+				world := path[i].World()
+				out.Waypoints = append(out.Waypoints, harnessPathPoint{
+					Index: i,
+					X:     world.X(),
+					Y:     world.Y(),
+					SubX:  path[i].X(),
+					SubY:  path[i].Y(),
+				})
+			}
+
+			out.Count = len(out.Waypoints)
+
+			// Reachable means the route actually ends at the goal tile rather
+			// than at the best partial approach the bounded search managed.
+			if out.Count > 0 {
+				last := out.Waypoints[out.Count-1]
+				out.Reachable = math.Floor(last.X) == math.Floor(in.ToX) &&
+					math.Floor(last.Y) == math.Floor(in.ToY)
+			}
+		})
+		if err != nil {
+			return nil, out, err
+		}
+
+		if toolErr != nil {
+			return nil, out, toolErr
+		}
+
+		return harnessText("path %.1f,%.1f -> %.1f,%.1f: %d waypoints, reachable=%v, straight line clear=%v",
+			out.FromX, out.FromY, out.ToX, out.ToY, out.Count, out.Reachable, out.StraightLineClear), out, nil
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{

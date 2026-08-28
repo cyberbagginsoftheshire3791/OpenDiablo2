@@ -104,6 +104,7 @@ FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 | `strigoi_get_entities` | Paginated entity list; kind/near filters |
 | `strigoi_get_entity` / `strigoi_get_player` | One entity with its kind-specific state (`HarnessState`), plus its `screen` pixel position for aiming clicks |
 | `strigoi_get_tile` | Region, level name, 5×5 walkability |
+| `strigoi_find_path` | The route the pathfinder would take, **without walking it**: waypoints in travel order (world tiles + subtiles), `reachable`, and `straight_line_clear`. That last field is the negative control — a route that arrives proves nothing unless the straight line did not. `from_x`/`from_y` default to the player. Added M4.3a. |
 | `strigoi_dump_map` | walk / entities / region window, ≤64×64 tiles |
 | `strigoi_read_log` | Ring of the last 5000 logger lines, cursor + RE2 filter |
 | `strigoi_screenshot` | PNG of the next frame; crop; inline image |

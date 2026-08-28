@@ -603,7 +603,7 @@ func (a *App) harnessAddActionTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_move_player_to",
-		Description: "Send the player toward a world-tile target via the MovePlayer packet (the pathing is the engine's raycast: it stops at the last unblocked point). Fire-and-forget in M3.2; wait semantics arrive with M3.3 stepping.",
+		Description: "Send the player toward a world-tile target via the MovePlayer packet. Since M4.3a the engine routes around obstacles (bounded A*), so a move that ends short of its target means unreachable rather than un-navigable; use strigoi_find_path to see the route without walking it. Fire-and-forget in M3.2; wait semantics arrive with M3.3 stepping.",
 		Annotations: harnessAnnMut(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessMoveIn) (*mcp.CallToolResult, harnessMoveOut, error) {
 		harnessLogCall("strigoi_move_player_to")
