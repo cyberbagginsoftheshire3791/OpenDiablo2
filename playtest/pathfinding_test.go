@@ -189,8 +189,16 @@ func pursuitOnly(t *testing.T, s *session, playerX, playerY float64) {
 	t.Logf("hunter %s spawned near the player", hunter)
 
 	chase := s.call("strigoi_pursue", map[string]any{"hunter": hunter, "quarry": "p:1"})
-	if int(num(chase, "chases")) != 1 {
-		t.Fatalf("expected one live chase, got %v", chase["chases"])
+
+	// Assert that OUR hunter is chasing, not that it is the only thing that
+	// is. This used to require exactly one live chase, which was true only
+	// while nothing but a script could start one -- since M4.3b's reopening
+	// the spawn tables notice the player and start chases of their own, so a
+	// count assertion here fails for the good reason that the game got busier.
+	// The same rot as ui_inventory's absence assertion: a check written about
+	// a world where only the test acts.
+	if int(num(chase, "chases")) < 1 {
+		t.Fatalf("expected at least our own live chase, got %v", chase["chases"])
 	}
 
 	firstSolves := int(num(chase, "solves"))
@@ -221,15 +229,10 @@ func pursuitOnly(t *testing.T, s *session, playerX, playerY float64) {
 	t.Logf("THE PURSUIT ASSERTION: the player moved and the hunter re-pathed — %d solves, up from %d",
 		solves, firstSolves)
 
-	list := asList(state["chase_list"])
-	if len(list) != 1 {
-		t.Fatalf("expected one chase in the list, got %d", len(list))
-	}
-
-	entry, ok := list[0].(map[string]any)
-	if !ok {
-		t.Fatalf("chase entry is not an object: %v", list[0])
-	}
+	// Find OUR hunter's entry rather than assuming it is the only one. Since
+	// M4.3b's reopening the spawn tables start chases of their own, and an
+	// index-0 read would silently assert about someone else's wolf.
+	entry := chaseEntryFor(t, state, entityID(t, s, hunter))
 
 	t.Logf("chase: hunter=%v quarry=%v distance=%.2f reachable=%v arrived=%v solves=%v",
 		entry["hunter"], entry["quarry"], num(entry, "distance"),
@@ -240,11 +243,35 @@ func pursuitOnly(t *testing.T, s *session, playerX, playerY float64) {
 	s.call("strigoi_pursue", map[string]any{"hunter": hunter, "release": true})
 
 	after := sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")
-	if got := int(num(after, "chases")); got != 0 {
-		t.Fatalf("release left %d chase(s) behind", got)
+	if e := findChaseEntry(after, entityID(t, s, hunter)); e != nil {
+		t.Fatalf("release left our hunter chasing: %v", e)
 	}
 
-	t.Log("released: the chase list is empty again")
+	t.Log("released: our hunter is no longer in the chase list")
+}
+
+// findChaseEntry returns the chase whose hunter is the given entity id, or nil.
+func findChaseEntry(state map[string]any, hunterID string) map[string]any {
+	for _, raw := range asList(state["chase_list"]) {
+		entry, ok := raw.(map[string]any)
+		if ok && str2(entry["hunter"]) == hunterID {
+			return entry
+		}
+	}
+
+	return nil
+}
+
+// chaseEntryFor is findChaseEntry with a failure when it is not there.
+func chaseEntryFor(t *testing.T, state map[string]any, hunterID string) map[string]any {
+	t.Helper()
+
+	entry := findChaseEntry(state, hunterID)
+	if entry == nil {
+		t.Fatalf("no chase for hunter %s in %v", hunterID, state["chase_list"])
+	}
+
+	return entry
 }
 
 // pathSignature renders a path as a stable string for exact comparison. It
