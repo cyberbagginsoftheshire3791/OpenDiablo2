@@ -39,7 +39,13 @@ func (m *MapEngine) checkLos(start, end d2vector.Position) (bool, d2vector.Posit
 		x += xstep
 		y += ystep
 
-		if m.SubTileAt(int(math.Floor(x)), int(math.Floor(y))).BlockWalk {
+		// SubTileAt returns nil off the map, and off the map is not walkable:
+		// the same answer as a wall, and the walk stops at the last good point
+		// instead of dereferencing nil. Before SubTileAt was guarded this loop
+		// crashed the process on a move target past the map edge, because it
+		// does no bounds checking of its own.
+		flags := m.SubTileAt(int(math.Floor(x)), int(math.Floor(y)))
+		if flags == nil || flags.BlockWalk {
 			return false, d2vector.NewPosition(x-xstep, y-ystep)
 		}
 	}

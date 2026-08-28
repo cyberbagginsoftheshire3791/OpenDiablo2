@@ -203,16 +203,60 @@ func (m *MapEngine) PlaceStamp(stamp *d2mapstamp.Stamp, tileOffsetX, tileOffsetY
 	}
 }
 
-// converts x,y tile coordinate into index in MapEngine.tiles
+// converts x,y tile coordinate into index in MapEngine.tiles, or -1 when the
+// coordinate is not on the map.
+//
+// The bare x + y*width this used to compute does not bound x. On a 150-wide
+// map (-1, 5) resolved to index 749, the last tile of row 4, and (150, 5)
+// resolved to 900, the first tile of row 6 -- so an off-map coordinate was
+// handed a real tile from a neighbouring row instead of being refused. A path
+// search that trusts it routes through the map's left and right edges by
+// wrapping rows.
 func (m *MapEngine) tileCoordinateToIndex(x, y int) int {
+	if x < 0 || x >= m.size.Width || y < 0 || y >= m.size.Height {
+		return -1
+	}
+
 	return x + (y * m.size.Width)
 }
 
-// SubTileAt gets the flags for the given subtile
-func (m *MapEngine) SubTileAt(subX, subY int) *d2dt1.SubTileFlags {
-	tile := m.TileAt(subX/subtilesPerTile, subY/subtilesPerTile)
+// floorDivMod divides a by b rounding the quotient toward negative infinity and
+// returns a non-negative remainder. Go's own / and % truncate toward zero, so
+// -1 / 5 is 0 and -1 % 5 is -1: a subtile one step off the map's left edge
+// would otherwise resolve to tile 0 at a negative subtile offset.
+func floorDivMod(a, b int) (quotient, remainder int) {
+	quotient = a / b
+	remainder = a % b
 
-	return tile.GetSubTileFlags(subX%subtilesPerTile, subY%subtilesPerTile)
+	if remainder < 0 {
+		quotient--
+		remainder += b
+	}
+
+	return quotient, remainder
+}
+
+// SubTileAt gets the flags for the given subtile, or nil when the subtile is
+// not on the map.
+//
+// This reached a panic on an off-map coordinate two different ways. Truncating
+// division mapped subX = -1 onto tile 0 with a subtile offset of -1, which
+// indexes GetSubTileFlags' lookup table out of range; and TileAt returns nil
+// out of range, which this then dereferenced unguarded. checkLos walks these
+// coordinates with no bounds check of its own, so a move target just off the
+// map edge crashed the process. Flooring the division keeps a negative
+// coordinate negative so TileAt refuses it, and the nil reaches the caller --
+// which is what the harness observers already test for.
+func (m *MapEngine) SubTileAt(subX, subY int) *d2dt1.SubTileFlags {
+	tileX, offsetX := floorDivMod(subX, subtilesPerTile)
+	tileY, offsetY := floorDivMod(subY, subtilesPerTile)
+
+	tile := m.TileAt(tileX, tileY)
+	if tile == nil {
+		return nil
+	}
+
+	return tile.GetSubTileFlags(offsetX, offsetY)
 }
 
 // TileAt returns a pointer to the data for the map tile at the given
@@ -312,7 +356,11 @@ func (m *MapEngine) Advance(tickTime float64) {
 func (m *MapEngine) TileExists(tileX, tileY int) bool {
 	tileIndex := m.tileCoordinateToIndex(tileX, tileY)
 
-	if valid := (tileIndex >= 0) && (tileIndex <= len(m.tiles)); valid {
+	// The bound was `tileIndex <= len(m.tiles)`, which then indexed m.tiles at
+	// exactly len(m.tiles) -- index equals length, the same signature as the
+	// DT1 decode panic. tileCoordinateToIndex now refuses off-map coordinates
+	// outright; this keeps the half-open bound so the two cannot disagree.
+	if valid := (tileIndex >= 0) && (tileIndex < len(m.tiles)); valid {
 		tile := m.tiles[tileIndex].Components
 		numFeatures := len(tile.Floors)
 		numFeatures += len(tile.Shadows)
