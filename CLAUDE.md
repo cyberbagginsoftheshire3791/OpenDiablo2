@@ -29,6 +29,18 @@ frozen numbers below.
    honest case against it written down first. Binds Claude and Josh.
 7. One dep bump per commit. Never `go get -u ./...`. akara stays pinned
    (it is only a BitSet in two files; removal is an M2.5 decision).
+8. **An audit verifies its own instruments before anyone acts on it**
+   (Constitution VI.4, added 28 Aug). Nothing sits above an audit to
+   catch its mistakes. So: every finding carries the command that
+   produced it; every instrument passes a positive AND a negative
+   control first -- a grep included, and findings that AGREE with you
+   get the controls too, because the expected number is the one nobody
+   checks; one headline finding is re-measured with a DIFFERENT
+   instrument, since repetition confirms and only independence can
+   disconfirm; and the audit states what it did NOT look for. The check
+   anyone can run, no expertise needed: **"what did you run to get
+   that?"** A finding whose command cannot be produced is withdrawn,
+   not defended.
 
 ## Verified facts (2026-08-20, Josh's machine, Windows/amd64)
 
