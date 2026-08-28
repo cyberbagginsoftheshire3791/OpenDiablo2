@@ -93,11 +93,51 @@ delta the game screen already gets, no wall clock, no renderer.
   before measuring a drain, and must measure against the clock's own elapsed
   minutes rather than the hours it asked step_world for.**
 
-**M4.3a IS HALF BUILT. NEXT: a path-reporting harness verb, then the
-playtest script, then pursuit.** Josh signed all six section-6 asks on
-27 Aug (decision 3caff9f3-d21e-817a-aa42-f1c1f3c6a7c7); nothing waits on him.
+**M4.3a IS DONE. NEXT: M4.3b, night spawns — and its build-shape note is a
+DRAFT written before the split, so it needs a v1.1 before Josh can sign it.**
 
-**SHIPPED (asks 1-4), CI green on both:**
+M4.3a closed 28 Aug (decision 3caff9f3-d21e-8102-aec3-c35f401ec6c8) in four
+commits: cafe22f6 the three accessor bugs · f894e5df the A* · 309193a8
+strigoi_find_path + the eighth playtest script · eea45074 pursuit.
+**Harness 0.8.0, 35 tools, FIVE providers (clock, light, meters, pursuit,
+ui), EIGHT playtest scripts, all passing.**
+
+**THE MILESTONE IN ONE LINE:** MapEngine.PathFind was one line-of-sight
+raycast returning a single point, so nothing in the world could route around
+anything. It is now a bounded, deterministic A* over the subtile grid, and
+d2core/d2world.Pursuit keeps a chase honest while its quarry moves.
+
+**MEASURED, seed 1462:** a goal twelve tiles east reports
+straight_line_clear=false and reachable=true in five waypoints, and the
+player ARRIVED after 420 stepped ticks -- twelve tiles it could not
+previously cross. The same query twice is byte-identical. A goal 400 tiles
+off the map reports unreachable and still returns nine partial waypoints
+toward it. A fallen spawned six tiles away chased the player through an
+eight-tile move and closed to 2.80 tiles, re-pathing as it went. Determinism
+re-proved at 13f523c11aad / 1ff9e341378e / b614542beb53.
+
+**THREE CORRECTIONS TO THE SIGNED NOTE, all mine -- read them before writing
+M4.3b's note, because two are about how a build-shape note goes wrong.**
+1. Section 3.5's blast-radius prediction was WRONG: town_walk_test.go and
+   determinism_test.go did NOT need rewriting. They were written to TOLERATE
+   a blocked direction, not to REQUIRE one.
+2. Section 3.2's own signed assertion was NOT WRITABLE when it was signed,
+   because nothing reported a path -- the provider rule a FOURTH time: an
+   assertion that names a path needs a provider that reports the path.
+   strigoi_find_path is the fix; its straight_line_clear is the negative
+   control, because a route that arrives proves nothing unless the straight
+   line did not.
+3. The pursuit dials were wrong in a way only the running game could show:
+   MinRepathMinutes 0.25 against a COMPRESSING clock meant 218 route solves
+   across 600 stepped frames. Fixed to 2.0 plus a ProgressTiles rule; 2
+   solves afterward. Lesson filed.
+
+**NOT DONE, NAMED:** a pursuer is not verified to end up ADJACENT to its
+quarry. It closes distance and re-paths correctly, but the last couple of
+tiles are a melee-range question and belong to M4.5. Awareness -- WHEN a
+chase starts -- is M4.3b's by signature.
+
+**PRIOR (the first half, for context):**
 - `cafe22f6` -- the three accessor bugs, each with a unit test on a
   hand-built grid. tileCoordinateToIndex returns -1 off the map instead of
   wrapping x onto the neighbouring row; TileExists bounds half-open;
@@ -117,23 +157,12 @@ playtest script, then pursuit.** Josh signed all six section-6 asks on
   8b22345a3241 -> 52c1559da938; C after 600 idle ticks c6e9b2317361 ->
   9931ffb10d91 -- all three agreeing across two separate launches.
 
-**AN HONEST CORRECTION:** the note predicted town_walk_test.go and
-determinism_test.go would need rewriting. They did NOT -- both pass
-unchanged, because they were written to tolerate a blocked direction rather
-than to require one. Their stale raycast comments are fixed in f894e5df.
-
-**WHAT REMAINS, AND WHY THE ORDER MATTERS.** Ask 5 (pursuit) is not built,
-and the Constitution VI.2 playtest script is not written -- because writing
-it surfaced the provider rule A FOURTH TIME. Section 3.2's signed assertion
-is "the same start and goal produce a byte-identical path across two
-launches", and **nothing reports a path**. The harness can move the player
-and read where it stopped, but the route is invisible, so a script could
-only assert arrival and the digest -- weaker than what was signed. Build a
-read-only harness verb returning the waypoint list for a start/goal pair
-FIRST (no state change, no new system: the same shape as place_source
-earning level_here), then the script, then pursuit. The rule in its fourth
-costume: an assertion that names a path needs a provider that reports the
-path.
+**WHAT M4.3b OWNS.** The spawn tables (hostile arrivals keyed to the clock)
+PLUS the notice/awareness model, which moved into it when M4.3a took pursuit
+only. Nothing in the R-track gates it: N1 is Verified and closes the beast
+content; E3 gates only the human row's kit; M11 and C3 do NOT gate it.
+Pursuit gives it the seam it needs -- `strigoi_pursue` and `Game.Pursue`
+start a chase; M4.3b decides WHEN.
 **THE FINDING THAT ARRIVED WITH THE SIGNATURE, and it changes what this
 milestone is FOR.** Josh asked how much of a priority it really is that you
 cannot walk out of the village. Read from the repo rather than assumed:
