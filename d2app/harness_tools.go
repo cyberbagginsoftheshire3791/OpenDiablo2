@@ -546,6 +546,24 @@ type harnessPursueOut struct {
 	Solves int    `json:"solves"`
 }
 
+type harnessWatchIn struct {
+	Watcher string `json:"watcher" jsonschema:"handle of the entity that might notice, from strigoi_get_entities"`
+	// Target is optional so one tool both starts and stops a watch, exactly as
+	// strigoi_pursue does, and for the same reason: releasing through
+	// set_system_field would want the entity's raw id, because d2world speaks
+	// ids and knows nothing about handles.
+	Target  string `json:"target,omitempty" jsonschema:"handle of the entity that might be noticed; omit with release:true"`
+	Release bool   `json:"release,omitempty" jsonschema:"stop the watcher noticing instead of starting"`
+}
+
+type harnessWatchOut struct {
+	Watcher  string `json:"watcher"`
+	Target   string `json:"target"`
+	Watching int    `json:"watching"`
+	Noticed  bool   `json:"noticed"`
+	Wired    bool   `json:"wired"`
+}
+
 type harnessMoveIn struct {
 	X        float64 `json:"x" jsonschema:"target world-tile x"`
 	Y        float64 `json:"y" jsonschema:"target world-tile y"`
@@ -708,6 +726,102 @@ func (a *App) harnessAddActionTools(srv *mcp.Server) {
 
 		return harnessText("%s now hunts %s · %d chase(s) live, %d route(s) solved",
 			out.Hunter, out.Quarry, out.Chases, out.Solves), out, nil
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "strigoi_watch",
+		Description: "Make one entity aware of another (M4.3b). The watcher notices the target when it has line of " +
+			"sight AND the target is inside the notice radius -- doubled when the target is lit, which is the other " +
+			"half of R2 3's dark-into-light trade. It knows sight, distance and the light at the target and nothing " +
+			"else, by signature. The spawn tables watch their own members automatically; this is for placing a " +
+			"watcher exactly where a script needs one. Stop with release:true, read the verdicts with " +
+			"strigoi_get_system_state spawns (notice blocks ride on each group, plus notice_wired / notice_aware).",
+		Annotations: harnessAnnMut(false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessWatchIn) (*mcp.CallToolResult, harnessWatchOut, error) {
+		harnessLogCall("strigoi_watch")
+
+		var out harnessWatchOut
+
+		var toolErr error
+
+		err := harnessOnUpdate(func() {
+			client, game := harnessGame()
+			if client == nil || game == nil {
+				toolErr = harnessErr("NOT_IN_GAME", "no game is running", "call strigoi_start_game first")
+				return
+			}
+
+			if game.Notice() == nil {
+				toolErr = harnessErr("NOT_IMPLEMENTED", "the notice model is not running", "this build predates M4.3b")
+				return
+			}
+
+			watcher, ok := harnessEntityFor(client, in.Watcher)
+			if !ok {
+				toolErr = harnessErr("UNKNOWN_HANDLE",
+					fmt.Sprintf("no entity for watcher handle %q", in.Watcher),
+					"list handles with strigoi_get_entities")
+
+				return
+			}
+
+			out.Watcher = in.Watcher
+			out.Wired = game.Notice().Wired()
+
+			if in.Release {
+				if !game.Unwatch(watcher.ID()) {
+					toolErr = harnessErr("BAD_ARGUMENT",
+						fmt.Sprintf("%q is not watching anything", in.Watcher),
+						"read the live watchers with strigoi_get_system_state spawns")
+
+					return
+				}
+
+				out.Watching = game.Notice().Count()
+
+				return
+			}
+
+			target, ok := harnessEntityFor(client, in.Target)
+			if !ok {
+				toolErr = harnessErr("UNKNOWN_HANDLE",
+					fmt.Sprintf("no entity for target handle %q", in.Target),
+					"list handles with strigoi_get_entities")
+
+				return
+			}
+
+			if in.Watcher == in.Target {
+				toolErr = harnessErr("BAD_ARGUMENT", "a thing cannot notice itself", "pass two different handles")
+				return
+			}
+
+			if !game.Watch(watcher, target) {
+				toolErr = harnessErr("BAD_ARGUMENT",
+					fmt.Sprintf("%q cannot be a watcher", in.Watcher),
+					"watch with a player or an npc handle")
+
+				return
+			}
+
+			out.Target = in.Target
+			out.Watching = game.Notice().Count()
+			out.Noticed, _ = game.Notice().Noticed(watcher.ID())
+		})
+		if err != nil {
+			return nil, out, err
+		}
+
+		if toolErr != nil {
+			return nil, out, toolErr
+		}
+
+		if in.Release {
+			return harnessText("%s stopped watching · %d watcher(s) live", out.Watcher, out.Watching), out, nil
+		}
+
+		return harnessText("%s watches %s · noticed=%t · %d watcher(s) live · wired=%t",
+			out.Watcher, out.Target, out.Noticed, out.Watching, out.Wired), out, nil
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{

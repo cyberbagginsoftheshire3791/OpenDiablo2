@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.8.0"          // M4.3a: find_path + pursue, and the pursuit provider
+	harnessVersion     = "0.9.0"          // M4.3b: watch, and the spawns provider carrying the notice blocks
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64

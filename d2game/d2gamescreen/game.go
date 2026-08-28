@@ -510,11 +510,14 @@ type chaser struct{ entity pathWalker }
 
 func (c chaser) HunterID() string { return c.entity.ID() }
 
-func (c chaser) HunterAt() (x, y float64) {
-	sx, sy := c.entity.GetPositionF()
-
-	return sx / subTilesPerTile, sy / subTilesPerTile
-}
+// HunterAt returns WORLD TILES, which is what GetPositionF already gives --
+// its own doc says "the entity's current tile position where 0.2 is one sub
+// tile", and it is Position.World(), already divided by five.
+//
+// M4.3a DIVIDED BY FIVE AGAIN HERE, and M4.3b's first playtest run is what
+// caught it: a watcher placed six tiles from the player reported a distance of
+// 1.19. See the note on prey.QuarryAt for what that cost.
+func (c chaser) HunterAt() (x, y float64) { return c.entity.GetPositionF() }
 
 func (c chaser) Following() bool { return c.entity.IsMoving() }
 
@@ -671,11 +674,23 @@ type prey struct{ entity pathWalker }
 
 func (p prey) QuarryID() string { return p.entity.ID() }
 
-func (p prey) QuarryAt() (x, y float64) {
-	sx, sy := p.entity.GetPositionF()
-
-	return sx / subTilesPerTile, sy / subTilesPerTile
-}
+// QuarryAt returns WORLD TILES. Same correction as chaser.HunterAt, and this
+// is the place to record what the bug actually did, because the M4.3a closeout
+// reported a number that was wrong in both size and sign.
+//
+// mapRouter.Route takes and returns world tiles -- its own comment says the
+// conversion "lives here, in one place" -- so feeding it fifth-scale
+// coordinates did not merely shrink the numbers, it routed between the WRONG
+// POINTS. A hunter at tile 35.2 asked for a route from tile 7.04 to a player
+// reported at tile 6.2, and walked toward the map's corner. The distance the
+// system reported shrank while the real gap grew.
+//
+// So M4.3a's closeout claim -- "a fallen spawned six tiles away chased the
+// player through an eight-tile move and closed to 2.80 tiles" -- was false.
+// The dials were wrong by the same factor: ArriveWithin 1.0 meant five tiles,
+// RepathTiles 1.5 meant seven and a half. They are left at their signed values
+// because those values were chosen as TILES; they only now mean it.
+func (p prey) QuarryAt() (x, y float64) { return p.entity.GetPositionF() }
 
 // subTilesPerTile mirrors d2vector's own constant, which is unexported.
 const subTilesPerTile = 5.0
@@ -695,6 +710,40 @@ func (v *Game) Pursue(hunter, quarry interface{}) bool {
 	v.pursuit.Chase(chaser{entity: h}, prey{entity: q})
 
 	return true
+}
+
+// Watch makes one entity aware of another, and Unwatch stops it. Same
+// translation problem Game.Pursue solves and the same answer: d2world speaks
+// entity ids and knows nothing about handles, so whoever owns the handles
+// starts the watch.
+//
+// In the running game the spawn tables do this themselves for every member of
+// every group they create. This exists so a script can put a watcher EXACTLY
+// where it needs one -- in the open for the positive control, behind a wall
+// for the negative -- which is what makes "it noticed you" evidence rather
+// than a coincidence. That distinction is the whole reason M4.3b ask 6 asked
+// for the notice block in the first place.
+func (v *Game) Watch(watcher, target interface{}) bool {
+	w, wok := watcher.(pathWalker)
+	q, qok := target.(pathWalker)
+
+	if v.notice == nil || !wok || !qok {
+		return false
+	}
+
+	v.notice.Watch(chaser{entity: w}, prey{entity: q})
+
+	return true
+}
+
+// Unwatch stops one watcher. It takes the entity's id rather than a handle,
+// because that is what d2world stored.
+func (v *Game) Unwatch(watcherID string) bool {
+	if v.notice == nil {
+		return false
+	}
+
+	return v.notice.Unwatch(watcherID)
 }
 
 // playerBody adapts the local player's hero stats to d2world.Body, so the

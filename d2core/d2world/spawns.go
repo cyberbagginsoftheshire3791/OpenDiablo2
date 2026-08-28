@@ -704,6 +704,16 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 		out["notice_re_evaluate_minutes"] = d.ReEvaluateMinutes
 		out["notice_memory_minutes"] = d.MemoryMinutes
 		out["notice_aware"] = s.notice.Aware()
+
+		// EVERY watcher, not only the grouped ones. The per-group blocks above
+		// are the view the tables produce; this is the view ask 6 actually
+		// promises, and the difference is not cosmetic -- a watcher started by
+		// hand (strigoi_watch, which is how the negative control gets placed
+		// exactly where it must be) belongs to no group and was invisible here
+		// until the playtest went looking for it and could not find it. The
+		// provider rule again, in its sixth costume: an assertion that names a
+		// watcher needs a provider that reports THAT watcher.
+		out["notice_list"] = s.notice.Report()
 	} else {
 		out["notice_wired"] = false
 	}
