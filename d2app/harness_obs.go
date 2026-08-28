@@ -22,13 +22,38 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
+	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client"
 )
 
 func harnessSystemNames() []string {
 	return d2harness.Names()
+}
+
+// harnessEntityFor resolves a handle to the live entity behind it, including
+// the p:1 shortcut for the local player. Pulled out of getEntity so the tools
+// that need the ENTITY rather than a rendering of it (strigoi_pursue) resolve
+// handles exactly the same way the observers do.
+func harnessEntityFor(client *d2client.GameClient, handle string) (d2interface.MapEntity, bool) {
+	if client == nil {
+		return nil, false
+	}
+
+	id, ok := harnessIDForHandle(handle)
+	if !ok {
+		if handle != "p:1" || client.PlayerID == "" {
+			return nil, false
+		}
+
+		id = client.PlayerID
+	}
+
+	e, ok := client.MapEngine.Entities()[id]
+
+	return e, ok
 }
 
 // ---------------------------------------------------------------- entities --

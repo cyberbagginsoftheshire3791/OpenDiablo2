@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.7.0"          // M4.3a: strigoi_find_path, the 34th tool
+	harnessVersion     = "0.8.0"          // M4.3a: find_path + pursue, and the pursuit provider
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64

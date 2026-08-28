@@ -170,6 +170,15 @@ func (m *mapEntity) nextPath() {
 	}
 }
 
+// IsMoving reports whether the entity still has route left to walk or is
+// still travelling toward its current target. It is the exported form of the
+// two conditions Step already tests, and M4.3a's pursuit reads it: a hunter
+// that has run out of route needs a new one, and without this the only way to
+// tell would be to watch its position stop changing.
+func (m *mapEntity) IsMoving() bool {
+	return m.hasPath() || !m.atTarget()
+}
+
 // hasPath returns false if the length of the entity movement path is 0.
 func (m *mapEntity) hasPath() bool {
 	return len(m.path) > 0

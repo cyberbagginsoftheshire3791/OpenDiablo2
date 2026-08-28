@@ -528,6 +528,24 @@ type harnessRunConsoleOut struct {
 	Output []string `json:"output"`
 }
 
+type harnessPursueIn struct {
+	Hunter string `json:"hunter" jsonschema:"handle of the entity that chases, from strigoi_get_entities"`
+	// Quarry is optional so one tool can both start and stop a chase. The
+	// alternative -- releasing through set_system_field pursuit.release --
+	// works but wants the entity's raw UUID, because d2world speaks ids and
+	// knows nothing about handles. Translation belongs in the layer that owns
+	// handles, which is this one.
+	Quarry  string `json:"quarry,omitempty" jsonschema:"handle of the entity being chased; omit with release:true"`
+	Release bool   `json:"release,omitempty" jsonschema:"end the hunter's chase instead of starting one"`
+}
+
+type harnessPursueOut struct {
+	Hunter string `json:"hunter"`
+	Quarry string `json:"quarry"`
+	Chases int    `json:"chases"`
+	Solves int    `json:"solves"`
+}
+
 type harnessMoveIn struct {
 	X        float64 `json:"x" jsonschema:"target world-tile x"`
 	Y        float64 `json:"y" jsonschema:"target world-tile y"`
@@ -599,6 +617,97 @@ func (a *App) harnessAddActionTools(srv *mcp.Server) {
 		}
 
 		return harnessText("ran %q · %d output line(s)", in.Command, len(out.Output)), out, nil
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "strigoi_pursue",
+		Description: "Put one entity on another's trail (M4.3a). The hunter paths to the quarry and re-paths when " +
+			"the quarry outruns the repath_tiles dial; it stops when it is within arrive_within and simply stands " +
+			"there, because M4.3a has no combat. Handles come from strigoi_get_entities. Stop a chase with " +
+			"strigoi_set_system_field pursuit.release, and read the chases with strigoi_get_system_state pursuit.",
+		Annotations: harnessAnnMut(false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessPursueIn) (*mcp.CallToolResult, harnessPursueOut, error) {
+		harnessLogCall("strigoi_pursue")
+
+		var out harnessPursueOut
+
+		var toolErr error
+
+		err := harnessOnUpdate(func() {
+			client, game := harnessGame()
+			if client == nil || game == nil {
+				toolErr = harnessErr("NOT_IN_GAME", "no game is running", "call strigoi_start_game first")
+				return
+			}
+
+			if game.Pursuit() == nil {
+				toolErr = harnessErr("NOT_IMPLEMENTED", "the pursuit system is not running", "this build predates M4.3a")
+				return
+			}
+
+			hunter, ok := harnessEntityFor(client, in.Hunter)
+			if !ok {
+				toolErr = harnessErr("UNKNOWN_HANDLE",
+					fmt.Sprintf("no entity for hunter handle %q", in.Hunter),
+					"list handles with strigoi_get_entities")
+
+				return
+			}
+
+			if in.Release {
+				if !game.Pursuit().Release(hunter.ID()) {
+					toolErr = harnessErr("BAD_ARGUMENT",
+						fmt.Sprintf("no chase is running for %q", in.Hunter),
+						"read the live chases with strigoi_get_system_state pursuit")
+
+					return
+				}
+
+				out.Hunter = in.Hunter
+				out.Chases = game.Pursuit().Count()
+				out.Solves = game.Pursuit().Solves()
+
+				return
+			}
+
+			quarry, ok := harnessEntityFor(client, in.Quarry)
+			if !ok {
+				toolErr = harnessErr("UNKNOWN_HANDLE",
+					fmt.Sprintf("no entity for quarry handle %q", in.Quarry),
+					"list handles with strigoi_get_entities")
+
+				return
+			}
+
+			if in.Hunter == in.Quarry {
+				toolErr = harnessErr("BAD_ARGUMENT", "a thing cannot chase itself", "pass two different handles")
+				return
+			}
+
+			// A chase needs an entity that can be given a route. Items and
+			// missiles cannot, and saying so is better than a silent no-op.
+			if !game.Pursue(hunter, quarry) {
+				toolErr = harnessErr("BAD_ARGUMENT",
+					fmt.Sprintf("%q cannot be given a path to walk", in.Hunter),
+					"pursue with a player or an npc handle")
+
+				return
+			}
+
+			out.Hunter, out.Quarry = in.Hunter, in.Quarry
+			out.Chases = game.Pursuit().Count()
+			out.Solves = game.Pursuit().Solves()
+		})
+		if err != nil {
+			return nil, out, err
+		}
+
+		if toolErr != nil {
+			return nil, out, toolErr
+		}
+
+		return harnessText("%s now hunts %s · %d chase(s) live, %d route(s) solved",
+			out.Hunter, out.Quarry, out.Chases, out.Solves), out, nil
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{

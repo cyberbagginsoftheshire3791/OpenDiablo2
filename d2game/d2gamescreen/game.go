@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"math"
 	"strconv"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
@@ -17,6 +18,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
@@ -100,6 +102,10 @@ func CreateGame(
 	// is attached on the first frame that has one — see advanceWorld.
 	game.meters = d2world.NewMeters(game.worldClock, d2world.DefaultMeterDials())
 
+	// Pursuit (M4.3a) routes through the map engine and steps on the same
+	// world clock as everything else here.
+	game.pursuit = d2world.NewPursuit(mapRouter{engine: gameClient.MapEngine}, d2world.DefaultPursuitDials())
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -146,6 +152,7 @@ type Game struct {
 	light        *d2world.Light
 	meters       *d2world.Meters
 	metersBodied bool
+	pursuit      *d2world.Pursuit
 
 	renderer      d2interface.Renderer
 	inputManager  d2interface.InputManager
@@ -195,6 +202,10 @@ func (v *Game) OnUnload() error {
 
 	if v.light != nil {
 		v.light.Close()
+	}
+
+	if v.pursuit != nil {
+		v.pursuit.Close()
 	}
 
 	if v.meters != nil {
@@ -362,6 +373,143 @@ func (v *Game) advanceWorld(elapsed float64) {
 
 		v.meters.Advance(worldMinutes)
 	}
+
+	if v.pursuit != nil {
+		v.pursuit.Advance(worldMinutes)
+	}
+}
+
+// mapRouter adapts the map engine's pathfinder to d2world.Router, so pursuit
+// can ask for a route without d2world knowing what a MapEngine is (M4.3a).
+// The conversion between world tiles and the subtile space the search works
+// in lives here, in one place.
+type mapRouter struct{ engine *d2mapengine.MapEngine }
+
+// routeNeighbours are the eight tiles around a goal, in a fixed order. When
+// the quarry's own tile cannot be routed to, standing next to it is the right
+// answer -- and the order is fixed because these routes move entities, and
+// entity positions are inside the state digest.
+var routeNeighbours = [8][2]float64{
+	{0, -1}, {1, -1}, {1, 0}, {1, 1},
+	{0, 1}, {-1, 1}, {-1, 0}, {-1, -1},
+}
+
+func (r mapRouter) Route(fromX, fromY, toX, toY float64) ([][2]float64, bool) {
+	if r.engine == nil {
+		return nil, false
+	}
+
+	path, reachable := r.routeExact(fromX, fromY, toX, toY)
+	if reachable {
+		return path, true
+	}
+
+	// The quarry's own subtile is often not walkable -- it is standing on it,
+	// and a thing's own footprint is not a place another thing can path to.
+	// Without this a pursuer stops several tiles short and reports failure,
+	// which is what the first playtest run measured: distance 2.80 and
+	// reachable=false while the hunter was plainly right there. Standing
+	// beside the quarry is what "the pursuer arrives" means at M4.3a, since
+	// there is no combat for it to start.
+	for _, n := range routeNeighbours {
+		beside, ok := r.routeExact(fromX, fromY, toX+n[0], toY+n[1])
+		if ok {
+			return beside, true
+		}
+	}
+
+	// Nothing adjacent is reachable either. Return the direct partial route,
+	// which still walks the hunter as far toward the quarry as it can get.
+	return path, false
+}
+
+// routeExact asks for a route to precisely the given point.
+func (r mapRouter) routeExact(fromX, fromY, toX, toY float64) ([][2]float64, bool) {
+	path := r.engine.PathFind(
+		d2vector.NewPositionTile(fromX, fromY),
+		d2vector.NewPositionTile(toX, toY),
+	)
+
+	out := make([][2]float64, 0, len(path))
+
+	for i := range path {
+		world := path[i].World()
+		out = append(out, [2]float64{world.X(), world.Y()})
+	}
+
+	// Reachable means the route ends on the goal tile rather than at the best
+	// partial approach the bounded search managed.
+	reachable := false
+	if n := len(out); n > 0 {
+		reachable = math.Floor(out[n-1][0]) == math.Floor(toX) &&
+			math.Floor(out[n-1][1]) == math.Floor(toY)
+	}
+
+	return out, reachable
+}
+
+// pathWalker is the part of a map entity that pursuit drives. Player and NPC
+// both satisfy it through the mapEntity they embed; naming it here rather
+// than widening d2interface.MapEntity keeps the surface to what is actually
+// needed.
+type pathWalker interface {
+	ID() string
+	GetPositionF() (float64, float64)
+	IsMoving() bool
+	SetPath(path []d2vector.Position, done func())
+}
+
+// chaser adapts a map entity to d2world.Hunter.
+type chaser struct{ entity pathWalker }
+
+func (c chaser) HunterID() string { return c.entity.ID() }
+
+func (c chaser) HunterAt() (x, y float64) {
+	sx, sy := c.entity.GetPositionF()
+
+	return sx / subTilesPerTile, sy / subTilesPerTile
+}
+
+func (c chaser) Following() bool { return c.entity.IsMoving() }
+
+func (c chaser) Follow(waypoints [][2]float64) {
+	path := make([]d2vector.Position, 0, len(waypoints))
+	for _, w := range waypoints {
+		path = append(path, d2vector.NewPositionTile(w[0], w[1]))
+	}
+
+	c.entity.SetPath(path, nil)
+}
+
+// prey adapts a map entity to d2world.Quarry.
+type prey struct{ entity pathWalker }
+
+func (p prey) QuarryID() string { return p.entity.ID() }
+
+func (p prey) QuarryAt() (x, y float64) {
+	sx, sy := p.entity.GetPositionF()
+
+	return sx / subTilesPerTile, sy / subTilesPerTile
+}
+
+// subTilesPerTile mirrors d2vector's own constant, which is unexported.
+const subTilesPerTile = 5.0
+
+// Pursue puts one entity on another's trail. It is the seam the harness (and,
+// at M4.3b, the awareness model) uses to start a chase: d2world cannot look
+// entities up by handle, so whoever owns the handles starts the chase and
+// pursuit keeps it honest afterwards.
+func (v *Game) Pursue(hunter, quarry interface{}) bool {
+	h, hok := hunter.(pathWalker)
+	q, qok := quarry.(pathWalker)
+
+	if v.pursuit == nil || !hok || !qok {
+		return false
+	}
+
+	v.pursuit.Chase(chaser{entity: h}, prey{entity: q})
+
+	return true
 }
 
 // playerBody adapts the local player's hero stats to d2world.Body, so the
@@ -381,6 +529,9 @@ func (v *Game) Light() *d2world.Light { return v.light }
 
 // Meters returns the screen's survival meters, or nil before they exist.
 func (v *Game) Meters() *d2world.Meters { return v.meters }
+
+// Pursuit returns the screen's pursuit system, or nil before it exists.
+func (v *Game) Pursuit() *d2world.Pursuit { return v.pursuit }
 
 func (v *Game) bindGameControls() error {
 	for _, player := range v.gameClient.Players {

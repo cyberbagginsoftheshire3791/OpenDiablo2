@@ -154,6 +154,97 @@ func TestPathfinding(t *testing.T) {
 	if moved < 1.0 {
 		t.Fatalf("the player did not move: %.2f,%.2f -> %.2f,%.2f", startX, startY, endX, endY)
 	}
+
+	// --- act 5: pursuit -- something follows a target that keeps moving -----
+	//
+	// The rest of this script proves a route can be computed and walked. This
+	// act proves the milestone's other half: that a chase survives the quarry
+	// moving, which is the whole difference between a path and a pursuit.
+	pursuitOnly(t, s, endX, endY)
+}
+
+// pursuitOnly is act 5, split out to keep TestPathfinding readable.
+func pursuitOnly(t *testing.T, s *session, playerX, playerY float64) {
+	t.Helper()
+
+	// The provider is registered, not merely planned.
+	systems := s.call("strigoi_list_systems", map[string]any{})
+	if !hasSystem(systems, "pursuit") {
+		t.Fatal("the pursuit provider is not registered")
+	}
+
+	// A hunter a few tiles away. strigoi_spawn_entity takes WORLD tiles and
+	// the field is "code" -- the raw d2mapentity factory wants subtiles, but
+	// the tool converts, and that difference has cost a run before.
+	spawn := s.call("strigoi_spawn_entity", map[string]any{
+		"kind": "npc", "code": "fallen1",
+		"x": playerX + 6, "y": playerY,
+	})
+
+	hunter := str2(spawn["handle"])
+	if hunter == "" {
+		t.Fatalf("no handle back from spawn: %v", spawn)
+	}
+
+	t.Logf("hunter %s spawned near the player", hunter)
+
+	chase := s.call("strigoi_pursue", map[string]any{"hunter": hunter, "quarry": "p:1"})
+	if int(num(chase, "chases")) != 1 {
+		t.Fatalf("expected one live chase, got %v", chase["chases"])
+	}
+
+	firstSolves := int(num(chase, "solves"))
+	t.Logf("chase started: %d chase(s), %d route(s) solved", int(num(chase, "chases")), firstSolves)
+
+	// Step, then move the player well past the repath dial and step again.
+	// If the chase were a one-shot path, the hunter would keep walking at
+	// where the player used to be and the solve count would never move.
+	s.call("strigoi_step", map[string]any{"frames": 300})
+
+	s.call("strigoi_move_player_to", map[string]any{
+		"x": playerX - 8, "y": playerY, "wait": true, "max_ticks": 3000,
+	})
+
+	s.call("strigoi_step", map[string]any{"frames": 300})
+
+	// sub(..., "state") is not optional: get_system_state returns
+	// {system, settable, state}, and reading the fields off the envelope
+	// silently yields zero for every one of them.
+	state := sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")
+
+	solves := int(num(state, "solves"))
+	if solves <= firstSolves {
+		t.Fatalf("the quarry moved %v tiles and the hunter never re-pathed: still %d solve(s)",
+			8, solves)
+	}
+
+	t.Logf("THE PURSUIT ASSERTION: the player moved and the hunter re-pathed — %d solves, up from %d",
+		solves, firstSolves)
+
+	list := asList(state["chase_list"])
+	if len(list) != 1 {
+		t.Fatalf("expected one chase in the list, got %d", len(list))
+	}
+
+	entry, ok := list[0].(map[string]any)
+	if !ok {
+		t.Fatalf("chase entry is not an object: %v", list[0])
+	}
+
+	t.Logf("chase: hunter=%v quarry=%v distance=%.2f reachable=%v arrived=%v solves=%v",
+		entry["hunter"], entry["quarry"], num(entry, "distance"),
+		entry["reachable"], entry["arrived"], entry["solves"])
+
+	// And the collection can be emptied again -- the rule the M4.1 reopening
+	// produced, honoured here from the start rather than earned twice.
+	s.call("strigoi_pursue", map[string]any{"hunter": hunter, "release": true})
+
+	after := sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")
+	if got := int(num(after, "chases")); got != 0 {
+		t.Fatalf("release left %d chase(s) behind", got)
+	}
+
+	t.Log("released: the chase list is empty again")
 }
 
 // pathSignature renders a path as a stable string for exact comparison. It

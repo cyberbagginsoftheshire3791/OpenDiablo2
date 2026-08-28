@@ -117,6 +117,7 @@ FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 | Tool | What |
 |---|---|
 | `strigoi_run_console` | Any bound terminal command, output captured |
+| `strigoi_pursue` | Put one entity on another's trail (M4.3a). The hunter paths to the quarry and re-paths when the quarry outruns `repath_tiles`; it stops within `arrive_within` and stands there, because M4.3a has no combat. Read the chases with `get_system_state pursuit`; end one with `set_system_field pursuit.release`. |
 | `strigoi_move_player_to` | MovePlayer packet toward a world-tile target; `wait`/`max_ticks` step until arrived / stuck / timeout |
 | `strigoi_set_system_field` | Write one allow-listed provider field (test setup); `FIELD_NOT_SETTABLE` otherwise |
 | `strigoi_spawn_entity` | npc (monstats Id) · item (item codes) · object (objects.txt index or name) at a world tile, through the engine's own factory; returns a handle |
