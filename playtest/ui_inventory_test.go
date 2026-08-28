@@ -44,12 +44,16 @@ func TestUIInventory(t *testing.T) {
 	}
 
 	// A planned system answers with its milestone, not a bare unknown. This
-	// used to ask about "meters" and passed until M4.2 shipped them, which
-	// is the assertion doing its job: it pins the ABSENCE of a system, so
-	// it must move to one still absent as each milestone lands. Next after
-	// spawns: dead (M4.3 / M4.6), then combat (M4.5).
-	if msg := s.callErr("strigoi_get_system_state", map[string]any{"system": "spawns"}); !strings.Contains(msg, "NOT_IMPLEMENTED") || !strings.Contains(msg, "M4.3") {
-		t.Fatalf("spawns: want NOT_IMPLEMENTED naming M4.3, got %q", msg)
+	// used to ask about "meters" and passed until M4.2 shipped them, then
+	// about "spawns" until M4.3b shipped those, which is the assertion doing
+	// its job: it pins the ABSENCE of a system, so it must move to one still
+	// absent as each milestone lands. Next after dead: combat (M4.5).
+	//
+	// This move was NOT a surprise -- the M4.3b build note read it out of the
+	// code and named it before the build started, which is the correction
+	// M4.3a's note earned by predicting a blast radius instead of reading one.
+	if msg := s.callErr("strigoi_get_system_state", map[string]any{"system": "dead"}); !strings.Contains(msg, "NOT_IMPLEMENTED") || !strings.Contains(msg, "M4.3") {
+		t.Fatalf("dead: want NOT_IMPLEMENTED naming M4.3, got %q", msg)
 	}
 
 	// ...and a system that has landed answers with its state.

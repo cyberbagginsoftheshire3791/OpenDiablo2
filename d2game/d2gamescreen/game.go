@@ -106,6 +106,31 @@ func CreateGame(
 	// world clock as everything else here.
 	game.pursuit = d2world.NewPursuit(mapRouter{engine: gameClient.MapEngine}, d2world.DefaultPursuitDials())
 
+	// Notice and the spawn tables (M4.3b). The three read as one sentence:
+	// the tables decide what arrives, Notice decides it has seen you, Pursuit
+	// keeps the chase honest afterwards.
+	//
+	// Notice takes the light model directly because *Light already satisfies
+	// its one-method Illumination interface — the same trick LightSampler
+	// uses in the other direction. It may know sight, distance and the light
+	// at the target and NOTHING else; that fence is signed (ask 5).
+	//
+	// The spawn tables are seeded from the RUN's seed, not from a fresh one,
+	// so two launches of one build at one seed see the same night.
+	game.notice = d2world.NewNotice(
+		mapSight{engine: gameClient.MapEngine},
+		game.light,
+		d2world.DefaultNoticeDials(),
+	)
+	game.spawns = d2world.NewSpawns(
+		game.worldClock,
+		game.notice,
+		&gameSpawner{engine: gameClient.MapEngine, asset: asset},
+		game.light,
+		gameClient.Seed,
+		d2world.DefaultSpawnDials(),
+	)
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -153,6 +178,8 @@ type Game struct {
 	meters       *d2world.Meters
 	metersBodied bool
 	pursuit      *d2world.Pursuit
+	notice       *d2world.Notice
+	spawns       *d2world.Spawns
 
 	renderer      d2interface.Renderer
 	inputManager  d2interface.InputManager
@@ -202,6 +229,10 @@ func (v *Game) OnUnload() error {
 
 	if v.light != nil {
 		v.light.Close()
+	}
+
+	if v.spawns != nil {
+		v.spawns.Close()
 	}
 
 	if v.pursuit != nil {
@@ -377,6 +408,21 @@ func (v *Game) advanceWorld(elapsed float64) {
 	if v.pursuit != nil {
 		v.pursuit.Advance(worldMinutes)
 	}
+
+	// The spawn tables come last, and they step the notice model themselves,
+	// so a group that arrives this tick is evaluated this tick rather than
+	// standing blind until the next one. Do not also advance v.notice here.
+	//
+	// The target is attached on the first frame that has a player, the same
+	// way the meters' body is: the tables spawn AROUND something and watch
+	// it, and at construction there is nothing to be.
+	if v.spawns != nil {
+		if v.localPlayer != nil {
+			v.spawns.SetTarget(prey{entity: v.localPlayer})
+		}
+
+		v.spawns.Advance(worldMinutes)
+	}
 }
 
 // mapRouter adapts the map engine's pathfinder to d2world.Router, so pursuit
@@ -481,6 +527,145 @@ func (c chaser) Follow(waypoints [][2]float64) {
 	c.entity.SetPath(path, nil)
 }
 
+// WatcherID and WatcherAt make a chaser a d2world.Watcher as well as a
+// d2world.Hunter. The two are the same adapter on purpose: the thing that
+// notices you is the thing that then comes for you, and Notice targets a
+// Quarry for the mirror-image reason.
+func (c chaser) WatcherID() string { return c.entity.ID() }
+
+func (c chaser) WatcherAt() (x, y float64) { return c.HunterAt() }
+
+// mapSight adapts the map engine's line-of-sight test to d2world.Sight. It is
+// the raycast PathFind used to be before M4.3a replaced it with a real
+// search, kept because whether a thing can SEE you is not whether it can WALK
+// to you.
+type mapSight struct{ engine *d2mapengine.MapEngine }
+
+func (m mapSight) Clear(fromX, fromY, toX, toY float64) bool {
+	if m.engine == nil {
+		return false
+	}
+
+	return m.engine.LineOfSight(
+		d2vector.NewPositionTile(fromX, fromY),
+		d2vector.NewPositionTile(toX, toY),
+	)
+}
+
+// gameSpawner adapts the entity factory to d2world.Spawner: the tables decide
+// what and how many, this puts them somewhere walkable and hands back things
+// that can say where they are.
+//
+// PLACEMENT IS DELIBERATELY NOT RANDOM. The pack size and which row fires are
+// already drawn from the spawn system's own seeded RNG; adding a second RNG
+// here would be a second thing to keep deterministic for no design gain. So
+// members land on evenly spaced bearings around the ring, with the starting
+// bearing walked on by each arrival so successive packs do not all come from
+// due east. A real "wolves come from the woods, dogs come from the road"
+// model needs terrain semantics this build does not have, and it is content
+// work rather than this milestone's.
+type gameSpawner struct {
+	engine  *d2mapengine.MapEngine
+	asset   *d2asset.AssetManager
+	arrival int
+}
+
+const (
+	spawnBearingStep = 2.39996 // ~137.5 degrees, so successive arrivals spread
+	spawnSearchRings = 6       // how far out to look for walkable ground
+)
+
+func (g *gameSpawner) Spawn(code string, count int, aroundX, aroundY,
+	minTiles, maxTiles float64) []d2world.Watcher {
+	if g.engine == nil || g.asset == nil || count <= 0 {
+		return nil
+	}
+
+	monstat := g.asset.Records.Monster.Stats[code]
+	if monstat == nil {
+		// An unknown stand-in code. The spawn system counts this as a failure
+		// and reports it; a bad [DIAL] should show up in the provider rather
+		// than crash in the field.
+		return nil
+	}
+
+	g.arrival++
+	bearing := float64(g.arrival) * spawnBearingStep
+
+	out := make([]d2world.Watcher, 0, count)
+
+	for i := 0; i < count; i++ {
+		angle := bearing + 2*math.Pi*float64(i)/float64(count)
+
+		reach := minTiles
+		if count > 1 {
+			reach += (maxTiles - minTiles) * float64(i) / float64(count-1)
+		}
+
+		x, y, ok := g.walkableNear(
+			aroundX+reach*math.Cos(angle),
+			aroundY+reach*math.Sin(angle),
+		)
+		if !ok {
+			continue
+		}
+
+		npc, err := g.engine.NewNPC(int(x*subTilesPerTile), int(y*subTilesPerTile), monstat, 0)
+		if err != nil {
+			continue
+		}
+
+		g.engine.AddEntity(npc)
+		out = append(out, chaser{entity: npc})
+	}
+
+	return out
+}
+
+// walkableNear finds ground near a wanted point, spiralling outward a few
+// tiles. A ring position can easily land in a wall or off the map; giving up
+// silently would make a spawn table look broken when the geometry was simply
+// unlucky, so this tries the neighbourhood before returning false.
+func (g *gameSpawner) walkableNear(wantX, wantY float64) (x, y float64, ok bool) {
+	for ring := 0; ring <= spawnSearchRings; ring++ {
+		for dy := -ring; dy <= ring; dy++ {
+			for dx := -ring; dx <= ring; dx++ {
+				// Only the shell of each ring; the inside was tried already.
+				if ring > 0 && absInt(dx) != ring && absInt(dy) != ring {
+					continue
+				}
+
+				tx := math.Floor(wantX) + float64(dx)
+				ty := math.Floor(wantY) + float64(dy)
+
+				if g.walkable(tx, ty) {
+					return tx + 0.5, ty + 0.5, true
+				}
+			}
+		}
+	}
+
+	return 0, 0, false
+}
+
+func (g *gameSpawner) walkable(tileX, tileY float64) bool {
+	if !g.engine.TileExists(int(tileX), int(tileY)) {
+		return false
+	}
+
+	flags := g.engine.SubTileAt(int(tileX*subTilesPerTile)+2, int(tileY*subTilesPerTile)+2)
+
+	return flags != nil && !flags.BlockWalk
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+
+	return v
+}
+
 // prey adapts a map entity to d2world.Quarry.
 type prey struct{ entity pathWalker }
 
@@ -532,6 +717,12 @@ func (v *Game) Meters() *d2world.Meters { return v.meters }
 
 // Pursuit returns the screen's pursuit system, or nil before it exists.
 func (v *Game) Pursuit() *d2world.Pursuit { return v.pursuit }
+
+// Spawns returns the screen's spawn tables, or nil before they exist.
+func (v *Game) Spawns() *d2world.Spawns { return v.spawns }
+
+// Notice returns the screen's awareness model, or nil before it exists.
+func (v *Game) Notice() *d2world.Notice { return v.notice }
 
 func (v *Game) bindGameControls() error {
 	for _, player := range v.gameClient.Players {
