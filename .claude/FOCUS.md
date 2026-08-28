@@ -3,13 +3,14 @@
 Updated: 2026-08-28 (midday CT). Keep this to a screen; the full state
 lives in `state.md` in the claude.ai project and in Notion.
 
-**THE PLAN IS v1.5 (28 Aug).** Every "plan v1.4 5" reference below still
-points at the right paragraph, but 5 Phase 4 now carries the M4.3a/M4.3b
-split and its reason, the world clock is named in M4.1 where it shipped
-(M4.4 is the clock's UI and the first scripted event), and 8 no longer
-restates status -- it points at Notion, state.md and this file instead.
-Lesson: **a stable document that also carries status has two writable homes
-for one truth, and the stale one is what a cold session reads first.**
+**THE PLAN IS v1.6 (28 Aug).** v1.5 corrected the plan's stale status;
+v1.6 changes the SEQUENCE. Phase 4 now states an explicit build order,
+M4.5 comes before M4.4, the corpse machine is named M4.7 and built after
+M4.5, and M4.4 absorbs the meter HUD. **The M4.x numbers are identities,
+not a schedule** -- the build-order line is the schedule.
+Lesson still standing from v1.5: **a stable document that also carries
+status has two writable homes for one truth, and the stale one is what a
+cold session reads first.**
 
 **PHASE 3 IS DONE** (M3.1-M3.4, DoD audit passed 26 Aug on 2c1b2124; the
 harness has 33 tools, SEVEN playtest scripts, docs/harness.md v1 with a leak
@@ -101,15 +102,58 @@ delta the game screen already gets, no wall clock, no renderer.
   before measuring a drain, and must measure against the clock's own elapsed
   minutes rather than the hours it asked step_world for.**
 
-**M4.3a AND M4.3b ARE BOTH DONE. NEXT IS M4.4, THE CLOCK UI -- BUT TWO
-ORDERING QUESTIONS ARE JOSH'S AND THEY MAY REORDER THE PHASE.**
-(a) Where the meter HUD lands: M4.4's scope, or its own milestone.
-(b) **The corpse-machine milestone has no number and no place.** It was
-split out of M4.3b by signature and shares with M4.6; it carries the
-corpse state machine, the rising roll, the rite window and consecrated
-boundaries. It is the premise of the game -- the dead, not the wolves --
-and it is the largest named-but-unscheduled thing in Phase 4. **Raise it
-before building M4.4.**
+**M4.3a AND M4.3b ARE BOTH DONE. NEXT IS M4.5 -- COMBAT v0 -- AHEAD OF
+M4.4, BY JOSH'S CALL, 28 AUG (decision 3caff9f3-d21e-8153-b34c-dfe6f018f47f;
+the plan is now v1.6).**
+
+**THE REASON IN ONE LINE: the chain is spawn -> notice -> approach ->
+FIGHT, and only the last link is missing.** Something comes out of the
+woods, works out that it can see you, routes around the palisade to reach
+you -- and stands there. **You cannot lose.** Until that changes,
+everything else in Phase 4 is presentation or content.
+
+**M4.5 IS CHEAPER THAN IT LOOKS BECAUSE IT WAS BUILT TOWARD.** It READS
+rather than recomputes: meters.reaction_available and meters.shaken
+(M4.2), spawns.morale and spawns.routing (M4.3b), and light.Level(x,y)
+(M4.1, already carrying R2 section 3's dark-into-light advantage). Three
+milestones each named this one as the consumer of a value they exposed
+but did not act on. R2 is the signed ruleset and its section 5 open-dials
+list is the scope. **D8 (combat initiation and initiative order) is an
+OPEN Research Topic, so initiative is unspecified rather than decided** --
+R2 section 1 signed the GROUPED half of BG3's model (pack activation) and
+refused the bonus-action economy.
+
+**THE BUILD ORDER IS NOW EXPLICIT AND THE M4.x NUMBERS ARE IDENTITIES,
+NOT A SCHEDULE:**
+
+    M4.1 -> M4.2 -> M4.3a -> M4.3b -> M4.5 -> M4.7 -> M4.6
+    with M4.4 floating -- slot it whenever.
+
+**M4.7 IS NEW: the corpse machine finally has a name and a place**, after
+M4.5, so a risen that paths toward the camp arrives into a night that can
+resolve the encounter instead of reproducing the diorama shape the M4.3
+split existed to avoid. It carries the corpse state machine, the per-band
+rising roll against soul pressure, the edge-arrival floor and the rite
+window; it shares content with M4.6; and it drives spawns.open_bodies,
+which M4.3b built as a settable stand-in for exactly this.
+**M4.4 IS NOW THE HUD MILESTONE** -- clock UI plus the meter HUD plus the
+first scripted event -- and it floats. That closes the last open item
+from M4.2's signature.
+
+**TWO SHORT BURSTS ARE APPROVED OUTSIDE THE BUILD ORDER.**
+(a) **The worldgen default branch** (3caff9f3-d21e-81a2-a0a7-edd4dcf0578c):
+the wilderness generates only for the E1/S1/W1 town presets, so an
+unseeded launch produced a village in a void. Seeded, so not a
+determinism bug -- but Phase 4's DoD is a FRIEND cloning and surviving a
+night, and a friend will not pass seed 1462. **READ THE BRANCH BEFORE
+PROMISING THE FIX IS SMALL**: the default case may exist because those
+presets have no wilderness stamp to place.
+(b) **The map-fire counting pass** (3caff9f3-d21e-8102-a210-e69708c2e55c):
+about an hour, changes no lighting, and reports how many placed objects
+declare a light, whether Flicker separates fire from magic, and the
+per-frame source count -- **that last number decides the design**, because
+Light.Level loops EVERY source and the renderer samples it per tile across
+four passes. Unblocks the map-fire note's asks 3, 4 and 5.
 
 **M4.3b closed 28 Aug** (decision 3caff9f3-d21e-81f4-bdb0-fad1556d7ac5)
 in five commits: fcd592c6 the notice model · 0f3cda8d the spawn tables ·
