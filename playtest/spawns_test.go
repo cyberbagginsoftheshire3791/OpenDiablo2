@@ -346,6 +346,44 @@ func TestSpawns(t *testing.T) {
 	t.Logf("act 6b PASS: despawn took watchers %d -> %d and the second despawn was refused",
 		watchingBefore, int(num(after, "notice_watching")))
 
+	// --- act 7: awareness must START A CHASE, with nobody asking -----------
+	//
+	// THIS IS THE ACT THE MILESTONE SHIPPED WITHOUT, and an audit found the
+	// hole rather than a test doing it. Notice worked out awareness and
+	// Pursuit could route a chase, and in any non-harness build nothing joined
+	// them -- so a wolf saw the player and stood there, while this very script
+	// passed because act 5 of the pathfinding run called strigoi_pursue by
+	// hand. A feature reachable only from the harness is not a feature.
+	//
+	// So: NOTHING BELOW CALLS strigoi_pursue. The chase has to appear on its
+	// own or the assertion fails.
+	s.call("strigoi_set_system_field", map[string]any{
+		"system": "spawns", "field": "notice_radius", "value": 40,
+	})
+	s.call("strigoi_set_system_field", map[string]any{
+		"system": "spawns", "field": "chance", "value": 100,
+	})
+
+	for i := 0; i < 10 && len(awareList(spawnsState(s))) == 0; i++ {
+		s.call("strigoi_step_world", map[string]any{"world_minutes": 6})
+	}
+
+	aware := awareList(spawnsState(s))
+	if len(aware) == 0 {
+		t.Fatalf("act 7: with a 40-tile notice radius and a forced table, something must "+
+			"end up aware of the player; state=%v", spawnsState(s))
+	}
+
+	chases := sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")
+	if n := num(chases, "chases"); n == 0 {
+		t.Fatalf("act 7: %d watcher(s) are aware of the player and NOTHING is chasing. "+
+			"Awareness that nothing acts on is a diorama -- this is the M4.3b hole. aware=%v",
+			len(aware), aware)
+	}
+
+	t.Logf("act 7 PASS: %d aware -> %.0f chase(s) started with nothing calling strigoi_pursue",
+		len(aware), num(chases, "chases"))
+
 	t.Logf("M4.3b: %d table check(s), %d roll(s), %d spawned, %d failure(s); "+
 		"%d notice check(s), %d notice(s)",
 		int(num(after, "checks")), int(num(after, "rolls")), int(num(after, "spawned")),
@@ -455,4 +493,19 @@ func firstGroup(t *testing.T, state map[string]any) map[string]any {
 	}
 
 	return g
+}
+
+// awareList pulls the ids of every watcher currently aware of its target.
+func awareList(state map[string]any) []string {
+	raw, _ := state["notice_aware"].([]any)
+
+	out := make([]string, 0, len(raw))
+
+	for _, v := range raw {
+		if id, ok := v.(string); ok {
+			out = append(out, id)
+		}
+	}
+
+	return out
 }

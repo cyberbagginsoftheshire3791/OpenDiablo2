@@ -243,6 +243,38 @@ func (n *Notice) Aware() []string {
 	return out
 }
 
+// AwarePair is one watcher that has found its target, handed out together so
+// something outside can ACT on awareness.
+//
+// It exists because M4.3b shipped without it and the milestone was hollow: the
+// tables made watchers, Notice worked out that they could see the player, and
+// nothing in any non-harness build ever read the answer. A chase only started
+// because a test asked for one. That is the same shape as Light.Remove being
+// exported with no non-test caller, which reopened M4.1 -- one milestone
+// larger, because here it was a whole feature rather than one verb.
+type AwarePair struct {
+	Watcher Watcher
+	Target  Quarry
+}
+
+// AwarePairs returns the watchers that are currently aware, with what they are
+// aware of, in a stable order. Aware() returns the same set as bare ids for
+// reporting; this is the form something can act on.
+func (n *Notice) AwarePairs() []AwarePair {
+	out := make([]AwarePair, 0, len(n.watches))
+
+	for _, id := range n.watcherIDs() {
+		w := n.watches[id]
+		if !w.noticed {
+			continue
+		}
+
+		out = append(out, AwarePair{Watcher: w.watcher, Target: w.target})
+	}
+
+	return out
+}
+
 // Advance steps every watcher by the world minutes that just passed.
 //
 // The split here is deliberate: the cheap bookkeeping (memory decay) runs

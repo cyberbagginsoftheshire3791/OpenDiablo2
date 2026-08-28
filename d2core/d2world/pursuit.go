@@ -161,6 +161,16 @@ func (p *Pursuit) Release(hunterID string) bool {
 	return true
 }
 
+// Chasing reports whether a hunter already has a chase running. The caller
+// that turns awareness into pursuit asks this every tick, and asking is
+// cheaper than restarting a chase that is already honest -- Chase() replaces,
+// which would reset the re-path clock on every frame.
+func (p *Pursuit) Chasing(hunterID string) bool {
+	_, ok := p.chases[hunterID]
+
+	return ok
+}
+
 // Count is how many chases are live.
 func (p *Pursuit) Count() int { return len(p.chases) }
 

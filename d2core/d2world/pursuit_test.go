@@ -353,3 +353,36 @@ func TestPursuitReportsItsName(t *testing.T) {
 	assert.Equal(t, "pursuit", p.HarnessName())
 	assert.Contains(t, p.HarnessSettableFields(), "release")
 }
+
+// Chasing is what stops the awareness-to-pursuit link restarting a chase every
+// tick. Chase() replaces, so a caller that did not ask would reset the re-path
+// clock on every frame and reproduce M4.3a's 218-solves bug from the other
+// direction.
+func TestPursuitChasingReportsLiveChasesOnly(t *testing.T) {
+	router := &fakeRouter{reachable: true}
+	p := NewPursuit(router, DefaultPursuitDials())
+
+	defer p.Close()
+
+	hunter := &fakeHunter{id: "n:1"}
+	quarry := &fakeQuarry{id: "p:1", x: 5}
+
+	assert.False(t, p.Chasing("n:1"), "nothing is chasing before a chase starts")
+
+	p.Chase(hunter, quarry)
+	assert.True(t, p.Chasing("n:1"))
+	assert.False(t, p.Chasing("n:2"), "and only the hunter that is actually chasing")
+
+	solvesAfterStart := p.Solves()
+
+	// The guard the caller relies on: asking again must not cost a solve.
+	if !p.Chasing("n:1") {
+		p.Chase(hunter, quarry)
+	}
+
+	assert.Equal(t, solvesAfterStart, p.Solves(),
+		"a guarded caller must not re-solve a chase that is already running")
+
+	require.True(t, p.Release("n:1"))
+	assert.False(t, p.Chasing("n:1"), "and released chases stop being live")
+}

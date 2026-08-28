@@ -296,3 +296,73 @@ func TestNoticeRadiusChangeMovesTheVerdict(t *testing.T) {
 	noticed, _ = n.Noticed("n:1")
 	assert.True(t, noticed, "widening the radius must actually widen it")
 }
+
+// AwarePairs is what lets something OUTSIDE act on awareness. M4.3b shipped
+// without it and the milestone was hollow: nothing in a non-harness build ever
+// read the verdict, so a wolf that had seen the player stood there. These pin
+// the shape the game screen depends on.
+func TestNoticeAwarePairsCarryWhatIsNeededToAct(t *testing.T) {
+	n, sight, _ := newTestNotice(true, 0)
+
+	seer := &fakeWatcher{id: "n:1", x: 0, y: 0}
+	blind := &fakeWatcher{id: "n:2", x: 0, y: 0}
+	target := &fakeQuarry{id: "p:1", x: 3, y: 0}
+
+	n.Watch(seer, target)
+
+	pairs := n.AwarePairs()
+	require.Len(t, pairs, 1, "one watcher can see")
+	assert.Equal(t, "n:1", pairs[0].Watcher.WatcherID())
+	assert.Equal(t, "p:1", pairs[0].Target.QuarryID(),
+		"the pair must carry WHAT it is aware of, or the caller cannot start a chase")
+
+	// A watcher that cannot see must not appear, however close it is.
+	sight.clear = false
+	n.Watch(blind, target)
+
+	for _, p := range n.AwarePairs() {
+		assert.NotEqual(t, "n:2", p.Watcher.WatcherID(),
+			"a blocked watcher must never be handed out as aware")
+	}
+}
+
+// AwarePairs and Aware must never disagree: one is for acting, one is for
+// reporting, and a build where a script sees an aware watcher that the game
+// never chases would be indistinguishable from the bug this fixes.
+func TestNoticeAwarePairsAgreeWithAware(t *testing.T) {
+	n, sight, _ := newTestNotice(true, 0)
+
+	for _, id := range []string{"n:3", "n:1", "n:2"} {
+		n.Watch(&fakeWatcher{id: id}, &fakeQuarry{id: "p:1", x: 2})
+	}
+
+	ids := make([]string, 0, 3)
+	for _, p := range n.AwarePairs() {
+		ids = append(ids, p.Watcher.WatcherID())
+	}
+
+	assert.Equal(t, n.Aware(), ids, "same set, same order")
+
+	// And when nothing can see, both must be empty rather than one of them.
+	sight.clear = false
+	loseSightAndForget(n)
+
+	assert.Empty(t, n.Aware())
+	assert.Empty(t, n.AwarePairs())
+}
+
+// loseSightAndForget steps far enough for a watcher that can no longer see its
+// target to stop coming for it.
+//
+// It takes TWO steps and that is the whole reason it exists. Memory only
+// begins accruing once an evaluation has flipped `sees` to false, so a single
+// Advance of ReEvaluateMinutes+MemoryMinutes does not forget: the first
+// evaluation happens at the END of that step with sinceSeen still zero. Two
+// call sites got this wrong before it was written down once -- this one and
+// act 4 of playtest/spawns_test.go.
+func loseSightAndForget(n *Notice) {
+	d := DefaultNoticeDials()
+
+	n.Advance(d.ReEvaluateMinutes) // an evaluation runs; sees goes false
+	n.Advance(d.MemoryMinutes)     // now the memory window can elapse
+}

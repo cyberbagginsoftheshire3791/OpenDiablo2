@@ -423,6 +423,43 @@ func (v *Game) advanceWorld(elapsed float64) {
 
 		v.spawns.Advance(worldMinutes)
 	}
+
+	v.startChasesForTheAware()
+}
+
+// startChasesForTheAware is the line that makes M4.3b a milestone rather than
+// a diorama: a thing that has noticed you comes for you.
+//
+// IT WAS MISSING FROM M4.3b AS SHIPPED, and an audit found it. Notice worked
+// out awareness, Pursuit could route a chase, and nothing joined them outside
+// the harness -- so in any real build a wolf spotted the player and stood
+// there, while the playtest passed because the script called strigoi_pursue
+// itself. Same shape as Light.Remove reopening M4.1, one milestone larger.
+//
+// The type assertion is the seam, not a shortcut: d2world knows a Watcher and
+// a Hunter, and the game screen's chaser adapter deliberately satisfies both,
+// because the thing that notices you is the thing that then comes for you.
+// Anything that can watch but not walk is skipped rather than forced.
+func (v *Game) startChasesForTheAware() {
+	if v.notice == nil || v.pursuit == nil {
+		return
+	}
+
+	for _, pair := range v.notice.AwarePairs() {
+		hunter, ok := pair.Watcher.(d2world.Hunter)
+		if !ok {
+			continue
+		}
+
+		// Already chasing: leave it alone. Chase() replaces, so restarting
+		// here every tick would reset the re-path clock and reproduce M4.3a's
+		// 218-solves bug from the other direction.
+		if v.pursuit.Chasing(hunter.HunterID()) {
+			continue
+		}
+
+		v.pursuit.Chase(hunter, pair.Target)
+	}
 }
 
 // mapRouter adapts the map engine's pathfinder to d2world.Router, so pursuit
