@@ -4,6 +4,7 @@ package playtest
 
 import (
 	"fmt"
+	"math"
 	"testing"
 )
 
@@ -146,13 +147,54 @@ func TestPathfinding(t *testing.T) {
 	p = s.call("strigoi_get_player", map[string]any{})
 	endX, endY := num(p, "x"), num(p, "y")
 
-	movedX, movedY := endX-startX, endY-startY
-	moved := movedX*movedX + movedY*movedY
+	// A number the TEST chose, held against a number the SYSTEM reported. This
+	// act commanded a walk to a goal the script picked itself, so the intended
+	// distance is known right here and the achieved one can be measured
+	// against it. What stood here before was
+	//
+	//	moved := movedX*movedX + movedY*movedY
+	//	if moved < 1.0 { ... }
+	//
+	// -- a SQUARED displacement compared to 1.0, so the real bar was ONE tile
+	// of movement after commanding twelve to eighteen. A mover running at
+	// one-fifth scale sails through that, and this project has already shipped
+	// an adapter that divided by five twice. "It moved" is invariant under a
+	// scale error; a magnitude in named units is not.
+	//
+	// UNITS: strigoi_get_player reports WORLD TILES -- d2app/harness_obs.go
+	// builds the player's x,y from pl.Position.World() -- and so do found.x/y
+	// and strigoi_move_player_to's own arrival test. One space throughout, so
+	// the numbers below mean tiles and the message can say so.
+	//
+	// ARRIVAL, not mere progress, is the right bar. Act 1 accepted this goal
+	// only because strigoi_find_path called it reachable, and a reachable
+	// route ends on the caller's own dest: d2mapengine/pathfind.go's
+	// waypoints() keeps dest as the final waypoint when the search was exact,
+	// and the mover lands exactly on its final waypoint. 3000 ticks at
+	// baseWalkSpeed is several times the budget an eighteen-tile detour needs.
+	//
+	// The tolerance is the sum of the two dials this act actually rides on
+	// rather than a comfortable round number: strigoi_move_player_to calls it
+	// arrived within 0.3 world tiles, and strigoi_find_path calls a route
+	// reachable when its last waypoint merely shares the goal's FLOORED tile,
+	// which permits about another tile of shortfall. Comparing the absolute
+	// difference catches a scale error in either direction -- a mover at
+	// one-fifth scale covers 2.4 of the shortest commanded 12 tiles and misses
+	// by 9.6, six times outside this bound.
+	const arriveWithin = 1.5 // world tiles [DIAL]
 
-	t.Logf("walked %.2f,%.2f -> %.2f,%.2f (goal %.2f,%.2f)", startX, startY, endX, endY, found.x, found.y)
+	commanded := math.Hypot(found.x-startX, found.y-startY)
+	achieved := math.Hypot(endX-startX, endY-startY)
+	shortfall := math.Abs(achieved - commanded)
 
-	if moved < 1.0 {
-		t.Fatalf("the player did not move: %.2f,%.2f -> %.2f,%.2f", startX, startY, endX, endY)
+	t.Logf("walked %.2f,%.2f -> %.2f,%.2f (goal %.2f,%.2f): commanded %.2f tiles, achieved %.2f",
+		startX, startY, endX, endY, found.x, found.y, commanded, achieved)
+
+	if shortfall > arriveWithin {
+		t.Fatalf("commanded a %.2f tile walk and the player covered %.2f (off by %.2f, tolerance %.2f): "+
+			"%.2f,%.2f -> %.2f,%.2f, goal %.2f,%.2f [outcome %v after %v ticks]",
+			commanded, achieved, shortfall, arriveWithin,
+			startX, startY, endX, endY, found.x, found.y, move["outcome"], move["ticks"])
 	}
 
 	// --- act 5: pursuit -- something follows a target that keeps moving -----

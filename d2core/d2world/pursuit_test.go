@@ -132,20 +132,74 @@ func TestMinRepathMinutesFloorsTheSolveRate(t *testing.T) {
 	p.Chase(h, q)
 	require.Equal(t, 1, router.calls)
 
-	// A quarry teleporting back and forth across the dial on every tick must
-	// not be able to make the hunter solve on every tick.
-	for i := 0; i < 20; i++ {
+	// A floor on a RATE needs two bounds to mean anything. This test used to
+	// assert only an upper one (calls <= 5), which a pursuit that never
+	// re-pathed at all satisfied perfectly. Both that 5 and the comment that
+	// justified it ("well under MinRepathMinutes of 0.25") were computed
+	// against a dial that has since moved to 2.0 -- so the loop covered 20 *
+	// 0.05 = 1.0 world minute, half of ONE floor window, and could not have
+	// observed a re-path even in principle. It measured nothing.
+	//
+	// So the loop is now sized from the dial rather than hard-coded, and both
+	// bounds are arithmetic on the loop's own parameters.
+	const (
+		step    = 0.05 // world minutes per Advance -- far under any sane floor
+		windows = 5    // whole MinRepathMinutes the loop spans
+	)
+
+	floor := p.dials.MinRepathMinutes
+
+	// Ticks of `step` needed for sinceSolve to reach the floor, counted by the
+	// same repeated addition Advance() performs. A division here could land a
+	// ulp on the wrong side of the comparison the implementation makes; this
+	// cannot, because it is that comparison.
+	ticksPerWindow := 0
+	for acc := 0.0; acc < floor; acc += step {
+		ticksPerWindow++
+	}
+
+	ticks := windows * ticksPerWindow
+
+	// A quarry teleporting back and forth across the RepathTiles dial on every
+	// single tick must not be able to make the hunter solve on every tick.
+	for i := 0; i < ticks; i++ {
 		if i%2 == 0 {
 			q.x = 30
 		} else {
 			q.x = 10
 		}
 
-		p.Advance(0.05) // well under MinRepathMinutes of 0.25
+		p.Advance(step)
 	}
 
-	assert.LessOrEqual(t, router.calls, 5,
-		"the floor bounds the solve rate no matter how the quarry jitters")
+	// Upper bound: the floor permits at most one solve per window, and the
+	// loop is exactly `windows` windows long.
+	//
+	// Lower bound: one fewer, and the off-by-one is real rather than padding.
+	// The quarry is only on the far side of RepathTiles on alternate ticks, so
+	// each re-path lands on the first tick after its window expires that also
+	// has the quarry displaced -- one tick late. That drift compounds to a
+	// cadence of ticksPerWindow+1, which over a run this length loses exactly
+	// the last window. Whether the run ends just before or just after that
+	// final solve is the genuine ambiguity, so the band is two wide and no
+	// wider; the observed value sits at the bottom of it.
+	minRepaths, maxRepaths := windows-1, windows
+	minCalls, maxCalls := 1+minRepaths, 1+maxRepaths // +1 for Chase()'s solve
+
+	require.GreaterOrEqual(t, minRepaths, 1,
+		"this test proves nothing unless the loop spans at least two floor windows")
+
+	assert.GreaterOrEqual(t, router.calls, minCalls,
+		"the floor throttles re-pathing, it must not stop it: %d ticks of %v world minutes "+
+			"(%v minutes = %d whole %v-minute windows) should buy at least %d solves "+
+			"(1 from Chase plus %d re-paths), got %d",
+		ticks, step, float64(ticks)*step, windows, floor, minCalls, minRepaths, router.calls)
+
+	assert.LessOrEqual(t, router.calls, maxCalls,
+		"the floor bounds the solve rate no matter how the quarry jitters: %d whole "+
+			"%v-minute windows permit at most %d solves (1 from Chase plus %d re-paths), "+
+			"got %d across %d ticks",
+		windows, floor, maxCalls, maxRepaths, router.calls, ticks)
 }
 
 func TestArrivingStopsTheChaseWithoutEndingIt(t *testing.T) {

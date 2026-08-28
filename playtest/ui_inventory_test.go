@@ -113,7 +113,8 @@ func TestUIInventory(t *testing.T) {
 
 	// 6. a scripted click on open ground walks the player through the normal
 	//    controls. One world tile east is (+80, +40) screen pixels from the
-	//    player (the isometric projection); east is clear at seed 1462.
+	//    player (the isometric projection), so the +120,+60 px click below is
+	//    exactly 1.5 tiles east; east is clear at seed 1462.
 	before := s.call("strigoi_get_player", map[string]any{})
 	sx, sy := pair(before, "screen")
 	fromX, fromY := num(before, "x"), num(before, "y")
@@ -132,10 +133,69 @@ func TestUIInventory(t *testing.T) {
 
 	after := s.call("strigoi_get_player", map[string]any{})
 	dx, dy := num(after, "x")-fromX, num(after, "y")-fromY
-	t.Logf("click walk: moved %.2f, %.2f tiles (want mostly +x)", dx, dy)
 
-	if math.Hypot(dx, dy) < 0.5 || dx < math.Abs(dy) {
-		t.Fatalf("the click did not walk the player east: moved %.2f, %.2f", dx, dy)
+	// The TEST chose the pixel offset, so the test can predict the tile offset
+	// and check the number the SYSTEM reports against it. +120,+60 px is not
+	// "somewhere east"; it is 1.5 tiles due east and nothing north or south.
+	// The derivation is read out of the renderer, not out of D2 lore
+	// (d2core/d2map/d2maprenderer/viewport.go):
+	//
+	//	tileWidth = 80, tileHeight = 40                    (viewport.go:18-19)
+	//	WorldToOrtho: ox = (x-y)*80, oy = (x+y)*40         (viewport.go:84)
+	//	OrthoToWorld: wx = (ox/80 + oy/40) / 2             (viewport.go:76)
+	//	              wy = (oy/40 - ox/80) / 2
+	//	ScreenToOrtho translates by the camera and nothing else (viewport.go:92)
+	//
+	// Because screen->ortho is a pure translation, a screen DELTA is an ortho
+	// DELTA and the camera cancels out completely:
+	//
+	//	dx = (120/80 + 60/40) / 2 = (1.5 + 1.5) / 2 = 1.5 tiles
+	//	dy = (60/40 - 120/80) / 2 = (1.5 - 1.5) / 2 = 0.0 tiles
+	//
+	// and get_player reports WORLD TILES: for a Player it returns
+	// Position.World() (harness_obs.go:142), which divides the stored subtile
+	// vector by 5 exactly once (d2vector/position.go:56-58). It does NOT take
+	// the GetPositionF()/5 fallback further down that function. The "screen"
+	// field this test aimed with is the projection of those same world tiles
+	// (harness_obs.go:409), so the round trip closes on one unit system.
+	const (
+		wantDX   = 1.5  // tiles east:       (120/80 + 60/40) / 2
+		wantDY   = 0.0  // tiles north/south: (60/40 - 120/80) / 2
+		tolTiles = 0.35 // tiles; the error budget below
+	)
+
+	// The tolerance is an error budget, not a guess. Two quantisations are real
+	// and nameable:
+	//   - get_player's screen field is floored to whole pixels (viewport.go:101
+	//     OrthoToScreen), worth at most (1/80 + 1/40)/2 = 0.019 tiles;
+	//   - the controls truncate the click target to 0.1 tiles before pathing
+	//     (truncateFloat64, d2game/d2player/game_controls.go:442), worth < 0.1
+	//     per axis.
+	// Worst case they compound to ~0.16 tiles, so 0.35 keeps 2x headroom.
+	//
+	// The walk does finish inside the step, so this can assert a landing point
+	// rather than a band: baseWalkSpeed is 9 subtiles/s = 1.8 tiles/s
+	// (d2mapentity/player.go:38) and 180 ticks x 1/60 s = 3 s buys 5.4 tiles of
+	// travel for a 1.5-tile walk. The mover also lands on the exact requested
+	// point rather than a tile centre -- d2mapengine's waypoints() keeps the
+	// caller's own dest as the final waypoint, and applyVelocity copies position
+	// onto target on overshoot -- so a detour around an obstacle changes the
+	// route without moving the destination.
+	//
+	// What this rejects: the project already shipped an adapter that divided by
+	// five twice. A 5x scale error lands the player 0.3 or 7.5 tiles east, i.e.
+	// 1.2 or 6.0 tiles from the prediction; a 2x error lands 0.75 or 3.0 tiles
+	// east, i.e. 0.75 or 1.5 away. All four are far outside 0.35, which catches
+	// any scale error over ~23%. The assertion this replaced -- "moved at least
+	// 0.5 tiles, mostly east" -- accepted every one of them.
+	off := math.Hypot(dx-wantDX, dy-wantDY)
+	t.Logf("click walk: moved %.2f, %.2f tiles; +120,+60 px predicts %.2f, %.2f (off by %.3f)",
+		dx, dy, wantDX, wantDY, off)
+
+	if off > tolTiles {
+		t.Fatalf("a +120,+60 px click must land %.2f,%.2f tiles away (the isometric projection); "+
+			"the player moved %.2f,%.2f, which is %.3f tiles off, past the %.2f budget",
+			wantDX, wantDY, dx, dy, off, tolTiles)
 	}
 
 	// 7. type_text reaches the input chars poll without disturbing the game

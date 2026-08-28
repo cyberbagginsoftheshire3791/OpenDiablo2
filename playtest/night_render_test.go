@@ -106,17 +106,24 @@ func TestNightIsVisiblyDark(t *testing.T) {
 
 	t.Logf("night is %.0f%% dimmer than noon (play mean %.1f -> %.1f of 255)", 100*(1-dim), day.play, night.play)
 
+	// The daylight regions are the denominator of every check below. If they
+	// are too dark to divide by, this run cannot measure the thing the script
+	// exists to measure — and an unmeasurable run is not a passing one.
+	if !usable(day.near, day.far) {
+		t.Fatalf("cannot measure the light: the daylight control is too dark in the very regions the "+
+			"three checks below divide by — %s. This is NOT the parked black floor (P3 §5.3): a "+
+			"black-floor launch is caught above by the play-area control, which passed. An empty "+
+			"bucket also reads 0.0, and the far bucket is only a few hundred pixels wide even when "+
+			"healthy, so suspect the sampling geometry first — but whatever it is, uniformity, the "+
+			"torch gradient and the burn-out ARE the milestone's claim, and a run that cannot "+
+			"measure them has not proved it", day)
+	}
+
 	// 2. an unlit night dims uniformly — the sky is the only source, so near
 	//    and far fall by the same factor. This is what separates real
 	//    per-tile light from a vignette painted over the frame.
 	nearFall := night.near / day.near
 	farFall := night.far / day.far
-
-	if !usable(day.near, day.far) {
-		t.Logf("WARNING: near (%.1f) or far (%.1f) is too dark by day to compare; "+
-			"skipping the uniformity and gradient checks", day.near, day.far)
-		return
-	}
 
 	if spread := math.Abs(nearFall-farFall) / farFall; spread > 0.25 {
 		t.Fatalf("the unlit night is not uniform: near fell to %.3f of its daylight value, far to %.3f "+

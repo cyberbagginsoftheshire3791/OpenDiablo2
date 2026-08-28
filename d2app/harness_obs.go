@@ -161,10 +161,19 @@ func harnessEntityInfoFor(id string, e interface{}, localPlayerID string, deep b
 	}
 
 	if me, ok := e.(interface{ GetPositionF() (float64, float64) }); ok {
-		// GetPositionF returns sub-tile coordinates; world tiles are /5
-		sx, sy := me.GetPositionF()
-		info.X, info.Y = sx/5, sy/5
-		info.Tile = [2]int{int(info.X), int(info.Y)}
+		// GetPositionF ALREADY returns world tiles -- it is Position.World(),
+		// and its own doc says "0.2 is one sub tile". The comment that used to
+		// sit here claimed the opposite and the code divided by five a second
+		// time, so every Object, Item and Missile this branch reports came back
+		// at one fifth of its true position. That is the M4.3a units bug in its
+		// third home (the first two were the Hunter/Quarry adapters in
+		// game.go); the Player and NPC branches above escaped it only because
+		// they read Position.World() directly and return before reaching here.
+		info.X, info.Y = me.GetPositionF()
+		// Floor, not a truncating cast: int() rounds toward zero, which would
+		// put a negative coordinate in the wrong tile. The branches above use
+		// Position.Tile(), which floors.
+		info.Tile = [2]int{int(math.Floor(info.X)), int(math.Floor(info.Y))}
 	}
 
 	return info
