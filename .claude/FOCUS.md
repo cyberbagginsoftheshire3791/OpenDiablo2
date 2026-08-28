@@ -93,9 +93,36 @@ delta the game screen already gets, no wall clock, no renderer.
   before measuring a drain, and must measure against the clock's own elapsed
   minutes rather than the hours it asked step_world for.**
 
-**NEXT: M4.3a, PATHFINDING AND PURSUIT** -- a milestone that did not exist
-this morning. Its build-shape note is written and is **AWAITING JOSH'S
-SIGNATURE on its 6 (six asks). No engine code until he signs.**
+**NEXT: M4.3a, PATHFINDING AND PURSUIT -- SIGNED, BUILD IT.** Josh took all
+six section-6 asks of the build-shape note as recommended on 27 Aug
+(decision 3caff9f3-d21e-817a-aa42-f1c1f3c6a7c7). Nothing is waiting on him.
+**THE FINDING THAT ARRIVED WITH THE SIGNATURE, and it changes what this
+milestone is FOR.** Josh asked how much of a priority it really is that you
+cannot walk out of the village. Read from the repo rather than assumed:
+**THE LAND OUTSIDE THE VILLAGE ALREADY EXISTS IN THE RUNNING BUILD.** There
+is no missing level and no missing transition -- the game server builds
+exactly ONE map engine (d2networking/d2server/game_server.go:106-115) and
+never builds another, and the LevelWarp records are decoded by d2records and
+then read by NOTHING (grep LevelWarp outside d2records/d2resource: zero
+hits). It needs none, because MapGenerator.GenerateAct1Overworld
+(d2core/d2map/d2mapgen/act1_overworld.go:37) resets the map to 150x150 and,
+when the town stamp's region path contains E1, S1 or W1, places the town and
+then generates Blood Moor wilderness beside it ON THE SAME CONTIGUOUS GRID.
+**At seed 1462 -- the seed every playtest run uses -- the game log reads
+"Region Path: Act1/Town/TownE1.ds1"**, so that branch runs: town at (0,0),
+wilderness east, player at tile (31,14) with generated ground a short walk
+away. It is already there and simply UNREACHABLE, because the raycast
+returns the last walkable point before the first fence. **So M4.3a is not
+mainly about wolves: it is the only thing between the player and terrain
+this build already generates.**
+**A SEPARATE DEFECT FROM THE SAME READ -- filed, not fixed, NOT in M4.3a's
+scope, and it needs Josh's call:** the wilderness generates only for the E1,
+S1 and W1 town presets. Every other preset falls to the switch's default
+branch, which places the town and generates NOTHING around it. An unseeded
+launch (wall-clock seed 1787854851626238800) drew TownN1 and produced a
+village in a void. The preset pick IS seeded, so this is not a determinism
+bug -- but WHETHER A WORLD EXISTS OUTSIDE THE PALISADE IS CURRENTLY A
+PROPERTY OF THE SEED. That is worldgen content, not pathfinding.
 **WHY M4.3 SPLIT (decision 3c9ff9f3-d21e-813d-afdd-d24d48b408f8):** told that
 M4.3 as scoped would ship spawn tables with nothing that moves, Josh said "we
 dont need a diorama we are trying to make a game that works", and chasing that
