@@ -1,6 +1,6 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-08-28 (late morning CT). Keep this to a screen; the full state
+Updated: 2026-08-28 (midday CT). Keep this to a screen; the full state
 lives in `state.md` in the claude.ai project and in Notion.
 
 **THE PLAN IS v1.5 (28 Aug).** Every "plan v1.4 5" reference below still
@@ -101,10 +101,57 @@ delta the game screen already gets, no wall clock, no renderer.
   before measuring a drain, and must measure against the clock's own elapsed
   minutes rather than the hours it asked step_world for.**
 
-**M4.3a IS DONE. M4.3b IS SIGNED -- all EIGHT section 8 asks as recommended,
-28 Aug (decision 3caff9f3-d21e-817d-8214-ff3ab17845db). THE BUILD IS OPEN.**
+**M4.3a AND M4.3b ARE BOTH DONE. NEXT IS M4.4, THE CLOCK UI -- BUT TWO
+ORDERING QUESTIONS ARE JOSH'S AND THEY MAY REORDER THE PHASE.**
+(a) Where the meter HUD lands: M4.4's scope, or its own milestone.
+(b) **The corpse-machine milestone has no number and no place.** It was
+split out of M4.3b by signature and shares with M4.6; it carries the
+corpse state machine, the rising roll, the rite window and consecrated
+boundaries. It is the premise of the game -- the dead, not the wolves --
+and it is the largest named-but-unscheduled thing in Phase 4. **Raise it
+before building M4.4.**
 
-**THE SIGNED SHAPE.** Scope is option (a): the two stage tables + the [3]
+**M4.3b closed 28 Aug** (decision 3caff9f3-d21e-81f4-bdb0-fad1556d7ac5)
+in five commits: fcd592c6 the notice model · 0f3cda8d the spawn tables ·
+5a61b95a the wiring · 943ee278 the units fix + strigoi_watch + the ninth
+script · ecba7943 docs. **Harness 0.9.0, 36 tools, SIX providers (clock,
+light, meters, pursuit, spawns, ui), NINE playtest scripts.** Determinism
+re-proved at 6a697780ce29 / f56f3f0edda2 / 7a7e9a004dff.
+
+**MEASURED, seed 1462:** a watcher six tiles away with a clear line SEES
+the player at 5.94 tiles; one behind cover at 6.00 tiles DOES NOT -- same
+map, same tick, same radius, only the line differs, and that pairing is
+the milestone's whole assertion. The memory window held a watcher coming
+1.6 world-minutes after it lost sight. Light 1.000 took reach 3.0 -> 6.0
+AND THE VERDICT WITH IT. Dawn -> night band 0 took the wolves row 0.000
+-> 0.500. Four open bodies lifted the carrion weight and the beast rows
+with it. A forced arrival routed at morale 5 and stopped routing at 90.
+
+**AND IT CAUGHT AN M4.3a BUG. READ THIS BEFORE TRUSTING ANY M4.3a
+MEASUREMENT.** chaser.HunterAt and prey.QuarryAt divided GetPositionF by
+the subtile factor -- but **GetPositionF ALREADY RETURNS WORLD TILES**
+(it is Position.World(); its own comment says "0.2 is one sub tile").
+Every coordinate d2world saw from M4.3a onward was a fifth of the truth,
+and because mapRouter.Route takes world tiles this did not shrink routes,
+it **routed between the WRONG POINTS**: a hunter on tile 35.2 asked for a
+path from tile 7.04 toward a player reported on tile 6.2 and walked at
+the map's corner, while the reported distance went DOWN and the real gap
+went UP. **So M4.3a's "a fallen closed to 2.80 tiles" was false in both
+size and direction, and ArriveWithin 1.0 meant five tiles.** Fixed in
+943ee278; the dials keep their signed values because those values were
+chosen as TILES and only now mean it.
+**Why it survived sign-off, and the rule that comes out of it:** every
+consumer divided consistently, so unit tests on fakes agreed (a fake
+returns whatever units the test puts in) and the old playtest agreed (it
+asserted the distance SHRANK, which it did). **At least one assertion per
+system must compare a number the TEST chose against a number the SYSTEM
+reported** -- place a thing six tiles away and assert it reports about
+six. Relationship assertions are invariant under a scale error and always
+will be. It is now an explicit act in playtest/spawns_test.go.
+**UNITS, once, plainly:** GetPositionF = world tiles. GetPosition =
+floored tile. NewNPC and the entity factory = SUBTILES.
+
+**THE SIGNED SHAPE M4.3b BUILT TO.** Scope is option (a): the two stage tables + the [3]
 deep-night bands (computed in the SPAWNS system, not the clock) + the morale
 STATE (`morale`/`routing`, read by M4.5's resolver -- no rout BEHAVIOUR here)
 + `open_bodies` reported and harness-settable + the notice model. **The corpse
