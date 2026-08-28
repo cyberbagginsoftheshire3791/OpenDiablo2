@@ -130,10 +130,13 @@ write. The provider rule, fifth costume, caught before the build.
 **ASK 7:** every rate in world minutes, but CHOSEN against DAY compression
 with its frame cost written beside it, and each with a reported counter the
 way Pursuit.solves is.
-**SIGNED ANYWAY, AND NAMED AS THE WEAKEST PART:** the notice dials are
-invented -- N1 says nothing about detection radii, and the 12-tile beast
-radius exceeds what is on screen (~5 tiles each way), so a wolf can notice
-you off-screen. Deliberate horror or unfair is a playtest question.
+**THE NOTICE DIALS ARE INVENTED** -- N1 says nothing about detection radii,
+and only the light threshold has a signed parent (R2 section 3). **But the
+12-tile beast radius is DELIBERATE, ruled on by Josh 28 Aug after it was
+flagged twice: it exceeds what is on screen (~5 tiles each way) ON PURPOSE,
+so a wolf can decide to come for you while off-camera. "12 tile aggro will
+keep it scary." DO NOT TUNE IT DOWN as an oversight** -- if a playtest makes
+it look unfair, report the measurement and let Josh re-rule.
 
 M4.3a closed 28 Aug (decision 3caff9f3-d21e-8102-aec3-c35f401ec6c8) in four
 commits: cafe22f6 the three accessor bugs · f894e5df the A* · 309193a8
