@@ -654,8 +654,12 @@ func (a *App) harnessAddActionTools(srv *mcp.Server) {
 		}
 
 		// Wait for arrival: stepped when the clock is paused (deterministic),
-		// wall-clock polling when live. The raycast pathfinder stops at the
-		// first blocked point, so "stuck" is a normal outcome, not an error.
+		// wall-clock polling when live. "Stuck" is still a normal outcome
+		// rather than an error, but for a different reason since M4.3a: the
+		// raycast that stopped at the first blocked point is gone, and the A*
+		// that replaced it returns the best partial route when the goal is
+		// walled off or the expansion budget runs out. So a move that ends
+		// short of its target now means unreachable, not un-navigable.
 		const (
 			checkEvery   = 30  // ticks between position checks [DIAL]
 			arriveWithin = 0.3 // world tiles [DIAL]

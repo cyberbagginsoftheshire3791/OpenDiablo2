@@ -61,8 +61,11 @@ func TestTownWalk(t *testing.T) {
 
 	// 4. walk and confirm the player moved. The map is unseeded until M3.3,
 	//    so no fixed vector is guaranteed clear: try the four cardinal
-	//    directions until one moves the player (raycast pathing stops at the
-	//    first blocked point). The M3.3 version pins the seed and one vector.
+	//    directions until one moves the player. Since M4.3a a blocked
+	//    direction is no longer a reason to stop -- the A* routes around
+	//    obstacles -- so the loop now only guards against a direction whose
+	//    goal is genuinely unreachable. The M3.3 version pins the seed and
+	//    one vector; TestPathfinding (M4.3a) is where routing is asserted.
 	moved := 0.0
 
 	for _, d := range [][2]float64{{6, 0}, {-6, 0}, {0, 6}, {0, -6}} {
