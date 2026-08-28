@@ -56,6 +56,27 @@ func (f *StampFactory) randFloat64() float64 {
 
 // LoadStamp loads the Stamp data from file, using the given level type, level preset index, and
 // level file index.
+// PresetFileNames returns a level preset's usable DS1 file names, in the order
+// LoadStamp indexes them -- so a caller that needs a SPECIFIC layout can find
+// its index here and pass it back as LoadStamp's fileIndex.
+//
+// It exists because GenerateAct1Overworld has to choose a town layout it can
+// actually build a world around, and until now it had no way to ask what the
+// choices were: it drew blind and then discovered, in a switch, that it could
+// not generate wilderness for what it got. The filter lives here rather than
+// being written twice, because two copies of "which files count" would drift.
+func (f *StampFactory) PresetFileNames(levelPreset int) []string {
+	var names []string
+
+	for _, fileRecord := range f.asset.Records.Level.Presets[levelPreset].Files {
+		if fileRecord != "" && fileRecord != "0" {
+			names = append(names, fileRecord)
+		}
+	}
+
+	return names
+}
+
 func (f *StampFactory) LoadStamp(levelType d2enum.RegionIdType, levelPreset, fileIndex int) *Stamp {
 	stamp := &Stamp{
 		factory:     f,
@@ -79,13 +100,7 @@ func (f *StampFactory) LoadStamp(levelType d2enum.RegionIdType, levelPreset, fil
 		stamp.tiles = append(stamp.tiles, dt1.Tiles...)
 	}
 
-	var levelFilesToPick []string
-
-	for _, fileRecord := range stamp.levelPreset.Files {
-		if fileRecord != "" && fileRecord != "0" {
-			levelFilesToPick = append(levelFilesToPick, fileRecord)
-		}
-	}
+	levelFilesToPick := f.PresetFileNames(levelPreset)
 
 	levelIndex := int(math.Round(float64(len(levelFilesToPick)-1) * f.randFloat64()))
 	if fileIndex >= 0 && fileIndex < len(levelFilesToPick) {

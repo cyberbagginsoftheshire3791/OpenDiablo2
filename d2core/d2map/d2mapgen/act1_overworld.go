@@ -47,7 +47,7 @@ func (g *MapGenerator) GenerateAct1Overworld() {
 	mapWidth := g.engine.Size().Width
 	mapHeight := g.engine.Size().Height
 
-	townStamp := g.engine.LoadStamp(d2enum.RegionAct1Town, presetB, autoFileIndex)
+	townStamp := g.engine.LoadStamp(d2enum.RegionAct1Town, presetB, g.pickTownWithWilderness())
 	townStamp.RegionPath()
 	townSize := townStamp.Size()
 
@@ -81,8 +81,80 @@ func (g *MapGenerator) GenerateAct1Overworld() {
 		startY := mapHeight - wilderness1Details.SizeYNormal
 		g.generateWilderness1TownWest(startX, startY)
 	default:
+		// A town layout with no wilderness generator: the town is placed and
+		// NOTHING is generated around it -- a village in a void.
+		//
+		// pickTownWithWilderness now keeps the draw off these layouts, so this
+		// branch is only reachable if the preset table contains no E1/S1/W1 at
+		// all. It is kept rather than turned into a panic because a missing
+		// wilderness should degrade to a small world, not to a dead process.
 		g.engine.PlaceStamp(townStamp, mapWidth-townSize.Width, mapHeight-townSize.Height)
 	}
+}
+
+// townPresetsWithWilderness are the Act 1 town layouts this generator can
+// actually build a world around: there is a generateWilderness1TownEast,
+// ...South and ...West, and there is no ...North.
+//
+// THAT ABSENCE IS THE WHOLE BUG. LoadStamp used to draw a town layout blind,
+// and a draw that landed on TownN1 fell through the switch below to the
+// default branch, which places the town and generates nothing -- so an
+// unseeded launch could produce a village in a void, and WHETHER A WORLD
+// EXISTED OUTSIDE THE PALISADE WAS A PROPERTY OF THE SEED. Every playtest
+// pins seed 1462, which draws TownE1, which is exactly why nobody saw it.
+//
+// Writing generateWilderness1TownNorth would be the other fix and it is NOT
+// taken: it is a few hundred lines of real worldgen content mirroring the East
+// generator on different axes, it buys Strigoi nothing (the slice is one
+// village, and M5.4 authors its region directly rather than generating it),
+// and the cost of this fix instead is only that one D2 town layout is never
+// drawn. If a future act needs the north layout, the generator is the thing to
+// write, and this list is where it announces itself.
+var townPresetsWithWilderness = []string{"E1", "S1", "W1"}
+
+// pickTownWithWilderness returns the file index of a town layout this
+// generator has a wilderness for, or autoFileIndex to let LoadStamp draw
+// freely if the preset table offers none.
+//
+// One draw from the world RNG, so the choice stays seeded and reproducible.
+func (g *MapGenerator) pickTownWithWilderness() int {
+	return usableTownIndex(
+		g.engine.PresetFileNames(presetB),
+		townPresetsWithWilderness,
+		g.rng.Intn,
+	)
+}
+
+// usableTownIndex is the pure half of pickTownWithWilderness: given the
+// preset's file names and a chooser, return the index of one that has a
+// wilderness generator, or autoFileIndex when none do.
+//
+// It is split out so it can be tested with no map engine, no asset manager and
+// no MPQs -- d2mapgen links no ebiten, so the test runs on CI. The alternative
+// was a fix to a seed-dependent worldgen bug with nothing asserting it, which
+// is how the bug got here in the first place.
+//
+// NOTE the invariant the chooser depends on: it is called with the count of
+// USABLE names, not the count of all names, and the value it returns indexes
+// the usable list rather than the original. Getting that wrong would return an
+// index into the wrong list and quietly pick the layout this exists to avoid.
+func usableTownIndex(names, wanted []string, choose func(n int) int) int {
+	usable := make([]int, 0, len(names))
+
+	for i := range names {
+		for _, want := range wanted {
+			if strings.Contains(names[i], want) {
+				usable = append(usable, i)
+				break
+			}
+		}
+	}
+
+	if len(usable) == 0 {
+		return autoFileIndex
+	}
+
+	return usable[choose(len(usable))]
 }
 
 // nolint:gosec,gomnd // we dont need crypto-strong randomness, mapgen will get a refactor soon
