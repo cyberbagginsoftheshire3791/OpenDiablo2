@@ -101,13 +101,39 @@ delta the game screen already gets, no wall clock, no renderer.
   before measuring a drain, and must measure against the clock's own elapsed
   minutes rather than the hours it asked step_world for.**
 
-**M4.3a IS DONE. NEXT: M4.3b, night spawns -- and ITS NOTE IS NOW v1.1 AND
-READY TO SIGN. THE ASKS ARE AT 8 AND THERE ARE EIGHT, NOT SIX AT 6.**
-Asks 5 (where the notice model lives and what it may know: line of sight,
-distance, and the light level at the quarry -- nothing else), 6 (the provider
-reports a per-group `notice` block, drivable both directions) and 7 (rate
-units, with their frame cost written beside them) are NEW, and they are why
-it was rewritten rather than restamped. **Do not build until 8 is signed.**
+**M4.3a IS DONE. M4.3b IS SIGNED -- all EIGHT section 8 asks as recommended,
+28 Aug (decision 3caff9f3-d21e-817d-8214-ff3ab17845db). THE BUILD IS OPEN.**
+
+**THE SIGNED SHAPE.** Scope is option (a): the two stage tables + the [3]
+deep-night bands (computed in the SPAWNS system, not the clock) + the morale
+STATE (`morale`/`routing`, read by M4.5's resolver -- no rout BEHAVIOUR here)
++ `open_bodies` reported and harness-settable + the notice model. **The corpse
+state machine, and therefore the dead arriving, is split into its own
+milestone shared with M4.6.**
+**THE FENCE (ask 5, the hardest to move later): the notice model lives in
+d2core/d2world beside Pursuit, behind a one-method sight interface, and may
+know LINE OF SIGHT, DISTANCE and THE LIGHT LEVEL AT THE QUARRY -- nothing
+else.** Not the meters, not the inventory, not reputation. That fence is what
+makes the torch the trade: light against being seen.
+**CONSIDERED AND NOT TAKEN:** adding the NOISE value. S1 section 4 already
+signs "one noise value per action that beasts and humans react to", so a wolf
+hearing you dig is signed design rather than new -- Josh took the tighter
+fence, which leaves that clause with a consumer in the TABLE WEIGHTS but none
+in the NOTICE MODEL. Recorded case against; additive to a one-method
+interface if playtest says otherwise. **Do not quietly add it.**
+**ASK 6 IS THE ONE TO HONOUR LITERALLY:** the provider reports a per-group
+`notice` block (`sees`, `distance`, `light_at_quarry`, `noticed`) drivable
+BOTH directions, because a chase that starts is NOT evidence that noticing
+works -- a chase can start for the wrong reason and look identical. It exists
+only because M4.3a's section 3.2 was signed with an assertion nothing could
+write. The provider rule, fifth costume, caught before the build.
+**ASK 7:** every rate in world minutes, but CHOSEN against DAY compression
+with its frame cost written beside it, and each with a reported counter the
+way Pursuit.solves is.
+**SIGNED ANYWAY, AND NAMED AS THE WEAKEST PART:** the notice dials are
+invented -- N1 says nothing about detection radii, and the 12-tile beast
+radius exceeds what is on screen (~5 tiles each way), so a wolf can notice
+you off-screen. Deliberate horror or unfair is a playtest question.
 
 M4.3a closed 28 Aug (decision 3caff9f3-d21e-8102-aec3-c35f401ec6c8) in four
 commits: cafe22f6 the three accessor bugs · f894e5df the A* · 309193a8
@@ -274,9 +300,14 @@ Two more habits: read the engine BEFORE writing the build note (M4.2's found
 a scope failure that would have cost a reopening), and check that a signed
 assertion is actually buildable clause by clause.
 
-**THE MAP-FIRE SCOPING NOTE IS DELIVERED (28 Aug) and awaits Josh's answers
-to its 8** -- "Map Fires - Scoping Note.md", five asks, no engine code
-written and none until he answers. **Its headline: D2's object table ALREADY
+**THE MAP-FIRE SCOPING NOTE'S ASK 2 IS ANSWERED (28 Aug): a map fire is A
+HEARTH SOMEONE ELSE LIT** -- radius 8, Burn negative, no fuel cost, no new
+category (decision 3caff9f3-d21e-8122-a038-c2c651f45768). The note's own
+argument for the opposite, that most of those drawn fires should be OUT
+because a countryside Vlad scorched should not glow, was read and NOT taken;
+it is preserved as the recorded case against. **ASKS 1, 3, 4 AND 5 ARE STILL
+OPEN and no engine code exists or may be written until 1 and 4 are answered.**
+"Map Fires - Scoping Note.md". **Its headline: D2's object table ALREADY
 declares which objects emit light** -- LightDiameter [8]int, LightRed/Green/
 Blue, Flicker bool, BlocksLight [8]bool, all **PER ANIMATION MODE**, all read
 by object_details_loader.go:72/82/146-148/196 and consumed by NOTHING outside
