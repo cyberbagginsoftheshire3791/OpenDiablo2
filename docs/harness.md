@@ -72,7 +72,26 @@ with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING 
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 
-## The tools (33; harness 0.6.0)
+## The tools (36; harness 0.9.0)
+
+> **The per-tool sections below were written exhaustively at M3.4 (33 tools,
+> harness 0.6.0) and have NOT been rewritten since; three tools were added
+> after them and are listed here rather than folded in, because a partial
+> rewrite that looks complete is worse than a short honest list.** The
+> authoritative surface is always the running server: `strigoi_list_systems`
+> for providers, and the `mcp.AddTool` calls in `d2app/harness_tools.go`,
+> `harness_obs.go` and `harness_spawn.go` for tools.
+>
+> - `strigoi_find_path` (M4.3a) — the route between two points without
+>   walking it, plus `straight_line_clear` as the negative control.
+> - `strigoi_pursue` (M4.3a) — put one entity on another's trail;
+>   `release:true` ends it.
+> - `strigoi_watch` (M4.3b) — make one entity notice another;
+>   `release:true` stops it. The spawn tables watch their own members, so
+>   this is for placing a watcher exactly where a script needs one.
+>
+> Providers are now six: `clock`, `light` (M4.1), `meters` (M4.2),
+> `pursuit` (M4.3a), `spawns` (M4.3b) and `ui` (M3.4).
 
 ### Session (M3.2)
 
@@ -140,14 +159,27 @@ are one checklist.
 
 **The rule, from Phase 4 on: a system is not done until its provider exposes
 every value its S1 §12 playtest assertion needs** (Constitution VI.2, made
-mechanical). The planned names the tools already know: `spawns` / `dead`
+mechanical). The planned names the tools already know: `dead`
 (M4.3, M4.6), `combat` (M4.5), `reputation` / `inventory` / `region` (Phase
 6), `soul_pressure` (Phase 4 dashboard sim). Asking for one early returns
 `NOT_IMPLEMENTED` with the milestone. A name leaves this map in the same
-commit its provider registers — `meters` did at M4.2.
+commit its provider registers — `meters` did at M4.2, `spawns` at M4.3b.
 
-Registered today — **`clock`**, **`light`**, **`meters`** and **`ui`**, all
-while a game screen is live.
+Registered today — **`clock`**, **`light`**, **`meters`**, **`pursuit`**,
+**`spawns`** and **`ui`**, all while a game screen is live.
+
+**`pursuit`** (M4.3a) reports the live chases and their dials; settable
+`arrive_within`, `release`, `repath_tiles`. **`spawns`** (M4.3b) reports the
+stage tables and their current weights, the deep-night `band`, `open_bodies`
+and `carrion_weight`, every group with its `morale` / `routing`, and — this
+is the part ask 6 asked for — a `notice` block per group plus `notice_list`
+for **every** watcher, carrying `sees`, `distance`, `light_at_quarry` and
+`noticed`. `notice_wired` tells a script "nothing could have noticed you"
+apart from "nothing did". Settable: `chance`, `check_minutes`, `despawn`,
+`morale` (an object, `{"group","value"}`), `notice_lit_level`,
+`notice_radius`, `open_bodies`, `rout_at`. There is deliberately no spawn
+verb: a script forces an arrival by raising `chance` and stepping the clock,
+which exercises the real table rather than bypassing it.
 
 **`clock`** (M4.1, `d2core/d2world`): `world_minutes` since the epoch,
 `minute_of_day`, `time_of_day`, `date` + `year`/`month`/`day` in the Julian
