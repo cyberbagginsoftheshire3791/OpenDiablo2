@@ -41,6 +41,19 @@ frozen numbers below.
    anyone can run, no expertise needed: **"what did you run to get
    that?"** A finding whose command cannot be produced is withdrawn,
    not defended.
+9. **Harness-reachable is not game-reachable** (A2, 28 Aug). A symbol
+   the playtest harness can call and the shipped game cannot is a
+   milestone that looks wired and is hollow. It cost M4.1
+   (`Light.Remove`) and M4.3b (the whole notice->pursuit seam), and a
+   lesson did not stop it twice, so it is now a gate:
+   `go run ./tools/reachcheck` from the repo root, with `deadcode` on
+   PATH. It is a **curated allowlist, not a sweep** -- the d2harness
+   registry makes every system reflection-live, which blinds `deadcode`
+   to exactly this class, so the register is hand-maintained and **a
+   symbol absent from it is not checked**. When a milestone ships a
+   system, its verbs go on the register in the same commit, each in one
+   of four buckets: wire, observe, defer (naming the milestone that
+   picks it up), delete. See `docs/reachability.md`.
 
 ## Verified facts (2026-08-20, Josh's machine, Windows/amd64)
 
