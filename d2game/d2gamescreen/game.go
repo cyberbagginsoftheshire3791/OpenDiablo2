@@ -792,20 +792,18 @@ func (b playerBody) CurrentHealth() int { return b.player.Stats.Health }
 func (b playerBody) MaxHealth() int     { return b.player.Stats.MaxHealth }
 func (b playerBody) SetHealth(h int)    { b.player.Stats.Health = h }
 
-// WorldClock returns the screen's world clock, or nil before it exists.
-func (v *Game) WorldClock() *d2world.Clock { return v.worldClock }
-
-// Light returns the screen's light model, or nil before it exists.
-func (v *Game) Light() *d2world.Light { return v.light }
-
-// Meters returns the screen's survival meters, or nil before they exist.
-func (v *Game) Meters() *d2world.Meters { return v.meters }
+// Only Pursuit and Notice get an accessor, and the asymmetry is deliberate:
+// d2app does not import d2core/d2world, so it cannot name those two types, and
+// Notice is the one world system with no provider of its own. Every other
+// system is reached through the d2harness registry instead.
+//
+// WorldClock, Light, Meters and Spawns used to sit here too. The reachability
+// register found that none of the four had ever had a caller in any commit --
+// they were a second door onto systems that already had one -- and they were
+// deleted on 28 Aug 2026 by Josh's ruling. See docs/reachability.md.
 
 // Pursuit returns the screen's pursuit system, or nil before it exists.
 func (v *Game) Pursuit() *d2world.Pursuit { return v.pursuit }
-
-// Spawns returns the screen's spawn tables, or nil before they exist.
-func (v *Game) Spawns() *d2world.Spawns { return v.spawns }
 
 // Notice returns the screen's awareness model, or nil before it exists.
 func (v *Game) Notice() *d2world.Notice { return v.notice }

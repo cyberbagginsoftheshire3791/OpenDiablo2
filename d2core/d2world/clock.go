@@ -167,8 +167,8 @@ func (c *Clock) Rate() float64 {
 	return c.dials.DayRate
 }
 
-// Frozen reports whether the clock is held.
-func (c *Clock) Frozen() bool { return c.frozen }
+// Frozen(), the getter, used to sit here and had zero call sites: HarnessState
+// publishes the flag from the field. Deleted 28 Aug 2026, reachability register.
 
 // SetFrozen holds or releases the clock (D7 §4). In M4.1 only the harness
 // calls it; the hearth and its safe zone arrive with the houses.

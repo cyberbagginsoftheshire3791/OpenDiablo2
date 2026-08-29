@@ -21,12 +21,7 @@ func (v *Game) HarnessControlsBound() bool {
 	return v.gameControls != nil
 }
 
-// HarnessLocalPlayerID returns the local player's entity ID, or "" before the
-// player exists.
-func (v *Game) HarnessLocalPlayerID() string {
-	if v.gameClient == nil {
-		return ""
-	}
-
-	return v.gameClient.PlayerID
-}
+// HarnessLocalPlayerID used to be here. It had no caller in any commit from
+// the one that introduced it onward: the harness already holds the game client
+// and reads client.PlayerID directly in about twenty places. Deleted 28 Aug
+// 2026 by Josh's ruling, after the reachability register found it.

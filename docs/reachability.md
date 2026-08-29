@@ -143,8 +143,10 @@ so the whole register is roughly ten minutes serial and about three at
   whether it is reached.
 * **It does not check unexported functions, package-level functions, struct
   fields, or any package outside `d2core/d2world` and `d2game/d2gamescreen`.**
-  The register's current 68 symbols came from the exported method sets of
-  `Game`, `Clock`, `Light`, `Meters`, `Pursuit`, `Notice` and `Spawns`.
+  The register was seeded from the exported method sets of `Game`, `Clock`,
+  `Light`, `Meters`, `Pursuit`, `Notice` and `Spawns`, and `go run
+  ./tools/reachcheck -list` prints what it holds now. Counts are not written
+  down here on purpose; a number in prose is a number that goes stale.
 
 ## Adding a symbol
 

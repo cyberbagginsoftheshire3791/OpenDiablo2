@@ -74,8 +74,10 @@ const (
 //
 // Every Expect below was MEASURED on 28 Aug 2026 at 9:35-10:06 PM CT against
 // HEAD 9d9611ba by strigoi-harness-runs\reach-census.ps1, which ran the same
-// two deadcode invocations this tool runs, over these same 68 symbols. Mean
-// 4.7 s per invocation. The raw output is in reach-census.tsv.
+// two deadcode invocations this tool runs, over 68 symbols -- these, plus the
+// six deleted the same evening. Mean 4.7 s per invocation. The raw output is
+// in reach-census.tsv, and the gate re-measures all of it on every run, so
+// nothing here has to be taken on trust.
 var Register = []Entry{
 	// ---------------------------------------------------------------
 	// WIRE -- the drive train. Sixteen rows, all measured live.
@@ -118,24 +120,21 @@ var Register = []Entry{
 		"The deep-night band the tables key on.", ""},
 
 	// ---------------------------------------------------------------
-	// DELETE -- proposed 28 Aug, awaiting Josh's ruling. Six rows.
-	// The four Game system accessors have never had a call site in ANY
-	// commit (git log -S returns nothing for each), because the harness
-	// reaches every one of these systems through the d2harness registry
-	// instead.
+	// DELETE -- empty, and that is the bucket working rather than an
+	// oversight.
+	//
+	// Six symbols sat here on 28 Aug 2026, proposed for deletion because
+	// `git log -S` found that not one of them had ever had a call site in
+	// any commit: Game.WorldClock, Game.Light, Game.Meters, Game.Spawns,
+	// Game.HarnessLocalPlayerID and Clock.Frozen. Each was a second door
+	// onto a system the harness already reached through the d2harness
+	// registry. Josh ruled delete-all-six and they went in the same burst.
+	//
+	// A row leaves the register when its symbol leaves the program,
+	// because a register entry for a symbol that no longer exists measures
+	// nothing and reports `missing` forever. The record of the deletion is
+	// the commit, this comment, and the note at each old site.
 	// ---------------------------------------------------------------
-	{sym(pkgScreen, "Game.WorldClock"), BucketDelete, VerdictDead,
-		"Never called, in any commit. The harness reads the clock through d2harness.Lookup(\"clock\").", ""},
-	{sym(pkgScreen, "Game.Light"), BucketDelete, VerdictDead,
-		"Never called, in any commit. The renderer gets the light model handed to it as a field at CreateGame; the harness uses the registry.", ""},
-	{sym(pkgScreen, "Game.Meters"), BucketDelete, VerdictDead,
-		"Never called, in any commit. The harness uses the \"meters\" provider.", ""},
-	{sym(pkgScreen, "Game.Spawns"), BucketDelete, VerdictDead,
-		"Never called, in any commit. The harness uses the \"spawns\" provider.", ""},
-	{sym(pkgScreen, "Game.HarnessLocalPlayerID"), BucketDelete, VerdictDead,
-		"Never called since the commit that added it. The harness already holds the game client and reads client.PlayerID directly in about twenty places.", ""},
-	{sym(pkgWorld, "Clock.Frozen"), BucketDelete, VerdictDead,
-		"Zero call sites. The clock's own HarnessState publishes the frozen flag from the field without going through this getter, and SetFrozen is the half that is used.", ""},
 
 	// ---------------------------------------------------------------
 	// DEFER -- the game should drive these and does not yet.
