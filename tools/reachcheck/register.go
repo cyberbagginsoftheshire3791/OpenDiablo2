@@ -122,6 +122,8 @@ var Register = []Entry{
 		"The only way a group leaves. Wired 29 Aug by clearAtDaybreak, which sends home every pack that never noticed you once the sun is up. Before that its one caller was HarnessSet, and with the group cap at 8 that made a permanent spawn stall: the eighth pack was the last one the game would ever produce.", ""},
 	{sym(pkgWorld, "Notice.Unwatch"), BucketWire, VerdictLive,
 		"The only way a watcher stops watching. Reached from Despawn, so it went live with it. Before 29 Aug nothing in a shipped build ever stopped watching anything.", ""},
+	{sym(pkgWorld, "Combat.Advance"), BucketWire, VerdictLive,
+		"Opens an encounter when something aware of the player is also in reach, and spends world time on rounds. Stepped from advanceWorld after startChasesForTheAware, so a thing that noticed you this tick and is already beside you fights this tick.", ""},
 
 	// ---------------------------------------------------------------
 	// DELETE -- empty, and that is the bucket working rather than an
@@ -165,10 +167,23 @@ var Register = []Entry{
 		"As Meters.Food.", "M4.4 (the HUD milestone)"},
 	{sym(pkgWorld, "Meters.Fatigue"), BucketDefer, VerdictDead,
 		"As Meters.Food.", "M4.4 (the HUD milestone)"},
+	// M4.5 step 1 wired the ENCOUNTER, not the resolver, and the two rows
+	// below are the honest consequence. Combat reads the meters' flags only
+	// inside HarnessState, which the registry dispatches and only harness-
+	// tagged code consumes -- so the flags are still harness-only, one level
+	// down, exactly as Light.Remove was after M4.1's remove_source. They flip
+	// to wire when the RESOLVER reads them, and not a commit before: marking
+	// them wired now would be the lie this register exists to catch.
 	{sym(pkgWorld, "Meters.ReactionAvailable"), BucketDefer, VerdictHarnessOnly,
-		"R2 section 1's reaction flag. Computed and reported, read by nothing -- M4.2 built it for a resolver that does not exist yet.", "M4.5 (combat v0)"},
+		"R2 section 1's reaction flag. Computed and reported, and as of M4.5 step 1 also reported by the combat provider -- but still read by nothing that acts on it. The resolver is what makes it live.", "M4.5 (the resolver)"},
 	{sym(pkgWorld, "Meters.Shaken"), BucketDefer, VerdictHarnessOnly,
-		"R2 section 3's shaken flag. Same shape: built for M4.5 to read.", "M4.5 (combat v0)"},
+		"R2 section 3's shaken flag. Same shape as ReactionAvailable above, and the same reason it has not flipped.", "M4.5 (the resolver)"},
+	{sym(pkgWorld, "Combat.Fighting"), BucketDefer, VerdictDead,
+		"Whether an encounter is live. It exists so a resolver, a HUD or a script can ask in Go rather than reading it out of the harness state -- the mistake Pursuit's `arrived` made. Nothing asks yet.", "M4.5 (the resolver)"},
+	{sym(pkgWorld, "Combat.Round"), BucketDefer, VerdictDead,
+		"The current round. Torches burn per round and the resolver spends them; nothing reads it yet.", "M4.5 (the resolver)"},
+	{sym(pkgWorld, "Combat.Order"), BucketDefer, VerdictDead,
+		"The provisional activation order. Reported so D8 can replace it without touching the resolver; nothing in Go reads it yet.", "M4.5 (the resolver), then D8"},
 	{sym(pkgWorld, "Meters.ShakenThreshold"), BucketDefer, VerdictHarnessOnly,
 		"The threshold thirst lowers. Reported, unread.", "M4.5 (combat v0)"},
 	{sym(pkgWorld, "Meters.Thirsty"), BucketDefer, VerdictHarnessOnly,

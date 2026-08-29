@@ -131,6 +131,21 @@ func CreateGame(
 		d2world.DefaultSpawnDials(),
 	)
 
+	// Combat comes last of the world systems because it is downstream of all
+	// of them: it asks Notice who is aware, reads the meters' derived facts
+	// through the two-method Fitness interface, and samples the light model
+	// at a participant's tile. It seeds from the run's seed like the tables,
+	// so the provisional activation order is the same on two launches of one
+	// build (M4.5, and the order is provisional until D8 rules).
+	game.combat = d2world.NewCombat(
+		game.worldClock,
+		game.notice,
+		game.meters,
+		game.light,
+		gameClient.Seed,
+		d2world.DefaultCombatDials(),
+	)
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -180,6 +195,7 @@ type Game struct {
 	pursuit      *d2world.Pursuit
 	notice       *d2world.Notice
 	spawns       *d2world.Spawns
+	combat       *d2world.Combat
 
 	renderer      d2interface.Renderer
 	inputManager  d2interface.InputManager
@@ -241,6 +257,10 @@ func (v *Game) OnUnload() error {
 
 	if v.meters != nil {
 		v.meters.Close()
+	}
+
+	if v.combat != nil {
+		v.combat.Close()
 	}
 
 	if err := v.gameControls.UnbindTerminalCommands(v.terminal); err != nil {
@@ -425,6 +445,15 @@ func (v *Game) advanceWorld(elapsed float64) {
 	}
 
 	v.startChasesForTheAware()
+
+	// Combat last, and after startChasesForTheAware deliberately: a thing that
+	// noticed the player on this very tick and is already in reach opens a
+	// fight on the same tick rather than standing blind for one. This call
+	// list IS the turn structure -- there is no queue anywhere in this engine,
+	// and every system takes world minutes as a float (M4.5 §3.7).
+	if v.combat != nil {
+		v.combat.Advance(worldMinutes)
+	}
 }
 
 // startChasesForTheAware is the line that makes M4.3b a milestone rather than

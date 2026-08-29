@@ -24,10 +24,9 @@ import (
 // message instead of a bare "unknown" (P3 spec §3.10).
 var harnessPlannedSystems = map[string]string{
 	// "clock" and "light" registered at M4.1, "meters" at M4.2, "pursuit" at
-	// M4.3a and "spawns" at M4.3b — they are live whenever a game screen
-	// exists, so they are absent from this map on purpose.
+	// M4.3a, "spawns" at M4.3b and "combat" at M4.5 — they are live whenever
+	// a game screen exists, so they are absent from this map on purpose.
 	"dead":          "M4.3 / M4.6",
-	"combat":        "M4.5",
 	"reputation":    "Phase 6",
 	"inventory":     "Phase 6",
 	"region":        "Phase 6",
