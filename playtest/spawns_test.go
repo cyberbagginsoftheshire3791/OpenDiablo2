@@ -45,7 +45,7 @@ func TestSpawns(t *testing.T) {
 	t.Logf("player at %.2f,%.2f (%s)", px, py, playerHandle)
 
 	spawns := spawnsState(s)
-	if wired, _ := spawns["notice_wired"].(bool); !wired {
+	if !flag(t, spawns, "notice_wired") {
 		t.Fatalf("the notice model is not wired: sight and light must both be attached, got %v", spawns)
 	}
 
@@ -73,7 +73,7 @@ func TestSpawns(t *testing.T) {
 
 		path := s.call("strigoi_find_path", map[string]any{"to_x": x, "to_y": y})
 
-		clear, _ := path["straight_line_clear"].(bool)
+		clear := flag(t, path, "straight_line_clear")
 		if clear && !haveClear {
 			clearX, clearY, haveClear = x, y, true
 		}
@@ -114,12 +114,12 @@ func TestSpawns(t *testing.T) {
 			"the adapters are not in world tiles", ring, d)
 	}
 
-	if sees, _ := seerRow["sees"].(bool); !sees {
+	if !flag(t, seerRow, "sees") {
 		t.Fatalf("act 2: a watcher %.0f tiles away with a clear line must SEE the player; got %v",
 			ring, seerRow)
 	}
 
-	if noticed, _ := seerRow["noticed"].(bool); !noticed {
+	if !flag(t, seerRow, "noticed") {
 		t.Fatalf("act 2: seeing it, the watcher must notice it; got %v", seerRow)
 	}
 
@@ -138,10 +138,10 @@ func TestSpawns(t *testing.T) {
 	t.Logf("act 3 inputs: sees=%v distance=%.2f reach=%.1f",
 		blindRow["sees"], num(blindRow, "distance"), num(blindRow, "reach"))
 
-	if noticed, _ := blindRow["noticed"].(bool); noticed {
+	if flag(t, blindRow, "noticed") {
 		t.Fatalf("act 3: a watcher behind cover must NOT notice, however close; got %v", blindRow)
 	}
-	if sees, _ := blindRow["sees"].(bool); sees {
+	if flag(t, blindRow, "sees") {
 		t.Fatalf("act 3: the blocked watcher must report sees=false, got %v", blindRow)
 	}
 
@@ -173,12 +173,12 @@ func TestSpawns(t *testing.T) {
 	// the verdict here and failed on its own timing, which is the memory window
 	// proving itself.
 	seerRow = noticeRowFor(t, s, seer)
-	if sees, _ := seerRow["sees"].(bool); sees {
+	if flag(t, seerRow, "sees") {
 		t.Fatalf("act 4: with the reach at %.1f, a player %.2f tiles away must be out of sight; got %v",
 			num(seerRow, "reach"), num(seerRow, "distance"), seerRow)
 	}
 
-	if noticed, _ := seerRow["noticed"].(bool); !noticed {
+	if !flag(t, seerRow, "noticed") {
 		t.Fatalf("act 4: %.2f world minutes after losing sight, memory must still hold; got %v",
 			num(seerRow, "minutes_unseen"), seerRow)
 	}
@@ -190,7 +190,7 @@ func TestSpawns(t *testing.T) {
 	s.call("strigoi_step_world", map[string]any{"world_minutes": 5})
 
 	seerRow = noticeRowFor(t, s, seer)
-	if noticed, _ := seerRow["noticed"].(bool); noticed {
+	if flag(t, seerRow, "noticed") {
 		t.Fatalf("act 4: past the memory window the watcher must forget; got %v", seerRow)
 	}
 
@@ -202,7 +202,7 @@ func TestSpawns(t *testing.T) {
 	s.call("strigoi_step_world", map[string]any{"world_minutes": 2})
 
 	seerRow = noticeRowFor(t, s, seer)
-	if noticed, _ := seerRow["noticed"].(bool); !noticed {
+	if !flag(t, seerRow, "noticed") {
 		t.Fatalf("act 4: a lit player at %.0f tiles is inside the doubled reach and must be noticed; got %v",
 			ring, seerRow)
 	}
@@ -298,7 +298,7 @@ func TestSpawns(t *testing.T) {
 		t.Fatalf("act 6: every group must carry a notice block per ask 6, got %v", group["notice"])
 	}
 
-	if routing, _ := group["routing"].(bool); routing {
+	if flag(t, group, "routing") {
 		t.Fatalf("act 6: a fresh group must not already be routing, morale %.0f", num(group, "morale"))
 	}
 
@@ -309,7 +309,7 @@ func TestSpawns(t *testing.T) {
 		"value": map[string]any{"group": groupID, "value": 5},
 	})
 
-	if routing, _ := firstGroup(t, spawnsState(s))["routing"].(bool); !routing {
+	if !flag(t, firstGroup(t, spawnsState(s)), "routing") {
 		t.Fatalf("act 6: morale 5 is under the rout threshold; the group must report routing")
 	}
 
@@ -318,7 +318,7 @@ func TestSpawns(t *testing.T) {
 		"value": map[string]any{"group": groupID, "value": 90},
 	})
 
-	if routing, _ := firstGroup(t, spawnsState(s))["routing"].(bool); routing {
+	if flag(t, firstGroup(t, spawnsState(s)), "routing") {
 		t.Fatalf("act 6: morale 90 is well above the threshold; routing must clear again")
 	}
 

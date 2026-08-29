@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -264,6 +265,64 @@ func contentText(res *mcp.CallToolResult) string {
 	}
 
 	return text
+}
+
+// flag reads a bool an assertion depends on, and FAILS when the key is absent
+// or is not a bool.
+//
+// This is A3 of the Phase 4 audit. The pattern it replaces --
+// `if v, _ := m[k].(bool); !v` -- reads a missing or RENAMED field as false,
+// so a negative assertion passes while measuring nothing at all. The provider
+// surface changed in four consecutive milestones, and a script that asserts
+// "the watcher did NOT notice" against a field that no longer exists is the
+// exact shape of a green suite over a broken system.
+//
+// Prefer this over the tolerant helpers below wherever the value carries an
+// assertion. num, str and pair are still fail-open, and that is A3's named
+// remainder rather than an oversight: see docs/harness.md.
+// It takes a testing.TB rather than a *testing.T so that its own failure path
+// can be exercised by a fake -- a helper whose whole job is to fail has to be
+// shown failing, or it is the same act of faith it was written to replace.
+func flag(t testing.TB, m map[string]any, key string) bool {
+	t.Helper()
+
+	// The returns after each Fatalf are deliberate. A real *testing.T's Fatalf
+	// ends the goroutine, so they are unreachable in a run -- but without them
+	// the absent-key branch falls through into the type assertion and reports
+	// "<nil> is not a bool", losing the message that says WHICH names were
+	// actually present. That is the message a rename is read from. Found by
+	// this helper's own negative control, which is the argument for writing
+	// one: an instrument whose failure path has never been executed has not
+	// been shown to work.
+	v, ok := m[key]
+	if !ok {
+		t.Fatalf("field %q is absent -- a negative assertion on a field that is not there proves nothing. present: %v",
+			key, keysOf(m))
+
+		return false
+	}
+
+	b, ok := v.(bool)
+	if !ok {
+		t.Fatalf("field %q is %T (%v), not a bool", key, v, v)
+
+		return false
+	}
+
+	return b
+}
+
+// keysOf makes the failure above readable: the point of the message is to show
+// that a field was RENAMED, which needs the names that are actually there.
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+
+	sort.Strings(out)
+
+	return out
 }
 
 func num(m map[string]any, key string) float64 {

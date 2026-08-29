@@ -68,8 +68,8 @@ func TestPathfinding(t *testing.T) {
 			"to_y": toY,
 		})
 
-		clear := boolean(res, "straight_line_clear")
-		reachable := boolean(res, "reachable")
+		clear := flag(t, res, "straight_line_clear")
+		reachable := flag(t, res, "reachable")
 		count := int(num(res, "waypoint_count"))
 
 		t.Logf("candidate %+.0f,%+.0f -> straight_line_clear=%v reachable=%v waypoints=%d",
@@ -123,7 +123,7 @@ func TestPathfinding(t *testing.T) {
 		"to_y": startY + 400,
 	})
 
-	if boolean(far, "reachable") {
+	if flag(t, far, "reachable") {
 		t.Fatal("a goal 400 tiles off the map reported reachable")
 	}
 
@@ -339,14 +339,6 @@ func pathSignature(t *testing.T, res map[string]any) string {
 	}
 
 	return out
-}
-
-// boolean reads a bool out of a tool result, defaulting to false when the key
-// is missing -- the same tolerant shape as num.
-func boolean(m map[string]any, key string) bool {
-	v, ok := m[key].(bool)
-
-	return ok && v
 }
 
 func truncate(s string, n int) string {
