@@ -118,6 +118,10 @@ var Register = []Entry{
 		"Computes a row's weight from band, carrion and light -- the milestone's signed assertion.", ""},
 	{sym(pkgWorld, "Spawns.Band"), BucketWire, VerdictLive,
 		"The deep-night band the tables key on.", ""},
+	{sym(pkgWorld, "Spawns.Despawn"), BucketWire, VerdictLive,
+		"The only way a group leaves. Wired 29 Aug by clearAtDaybreak, which sends home every pack that never noticed you once the sun is up. Before that its one caller was HarnessSet, and with the group cap at 8 that made a permanent spawn stall: the eighth pack was the last one the game would ever produce.", ""},
+	{sym(pkgWorld, "Notice.Unwatch"), BucketWire, VerdictLive,
+		"The only way a watcher stops watching. Reached from Despawn, so it went live with it. Before 29 Aug nothing in a shipped build ever stopped watching anything.", ""},
 
 	// ---------------------------------------------------------------
 	// DELETE -- empty, and that is the bucket working rather than an
@@ -178,19 +182,14 @@ var Register = []Entry{
 	{sym(pkgWorld, "Spawns.OpenBodies"), BucketDefer, VerdictDead,
 		"The carrion count. Settable as a stand-in because the corpse machine that will drive it is not built.", "M4.7 (the corpse machine)"},
 
-	// The three rows below are the spawn stall, found by this register on
-	// 28 Aug. Nothing in a shipped build ever despawns a group, unwatches a
-	// watcher or releases a chase. Groups are hard-capped at MaxGroups 8
-	// (spawns.go:435, dial at :179, not settable), so this is not a leak --
-	// it is worse in a quieter way: once eight groups exist, every later roll
-	// hits the cap and NOTHING EVER ARRIVES AGAIN for the life of the screen.
-	// The milestone named here is a PROPOSAL, not a ruling.
-	{sym(pkgWorld, "Spawns.Despawn"), BucketDefer, VerdictHarnessOnly,
-		"The only way a group leaves. Its one caller is HarnessSet, so in a shipped build no pack ever departs and the group cap becomes a permanent spawn stall.", "M4.5 (PROPOSED -- awaiting Josh's ruling on the spawn stall)"},
-	{sym(pkgWorld, "Notice.Unwatch"), BucketDefer, VerdictHarnessOnly,
-		"The only way a watcher stops watching. Reached from Despawn and from Game.Unwatch, both harness-only, so awareness entries are never dropped in a shipped build.", "M4.5 (PROPOSED -- awaiting Josh's ruling on the spawn stall)"},
+	// Spawns.Despawn and Notice.Unwatch USED TO SIT HERE, deferred, as the
+	// spawn stall this register found on 28 Aug. They are wired now -- see
+	// the wire block above -- and the move is the register doing exactly what
+	// it is for: it named a hole, Josh ruled it a burst, and the gate went
+	// red until the hole was filled. Pursuit.Release is still deferred and
+	// still below, because ending a chase needs something that ends a fight.
 	{sym(pkgWorld, "Pursuit.Release"), BucketDefer, VerdictHarnessOnly,
-		"The only way a chase ends. Same shape: a shipped build starts chases and never ends one.", "M4.5 (PROPOSED -- awaiting Josh's ruling on the spawn stall)"},
+		"The only way a chase ends. A shipped build starts chases and never ends one -- daybreak now sends home the packs that never noticed you, but a pack that DID notice you keeps its chase, and what ends that is a fight.", "M4.5 (combat v0)"},
 
 	// ---------------------------------------------------------------
 	// OBSERVE -- harness surface. Reads and dial writes only; see the

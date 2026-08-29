@@ -662,6 +662,34 @@ func (g *gameSpawner) Spawn(code string, count int, aroundX, aroundY,
 	return out
 }
 
+// Despawn takes a group's members back off the map.
+//
+// The type assertion is the seam, not a shortcut: d2world hands back Watchers
+// because what a spawned thing is FOR is noticing you, and only this package
+// knows that a Watcher it produced is a chaser wrapping a real map entity.
+// Anything else -- a hand-made watcher from a script, say -- is skipped rather
+// than forced, the same way startChasesForTheAware skips a watcher that cannot
+// walk.
+func (g *gameSpawner) Despawn(members []d2world.Watcher) {
+	if g.engine == nil {
+		return
+	}
+
+	for _, m := range members {
+		c, ok := m.(chaser)
+		if !ok {
+			continue
+		}
+
+		entity, ok := c.entity.(d2interface.MapEntity)
+		if !ok {
+			continue
+		}
+
+		g.engine.RemoveEntity(entity)
+	}
+}
+
 // walkableNear finds ground near a wanted point, spiralling outward a few
 // tiles. A ring position can easily land in a wall or off the map; giving up
 // silently would make a spawn table look broken when the geometry was simply

@@ -51,10 +51,12 @@ type Spawns struct {
 
 	openBodies int
 
-	checks   int
-	rolls    int
-	spawned  int
-	failures int
+	checks    int
+	rolls     int
+	spawned   int
+	failures  int
+	despawned int // members taken back out of the world
+	cleared   int // groups sent home at daybreak
 }
 
 // Spawner is the only thing Spawns needs from the world outside: make count
@@ -70,6 +72,15 @@ type Spawns struct {
 // provider, not fatal in the field.
 type Spawner interface {
 	Spawn(code string, count int, aroundX, aroundY, minTiles, maxTiles float64) []Watcher
+
+	// Despawn takes the members back out of the world.
+	//
+	// It arrived a milestone late, and the gap is worth naming. M4.3b shipped
+	// with only the filling half: Spawns.Despawn dropped the bookkeeping and
+	// left the creatures standing on the map, and nothing in a shipped build
+	// called even that. THE FIRST PROVIDER RULE APPLIES TO THE WORLD OUTSIDE
+	// THE MODEL, not only to the model's own collection.
+	Despawn(members []Watcher)
 }
 
 // SpawnRow is one line of a stage table. Every number is a [DIAL].
@@ -402,6 +413,64 @@ func (s *Spawns) Advance(worldMinutes float64) {
 	if s.notice != nil {
 		s.notice.Advance(worldMinutes)
 	}
+
+	// After the notice model, so a group that noticed the player on this very
+	// tick is not sent home a moment later.
+	s.clearAtDaybreak()
+}
+
+// clearAtDaybreak sends home every group that has not noticed the player,
+// once the sun is properly up.
+//
+// M4.3b shipped without it, and the omission was worse than it looks. Nothing
+// in a shipped build called Despawn at all -- its only caller was HarnessSet
+// -- and check() refuses to spawn once len(groups) reaches MaxGroups (8). So
+// the eighth pack was the last one the game would ever produce: not a leak,
+// a permanent SPAWN STALL, with the night simply ceasing to happen for the
+// life of the screen. Found by the reachability register on its first run and
+// ruled a burst of its own by Josh, 28 Aug.
+//
+// StageDay rather than !Stage().IsDark(), and the difference is not cosmetic:
+// IsDark() is true for StageNight ALONE (clock.go:52), so "not dark" would
+// include dusk -- and the dogs row carries a 0.6 dusk weight, so a pack could
+// be cleared on the tick after it arrived. Daylight is the rule; the dark
+// stages either side of it are when things are out.
+//
+// A group that has noticed the player is left alone. Daylight is a reason to
+// go home, not a reason to forget the thing already coming for you, and what
+// happens to a pack that catches you at dawn is M4.5's.
+func (s *Spawns) clearAtDaybreak() {
+	if s.clock == nil || s.clock.Stage() != StageDay || len(s.groups) == 0 {
+		return
+	}
+
+	// groupIDs returns a sorted snapshot, so deleting inside the loop is safe
+	// and the order is the same on every launch.
+	for _, id := range s.groupIDs() {
+		if s.aware(id) {
+			continue
+		}
+
+		if s.Despawn(id) {
+			s.cleared++
+		}
+	}
+}
+
+// aware reports whether any member of a group has noticed the player.
+func (s *Spawns) aware(groupID string) bool {
+	g, ok := s.groups[groupID]
+	if !ok || s.notice == nil {
+		return false
+	}
+
+	for _, m := range g.members {
+		if noticed, watching := s.notice.Noticed(m.WatcherID()); watching && noticed {
+			return true
+		}
+	}
+
+	return false
 }
 
 // check consults every row once, in declaration order.
@@ -494,6 +563,13 @@ func (s *Spawns) Despawn(groupID string) bool {
 		return false
 	}
 
+	// The world first, then the bookkeeping. Before 29 Aug this method did
+	// only the second half, so even a harness despawn left the creatures
+	// standing on the map with nothing watching them.
+	if s.spawner != nil {
+		s.spawner.Despawn(g.members)
+	}
+
 	if s.notice != nil {
 		for _, m := range g.members {
 			s.notice.Unwatch(m.WatcherID())
@@ -501,6 +577,8 @@ func (s *Spawns) Despawn(groupID string) bool {
 	}
 
 	delete(s.groups, groupID)
+
+	s.despawned += len(g.members)
 
 	return true
 }
@@ -679,6 +757,8 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 		"rolls":          s.rolls,
 		"spawned":        s.spawned,
 		"spawn_failures": s.failures,
+		"despawned":      s.despawned,
+		"cleared":        s.cleared,
 		"check_minutes":  s.dials.CheckMinutes,
 		"chance":         s.dials.Chance,
 		"rout_at":        s.dials.RoutAt,

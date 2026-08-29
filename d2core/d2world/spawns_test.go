@@ -17,6 +17,11 @@ type fakeSpawner struct {
 	lastCount        int
 	lastMin, lastMax float64
 	made             int
+	removed          int
+}
+
+func (s *fakeSpawner) Despawn(members []Watcher) {
+	s.removed += len(members)
 }
 
 func (s *fakeSpawner) Spawn(code string, count int, aroundX, aroundY, minTiles, maxTiles float64) []Watcher {
