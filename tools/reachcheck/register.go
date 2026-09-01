@@ -65,6 +65,10 @@ func sym(pkg, name string) string {
 const (
 	pkgWorld  = "d2core/d2world"
 	pkgScreen = "d2game/d2gamescreen"
+	// pkgEntity joined at M4.5 step 3, when the NPC gained its first two
+	// exported members that combat cares about. Before that, nothing in
+	// d2mapentity was worth a claim: the entity was a sprite on a path.
+	pkgEntity = "d2core/d2map/d2mapentity"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -120,6 +124,25 @@ var Register = []Entry{
 		"The deep-night band the tables key on.", ""},
 	{sym(pkgWorld, "Spawns.Despawn"), BucketWire, VerdictLive,
 		"The only way a group leaves. Wired 29 Aug by clearAtDaybreak, which sends home every pack that never noticed you once the sun is up. Before that its one caller was HarnessSet, and with the group cap at 8 that made a permanent spawn stall: the eighth pack was the last one the game would ever produce.", ""},
+	// MOVED observe -> wire ON 1 SEP 2026, AND THE MOVE IS THE FINDING.
+	//
+	// The gate went red on this row, and it was RIGHT: Spawns.aware reads
+	// Noticed at spawns.go:468 to decide which packs go home at daybreak, so
+	// a shipped build has called it since 68605cb2 on 28 Aug -- git blame
+	// names that commit for the line, and the burst that found this had not
+	// touched spawns.go at all.
+	//
+	// IT WENT UNNOTICED FOR THREE DAYS BECAUSE THE FULL REGISTER WAS NOT
+	// RE-RUN. The spawn-stall burst moved Spawns.Despawn and Notice.Unwatch
+	// by hand and checked those; M4.5 steps 1 and 2 ran `-only Combat` and
+	// `-only Meters.Shaken`. Every one of those passed. A gate that is only
+	// ever run on the symbols you expect to have changed measures your
+	// expectations, which is the same failure as the grep census A2 replaced
+	// -- an instrument and a hypothesis sharing an assumption cannot
+	// disconfirm it. Run the whole register before the commit that closes a
+	// milestone step.
+	{sym(pkgWorld, "Notice.Noticed"), BucketWire, VerdictLive,
+		"Whether one watcher has noticed the player. The spawn tables read it every daybreak: a pack that has noticed you is NOT sent home, which is the whole distinction the stall fix turned on. Wire, so the gate goes red if that read is ever removed.", ""},
 	{sym(pkgWorld, "Notice.Unwatch"), BucketWire, VerdictLive,
 		"The only way a watcher stops watching. Reached from Despawn, so it went live with it. Before 29 Aug nothing in a shipped build ever stopped watching anything.", ""},
 	{sym(pkgWorld, "Combat.Advance"), BucketWire, VerdictLive,
@@ -197,6 +220,33 @@ var Register = []Entry{
 	{sym(pkgWorld, "Spawns.OpenBodies"), BucketDefer, VerdictDead,
 		"The carrion count. Settable as a stand-in because the corpse machine that will drive it is not built.", "M4.7 (the corpse machine)"},
 
+	// M4.5 STEP 3 -- THE NPC BODY. Three rows, and every verdict below was
+	// measured on 31 Aug 2026 at 11:47 PM CT against HEAD 502e4cef plus this
+	// burst's working tree, by strigoi-harness-runs\step3-reach.ps1, with
+	// Combat.Advance (live) and Meters.Shaken (harness-only) run in the same
+	// batch as controls so the instrument's two known answers were confirmed
+	// before these three were believed.
+	//
+	// None of them is wire, and that is the honest reading rather than a
+	// disappointing one. The game DOES adopt a body for every monster the
+	// spawn tables send -- gameSpawner.Spawn calls Game.adoptNPCBody, which
+	// Spawns.Advance drives from advanceWorld -- but adoptNPCBody is
+	// unexported and this register covers exported symbols only, so the row
+	// that would say so cannot be written. What CAN be named is the reading
+	// side, and the reading side is still harness-only or dead, because the
+	// only thing that reads a monster's health today is the combat
+	// provider's HarnessState. That flips at step 4 when the resolver reads
+	// it in Go, and not a commit before -- the same reasoning as the two
+	// Meters rows above, in a third costume.
+	{sym(pkgScreen, "Game.BodyOf"), BucketDefer, VerdictHarnessOnly,
+		"How the combat model asks what a monster's body is. The game screen implements it and combat calls it, but only inside HarnessState, which the d2harness registry dispatches and only harness-tagged code consumes. The resolver is what makes it live.", "M4.5 (the resolver)"},
+	{sym(pkgScreen, "Game.BodiesKnown"), BucketObserve, VerdictHarnessOnly,
+		"How many monsters currently have a body. Observe rather than defer, and it is a READ: it exists so a playtest can watch the game adopt bodies when the spawn tables fire, which is the only way to tell eager adoption from BodyOf's on-demand fallback. Without it, deleting the eager path would break no test -- the M4.1 and M4.3b shape.", ""},
+	{sym(pkgEntity, "NPC.MonStat"), BucketDefer, VerdictHarnessOnly,
+		"The monstats record an NPC was built from, so the game screen can read a hit-point band without going through harness state. Reached only from Game.BodyOf, so it inherits that row's verdict exactly.", "M4.5 (the resolver)"},
+	{sym(pkgEntity, "NPC.SetAnimationMode"), BucketDefer, VerdictDead,
+		"The first exported way to tell a monster to play a mode -- to swing, to be hit, to die. NOTHING CALLS IT YET, which is the point of the row: the resolver is what swings, and until it does this is dead in every configuration. tools/animcensus measured that the animations it would ask for do exist.", "M4.5 (the resolver)"},
+
 	// Spawns.Despawn and Notice.Unwatch USED TO SIT HERE, deferred, as the
 	// spawn stall this register found on 28 Aug. They are wired now -- see
 	// the wire block above -- and the move is the register doing exactly what
@@ -243,8 +293,6 @@ var Register = []Entry{
 		"Reports how many chases are live.", ""},
 	{sym(pkgWorld, "Pursuit.Solves"), BucketObserve, VerdictHarnessOnly,
 		"Reports how many route solves have run. This is the counter that caught M4.3a's 218-solve bug.", ""},
-	{sym(pkgWorld, "Notice.Noticed"), BucketObserve, VerdictHarnessOnly,
-		"Reports whether one watcher has noticed the player.", ""},
 	{sym(pkgWorld, "Notice.Count"), BucketObserve, VerdictHarnessOnly,
 		"Reports how many watchers exist.", ""},
 	{sym(pkgWorld, "Notice.Checks"), BucketObserve, VerdictHarnessOnly,

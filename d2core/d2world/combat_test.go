@@ -18,10 +18,51 @@ type fakeFitness struct {
 func (f *fakeFitness) ReactionAvailable() bool { return f.reaction }
 func (f *fakeFitness) Shaken() bool            { return f.shaken }
 
+// fakeBodies stands in for the game screen's body registry (M4.5 step 3).
+//
+// BodyOf returns an UNTYPED nil for an id it does not know, which is the
+// contract the Bodies doc comment states and not a detail of the fake: a nil
+// *T returned into an interface is not nil, so a lookup that got this wrong
+// would report has_body:true for a body that is not there and then panic
+// dereferencing it.
+type fakeBodies struct {
+	known map[string]*fakeBody
+}
+
+func (f *fakeBodies) BodiesKnown() int { return len(f.known) }
+
+func (f *fakeBodies) BodyOf(id string) Body {
+	if b, ok := f.known[id]; ok && b != nil {
+		return b
+	}
+
+	return nil
+}
+
+type fakeBody struct {
+	health    int
+	maxHealth int
+}
+
+func (b *fakeBody) CurrentHealth() int { return b.health }
+func (b *fakeBody) MaxHealth() int     { return b.maxHealth }
+func (b *fakeBody) SetHealth(h int)    { b.health = h }
+
 // newTestCombat wires a Notice with a clear line of sight, so a watcher's
 // awareness is a function of distance alone and the tests can put a thing in
 // reach or out of it by moving it.
 func newTestCombat(t *testing.T) (*Combat, *Notice, *fakeQuarry, *fakeFitness) {
+	t.Helper()
+
+	// Nil bodies, deliberately: most of these tests are about whether a fight
+	// happens, and a model that needs a body registry to decide that would
+	// have the fence in the wrong place.
+	return newTestCombatWith(t, nil)
+}
+
+// newTestCombatWith is newTestCombat plus a body lookup, for the tests that
+// are about what the provider reports rather than about when a fight starts.
+func newTestCombatWith(t *testing.T, bodies Bodies) (*Combat, *Notice, *fakeQuarry, *fakeFitness) {
 	t.Helper()
 
 	clock := NewClock(DefaultClockDials())
@@ -29,7 +70,7 @@ func newTestCombat(t *testing.T) (*Combat, *Notice, *fakeQuarry, *fakeFitness) {
 	fitness := &fakeFitness{reaction: true}
 	target := &fakeQuarry{id: "p:1", x: 40, y: 40}
 
-	c := NewCombat(clock, notice, fitness, &fakeIllumination{}, 1462, DefaultCombatDials())
+	c := NewCombat(clock, notice, fitness, &fakeIllumination{}, bodies, 1462, DefaultCombatDials())
 
 	t.Cleanup(c.Close)
 
@@ -182,7 +223,7 @@ func TestCombatProvisionalOrderIsDeterministic(t *testing.T) {
 		clock := NewClock(DefaultClockDials())
 		notice := NewNotice(&fakeSight{clear: true}, &fakeIllumination{}, DefaultNoticeDials())
 		target := &fakeQuarry{id: "p:1", x: 40, y: 40}
-		c := NewCombat(clock, notice, &fakeFitness{}, &fakeIllumination{}, 1462, DefaultCombatDials())
+		c := NewCombat(clock, notice, &fakeFitness{}, &fakeIllumination{}, nil, 1462, DefaultCombatDials())
 
 		defer c.Close()
 
@@ -283,4 +324,116 @@ func TestCombatAdjacentTilesIsADial(t *testing.T) {
 
 	c.Advance(1.0)
 	require.True(t, c.Fighting(), "widening the reach should bring the same wolf into the fight")
+}
+
+// THE ENEMY HAS A BODY, AND A SCRIPT CAN SEE IT (M4.5 step 3).
+//
+// This is the milestone's own assertion at the model level: before step 3 an
+// NPC had no health at all, and the provider could report that a fight was
+// happening without being able to say what was in it.
+func TestCombatReportsAnEnemyBody(t *testing.T) {
+	bodies := &fakeBodies{known: map[string]*fakeBody{
+		"w:1": {health: 181, maxHealth: 181},
+	}}
+
+	c, notice, target, _ := newTestCombatWith(t, bodies)
+
+	wolf := &fakeWatcher{id: "w:1", x: 41, y: 40}
+	aware(t, notice, wolf, target)
+
+	c.Advance(1.0)
+
+	state := c.HarnessState()
+	require.Equal(t, true, state["has_bodies"])
+
+	parts, ok := state["participants"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, parts, 2)
+
+	require.Equal(t, "enemy", parts[1]["side"])
+	require.Equal(t, true, parts[1]["has_body"])
+	require.Equal(t, 181, parts[1]["health"])
+	require.Equal(t, 181, parts[1]["max_health"])
+
+	// The PLAYER's body is deliberately not reported here. It is already
+	// meters.health / max_health, and Fitness was fenced to two booleans on
+	// purpose; duplicating it would give one truth two homes, which is the
+	// disease this project keeps treating.
+	require.NotContains(t, parts[0], "health")
+}
+
+// A MONSTER WITH NO BODY READS AS "NO BODY", NOT AS ZERO HEALTH.
+//
+// The harness and the debug terminal can both put an NPC on the map without
+// the game screen adopting it, so this case is real rather than defensive.
+// A3's lesson in one sentence: a missing value that reads as a legal value is
+// an assertion that passes while measuring nothing -- health:0 would satisfy
+// "the wolf is nearly dead" for a wolf nobody ever gave a body to.
+func TestCombatReportsNoBodyRatherThanZeroHealth(t *testing.T) {
+	// Knows a different monster, so the lookup works and this id is genuinely
+	// absent rather than the whole registry being empty.
+	bodies := &fakeBodies{known: map[string]*fakeBody{
+		"someone-else": {health: 61, maxHealth: 61},
+	}}
+
+	c, notice, target, _ := newTestCombatWith(t, bodies)
+
+	wolf := &fakeWatcher{id: "w:1", x: 41, y: 40}
+	aware(t, notice, wolf, target)
+
+	c.Advance(1.0)
+
+	parts, ok := c.HarnessState()["participants"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, parts, 2)
+
+	require.Equal(t, false, parts[1]["has_body"], "the registry does not know this id")
+	require.NotContains(t, parts[1], "health", "absent, not zero")
+	require.NotContains(t, parts[1], "max_health")
+}
+
+// The model still works with no body registry at all, which is what every
+// unit test above it relies on and what a Combat built before the game screen
+// exists would see.
+func TestCombatWithoutABodyRegistryStillReportsTheFight(t *testing.T) {
+	c, notice, target, _ := newTestCombat(t)
+
+	wolf := &fakeWatcher{id: "w:1", x: 41, y: 40}
+	aware(t, notice, wolf, target)
+
+	c.Advance(1.0)
+
+	state := c.HarnessState()
+	require.Equal(t, true, state["fighting"])
+	require.Equal(t, false, state["has_bodies"])
+
+	parts, ok := state["participants"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, false, parts[1]["has_body"])
+}
+
+// A LOOKUP THAT RETURNS A TYPED NIL WOULD PANIC, AND THIS IS THE CONTROL FOR
+// IT. Go's nil-interface trap: a (*T)(nil) returned as an interface is not
+// nil, so "if body != nil" passes and the next call dereferences nothing.
+// The Bodies doc comment requires an untyped nil; this proves the model
+// believes a lookup that honours it, and d2gamescreen's own test proves the
+// real implementation does.
+func TestCombatBelievesAnUntypedNilFromTheLookup(t *testing.T) {
+	bodies := &fakeBodies{known: map[string]*fakeBody{"w:1": nil}}
+
+	// The fake maps a known id to a nil body, which its BodyOf must convert
+	// into an untyped nil rather than passing along.
+	require.Nil(t, bodies.BodyOf("w:1"))
+	require.True(t, bodies.BodyOf("w:1") == nil, "must be an UNTYPED nil")
+
+	c, notice, target, _ := newTestCombatWith(t, bodies)
+
+	wolf := &fakeWatcher{id: "w:1", x: 41, y: 40}
+	aware(t, notice, wolf, target)
+
+	c.Advance(1.0)
+
+	parts, ok := c.HarnessState()["participants"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, false, parts[1]["has_body"])
 }

@@ -37,6 +37,7 @@ type Combat struct {
 	notice  *Notice
 	fitness Fitness
 	illum   Illumination
+	bodies  Bodies
 
 	rng *rand.Rand
 
@@ -63,6 +64,41 @@ type Combat struct {
 type Fitness interface {
 	ReactionAvailable() bool
 	Shaken() bool
+}
+
+// Bodies is how the combat model asks what an enemy's body is, by the same id
+// Notice and Pursuit already know it by. It is the monster half of what
+// Fitness is for the player: the narrowest thing that answers the question,
+// rather than a handle on the thing that owns the answer.
+//
+// Nil means no body is known, and the model must cope rather than assume:
+// the game screen adopts a body for every monster the spawn tables send, but
+// the harness and the debug terminal can both put an NPC on the map without
+// going through it, and a fight against one of those is a fight against
+// something with no body. That is reported as has_body:false rather than as
+// zero health, because "I do not know" and "it is dead" are different facts
+// and A3's fail-open lesson is what happens when they share a value.
+//
+// An implementation MUST return an untyped nil for an unknown id. Returning a
+// nil *T here yields a non-nil interface, which would report has_body:true
+// for a body that is not there.
+type Bodies interface {
+	BodyOf(id string) Body
+
+	// BodiesKnown is how many bodies the registry holds.
+	//
+	// It exists so that ADOPTION IS OBSERVABLE, and that is not decoration.
+	// The game screen adopts a body when the spawn tables place a monster,
+	// and BodyOf also adopts one on demand for anything the tables did not
+	// place -- so without a count, a playtest cannot tell the two apart, and
+	// deleting the eager path would break nothing any test could see. That is
+	// the shape of the M4.1 and M4.3b failures exactly: a thing the game is
+	// supposed to do, which only the harness ever actually does, passing
+	// because no assertion could distinguish them.
+	//
+	// With the count, forcing a real arrival and watching this rise BEFORE
+	// any fight exists is evidence about the game.
+	BodiesKnown() int
 }
 
 // Combatant is a participant. It is deliberately the same shape as Watcher --
@@ -139,13 +175,14 @@ type encounter struct {
 // same order, which is R2 §3's determinism clause applied to the one part of
 // this milestone that is arbitrary by design.
 func NewCombat(clock *Clock, notice *Notice, fitness Fitness, illum Illumination,
-	seed int64, dials CombatDials) *Combat {
+	bodies Bodies, seed int64, dials CombatDials) *Combat {
 	c := &Combat{
 		dials:   dials,
 		clock:   clock,
 		notice:  notice,
 		fitness: fitness,
 		illum:   illum,
+		bodies:  bodies,
 		rng:     rand.New(rand.NewSource(seed)), // nolint:gosec // gameplay RNG, seeded for reproducibility
 		nextID:  1,
 	}
@@ -403,6 +440,12 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"adjacent_tiles": c.dials.AdjacentTiles,
 		"has_notice":     c.notice != nil,
 		"has_fitness":    c.fitness != nil,
+		"has_bodies":     c.bodies != nil,
+		"bodies_known":   0,
+	}
+
+	if c.bodies != nil {
+		state["bodies_known"] = c.bodies.BodiesKnown()
 	}
 
 	if c.clock != nil {
@@ -462,6 +505,20 @@ func (c *Combat) HarnessState() map[string]interface{} {
 
 		if c.illum != nil {
 			row["light_here"] = c.illum.Level(int(math.Floor(ex)), int(math.Floor(ey)))
+		}
+
+		// M4.5 step 3: the enemy has a body, and a script can now assert on
+		// it. has_body is reported separately and always, so that a monster
+		// the game screen never adopted reads as "no body known" rather than
+		// as a monster on zero health -- see the Bodies doc comment.
+		row["has_body"] = false
+
+		if c.bodies != nil {
+			if body := c.bodies.BodyOf(enemy.WatcherID()); body != nil {
+				row["has_body"] = true
+				row["health"] = body.CurrentHealth()
+				row["max_health"] = body.MaxHealth()
+			}
 		}
 
 		parts = append(parts, row)

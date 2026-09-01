@@ -125,7 +125,12 @@ func CreateGame(
 	game.spawns = d2world.NewSpawns(
 		game.worldClock,
 		game.notice,
-		&gameSpawner{engine: gameClient.MapEngine, asset: asset},
+		&gameSpawner{
+			engine:  gameClient.MapEngine,
+			asset:   asset,
+			adopt:   game.adoptNPCBody,
+			release: game.releaseNPCBody,
+		},
 		game.light,
 		gameClient.Seed,
 		d2world.DefaultSpawnDials(),
@@ -142,6 +147,7 @@ func CreateGame(
 		game.notice,
 		game.meters,
 		game.light,
+		game,
 		gameClient.Seed,
 		d2world.DefaultCombatDials(),
 	)
@@ -196,6 +202,12 @@ type Game struct {
 	notice       *d2world.Notice
 	spawns       *d2world.Spawns
 	combat       *d2world.Combat
+
+	// bodies is where a monster's health lives (M4.5 step 3), keyed by the
+	// entity id d2world knows it by. It is on the screen rather than on the
+	// entity for the reasons npc_body.go states. Game satisfies
+	// d2world.Bodies through it.
+	bodies map[string]*npcBody
 
 	renderer      d2interface.Renderer
 	inputManager  d2interface.InputManager
@@ -262,6 +274,10 @@ func (v *Game) OnUnload() error {
 	if v.combat != nil {
 		v.combat.Close()
 	}
+
+	// The bodies go with the screen: they are keyed by entity ids that mean
+	// nothing on the next map.
+	v.bodies = nil
 
 	if err := v.gameControls.UnbindTerminalCommands(v.terminal); err != nil {
 		return err
@@ -637,6 +653,14 @@ type gameSpawner struct {
 	engine  *d2mapengine.MapEngine
 	asset   *d2asset.AssetManager
 	arrival int
+
+	// adopt and release hand a spawned monster its body and take it back
+	// (M4.5 step 3). They are callbacks rather than a *Game so that the
+	// spawner still knows only what it needs: it has the monstats record in
+	// hand at the moment it creates the entity, which is the only moment the
+	// hit-point band and the entity id are both to hand.
+	adopt   func(id string, maxHealth int)
+	release func(id string)
 }
 
 const (
@@ -685,6 +709,15 @@ func (g *gameSpawner) Spawn(code string, count int, aroundX, aroundY,
 		}
 
 		g.engine.AddEntity(npc)
+
+		// The night hands the monster a body. This is the game-side caller
+		// that keeps the whole thing off the harness-only ladder: Spawns
+		// drives it from advanceWorld, so a shipped build adopts bodies with
+		// no script involved.
+		if g.adopt != nil {
+			g.adopt(npc.ID(), monstat.MaxHPNormal)
+		}
+
 		out = append(out, chaser{entity: npc})
 	}
 
@@ -716,6 +749,13 @@ func (g *gameSpawner) Despawn(members []d2world.Watcher) {
 		}
 
 		g.engine.RemoveEntity(entity)
+
+		// Off the map, so the body goes too. Paired with the removal rather
+		// than with the loop, so a member that was never really on the map
+		// keeps whatever body BodyOf may since have adopted for it.
+		if g.release != nil {
+			g.release(c.entity.ID())
+		}
 	}
 }
 

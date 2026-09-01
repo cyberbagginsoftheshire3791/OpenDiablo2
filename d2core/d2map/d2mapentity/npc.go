@@ -199,3 +199,44 @@ func (v *NPC) GetVelocity() d2vector.Vector {
 func (v *NPC) GetSize() (width, height int) {
 	return v.composite.GetSize()
 }
+
+// MonStat returns the monstats record this NPC was built from, or nil.
+//
+// The record is already held (the factory sets it at construction) and 252 of
+// its fields are decoded; until M4.5 step 3 nothing outside this package could
+// read any of them, so the game screen could not learn a monster's hit-point
+// band without going through HarnessState -- which is the mistake Pursuit's
+// unexported `arrived` made, answering a Go question out of a JSON map.
+//
+// Read-only, and it is NOT health: it is the record the entity was stamped
+// from. Where a monster's CURRENT health lives, and why it lives there, is
+// npcBody in d2game/d2gamescreen.
+func (v *NPC) MonStat() *d2records.MonStatRecord {
+	return v.monstatRecord
+}
+
+// SetAnimationMode tells the composite which mode to play, keeping the
+// current weapon class. It mirrors Player.SetAnimationMode (player.go).
+//
+// THIS IS THE FIRST EXPORTED WAY TO TELL A MONSTER TO DO ANYTHING. Before it,
+// an NPC's whole animation vocabulary was the three modes next() and rotate()
+// set for themselves -- Neutral, Walk and Skill1 -- and a census of Attack1,
+// Attack2, GetHit, Death, Dead and Block outside d2enum returned empty for
+// every one: no monster in this codebase had ever been told to attack, be hit
+// or die. animation_mode is already reported per entity, so the day a
+// resolver calls this, "the monster swung" becomes assertable.
+//
+// MEASURED (tools/animcensus, 31 Aug 2026): fallen1, zombie1 and skeleton1 --
+// the three codes the signed spawn tables use -- all have A1, A2, GH, DT and
+// DD, so those calls will find an animation rather than an error.
+//
+// TWO THINGS THIS DOES NOT DO, and the second is a live constraint on step 4.
+// It does not hold the mode: next() and rotate() set the mode from the NPC's
+// own state whenever they run, so an externally set A1 lasts only until the
+// entity next decides otherwise. And it does not tell the caller when the
+// swing lands; the precedent for that is Player.StartCasting(mode, onFinished).
+// A resolver that needs either will need a held-mode path, which is step 4's
+// to build and is deliberately not invented here.
+func (v *NPC) SetAnimationMode(mode d2enum.MonsterAnimationMode) error {
+	return v.composite.SetMode(mode, v.composite.GetWeaponClass())
+}
