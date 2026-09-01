@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.9.0"          // M4.3b: watch, and the spawns provider carrying the notice blocks
+	harnessVersion     = "0.9.1"          // M4.5 steps 1-3: the combat provider, and the bodies in it
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64

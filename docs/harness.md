@@ -72,7 +72,7 @@ with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING 
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 
-## The tools (36; harness 0.9.0)
+## The tools (36; harness 0.9.1)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -160,13 +160,14 @@ are one checklist.
 **The rule, from Phase 4 on: a system is not done until its provider exposes
 every value its S1 §12 playtest assertion needs** (Constitution VI.2, made
 mechanical). The planned names the tools already know: `dead`
-(M4.3, M4.6), `combat` (M4.5), `reputation` / `inventory` / `region` (Phase
-6), `soul_pressure` (Phase 4 dashboard sim). Asking for one early returns
+(M4.3, M4.6), `reputation` / `inventory` / `region` (Phase 6),
+`soul_pressure` (Phase 4 dashboard sim). Asking for one early returns
 `NOT_IMPLEMENTED` with the milestone. A name leaves this map in the same
-commit its provider registers — `meters` did at M4.2, `spawns` at M4.3b.
+commit its provider registers — `meters` did at M4.2, `spawns` at M4.3b,
+`combat` at M4.5 step 1.
 
 Registered today — **`clock`**, **`light`**, **`meters`**, **`pursuit`**,
-**`spawns`** and **`ui`**, all while a game screen is live.
+**`spawns`**, **`combat`** and **`ui`**, all while a game screen is live.
 
 **`pursuit`** (M4.3a) reports the live chases and their dials; settable
 `arrive_within`, `release`, `repath_tiles`. **`spawns`** (M4.3b) reports the
@@ -180,6 +181,37 @@ apart from "nothing did". Settable: `chance`, `check_minutes`, `despawn`,
 `notice_radius`, `open_bodies`, `rout_at`. There is deliberately no spawn
 verb: a script forces an arrival by raising `chance` and stepping the clock,
 which exercises the real table rather than bypassing it.
+
+**`combat`** (M4.5). Steps 1 and 2 built the encounter — that a fight IS
+happening, who is in it, and whose turn it is — and step 3 gave the monsters
+bodies. It reports `fighting`, `encounter`, `round`, `minutes_into_round`,
+`order` (the activation sequence, **provisional** until D8 rules and reported
+precisely so it can be replaced without touching anything else), the counters
+`encounters` / `ended` / `rounds` / `declined_reach`, the dials
+`round_minutes` (1.0, SIGNED by R2 §2A) and `adjacent_tiles` (1 — Chebyshev
+on floored tiles, deliberately a separate dial from pursuit's Euclidean
+`arrive_within`), and the wiring flags `has_notice` / `has_fitness` /
+`has_bodies`. Each `participants` row carries `id`, `side`, `x`, `y`,
+`adjacent` and `light_here`; the player side adds `reaction_available` and
+`shaken` (read from the meters, not recomputed), and each enemy adds
+`has_body` plus `health` / `max_health` when a body is known.
+
+**`has_body` is reported separately and always**, so a monster the game
+screen never adopted reads as "no body known" rather than as a monster on
+zero health — the harness and the debug terminal can both place an NPC
+without passing through the screen. **`bodies_known`** counts the bodies the
+registry holds, and it exists to be watched rather than admired: the game
+adopts a body when the spawn tables place a monster, and `Game.BodyOf` also
+adopts one on demand, so without a count no test could tell those apart and
+deleting the eager path would break nothing. `playtest/combat_body_test.go`
+forces a real table arrival and watches this number rise before any fight
+exists.
+
+Settable: `adjacent_tiles`, `disengage`, `round`, `round_minutes`. **There is
+deliberately no start verb and no set-health verb** — the same call spawns
+made about spawning. A script arranges a fight by placing something, telling
+the notice model to watch, and stepping the clock; if an encounter appears,
+the game made it.
 
 **`clock`** (M4.1, `d2core/d2world`): `world_minutes` since the epoch,
 `minute_of_day`, `time_of_day`, `date` + `year`/`month`/`day` in the Julian

@@ -1,7 +1,42 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-08-28 (midday CT). Keep this to a screen; the full state
+Updated: 2026-09-01 (00:15 CT). Keep this to a screen; the full state
 lives in `state.md` in the claude.ai project and in Notion.
+
+**SINCE 28 AUG, AND THIS FILE HAD NOT SAID SO -- five heads landed while the
+body of this document still read as current, which is the exact disease it
+warns about further down.** In order: `68605cb2` THE SPAWN STALL FIXED
+(daybreak sends home the packs that have not noticed you; groups were
+hard-capped at 8 and nothing ever despawned, so the night stopped happening
+after the first eight packs) - `dd2b7d99` `tools/mapfirecount` (ask 1 of the
+map-fire note: the village places about TWENTY-ONE lit objects, and NOT ONE
+is lit in the mode it is placed in) - `deadf8a8` A3 (the playtest scripts'
+fail-open bool reads now fail closed; `num`/`str`/`pair` are still fail-open
+at 177 sites and that is named, not fixed) - `84018f5a` + `502e4cef` M4.5
+STEPS 1 AND 2 (the encounter model and its provider, built BEFORE the
+resolver on purpose) - and this burst, M4.5 STEP 3.
+
+**M4.5 IS WHOLE, WITH NAMED STEPS** (Josh, 31 Aug). Step 3 = the NPC body;
+step 4 = the resolver (`band`, `advantage`-and-why, damage); step 5 = rout,
+quick-resolve, `Pursuit.Release`'s first game caller, the eight-clause
+playtest. The eight-clause DoD in the signed note's section 4.1 is the only
+"done"; each step closes with a decision row.
+
+**M4.5 STEP 3 IN ONE PARAGRAPH.** A monster had no health, no morale, no
+alive flag and three usable animation modes; the player was a body and an NPC
+was a sprite on a path. Now `npcBody` in `d2gamescreen` satisfies the same
+`d2world.Body` the meters declared, health lives on an adapter the screen
+owns (NOT on the entity - R2 section 1 signs no health bar, and
+`d2mapentity` is engine-inherited code), and `Combat` reads it through a
+two-method `Bodies` lookup. **HP is `MaxHPNormal` with NO ROLL**: a new RNG
+draw would move every seeded measurement, which is what the worldgen fix cost
+in August. `NPC.SetAnimationMode` is the first exported way to tell a monster
+to do anything. **`tools/animcensus` measured that the three stand-in codes
+all have A1, A2, GH, DT and DD** (fallen1 21-61, zombie1 101-181, skeleton1
+86-129), so the resolver will find animations rather than errors. **The one
+thing to know before step 4: `npc.go`'s `next()`/`rotate()` reset the mode
+from the NPC's own state every tick, so an externally set A1 does not hold -
+a held-mode path is step 4's to build.**
 
 **THE PLAN IS v1.6 (28 Aug).** v1.5 corrected the plan's stale status;
 v1.6 changes the SEQUENCE. Phase 4 now states an explicit build order,
