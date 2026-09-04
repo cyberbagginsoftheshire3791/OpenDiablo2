@@ -3,6 +3,39 @@
 Updated: 2026-09-01 (00:15 CT). Keep this to a screen; the full state
 lives in `state.md` in the claude.ai project and in Notion.
 
+**THREE SAVED SKILLS CARRY THIS PROJECT'S PROCEDURES. INVOKE THEM; DO NOT
+RE-DERIVE THEM** (Josh saved them 3 Sep 2026). They live on Josh's
+claude.ai account, so they are available on every surface -- Cowork,
+Claude Code, chat -- and they are deliberately NOT copied into
+`.claude/skills/`: two writable homes for one procedure drift, and the
+stale one is what a cold session reads first. The spine of a burst, in
+order:
+
+1. `brief-then-attack` -- BEFORE any milestone step, research topic or
+   finding is built or filed. One session writes it; a second,
+   independent agent tries to break it. Four A-severity findings across
+   three M4.5 steps, and C3's lead pass read its load-bearing sentence
+   backwards.
+2. `strigoi-measure-first` -- at the START of a build burst whose design
+   depends on engine behaviour, before code or assertions. Throwaway
+   playtest scaffold, deleted before the commit. Step 4's section 0
+   changed THREE design decisions before they cost anything.
+   **A measurement that contradicts the brief beats the brief.**
+3. `strigoi-burst-closeout` -- gate, the FULL reachability register,
+   every playtest script, negative controls, commit, CI, Notion, the
+   tracker, state.md, the handoff.
+
+They compose and do not substitute: closeout is not the gate, and the
+brief is not section 0. **If a skill is not in the session's skill list,
+say so** rather than improvising a shortened version of it.
+
+**THIS FILE IS ONE STEP BEHIND: M4.5 STEP 4 SHIPPED 3 SEP (`040eea70`)**
+and the body below still stops at step 3 -- the exact disease the next
+paragraph warns about. The resolver, the player's body through
+`Game.BodyOf`, D8 section 9's order and the thirteenth playtest are all in
+the tree; read `claude/m4.5-step4-build-note.md`. Refreshing this file
+properly is its own small burst.
+
 **SINCE 28 AUG, AND THIS FILE HAD NOT SAID SO -- five heads landed while the
 body of this document still read as current, which is the exact disease it
 warns about further down.** In order: `68605cb2` THE SPAWN STALL FIXED

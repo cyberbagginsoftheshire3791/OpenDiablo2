@@ -55,6 +55,40 @@ frozen numbers below.
    of four buckets: wire, observe, defer (naming the milestone that
    picks it up), delete. See `docs/reachability.md`.
 
+## Skills — invoke them, do not re-derive them
+
+Three saved skills carry the procedures this project learned the
+expensive way. They live on Josh's claude.ai account (saved 3 Sep 2026),
+so they are available on **every** surface — Cowork, Claude Code, chat —
+and they are deliberately **not** copied into `.claude/skills/`, which
+holds only the repo-local `d2-formats` skill. Two writable homes for one
+procedure drift, and the stale one is what a cold session reads first.
+
+The spine of a burst, in order:
+
+1. **`brief-then-attack`** — before any milestone step, research topic or
+   finding is built or filed. One session writes the plan; a second,
+   independent agent tries to break it. This has caught four A-severity
+   findings across three M4.5 steps, and it is why C3 is filed correctly:
+   the lead pass read its load-bearing sentence backwards.
+2. **`strigoi-measure-first`** — at the *start* of any build burst whose
+   design depends on engine behaviour, before code or assertions.
+   Throwaway playtest scaffold, deleted before the commit. Step 4's §0
+   pass changed three design decisions before they cost anything (player
+   `max_health` is 240 not 166; a pursuer's route ends on the quarry's
+   **own** tile; `advanceWorld` runs once per **frame**). **A measurement
+   that contradicts the brief beats the brief** — say so in the build
+   note and move on.
+3. **`strigoi-burst-closeout`** — when a step is finished and needs
+   filing: the gate, the FULL reachability register, every playtest
+   script, negative controls, commit, CI, Notion, the tracker, state.md,
+   the handoff.
+
+They compose; they do not substitute. Closeout is not the gate and the
+brief is not §0. **If a skill is not in the session's skill list, say so**
+rather than improvising a shortened version of it — an improvised
+closeout is how a step ships with the register half-run.
+
 ## Verified facts (2026-08-20, Josh's machine, Windows/amd64)
 
 - Toolchain: Go 1.27.0 at `C:\Program Files\Go\bin` (go.mod directive
