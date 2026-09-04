@@ -29,6 +29,11 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 )
 
+// harnessMinuteEpsilon is the tolerance on "did the clock advance as far as I
+// asked". A world minute arrives as a sum of per-tick slices, so it lands a
+// few ulps short; without this an honest full step reads as a stall.
+const harnessMinuteEpsilon = 1e-9
+
 const harnessStepBatch = 600 // ticks executed per queued command [DIAL] P3 §3.4
 
 // harnessStepDeltas reports whether the harness holds the clock. While
@@ -612,7 +617,13 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 
 	out.Digest = harnessTotalDigest(parts)
 
-	if out.WorldMinutes < worldMinutes {
+	// The same floating-point accumulation the resolver's roundEpsilon
+	// absorbs, one level up: the clock advances a fractional slice per tick,
+	// so fifteen ticks of a "one minute" step sum to 0.9999999999999998 and
+	// an exact comparison calls that a stall. Found by the thirteenth
+	// playtest, which steps frames before it steps minutes and so starts from
+	// a sub-tick offset that earlier scripts never had.
+	if out.WorldMinutes < worldMinutes-harnessMinuteEpsilon {
 		return nil, out, harnessErr("TIMEOUT_LOADING",
 			fmt.Sprintf("stepped %d ticks and the clock advanced only %s of %s world minutes",
 				out.Ticks, harnessFmtFloat(out.WorldMinutes), harnessFmtFloat(worldMinutes)),

@@ -131,6 +131,27 @@ type SpawnRow struct {
 
 	// Morale is what a group of this row starts at (R2 §3's test-and-rout).
 	Morale float64
+
+	// Speed is D8 §9's authored initiative number: packs activate in
+	// DESCENDING Speed, ties broken once per fight by the seeded RNG. It is
+	// authored HERE rather than read from the D2 record on D8 §5's own
+	// reasoning -- ThreatLevel and SpeedBase were both ruled out for
+	// initiative because reading D2 fields anew grows the dependency Article
+	// V.2 says must shrink. Same move Code makes for sprites. [DIAL]
+	Speed int
+
+	// DamageMin/DamageMax is the row's bite, inclusive, before the band
+	// factor. M4.5 step 4 extends D8 §5's reasoning from initiative to
+	// damage: the record's own damage fields are Blizzard's balance, not
+	// ours, so the number a wolf bites for is authored beside the number that
+	// decides when it bites.
+	//
+	// THE INCONSISTENCY THIS LEAVES IS NAMED RATHER THAN HIDDEN: hit points
+	// still come from the record (MaxHPNormal, npc_body.go), so a creature's
+	// health is Blizzard's and its bite is ours. The day the roster is
+	// authored end to end, HP moves onto this row too. Nothing in N1 gives a
+	// number for either. [DIAL]
+	DamageMin, DamageMax int
 }
 
 // SpawnDials are the numbers M4.3b ships with. Every one is a [DIAL].
@@ -200,6 +221,7 @@ func DefaultSpawnDials() SpawnDials {
 				MinTiles: 8, MaxTiles: 16,
 				Carrion: true,
 				Morale:  50,
+				Speed:   3, DamageMin: 3, DamageMax: 6,
 			},
 			{
 				// N1 §5: deep night, from the woods, bolder as the night's
@@ -212,6 +234,7 @@ func DefaultSpawnDials() SpawnDials {
 				MinTiles: 14, MaxTiles: 24,
 				Carrion: true,
 				Morale:  60,
+				Speed:   2, DamageMin: 6, DamageMax: 12,
 			},
 			{
 				// N1 §5: dawn and dusk, field and wood edges. Solitary or a
@@ -223,6 +246,7 @@ func DefaultSpawnDials() SpawnDials {
 				MinCount:    1, MaxCount: 2,
 				MinTiles: 10, MaxTiles: 18,
 				Morale: 70,
+				Speed:  1, DamageMin: 8, DamageMax: 14,
 			},
 			{
 				// S1 §6.4's human row: dusk and pre-dawn, "when men move",
@@ -235,6 +259,7 @@ func DefaultSpawnDials() SpawnDials {
 				MinTiles: 12, MaxTiles: 20,
 				LightDrawn: true,
 				Morale:     40,
+				Speed:      2, DamageMin: 4, DamageMax: 9,
 			},
 		},
 	}
@@ -609,6 +634,68 @@ func (s *Spawns) Routing(groupID string) (routing, known bool) {
 	}
 
 	return g.morale <= s.dials.RoutAt, true
+}
+
+// ProfileOf answers what one enemy fights as, and it is the seam M4.5 step 4
+// reaches the spawn tables through (the Profiles interface, combat.go).
+//
+// IT RETURNS THE GROUP ID, NOT JUST THE ROW, and that is the whole reason it
+// exists in this shape. R2 §3's "same-species enemy groups activate together"
+// is about PACKS, and two live groups can share one row -- two dog packs on
+// one night are two packs, not one -- so a lookup that answered only "dogs"
+// would collapse them into a single activation and make N1 §5's pack-size
+// dials cosmetic.
+//
+// The scan is over at most MaxGroups (8) groups of at most MaxCount (6)
+// members. A map from member id to group would be faster and would be a
+// second index over state this file already owns, which is the kind of
+// duplicate the reachability work keeps deleting; if a profile lookup ever
+// shows up in a profile, build the index then.
+func (s *Spawns) ProfileOf(memberID string) (Profile, bool) {
+	if memberID == "" {
+		return Profile{}, false
+	}
+
+	// Fixed order, because ranging a map is randomised in Go and this answer
+	// feeds activation order, which is inside the state digest.
+	for _, id := range s.groupIDs() {
+		g := s.groups[id]
+		if g == nil {
+			continue
+		}
+
+		for _, m := range g.members {
+			if m == nil || m.WatcherID() != memberID {
+				continue
+			}
+
+			row, ok := s.rowNamed(g.row)
+			if !ok {
+				return Profile{}, false
+			}
+
+			return Profile{
+				Group:     g.id,
+				Row:       row.Name,
+				Speed:     row.Speed,
+				DamageMin: row.DamageMin,
+				DamageMax: row.DamageMax,
+			}, true
+		}
+	}
+
+	return Profile{}, false
+}
+
+// rowNamed finds a table row by its design name.
+func (s *Spawns) rowNamed(name string) (SpawnRow, bool) {
+	for i := range s.dials.Rows {
+		if s.dials.Rows[i].Name == name {
+			return s.dials.Rows[i], true
+		}
+	}
+
+	return SpawnRow{}, false
 }
 
 // Groups is how many groups are live.

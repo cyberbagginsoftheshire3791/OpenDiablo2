@@ -13,10 +13,22 @@ import (
 type fakeFitness struct {
 	reaction bool
 	shaken   bool
+	activity Activity
 }
 
 func (f *fakeFitness) ReactionAvailable() bool { return f.reaction }
 func (f *fakeFitness) Shaken() bool            { return f.shaken }
+
+// Activity is D8 §9's stance. An unset fake is IDLE rather than the empty
+// string, so a test that does not care about the surprise branch gets the
+// vigilant case rather than a value no Activity constant has.
+func (f *fakeFitness) Activity() Activity {
+	if f.activity == "" {
+		return ActivityIdle
+	}
+
+	return f.activity
+}
 
 // fakeBodies stands in for the game screen's body registry (M4.5 step 3).
 //
@@ -70,7 +82,11 @@ func newTestCombatWith(t *testing.T, bodies Bodies) (*Combat, *Notice, *fakeQuar
 	fitness := &fakeFitness{reaction: true}
 	target := &fakeQuarry{id: "p:1", x: 40, y: 40}
 
-	c := NewCombat(clock, notice, fitness, &fakeIllumination{}, bodies, 1462, DefaultCombatDials())
+	// Nil profiles and nil animator: these tests are about when a fight
+	// happens and what the provider says, and the resolver copes with both
+	// (every enemy fights on the placeholder profile; nothing is drawn).
+	// combat_resolver_test.go builds the wired-up version.
+	c := NewCombat(clock, notice, fitness, &fakeIllumination{}, bodies, nil, nil, 1462, DefaultCombatDials())
 
 	t.Cleanup(c.Close)
 
@@ -125,7 +141,12 @@ func TestCombatStartsWhenAnAwareThingIsInReach(t *testing.T) {
 
 	require.True(t, c.Fighting(), "an aware thing standing next to you is a fight")
 	require.Equal(t, 1, c.Round(), "an encounter opens on round 1")
-	require.Equal(t, []string{"w:1"}, c.Order())
+
+	// THE ORDER'S FORMAT CHANGED AT STEP 4: it is the whole activation
+	// sequence now, the player's own id included, because D8 §9 puts him in
+	// it. The player goes first -- he was idle, so this is not a surprised
+	// round one.
+	require.Equal(t, []string{"p:1", "w:1"}, c.Order())
 }
 
 // A diagonal neighbour is as adjacent as an orthogonal one: the reach test is
@@ -204,26 +225,27 @@ func TestCombatOrderTracksTheLivingParticipants(t *testing.T) {
 	c.Advance(1.0)
 
 	require.True(t, c.Fighting())
-	require.ElementsMatch(t, []string{"w:1", "w:2"}, c.Order(), "both packs are in the fight")
+	require.ElementsMatch(t, []string{"p:1", "w:1", "w:2"}, c.Order(), "both packs, and the player")
 
 	// One backs off.
 	alsoNear.x = 50
 
 	c.Advance(1.0)
 
-	require.Equal(t, []string{"w:1"}, c.Order(), "the one that left must leave the order too")
+	require.Equal(t, []string{"p:1", "w:1"}, c.Order(), "the one that left must leave the order too")
 	require.True(t, c.Fighting(), "the other is still there")
 }
 
 // R2 section 3's determinism clause applied to the one part of this milestone
 // that is arbitrary by design: the provisional order is seeded, so two runs of
 // one build at one seed agree.
-func TestCombatProvisionalOrderIsDeterministic(t *testing.T) {
+func TestCombatInitiativeOrderIsDeterministic(t *testing.T) {
 	orderFor := func() []string {
 		clock := NewClock(DefaultClockDials())
 		notice := NewNotice(&fakeSight{clear: true}, &fakeIllumination{}, DefaultNoticeDials())
 		target := &fakeQuarry{id: "p:1", x: 40, y: 40}
-		c := NewCombat(clock, notice, &fakeFitness{}, &fakeIllumination{}, nil, 1462, DefaultCombatDials())
+		c := NewCombat(clock, notice, &fakeFitness{}, &fakeIllumination{}, nil, nil, nil, 1462,
+			DefaultCombatDials())
 
 		defer c.Close()
 
@@ -244,7 +266,10 @@ func TestCombatProvisionalOrderIsDeterministic(t *testing.T) {
 	first := orderFor()
 	second := orderFor()
 
-	require.Len(t, first, 4)
+	// Four watchers and the player. They share the placeholder profile, so
+	// all four are speed-1 packs of one and the whole order is decided by the
+	// tie-break shuffle -- which is exactly the draw this test pins.
+	require.Len(t, first, 5)
 	require.Equal(t, first, second, "one build at one seed must produce one order")
 }
 
@@ -285,7 +310,11 @@ func TestCombatProviderReportsTheFight(t *testing.T) {
 func TestCombatSettableFields(t *testing.T) {
 	c, notice, target, _ := newTestCombat(t)
 
-	require.Equal(t, []string{"adjacent_tiles", "disengage", "round", "round_minutes"}, c.HarnessSettableFields())
+	require.Equal(t, []string{
+		"adjacent_tiles", "advantage_shift", "crit_band", "crit_factor",
+		"disengage", "forced_band", "graze_band", "graze_factor", "hit_factor",
+		"lit_level", "player_action", "round", "round_minutes", "shaken_penalty",
+	}, c.HarnessSettableFields())
 
 	// Setting a value on nothing is an error rather than a silent no-op.
 	require.Error(t, c.HarnessSet("round", 5.0), "there is no encounter to set a round on")

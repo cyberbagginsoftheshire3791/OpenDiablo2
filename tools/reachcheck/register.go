@@ -148,6 +148,49 @@ var Register = []Entry{
 	{sym(pkgWorld, "Combat.Advance"), BucketWire, VerdictLive,
 		"Opens an encounter when something aware of the player is also in reach, and spends world time on rounds. Stepped from advanceWorld after startChasesForTheAware, so a thing that noticed you this tick and is already beside you fights this tick.", ""},
 
+	// M4.5 STEP 4 -- THE RESOLVER. TEN ROWS MOVED TO WIRE AND TWO ARE NEW,
+	// and this is the largest single move this register has made.
+	//
+	// Every one of them had sat in defer with "M4.5 (the resolver)" against
+	// its name, which is what a deferral is FOR: the row was written when
+	// the symbol was built, it named who would pick it up, and the gate
+	// went red the moment that happened. Nine were harness-only or dead in
+	// every shipped build one commit ago -- the meters two derived flags
+	// were computed for a reader that did not exist, a monster body could
+	// be read only by a script, and no monster in this codebase had ever
+	// been told to swing.
+	//
+	// THREE OF THEM ARE LIVE TRANSITIVELY, and that is worth stating
+	// because it is not visible at any call site: deadcode -whylive follows
+	// calls, so Meters.ShakenThreshold and Meters.Thirsty go live through
+	// Shaken(), and NPC.MonStat through Game.BodyOf. A first draft of the
+	// step-4 brief filed all three as observe, and the gate would have gone
+	// red on the closing run.
+	{sym(pkgWorld, "Meters.ReactionAvailable"), BucketWire, VerdictLive,
+		"R2 section 1's reaction flag. The resolver reads it to decide whether a graze on the player buys a Riposte -- clause 5 of M4.5's DoD, read from the meters rather than recomputed. Wire, so the gate goes red if the resolver ever stops asking.", ""},
+	{sym(pkgWorld, "Meters.Shaken"), BucketWire, VerdictLive,
+		"R2 section 3's shaken condition. The resolver reads it for the accuracy penalty on the player's own blows, and to withhold his Reaction.", ""},
+	{sym(pkgWorld, "Meters.ShakenThreshold"), BucketWire, VerdictLive,
+		"The threshold thirst lowers. Live TRANSITIVELY: Shaken() calls it, so it went live the moment the resolver called Shaken(). Nothing calls it directly and it is wire anyway, because a call graph is what reachability means.", ""},
+	{sym(pkgWorld, "Meters.Thirsty"), BucketWire, VerdictLive,
+		"Feeds ShakenThreshold, which feeds Shaken, which the resolver reads. Live for the same transitive reason as the row above.", ""},
+	{sym(pkgWorld, "Meters.Activity"), BucketWire, VerdictLive,
+		"What the body is doing. The resolver reads it ONCE at the start of a fight, through the Fitness interface, to decide D8 section 9's caught-head-down branch -- a player caught foraging or labouring loses round one's initiative and his Reaction with it.", ""},
+	{sym(pkgWorld, "Meters.SetActivity"), BucketWire, VerdictLive,
+		"The write half. The game screen sets labour while a fight runs and puts back what the body was doing when it ends, which is S1 section 5's signed food drain -- faster when digging, fighting, carrying -- finally getting a consumer.", ""},
+	{sym(pkgWorld, "Combat.Fighting"), BucketWire, VerdictLive,
+		"Whether an encounter is live, asked in Go rather than read out of harness state. advanceWorld reads it every tick to apply and take back the labour activity. This is the row that stops Pursuit's arrived mistake happening twice.", ""},
+	{sym(pkgScreen, "Game.BodyOf"), BucketWire, VerdictLive,
+		"How the resolver reaches a body -- the PLAYER'S included, since step 4, which is what makes losing possible. Called from Combat.Advance, in Go, on every blow. It was harness-only for one milestone because only HarnessState read it.", ""},
+	{sym(pkgEntity, "NPC.MonStat"), BucketWire, VerdictLive,
+		"The monstats record an NPC was built from. Reached from Game.BodyOf's on-demand adoption path, so it inherits that row's verdict exactly, as its own comment has said since step 3.", ""},
+	{sym(pkgEntity, "NPC.StartAction"), BucketWire, VerdictLive,
+		"Plays one animation and HOLDS it, then returns the monster to Neutral -- or, for a death, to a Dead that is held for the rest of the run. Called from Game.Animate on every swing, every blow taken and every death. Before it, nothing could make a monster's sprite survive the next tick.", ""},
+	{sym(pkgEntity, "NPC.SetAnimationMode"), BucketWire, VerdictLive,
+		"The first exported way to tell a monster to play a mode. Its only caller is NPC.StartAction, which is the honest reading: the row stays because the symbol stays, and it is wire because a real build now reaches it. tools/animcensus measured on 31 Aug that A1, GH, DT and DD all exist for the three codes the spawn tables use.", ""},
+	{sym(pkgWorld, "Spawns.ProfileOf"), BucketWire, VerdictLive,
+		"What one enemy fights as: its PACK (not its row -- two dog packs are two packs), its authored Speed and its bite. The resolver calls it through the Profiles interface to build D8's order and to draw damage. It is the seam that put speed and damage on the spawn row instead of reading them out of the D2 record.", ""},
+
 	// ---------------------------------------------------------------
 	// DELETE -- empty, and that is the bucket working rather than an
 	// oversight.
@@ -174,10 +217,6 @@ var Register = []Entry{
 	// correct as signed -- M4.2's DoD put inventory in Phase 6 -- and it is
 	// recorded here so the gate reports it as a deliberate exclusion rather
 	// than finding it again every burst.
-	{sym(pkgWorld, "Meters.Activity"), BucketDefer, VerdictDead,
-		"Nothing in the game sets what the body is doing, so the activity is permanently idle and the labour and watch multipliers never run.", "Phase 6 inventory"},
-	{sym(pkgWorld, "Meters.SetActivity"), BucketDefer, VerdictDead,
-		"The write half of the same dial. HarnessSet assigns the field directly rather than calling this, which is why it reads dead rather than harness-only.", "Phase 6 inventory"},
 	{sym(pkgWorld, "Meters.Consume"), BucketDefer, VerdictHarnessOnly,
 		"The only way to refill food or water or to rest off fatigue. No eat, drink or sleep verb exists in the game, so the meters are a one-way ratchet in every playable build.", "Phase 6 inventory"},
 	{sym(pkgWorld, "Light.Add"), BucketDefer, VerdictHarnessOnly,
@@ -197,26 +236,16 @@ var Register = []Entry{
 	// down, exactly as Light.Remove was after M4.1's remove_source. They flip
 	// to wire when the RESOLVER reads them, and not a commit before: marking
 	// them wired now would be the lie this register exists to catch.
-	{sym(pkgWorld, "Meters.ReactionAvailable"), BucketDefer, VerdictHarnessOnly,
-		"R2 section 1's reaction flag. Computed and reported, and as of M4.5 step 1 also reported by the combat provider -- but still read by nothing that acts on it. The resolver is what makes it live.", "M4.5 (the resolver)"},
-	{sym(pkgWorld, "Meters.Shaken"), BucketDefer, VerdictHarnessOnly,
-		"R2 section 3's shaken flag. Same shape as ReactionAvailable above, and the same reason it has not flipped.", "M4.5 (the resolver)"},
-	{sym(pkgWorld, "Combat.Fighting"), BucketDefer, VerdictDead,
-		"Whether an encounter is live. It exists so a resolver, a HUD or a script can ask in Go rather than reading it out of the harness state -- the mistake Pursuit's `arrived` made. Nothing asks yet.", "M4.5 (the resolver)"},
 	{sym(pkgWorld, "Combat.Round"), BucketDefer, VerdictDead,
-		"The current round. Torches burn per round and the resolver spends them; nothing reads it yet.", "M4.5 (the resolver)"},
+		"The current round. The resolver spends world time on rounds but reads it off the encounter directly; the HUD is what will want the accessor.", "M4.4 (the HUD milestone)"},
 	{sym(pkgWorld, "Combat.Order"), BucketDefer, VerdictDead,
-		"The provisional activation order. Reported so D8 can replace it without touching the resolver; nothing in Go reads it yet.", "M4.5 (the resolver), then D8"},
-	{sym(pkgWorld, "Meters.ShakenThreshold"), BucketDefer, VerdictHarnessOnly,
-		"The threshold thirst lowers. Reported, unread.", "M4.5 (combat v0)"},
-	{sym(pkgWorld, "Meters.Thirsty"), BucketDefer, VerdictHarnessOnly,
-		"Feeds ShakenThreshold and nothing else.", "M4.5 (combat v0)"},
+		"The activation sequence -- D8 section 9's since step 4, and no longer provisional. Reported and asserted by playtests; still read by nothing in Go, and the HUD is what will.", "M4.4 (the HUD milestone)"},
 	{sym(pkgWorld, "Meters.Dying"), BucketDefer, VerdictHarnessOnly,
 		"Neglect can already run the body to zero, but nothing acts on it: there is no death path and no death screen.", "M4.6 (death and the dead)"},
 	{sym(pkgWorld, "Spawns.Routing"), BucketDefer, VerdictDead,
-		"M4.3b built the rout STATE and signed the rout BEHAVIOUR over to M4.5, so this flag is deliberately read by nobody yet.", "M4.5 (combat v0)"},
+		"M4.3b built the rout STATE and signed the rout BEHAVIOUR over to M4.5. Step 4 kills things; a pack LEAVING because it is losing is step 5, and this is the flag that step reads.", "M4.5 (step 5: rout and quick-resolve)"},
 	{sym(pkgWorld, "Spawns.Groups"), BucketDefer, VerdictDead,
-		"The live group list. A combat resolver needs it; nothing else does yet.", "M4.5 (combat v0)"},
+		"The live group COUNT. Step 4 reaches groups through Spawns.ProfileOf instead, which answers per member; what still wants a count is step 5's rout.", "M4.5 (step 5: rout and quick-resolve)"},
 	{sym(pkgWorld, "Spawns.OpenBodies"), BucketDefer, VerdictDead,
 		"The carrion count. Settable as a stand-in because the corpse machine that will drive it is not built.", "M4.7 (the corpse machine)"},
 
@@ -238,14 +267,8 @@ var Register = []Entry{
 	// provider's HarnessState. That flips at step 4 when the resolver reads
 	// it in Go, and not a commit before -- the same reasoning as the two
 	// Meters rows above, in a third costume.
-	{sym(pkgScreen, "Game.BodyOf"), BucketDefer, VerdictHarnessOnly,
-		"How the combat model asks what a monster's body is. The game screen implements it and combat calls it, but only inside HarnessState, which the d2harness registry dispatches and only harness-tagged code consumes. The resolver is what makes it live.", "M4.5 (the resolver)"},
 	{sym(pkgScreen, "Game.BodiesKnown"), BucketObserve, VerdictHarnessOnly,
 		"How many monsters currently have a body. Observe rather than defer, and it is a READ: it exists so a playtest can watch the game adopt bodies when the spawn tables fire, which is the only way to tell eager adoption from BodyOf's on-demand fallback. Without it, deleting the eager path would break no test -- the M4.1 and M4.3b shape.", ""},
-	{sym(pkgEntity, "NPC.MonStat"), BucketDefer, VerdictHarnessOnly,
-		"The monstats record an NPC was built from, so the game screen can read a hit-point band without going through harness state. Reached only from Game.BodyOf, so it inherits that row's verdict exactly.", "M4.5 (the resolver)"},
-	{sym(pkgEntity, "NPC.SetAnimationMode"), BucketDefer, VerdictDead,
-		"The first exported way to tell a monster to play a mode -- to swing, to be hit, to die. NOTHING CALLS IT YET, which is the point of the row: the resolver is what swings, and until it does this is dead in every configuration. tools/animcensus measured that the animations it would ask for do exist.", "M4.5 (the resolver)"},
 
 	// Spawns.Despawn and Notice.Unwatch USED TO SIT HERE, deferred, as the
 	// spawn stall this register found on 28 Aug. They are wired now -- see
@@ -254,7 +277,7 @@ var Register = []Entry{
 	// red until the hole was filled. Pursuit.Release is still deferred and
 	// still below, because ending a chase needs something that ends a fight.
 	{sym(pkgWorld, "Pursuit.Release"), BucketDefer, VerdictHarnessOnly,
-		"The only way a chase ends. A shipped build starts chases and never ends one -- daybreak now sends home the packs that never noticed you, but a pack that DID notice you keeps its chase, and what ends that is a fight.", "M4.5 (combat v0)"},
+		"The only way a chase ends. Step 4 can now kill the thing doing the chasing and STILL does not release it -- a dead dog keeps its chase and keeps being noticed, which is exactly why tryStart has to filter the dead. Releasing them is step 5.", "M4.5 (step 5: rout and quick-resolve)"},
 
 	// ---------------------------------------------------------------
 	// OBSERVE -- harness surface. Reads and dial writes only; see the

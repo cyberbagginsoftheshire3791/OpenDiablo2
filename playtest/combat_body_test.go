@@ -116,17 +116,35 @@ func TestCombatBody(t *testing.T) {
 	// where an aware thing in reach becomes an encounter. Failing here means
 	// the seam is not joined in a real build, which is exactly the defect
 	// that reopened M4.1 and M4.3b.
+	// STEPPED IN FRAMES SINCE M4.5 STEP 4, AND NOT ONE ASSERTION BELOW MOVED.
+	//
+	// This loop used to step whole world minutes. That was fine while a fight
+	// was only a fact; now that a blow does something, it is not, because
+	// advanceWorld runs once per FRAME and a stepped "world minute" is 15 to
+	// 24 calls into the resolver. The encounter therefore opened on the first
+	// frame of a step and the rest of that step resolved a round -- so act 4
+	// read the zombie at 166 of 181 and failed on "adopted at full health".
+	//
+	// A single Advance either OPENS an encounter or ticks one, never both. So
+	// stopping on the frame the fight opens is the moment this script always
+	// meant to read at: round 1, nothing resolved, every body still exactly as
+	// the game screen adopted it. The step-4 brief's reviewer reasoned about
+	// Advance and not about a harness step, and that is the whole gap.
 	var fighting bool
 
-	for i := 0; i < 12 && !fighting; i++ {
-		s.call("strigoi_step_world", map[string]any{"world_minutes": 1.0})
+	for i := 0; i < 150 && !fighting; i++ {
+		s.call("strigoi_step", map[string]any{"frames": 1})
 
 		fighting = flag(t, combatState(s), "fighting")
 	}
 
 	if !fighting {
-		t.Fatalf("after 12 world minutes with two aware monsters one tile away, "+
+		t.Fatalf("after 150 frames with two aware monsters one tile away, "+
 			"the game never started an encounter: %v", combatState(s))
+	}
+
+	if got := num(combatState(s), "round"); got != 1 {
+		t.Fatalf("stopping on the frame the fight opens must catch round 1, before any blow; round=%.0f", got)
 	}
 
 	combat = combatState(s)

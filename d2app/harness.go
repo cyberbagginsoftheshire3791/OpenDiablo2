@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.9.1"          // M4.5 steps 1-3: the combat provider, and the bodies in it
+	harnessVersion     = "0.10.0"         // M4.5 step 4: the resolver -- bands, advantage, damage, D8's order
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64

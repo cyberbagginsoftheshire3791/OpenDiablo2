@@ -1,6 +1,7 @@
 package d2gamescreen
 
 import (
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 )
@@ -96,7 +97,10 @@ func (v *Game) releaseNPCBody(id string) {
 	delete(v.bodies, id)
 }
 
-// BodiesKnown is how many monsters currently have a body.
+// BodiesKnown is how many monsters currently have a body. NPC BODIES ONLY --
+// the player's body is answered by BodyOf but is not in this registry and
+// never counts here, so a script that reads bodies_known across step 4 must
+// not expect it to have gone up by one.
 //
 // It is what makes eager adoption testable. gameSpawner.Spawn adopts when the
 // night places a pack; BodyOf adopts on demand for anything else. Both end up
@@ -126,6 +130,23 @@ func (v *Game) BodiesKnown() int { return len(v.bodies) }
 // directly would hand back a nil *npcBody wrapped in a non-nil interface, and
 // the caller's "if body != nil" would pass.
 func (v *Game) BodyOf(id string) d2world.Body {
+	// THE PLAYER ANSWERS HERE TOO, AND THAT IS WHAT MAKES LOSING POSSIBLE.
+	//
+	// Before step 4 the resolver could reach a wolf's health and not the
+	// player's -- Fitness was fenced to two booleans and playerBody was handed
+	// privately to the meters -- so a fight could only ever go one way. One
+	// seam for every participant is the narrowest fix, and it has a second
+	// virtue: the resolver now writes the player's health through the SAME
+	// adapter the meters' neglect path uses (game.go's playerBody, the only
+	// writer of Stats.Health in the tree), so the two readings cannot drift.
+	//
+	// A second interface for the player -- PlayerBody -- was the alternative,
+	// and it is the second-health-abstraction disease this project keeps
+	// treating.
+	if v.localPlayer != nil && v.localPlayer.Stats != nil && v.localPlayer.ID() == id {
+		return playerBody{player: v.localPlayer}
+	}
+
 	if b, ok := v.bodies[id]; ok && b != nil {
 		return b
 	}
@@ -156,4 +177,64 @@ func (v *Game) BodyOf(id string) d2world.Body {
 	}
 
 	return nil
+}
+
+// Animate satisfies d2world.Animator: it is how the resolver reaches sprites.
+//
+// THE SEAM IS THE SAME ONE BODIES USES, for the same reason -- d2world cannot
+// import d2mapentity, so it names three acts and this side decides what they
+// look like. A swing is A1, a blow taken is GH, a death is DT and then a held
+// DD; the monster's held-mode path (NPC.StartAction) is what makes any of them
+// survive the tick after they were set.
+//
+// THE PLAYER'S SIDE RENDERS WRONG AND IT IS COSMETIC, NOT A DEFERRAL WORTH
+// PRETENDING AWAY: Player.Advance re-applies GetAnimationMode() every tick and
+// that returns Cast while IsCasting(), so a StartCasting(Attack1) shows the SC
+// animation from the second tick onward. The fix is one field on Player
+// (castMode, returned from GetAnimationMode) and it belongs in its own commit
+// with a screenshot; the milestone's DoD says nothing about the player's
+// sprite, and inventing a second animation path here to dodge it would be
+// worse than the flaw.
+func (v *Game) Animate(id string, act d2world.CombatAct) {
+	if id == "" {
+		return
+	}
+
+	if v.localPlayer != nil && v.localPlayer.ID() == id {
+		if act == d2world.ActSwing {
+			v.localPlayer.StartCasting(d2enum.PlayerAnimationModeAttack1, nil)
+		}
+
+		// Nothing for a blow taken and nothing for death: the player's death
+		// screen, and what a dead player looks like, are M4.6's.
+		return
+	}
+
+	if v.gameClient == nil || v.gameClient.MapEngine == nil {
+		return
+	}
+
+	entity, ok := v.gameClient.MapEngine.Entities()[id]
+	if !ok {
+		return
+	}
+
+	npc, ok := entity.(*d2mapentity.NPC)
+	if !ok {
+		return
+	}
+
+	// Errors are swallowed on purpose. A missing animation is a content
+	// problem in the MPQs, not a reason to stop resolving a fight -- and
+	// tools/animcensus measured on 31 Aug that fallen1, zombie1 and skeleton1
+	// all carry A1, GH, DT and DD, so a failure here means something the
+	// spawn tables did not place.
+	switch act {
+	case d2world.ActSwing:
+		_ = npc.StartAction(d2enum.MonsterAnimationModeAttack1, nil)
+	case d2world.ActHit:
+		_ = npc.StartAction(d2enum.MonsterAnimationModeGetHit, nil)
+	case d2world.ActDie:
+		_ = npc.StartAction(d2enum.MonsterAnimationModeDeath, nil)
+	}
 }

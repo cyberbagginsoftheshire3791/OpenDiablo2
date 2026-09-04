@@ -148,6 +148,40 @@ so the whole register is roughly ten minutes serial and about three at
   ./tools/reachcheck -list` prints what it holds now. Counts are not written
   down here on purpose; a number in prose is a number that goes stale.
 
+## Deferrals the register cannot carry
+
+Some things the game is supposed to do eventually have **no exported symbol to
+register**, so the gate cannot hold them and this section does instead. A
+deferral written only in a commit message is a deferral that has been lost.
+
+* **The caught-head-down branch is live in the model and harness-only in the
+  game.** D8 §9 says a player caught foraging or labouring when something
+  reaches him loses round one's initiative and his Reaction. The resolver
+  reads the stance and the branch works — `Meters.Activity` is wire and the
+  thirteenth playtest asserts the whole branch — but **nothing in the game
+  ever sets `forage`**, so in a shipped build the branch is reachable only
+  through the harness. There is no symbol whose verdict would say so: the
+  reading side is genuinely live. It closes when a forage or watch VERB exists
+  (M4.4's turn UI).
+
+* **The player's Action is a policy, not a person.** `CombatDials.PlayerAction`
+  makes the player's side strike the first adjacent enemy, because the engine
+  has no player attack verb. Every symbol involved is properly live; what is
+  deferred is that a *human* should be choosing. M4.4.
+
+* **Reinforcements do not join a running fight.** `tryStart` builds the
+  participant list once and `pruneOrEnd` only removes from it. No symbol is
+  dead — the list is built and pruned in a shipped build — and yet a monster
+  that arrives mid-fight stands outside it. M4.5 step 5, beside rout.
+
+* **`bodies_known` counts NPC bodies only.** The player's body is answered by
+  `Game.BodyOf` since step 4 but is not in that registry, so the count does not
+  move when the player joins a fight. Deliberate; stated here because a script
+  reading the number cannot tell.
+
+The rule for this section: **if the gate cannot express it, write it here on
+the day you defer it, and name the milestone that picks it up.**
+
 ## Adding a symbol
 
 Add a row to `Register` in `register.go` with a bucket, the verdict you expect,

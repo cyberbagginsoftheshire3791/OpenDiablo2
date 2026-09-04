@@ -140,14 +140,22 @@ func CreateGame(
 	// of them: it asks Notice who is aware, reads the meters' derived facts
 	// through the two-method Fitness interface, and samples the light model
 	// at a participant's tile. It seeds from the run's seed like the tables,
-	// so the provisional activation order is the same on two launches of one
-	// build (M4.5, and the order is provisional until D8 rules).
+	// so two launches of one build fight the same fight: since step 4 that
+	// seed drives D8's initiative tie-break and every roll of every blow.
 	game.combat = d2world.NewCombat(
 		game.worldClock,
 		game.notice,
 		game.meters,
 		game.light,
 		game,
+
+		// The spawn tables answer what an enemy fights as (its pack, its
+		// authored Speed and its bite), and the screen itself drives the
+		// sprites -- d2world cannot import d2mapentity, so it asks through
+		// the Animator interface exactly as it asks for bodies.
+		game.spawns,
+		game,
+
 		gameClient.Seed,
 		d2world.DefaultCombatDials(),
 	)
@@ -202,6 +210,14 @@ type Game struct {
 	notice       *d2world.Notice
 	spawns       *d2world.Spawns
 	combat       *d2world.Combat
+
+	// wasFighting and activityBeforeFight are how "fighting is labour" is
+	// applied and then taken back. S1 §5's Food row signs the DRAIN --
+	// "faster when digging, fighting, carrying" -- and this is the edge that
+	// applies it: the meters' activity goes to labour when a fight opens and
+	// back to whatever the body was doing when it ends.
+	wasFighting         bool
+	activityBeforeFight d2world.Activity
 
 	// bodies is where a monster's health lives (M4.5 step 3), keyed by the
 	// entity id d2world knows it by. It is on the screen rather than on the
@@ -469,6 +485,47 @@ func (v *Game) advanceWorld(elapsed float64) {
 	// and every system takes world minutes as a float (M4.5 §3.7).
 	if v.combat != nil {
 		v.combat.Advance(worldMinutes)
+
+		v.applyFightingActivity()
+	}
+}
+
+// applyFightingActivity makes a fight cost what S1 §5 says a fight costs.
+//
+// AFTER combat.Advance, NEVER BEFORE, and the ordering is load-bearing rather
+// than tidy: the resolver reads the player's stance inside tryStart to decide
+// D8 §9's caught-head-down branch, so if this ran first every fight would open
+// against a player who was "labouring" and every single one would be a
+// surprise. Writing here means what the resolver read is what the player was
+// actually doing when the pack arrived.
+//
+// It gives Combat.Fighting and Meters.SetActivity their first game callers --
+// both had been reachable only from the harness, which is the hollow shape
+// M4.1 and M4.3b each shipped once.
+func (v *Game) applyFightingActivity() {
+	if v.meters == nil {
+		return
+	}
+
+	fighting := v.combat.Fighting()
+
+	switch {
+	case fighting && !v.wasFighting:
+		v.activityBeforeFight = v.meters.Activity()
+
+		v.meters.SetActivity(d2world.ActivityLabour)
+
+		v.wasFighting = true
+
+	case !fighting && v.wasFighting:
+		// ONLY PUT BACK WHAT WE REPLACED. If anything wrote the activity
+		// while the fight ran -- a script today, a real verb after M4.4 --
+		// restoring the pre-fight value would silently clobber it.
+		if v.meters.Activity() == d2world.ActivityLabour {
+			v.meters.SetActivity(v.activityBeforeFight)
+		}
+
+		v.wasFighting = false
 	}
 }
 

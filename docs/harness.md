@@ -183,18 +183,75 @@ verb: a script forces an arrival by raising `chance` and stepping the clock,
 which exercises the real table rather than bypassing it.
 
 **`combat`** (M4.5). Steps 1 and 2 built the encounter — that a fight IS
-happening, who is in it, and whose turn it is — and step 3 gave the monsters
-bodies. It reports `fighting`, `encounter`, `round`, `minutes_into_round`,
-`order` (the activation sequence, **provisional** until D8 rules and reported
-precisely so it can be replaced without touching anything else), the counters
-`encounters` / `ended` / `rounds` / `declined_reach`, the dials
-`round_minutes` (1.0, SIGNED by R2 §2A) and `adjacent_tiles` (1 — Chebyshev
-on floored tiles, deliberately a separate dial from pursuit's Euclidean
-`arrive_within`), and the wiring flags `has_notice` / `has_fitness` /
-`has_bodies`. Each `participants` row carries `id`, `side`, `x`, `y`,
-`adjacent` and `light_here`; the player side adds `reaction_available` and
-`shaken` (read from the meters, not recomputed), and each enemy adds
-`has_body` plus `health` / `max_health` when a body is known.
+happening, who is in it, and whose turn it is — step 3 gave the monsters
+bodies, and **step 4 made a blow do something**. It reports `fighting`,
+`encounter`, `round`, `minutes_into_round`, `order`, the counters
+`encounters` / `ended` / `rounds` / `declined_reach` / `actions_total`, the
+dials `round_minutes` (1.0, SIGNED by R2 §2A) and `adjacent_tiles` (1 —
+Chebyshev on floored tiles, deliberately a separate dial from pursuit's
+Euclidean `arrive_within`), and the wiring flags `has_notice` /
+`has_fitness` / `has_bodies` / `has_profiles` / `has_animator`.
+
+**`order` changed format at step 4**: it is now the whole activation
+sequence, the player's own id included, because D8 §9 puts him in it. It was
+enemies-only while there was nothing else to activate, and it is no longer
+provisional — D8 was signed on 1 September and this is the code that builds
+it. Packs go in descending authored `speed`, ties broken once at fight start
+by the seeded RNG, members inside a pack in sorted id order.
+
+**The initiation facts**, read once when the fight opens and then fixed:
+`initiator` (always `"enemy"` in v0 — the only path into a fight is something
+noticing you; the ambush branch waits on a player attack verb, M4.4),
+`surprised`, `surprise_why` (`"caught-foraging"` / `"caught-labouring"` / `""`)
+and `first_side`. A player caught head-down loses round one's initiative and
+his Reaction with it (D8 §9).
+
+**The blows.** `actions` is every blow of the most recently RESOLVED ROUND,
+and `actions_round` says which round that was. Each row carries `round`,
+`attacker`, `target`, `roll`, `mod`, `score`, `band`, `base`, `damage`,
+`target_health_after` (absent when the target has no body) `advantage_why`
+and `reaction`. **The log is retained between rounds and that is deliberate**:
+`advanceWorld` runs once per FRAME, so one stepped world minute is 15–24
+calls into the resolver and a log cleared per call would be empty on almost
+every read. The cost is that a script which writes a dial and then reads once
+can be looking at a round that resolved *before* its write took effect —
+compare `actions_round` to tell a new round from a retained one.
+
+**How the ending is reported**: `ended_reason` (`enemies_dead`,
+`player_dead`, `disengaged`) persists after the encounter is gone, with
+`ended_enemies_dead` / `ended_player_dead` / `ended_disengaged` beside it,
+because a fight that begins and ends between two reads is otherwise invisible.
+
+Each `participants` row carries `id`, `side`, `x`, `y`, `adjacent` and
+`light_here`; the player side adds `reaction_available`, `shaken` (read from
+the meters, not recomputed) and his placeholder melee profile; each enemy adds
+`has_body` plus `health` / `max_health` when a body is known, its `profile`,
+`pack`, `speed`, `damage_min` / `damage_max`, and `dead`.
+
+**A dead enemy KEEPS its row and leaves the order.** The resolver despawns
+nothing: a killed monster stays on the map holding DD, stays in its spawn
+group, and keeps being noticed and chased — clearing those is step 5's work
+(`Notice.Unwatch`, `Pursuit.Release`). What stops the corpse re-opening the
+fight it just lost is a filter in `tryStart`, which skips any watcher whose
+body reads 0 and refuses to start against a dead quarry.
+
+**Two rules are RIGHT and UNOBSERVABLE in a v0 build**, and both are proved
+in `d2core/d2world`'s unit tests with fakes rather than in a playtest:
+
+* *Dark-into-light.* A pursuer's route ends on the quarry's OWN tile —
+  entities do not block the search — so it walks to distance 0.000 and every
+  participant in a settled fight floors to one tile and samples one light
+  level. Measured 3 Sep 2026. Making a pursuer stop on an adjacent tile is the
+  one change that would make light, flank and facing real.
+* *Shaken blocks Riposte.* `ShakenFatigue` (90) and `ThirstyShakenFatigue`
+  (80) both exceed `NoReactionFatigue` (75), so in every shipped build Shaken
+  already implies no Reaction and a withheld Riposte was withheld by the
+  fatigue clause. What a playtest CAN see of Shaken is the accuracy penalty on
+  the player's own blows.
+
+**Reinforcements do not join a running fight.** `tryStart` builds the
+participant list once and `pruneOrEnd` only ever removes from it, so something
+that arrives after a fight opens is not in it. Step 5's, beside rout.
 
 **`has_body` is reported separately and always**, so a monster the game
 screen never adopted reads as "no body known" rather than as a monster on
@@ -207,11 +264,37 @@ deleting the eager path would break nothing. `playtest/combat_body_test.go`
 forces a real table arrival and watches this number rise before any fight
 exists.
 
-Settable: `adjacent_tiles`, `disengage`, `round`, `round_minutes`. **There is
-deliberately no start verb and no set-health verb** — the same call spawns
-made about spawning. A script arranges a fight by placing something, telling
-the notice model to watch, and stepping the clock; if an encounter appears,
-the game made it.
+Settable: `adjacent_tiles`, `advantage_shift`, `crit_band`, `crit_factor`,
+`disengage`, `forced_band`, `graze_band`, `graze_factor`, `hit_factor`,
+`lit_level`, `player_action`, `round`, `round_minutes`, `shaken_penalty` —
+and every one of them is read back under `dials`, so an assertion can prove
+the write took rather than trusting it.
+
+**There is deliberately no start verb, no set-health verb, no land-a-blow
+verb and no set-animation verb** — the same call spawns made about spawning.
+A script that could set a wolf to 1 HP would prove nothing about the resolver;
+one that could land a blow would prove nothing about the game; one that could
+set A1 would prove nothing about the held-mode path. The rows' `speed` and
+damage and the two placeholder profiles are CONTENT, not dials, and have no
+setter either: a script that wants a different bite spawns a different row.
+
+**The one outcome a script may steer is the BAND**, through `forced_band`
+(`graze` / `hit` / `crit`, or `""` to clear). Both RNG draws still happen when
+it is set, so forcing one blow does not shift the sequence the next one sees.
+
+**`player_action`** (`attack` / `hold`) is the player's stand-in Action
+policy, and it is reported because it IS a stand-in: there is no player attack
+verb in the engine and no turn UI until M4.4, so without a policy the game
+could only run one side of a fight and every fight would end `player_dead`.
+A script reading `actions[]` can see that the player's blow came from the
+policy rather than from a person.
+
+A script arranges a fight by placing something, telling the notice model to
+watch, and stepping the clock; if an encounter appears, the game made it. To
+catch **round one** — the only round in which D8's caught-head-down branch can
+be seen — step FRAMES rather than world minutes: a single `Advance` either
+opens an encounter or ticks one, never both, but a one-minute step is 15–24 of
+them and will carry the fight past its own start.
 
 **`clock`** (M4.1, `d2core/d2world`): `world_minutes` since the epoch,
 `minute_of_day`, `time_of_day`, `date` + `year`/`month`/`day` in the Julian

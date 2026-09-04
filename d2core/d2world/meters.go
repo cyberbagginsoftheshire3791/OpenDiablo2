@@ -90,6 +90,19 @@ const (
 	ActivityIdle   Activity = "idle"
 	ActivityLabour Activity = "labour" // digging, fighting, carrying (S1 §5)
 	ActivityWatch  Activity = "watch"  // the night watch and hearth-tales
+
+	// ActivityForage is head-down work: gathering, digging through a pack,
+	// searching a body. M4.5 step 4 needs it because D8 §9's caught-head-down
+	// branch is stated in terms of it -- a player who is foraging or labouring
+	// when something reaches him loses the first round's initiative and his
+	// Reaction with it.
+	//
+	// IT SPENDS LIKE IDLE FOR NOW, and that is a deferral rather than a
+	// judgement: what a forager actually gains and burns is Phase 6's
+	// inventory work, and inventing a drain factor here would be a number
+	// nobody signed. NO GAME VERB SETS IT -- the harness is the only caller
+	// until M4.4's turn UI, and the reachability register carries that.
+	ActivityForage Activity = "forage"
 )
 
 // meterFull is the top of every meter's range.
@@ -173,7 +186,10 @@ func (m *Meters) Advance(worldMinutes float64) {
 		water *= m.dials.LabourWaterFactor
 	case ActivityWatch:
 		fatigue *= m.dials.WatchFatigueFactor
-	case ActivityIdle:
+	case ActivityIdle, ActivityForage:
+		// Foraging spends like idling until Phase 6 gives it a yield to pay
+		// for. Listed explicitly rather than left to the default so that the
+		// day it gets its own factor, this line is where it goes.
 	}
 
 	if m.clock != nil && m.clock.Stage() == StageDay {
@@ -353,15 +369,15 @@ func (m *Meters) HarnessSet(field string, value interface{}) error {
 	case "activity":
 		kind, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("activity wants a string (idle, labour, watch), got %T", value)
+			return fmt.Errorf("activity wants a string (idle, labour, watch, forage), got %T", value)
 		}
 
 		switch Activity(kind) {
-		case ActivityIdle, ActivityLabour, ActivityWatch:
+		case ActivityIdle, ActivityLabour, ActivityWatch, ActivityForage:
 			m.activity = Activity(kind)
 			return nil
 		default:
-			return fmt.Errorf("no activity %q (idle, labour, watch)", kind)
+			return fmt.Errorf("no activity %q (idle, labour, watch, forage)", kind)
 		}
 
 	case "consume":
