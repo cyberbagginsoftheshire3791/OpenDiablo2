@@ -1,6 +1,6 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-09-05 (13:55 CT). **This file is capped at one screen.** It
+Updated: 2026-09-05 (16:20 CT). **This file is capped at one screen.** It
 held 528 lines until today and told a session more about finished
 milestones than about the next hour; the body was frozen into
 `docs/focus-archive-2026-09-05.md` and is not appended to again. **If you
@@ -56,18 +56,21 @@ content with M4.6 and drives `spawns.open_bodies`, which M4.3b built as a
 settable stand-in for exactly this. **M4.4 is the HUD milestone** (clock UI,
 meter HUD, first scripted event) and it floats.
 
-**Two short bursts are approved outside the build order.**
-(a) **The worldgen default branch** (3caff9f3-d21e-81a2-a0a7-edd4dcf0578c):
-the wilderness generates only for the E1/S1/W1 town presets, so an unseeded
-launch produces a village in a void. Phase 4's DoD is a FRIEND cloning and
-surviving a night, and a friend will not pass seed 1462. **Read the branch
-before promising the fix is small** -- the default case may exist because
-those presets have no wilderness stamp to place.
-(b) **Map fires.** Ask 1 is DONE (`dd2b7d99`, `tools/mapfirecount`: the
-village places about twenty-one lit objects and **not one is lit in the mode
-it is placed in**). Ask 2 is ruled: a map fire is a hearth someone else lit,
-radius 8, Burn negative, no new category. **Asks 3, 4 and 5 are open and no
-lighting engine code may be written until 4 is answered.**
+**Map fires is the one short burst still approved outside the build order.**
+Ask 1 is DONE (`dd2b7d99`, `tools/mapfirecount`: the village places about
+twenty-one lit objects and **not one is lit in the mode it is placed in**).
+Ask 2 is ruled: a map fire is a hearth someone else lit, radius 8, Burn
+negative, no new category. **Asks 3, 4 and 5 are open and no lighting engine
+code may be written until 4 is answered.**
+
+**The worldgen default branch was FIXED on 28 Aug** (`47f0dc95`,
+`pickTownWithWilderness` + `usableTownIndex`, asserted across six seeds by
+`playtest/worldgen_test.go`) -- **twenty minutes after the paragraph calling
+it approved-and-pending was written into this file**, where it then sat for
+eight days and was carried into this rewrite unchecked. It is recorded here
+as a warning rather than deleted: a `git log` grep of commit SUBJECTS
+reported it still open, because the fix's subject shares no keyword with the
+bug's description. **The check for "is this still open" is the code.**
 
 ## Do not
 
