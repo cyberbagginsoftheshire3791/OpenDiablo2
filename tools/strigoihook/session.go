@@ -16,7 +16,7 @@ const (
 	maxDirtyListed     = 8
 )
 
-const sessionLaw = "Law (Constitution v1.1, condensed): one goal per burst, stated in one sentence before working · verify against the live system before asserting (code outranks memory and docs) · closeout = state.md + Notion + tracker + a same-burst listing · Blizzard content never enters the repo · one dependency bump per commit · case-against before any direction change · Josh decides, Claude advises."
+const sessionLaw = "Law (Constitution v1.2, condensed): one goal per burst, stated in one sentence before working · verify against the live system before asserting (code outranks memory and docs) · closeout = next-session-prompt.md + state-history.md + Notion + tracker + a same-burst listing · an audit verifies its own instruments first (VI.4) · Blizzard content never enters the repo · one dependency bump per commit · case-against before any direction change · Josh decides, Claude advises."
 
 // runSessionStart prints the live facts as plain text; Claude Code adds a
 // SessionStart hook's stdout to Claude's context.
@@ -70,7 +70,7 @@ func runSessionStart(root string, w, errw io.Writer) int {
 	if focus, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(focusFile))); err == nil {
 		fmt.Fprintf(&b, "focus (%s):\n%s\n", focusFile, indent(strings.TrimSpace(string(focus))))
 	} else {
-		fmt.Fprintf(&b, "focus: %s missing — state.md in the claude.ai project is the fallback\n", focusFile)
+		fmt.Fprintf(&b, "focus: %s missing — next-session-prompt.md in the claude.ai project is the fallback for status, state.md for standing facts\n", focusFile)
 	}
 
 	fmt.Fprintln(&b, sessionLaw)

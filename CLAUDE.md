@@ -4,21 +4,27 @@ Wallachia, June 1462: a historical open-world survival RPG with horror at
 night, built on a fork of the archived OpenDiablo2 engine. D2 is
 scaffolding and design reference, not the destination.
 
-**Read first, every session:** `state.md` in the claude.ai project ("Dunno
-Yet") + the Notion Strigoi Project Center (workstreams, gates, decisions).
-The plan (`Project Plan.md`) and Constitution live at Josh's Video Game
-folder root; the Constitution governs every session on any surface. In
-Claude Code the SessionStart hook prints the live facts (branch, tree,
-build, Article V status) and `.claude/FOCUS.md` — trust those over the
-frozen numbers below.
+**Read first, every session:** `next-session-prompt.md` in the claude.ai
+project ("Dunno Yet") — that is the STATUS document, rewritten every burst.
+Beside it sit `state.md` (durable reference: paths, standing engine facts,
+the provider rules, parked items, Josh's constraints — changes rarely) and
+`state-history.md` (the numbered burst log, appended, never read at session
+start). **Do not look for status in `state.md`; it deliberately carries
+none.** Then the Notion Strigoi Project Center (workstreams, gates,
+decisions, lessons). The plan (`Project Plan.md`) and Constitution live at
+Josh's Video Game folder root, NOT under `Claude doc outputs\`; the
+Constitution governs every session on any surface. In Claude Code the
+SessionStart hook prints the live facts (branch, tree, build, Article V
+status) and `.claude/FOCUS.md` — trust those over the frozen numbers below.
 
 ## The law (condensed — Constitution is canonical)
 
 1. One goal per burst; state it in one sentence before working.
 2. Verify against the live system (git status, build, tests, the running
    game) before asserting anything. Code outranks memory and docs.
-3. Closeout is mandatory: state.md updated, work committed cleanly,
-   Notion status updated, claims backed by same-burst listings.
+3. Closeout is mandatory: `next-session-prompt.md` rewritten and
+   `state-history.md` appended, work committed cleanly, Notion status
+   updated, claims backed by same-burst listings.
 4. **Blizzard content never enters the repo.** MPQs and anything
    extracted/derived are blocked by .gitignore (see the Strigoi block).
    New fixtures need explicit justification in a manifest. Builds go
@@ -68,9 +74,10 @@ The spine of a burst, in order:
 
 1. **`brief-then-attack`** — before any milestone step, research topic or
    finding is built or filed. One session writes the plan; a second,
-   independent agent tries to break it. This has caught four A-severity
-   findings across three M4.5 steps, and it is why C3 is filed correctly:
-   the lead pass read its load-bearing sentence backwards.
+   independent agent tries to break it. It has changed the answer every
+   time it has run — ten A-severity findings across two briefs on 4 Sep
+   alone, five of them inverting a conclusion — and it is why C3 is filed
+   correctly: the lead pass read its load-bearing sentence backwards.
 2. **`strigoi-measure-first`** — at the *start* of any build burst whose
    design depends on engine behaviour, before code or assertions.
    Throwaway playtest scaffold, deleted before the commit. Step 4's §0
@@ -81,8 +88,8 @@ The spine of a burst, in order:
    note and move on.
 3. **`strigoi-burst-closeout`** — when a step is finished and needs
    filing: the gate, the FULL reachability register, every playtest
-   script, negative controls, commit, CI, Notion, the tracker, state.md,
-   the handoff.
+   script, negative controls, commit, CI, Notion, the tracker, the
+   handoff and the history log.
 
 They compose; they do not substitute. Closeout is not the gate and the
 brief is not §0. **If a skill is not in the session's skill list, say so**
