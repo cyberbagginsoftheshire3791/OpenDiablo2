@@ -70,6 +70,22 @@ func TestSurvivalMeters(t *testing.T) {
 	}
 
 	// --- 1. the meters drain on the world clock -------------------------
+	//
+	// THE NIGHT IS TURNED OFF FIRST, and M4.5 step 5 is why. This act
+	// measures the body's own clock, and it gets there by walking 43 world
+	// hours to a deep night. Until step 5 a fight was one monster that died
+	// and ended it; reinforcements made monsters JOIN a running fight, and
+	// the first full-suite run after that step found this test failing with
+	// food at exactly 100 -- because the player had been killed somewhere in
+	// the walk and Meters.Advance returns early for a dead body. Nothing was
+	// wrong with the arithmetic.
+	//
+	// So arrivals are stopped and the notice reach is closed down before the
+	// walk begins. That removes a variable this act is not about; whether the
+	// night can kill you is the fourteenth script's subject, not this one's.
+	setField(s, "spawns", "chance", 0)
+	setField(s, "spawns", "notice_radius", 0.5)
+
 	s.call("strigoi_set_system_field", map[string]any{"system": "clock", "field": "moon", "value": 0})
 
 	clock := sub(s.call("strigoi_get_system_state", map[string]any{"system": "clock"}), "state")
@@ -119,7 +135,11 @@ func TestSurvivalMeters(t *testing.T) {
 		{"fatigue", num(after, "fatigue"), num(before, "fatigue") + fatigueDrain*hours},
 	} {
 		if math.Abs(tc.got-tc.want) > tolerance {
-			t.Fatalf("after %.4f world hours: %s reads %.4f, want %.4f", hours, tc.name, tc.got, tc.want)
+			// The whole body, not just the meter that disagreed: Meters.Advance
+			// returns early for a DEAD body, so "the meter did not move" and
+			// "the drain arithmetic is wrong" look identical from one number.
+			t.Fatalf("after %.4f world hours: %s reads %.4f, want %.4f; body=%v",
+				hours, tc.name, tc.got, tc.want, after)
 		}
 	}
 

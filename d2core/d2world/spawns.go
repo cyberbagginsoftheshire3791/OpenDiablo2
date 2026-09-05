@@ -625,6 +625,57 @@ func (s *Spawns) SetMorale(groupID string, morale float64) bool {
 	return true
 }
 
+// Hurt takes morale off a group. It is the DECREMENT SetMorale deliberately
+// was not, and step 5 is the milestone that owed it: M4.3b built the morale
+// state, signed the rout behaviour over to M4.5, and left a third piece
+// belonging to neither -- the thing that MOVES the number. Without it
+// Spawns.Routing is a flag nothing in a shipped build can ever raise, which is
+// the hollow class this project has now shipped five times.
+//
+// IT WRITES g.morale RATHER THAN CALLING SetMorale, and that is deliberate
+// rather than a missed refactor. SetMorale is registered observe/harness-only;
+// deadcode -whylive is TRANSITIVE, so routing this through it would flip that
+// row live and make the register's claim about it false. They are also
+// different operations -- one writes, one subtracts and floors -- so the
+// duplication is two lines of arithmetic, not a second source of truth.
+//
+// Morale floors at zero. A pack cannot be more broken than broken, and a
+// negative would make the rout threshold meaningless for anything that
+// arrives after it.
+func (s *Spawns) Hurt(groupID string, amount float64) bool {
+	g, ok := s.groups[groupID]
+	if !ok {
+		return false
+	}
+
+	if amount <= 0 {
+		return false
+	}
+
+	g.morale -= amount
+	if g.morale < 0 {
+		g.morale = 0
+	}
+
+	return true
+}
+
+// Morale reports one group's nerve, and whether the group is known at all.
+//
+// THE SECOND RETURN IS THE POINT, and it is the A3 fail-open rule again: a
+// group the tables never placed is not a group with zero morale. Quick-resolve
+// reads this to decide whether an enemy is a MUNDANE ANIMAL (R2 §2B), and
+// unknown must not read as "the dead" nor as "a dog" -- every playtest fight
+// so far has been against a harness-spawned stand-in with no group at all.
+func (s *Spawns) Morale(groupID string) (morale float64, known bool) {
+	g, ok := s.groups[groupID]
+	if !ok {
+		return 0, false
+	}
+
+	return g.morale, true
+}
+
 // Routing reports whether a group is at or below the rout threshold. The
 // STATE is this milestone's; what a routing pack DOES is M4.5's.
 func (s *Spawns) Routing(groupID string) (routing, known bool) {
@@ -680,6 +731,7 @@ func (s *Spawns) ProfileOf(memberID string) (Profile, bool) {
 				Speed:     row.Speed,
 				DamageMin: row.DamageMin,
 				DamageMax: row.DamageMax,
+				Count:     g.spawned,
 			}, true
 		}
 	}

@@ -1,6 +1,7 @@
 package d2world
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -67,6 +68,71 @@ func (a *recordingAnimator) Animate(id string, act CombatAct) {
 	a.acts = append(a.acts, id+":"+name)
 }
 
+// fakeMorale is the spawn tables' morale seam with no spawn tables behind it.
+// It records every Hurt so a test can assert the DECREMENT rather than only
+// the resulting number, which is the difference between checking the trigger
+// and checking the threshold.
+type fakeMorale struct {
+	morale map[string]float64
+	routAt float64
+	hurts  []string
+}
+
+func newFakeMorale() *fakeMorale {
+	return &fakeMorale{morale: map[string]float64{}, routAt: 25}
+}
+
+func (m *fakeMorale) Hurt(groupID string, amount float64) bool {
+	v, ok := m.morale[groupID]
+	if !ok || amount <= 0 {
+		return false
+	}
+
+	v -= amount
+	if v < 0 {
+		v = 0
+	}
+
+	m.morale[groupID] = v
+	m.hurts = append(m.hurts, fmt.Sprintf("%s:%.4f", groupID, amount))
+
+	return true
+}
+
+func (m *fakeMorale) Morale(groupID string) (float64, bool) {
+	v, ok := m.morale[groupID]
+
+	return v, ok
+}
+
+func (m *fakeMorale) Routing(groupID string) (bool, bool) {
+	v, ok := m.morale[groupID]
+	if !ok {
+		return false, false
+	}
+
+	return v <= m.routAt, true
+}
+
+// fakeChases records what the resolver released. It answers false for a hunter
+// it never held, exactly as *Pursuit does.
+type fakeChases struct {
+	chasing  map[string]bool
+	released []string
+}
+
+func (f *fakeChases) Release(hunterID string) bool {
+	f.released = append(f.released, hunterID)
+
+	if !f.chasing[hunterID] {
+		return false
+	}
+
+	delete(f.chasing, hunterID)
+
+	return true
+}
+
 // resolverFight is a wired-up Combat: a player with a body, enemies with
 // bodies and profiles, per-tile light, and a recording animator.
 type resolverFight struct {
@@ -78,6 +144,8 @@ type resolverFight struct {
 	illum    *tileIllumination
 	animator *recordingAnimator
 	profiles *fakeProfiles
+	morale   *fakeMorale
+	chases   *fakeChases
 	watchers map[string]*fakeWatcher
 }
 
@@ -94,11 +162,13 @@ func newResolverFight(t *testing.T, seed int64) *resolverFight {
 		illum:    &tileIllumination{levels: map[[2]int]float64{}},
 		animator: &recordingAnimator{},
 		profiles: &fakeProfiles{byID: map[string]Profile{}},
+		morale:   newFakeMorale(),
+		chases:   &fakeChases{chasing: map[string]bool{}},
 		watchers: map[string]*fakeWatcher{},
 	}
 
 	f.c = NewCombat(NewClock(DefaultClockDials()), f.notice, f.fitness, f.illum, f.bodies,
-		f.profiles, f.animator, seed, DefaultCombatDials())
+		f.profiles, f.animator, f.morale, f.chases, seed, DefaultCombatDials())
 
 	t.Cleanup(f.c.Close)
 
@@ -659,9 +729,14 @@ func TestResolverTheDeadDoNotRestartTheFight(t *testing.T) {
 
 	require.False(t, f.c.Fighting())
 
-	// The corpse is still aware and still one tile away: nothing cleared it.
-	noticed, watching := f.notice.Noticed("w:1")
-	require.True(t, watching && noticed, "the premise -- the corpse is still a live watcher")
+	// SINCE STEP 5 THE CORPSE IS NO LONGER WATCHED, and this assertion is the
+	// inverse of the one that stood here before it. Step 4 left a dead dog
+	// noticed and chasing, and tryStart's body filter was the only thing
+	// stopping the next tick opening a fresh fight against it. Now the death
+	// itself withdraws it, and the filter is belt-and-braces.
+	_, watching := f.notice.Noticed("w:1")
+	require.False(t, watching, "the death unwatched it")
+	require.Contains(t, f.chases.released, "w:1", "and released its chase")
 
 	before := f.c.HarnessState()
 
@@ -730,7 +805,7 @@ func TestResolverCopesWithNoProfilesAndNoAnimator(t *testing.T) {
 	}}
 
 	c := NewCombat(NewClock(DefaultClockDials()), notice, &fakeFitness{reaction: true},
-		&fakeIllumination{}, bodies, nil, nil, 1462, DefaultCombatDials())
+		&fakeIllumination{}, bodies, nil, nil, nil, nil, 1462, DefaultCombatDials())
 
 	defer c.Close()
 
@@ -862,4 +937,300 @@ func TestResolverRoundMinutesIsFloored(t *testing.T) {
 	require.NoError(t, f.c.HarnessSet("round_minutes", minRoundMinutes), "the floor itself is allowed")
 	require.NoError(t, f.c.HarnessSet("round_minutes", 2.0))
 	require.Equal(t, 2.0, f.c.HarnessState()["round_minutes"])
+}
+
+// --- step 5: rout, quick-resolve, withdrawal and reinforcements ------------
+//
+// EVERY RULE BELOW IS PROVED HERE BECAUSE MOST OF THEM CANNOT BE PROVED IN A
+// PLAYTEST WITHOUT LUCK. A rout needs a pack of a known size to lose a member
+// on a chosen round; quick-resolve needs a fight already won. The playtest
+// proves the GAME joins the halves; these prove the halves are right.
+
+// dogPack puts n dogs in one group, with the group known to the morale seam at
+// the authored starting value.
+func dogPack(t *testing.T, f *resolverFight, group string, n int, morale float64) {
+	t.Helper()
+
+	f.morale.morale[group] = morale
+
+	for i := 1; i <= n; i++ {
+		id := fmt.Sprintf("%s.d:%d", group, i)
+		f.chases.chasing[id] = true
+		f.add(t, id, 1, Profile{
+			Group: group, Row: "dogs", Speed: 3, Count: n, DamageMin: 1, DamageMax: 1,
+		})
+	}
+}
+
+// TestResolverRoutDecrementScalesWithPackSize is the arithmetic that the flat
+// decrement could not do. Four dogs lose 25 apiece; two lose 50.
+func TestResolverRoutDecrementScalesWithPackSize(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		count int
+		want  string
+	}{
+		{"four dogs", 4, "g:1:25.0000"},
+		{"two dogs", 2, "g:1:50.0000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newResolverFight(t, 1462)
+			dogPack(t, f, "g:1", tc.count, 50)
+			f.open(t)
+			f.set(t, "forced_band", BandCrit)
+
+			f.round()
+
+			require.NotEmpty(t, f.morale.hurts, "one death must hurt the pack")
+			require.Equal(t, tc.want, f.morale.hurts[0])
+		})
+	}
+}
+
+// TestResolverARoutIsNotAKill is A-1's regression test and the most important
+// assertion in the step: a fight the player survived because the pack broke
+// must not be reported as one in which he killed everything.
+func TestResolverARoutIsNotAKill(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	dogPack(t, f, "g:1", 4, 50)
+	f.open(t)
+	f.set(t, "forced_band", BandCrit)
+
+	for i := 0; i < 8 && f.c.Fighting(); i++ {
+		f.round()
+	}
+
+	require.False(t, f.c.Fighting())
+
+	state := f.c.HarnessState()
+	require.Equal(t, "enemies_routed", state["ended_reason"])
+	require.Equal(t, 1, state["ended_routed"])
+	require.Equal(t, 0, state["ended_enemies_dead"], "and NOT counted as a kill")
+
+	// One died; the survivors broke and are still standing, still participants.
+	require.Equal(t, 25.0, f.morale.morale["g:1"])
+	require.Len(t, f.chases.released, 4, "the dead one and the three that broke")
+}
+
+// TestResolverRoutIsOffWhenTheDialIsZero is the negative control in unit form:
+// the same fight with LossWeight 0 ends the old way, which proves the ending
+// above came from the trigger rather than from anything else in the step.
+func TestResolverRoutIsOffWhenTheDialIsZero(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	dogPack(t, f, "g:1", 4, 50)
+	f.open(t)
+	f.set(t, "forced_band", BandCrit)
+	f.set(t, "loss_weight", 0.0)
+	f.set(t, "quick_resolve_advantage", 2.0) // out of reach: this test is about rout
+
+	for i := 0; i < 20 && f.c.Fighting(); i++ {
+		f.round()
+	}
+
+	require.False(t, f.c.Fighting())
+
+	state := f.c.HarnessState()
+	require.Equal(t, "enemies_dead", state["ended_reason"])
+	require.Equal(t, 0, state["ended_routed"])
+	require.Empty(t, f.morale.hurts, "nothing was taken off the pack")
+	require.Equal(t, 50.0, f.morale.morale["g:1"])
+}
+
+// TestResolverASolitaryBoarDoesNotRout is N1 §5's "dangerous cornered", and it
+// falls out of the arithmetic rather than needing a rule of its own: a pack of
+// one has nobody left to break when it loses its only member.
+func TestResolverASolitaryBoarDoesNotRout(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	f.morale.morale["g:9"] = 70
+	f.chases.chasing["b:1"] = true
+	f.add(t, "b:1", 1, Profile{
+		Group: "g:9", Row: "boar", Speed: 1, Count: 1, DamageMin: 1, DamageMax: 1,
+	})
+	f.open(t)
+	f.set(t, "forced_band", BandCrit)
+
+	for i := 0; i < 6 && f.c.Fighting(); i++ {
+		f.round()
+	}
+
+	require.False(t, f.c.Fighting())
+
+	state := f.c.HarnessState()
+	require.Equal(t, "enemies_dead", state["ended_reason"], "it died fighting")
+	require.Equal(t, 0, state["ended_routed"])
+	require.Equal(t, []string{"g:9:100.0000"}, f.morale.hurts, "its nerve broke; there was nobody to break")
+}
+
+// TestResolverMundaneNeedsAKnownGroup is R2 §2B's prohibition in the only
+// terms this engine has. The never-the-dead half is a named deferral to M4.7 --
+// there are no dead rows to test against -- and what IS true today is that a
+// stand-in the tables never placed is not a mundane animal.
+func TestResolverMundaneNeedsAKnownGroup(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	dogPack(t, f, "g:1", 2, 50)
+	f.add(t, "x:1", 1, Profile{}) // no row, no group: the placeholder profile
+	f.open(t)
+
+	require.True(t, f.c.mundane("g:1.d:1"))
+	require.False(t, f.c.mundane("x:1"), "the tables never placed it")
+}
+
+// TestResolverQuickResolveFiresAgainstAPackAlreadyBeaten is N1 §5's signed
+// playtest sentence in unit form: it FIRES. An earlier draft had it report an
+// offer and do nothing, which contradicts the corpus.
+func TestResolverQuickResolveFiresAgainstAPackAlreadyBeaten(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	dogPack(t, f, "g:1", 4, 50)
+	f.open(t)
+	f.set(t, "forced_band", BandCrit)
+	f.set(t, "loss_weight", 0.0) // this test is about quick-resolve, not rout
+	f.set(t, "quick_resolve_advantage", 0.1)
+
+	f.round() // the player kills one; three of four are left
+
+	require.Equal(t, 0, f.c.HarnessState()["quick_resolved"], "not yet: the round had already begun")
+
+	f.round() // the next round opens with the fight already won
+
+	state := f.c.HarnessState()
+	require.False(t, f.c.Fighting())
+	require.Equal(t, 1, state["quick_resolved"])
+	require.InDelta(t, 0.25, state["last_quick_advantage"].(float64), 1e-9,
+		"one of four gone when it fired")
+	require.Equal(t, "enemies_dead", state["ended_reason"])
+	require.Len(t, f.chases.released, 4, "every one of them was withdrawn, not just the first")
+}
+
+// TestResolverQuickResolveRefusesWhatTheTablesNeverPlaced is the half of R2
+// §2B's prohibition this build can honestly assert. The never-the-dead clause
+// is a NAMED DEFERRAL to M4.7 -- there are no dead rows to test against, and
+// the signed M4.5 note grades that half unassertable -- so what is proved here
+// is that an enemy with no known group is never treated as a mundane animal,
+// however far ahead the player is.
+func TestResolverQuickResolveRefusesWhatTheTablesNeverPlaced(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	dogPack(t, f, "g:1", 4, 50)
+
+	// A stand-in with a profile but no group the tables know. It is SLOW, so
+	// the player's policy kills the dogs first and it is still standing while
+	// the advantage climbs past the threshold.
+	f.chases.chasing["x:1"] = true
+	f.add(t, "x:1", 1, Profile{Group: "g:99", Row: "stray", Speed: 1, Count: 1, DamageMin: 1, DamageMax: 1})
+
+	f.open(t)
+	f.set(t, "forced_band", BandCrit)
+	f.set(t, "loss_weight", 0.0)
+	f.set(t, "quick_resolve_advantage", 0.1)
+
+	for i := 0; i < 4 && f.c.Fighting(); i++ {
+		f.round()
+	}
+
+	require.True(t, f.c.Fighting(), "the premise -- the stand-in is still alive")
+	require.Equal(t, 0, f.c.HarnessState()["quick_resolved"],
+		"three of five gone is past the threshold, and it still refused")
+
+	for i := 0; i < 4 && f.c.Fighting(); i++ {
+		f.round()
+	}
+
+	state := f.c.HarnessState()
+	require.False(t, f.c.Fighting())
+	require.Equal(t, 0, state["quick_resolved"], "it was ground out a blow at a time")
+	require.Equal(t, "enemies_dead", state["ended_reason"])
+}
+
+// TestResolverReinforcementJoinsWithoutRebuildingTheFight is the trap the step
+// was most likely to ship: any refactor that let the arrival path reach
+// tryStart's construction would reset the round, the dead set and the order.
+func TestResolverReinforcementJoinsWithoutRebuildingTheFight(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	f.morale.morale["g:1"] = 60
+	f.add(t, "w:1", 400, Profile{Group: "g:1", Row: "wolves", Speed: 2, Count: 1, DamageMin: 1, DamageMax: 1})
+	f.open(t)
+	f.set(t, "player_action", PlayerActionHold)
+	f.round()
+
+	before := f.c.HarnessState()
+	require.Equal(t, 0, before["joined"])
+	require.Equal(t, []string{"w:1"}, orderOfEnemies(f))
+
+	// A faster dog notices the player mid-fight.
+	f.morale.morale["g:2"] = 50
+	f.add(t, "d:1", 400, Profile{Group: "g:2", Row: "dogs", Speed: 3, Count: 1, DamageMin: 1, DamageMax: 1})
+
+	roundBefore := f.c.Round()
+	f.round()
+
+	state := f.c.HarnessState()
+	require.Equal(t, 1, state["joined"])
+	require.Equal(t, roundBefore+1, f.c.Round(), "the fight advanced; it did not restart")
+	require.Equal(t, before["encounter"], state["encounter"], "and it is the same encounter")
+
+	// Placed by authored Speed, in front of the slower wolf.
+	require.Equal(t, []string{"d:1", "w:1"}, orderOfEnemies(f))
+}
+
+// orderOfEnemies is the activation order with the player taken out, which is
+// the half a reinforcement changes.
+func orderOfEnemies(f *resolverFight) []string {
+	out := []string{}
+
+	for _, id := range f.c.HarnessState()["order"].([]string) {
+		if id != "p:1" {
+			out = append(out, id)
+		}
+	}
+
+	return out
+}
+
+// TestInsertBySpeedPutsATieLastAmongItsEquals decides the case the brief left
+// silent. Two live dog packs are two groups on one row at one Speed, and the
+// tables can place them, so it is reachable rather than theoretical. The pack
+// that was already swinging keeps its place.
+func TestInsertBySpeedPutsATieLastAmongItsEquals(t *testing.T) {
+	speeds := map[string]int{"a": 3, "b": 3, "c": 1, "new": 3}
+	speedOf := func(id string) int { return speeds[id] }
+
+	require.Equal(t, []string{"a", "b", "new", "c"},
+		insertBySpeed([]string{"a", "b", "c"}, "new", 3, speedOf))
+
+	speeds["fast"] = 9
+	require.Equal(t, []string{"fast", "a", "b", "c"},
+		insertBySpeed([]string{"a", "b", "c"}, "fast", 9, speedOf))
+
+	speeds["slow"] = 0
+	require.Equal(t, []string{"a", "b", "c", "slow"},
+		insertBySpeed([]string{"a", "b", "c"}, "slow", 0, speedOf))
+}
+
+// TestResolverQuickResolveMeasuresTheFightNotTheTable is the regression test
+// for an A-severity defect the fourteenth playtest found in a real build.
+//
+// The first version measured advantage against the pack's AUTHORED size, and
+// a pack does not arrive together: two dogs of an authored four already read
+// as half the enemy side gone before a blow landed, so quick-resolve fired on
+// a fight in which nothing had died. The denominator is the fight.
+func TestResolverQuickResolveMeasuresTheFightNotTheTable(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	f.morale.morale["g:1"] = 50
+
+	// Two present, out of an authored four.
+	for _, id := range []string{"d:1", "d:2"} {
+		f.chases.chasing[id] = true
+		f.add(t, id, 400, Profile{
+			Group: "g:1", Row: "dogs", Speed: 3, Count: 4, DamageMin: 1, DamageMax: 1,
+		})
+	}
+
+	f.open(t)
+	f.set(t, "player_action", PlayerActionHold)
+	f.set(t, "quick_resolve_advantage", 0.4)
+
+	f.round()
+	f.round()
+
+	require.True(t, f.c.Fighting(), "nothing has died; there is no advantage to resolve on")
+	require.Equal(t, 0, f.c.HarnessState()["quick_resolved"])
 }

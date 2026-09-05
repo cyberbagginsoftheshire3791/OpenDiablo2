@@ -39,6 +39,8 @@ type Combat struct {
 	bodies   Bodies
 	profiles Profiles
 	animator Animator
+	morale   Morale
+	chases   Chases
 
 	rng *rand.Rand
 
@@ -80,6 +82,20 @@ type Combat struct {
 	endedEnemiesDead int
 	endedPlayerDead  int
 	endedDisengaged  int
+	endedRouted      int
+
+	// joined is how many enemies have arrived into a fight already running.
+	// Reinforcements are otherwise invisible: a script can watch the
+	// participant list grow, but only if it happens to read on the right
+	// tick, and end() would report the fight identically either way.
+	joined int
+
+	// quickResolved counts the fights finished in one action, and
+	// lastQuickAdvantage is the advantage figure that triggered the last one.
+	// The dial is R2's to answer, so the build's job is to make what it did
+	// legible rather than to defend the number.
+	quickResolved      int
+	lastQuickAdvantage float64
 }
 
 // Fitness is what the combat model may know about the player's body beyond its
@@ -140,6 +156,63 @@ type Bodies interface {
 	// With the count, forcing a real arrival and watching this rise BEFORE
 	// any fight exists is evidence about the game.
 	BodiesKnown() int
+}
+
+// Morale is what the combat model may do to a pack's nerve, and what it may
+// ask about it. Two methods, and the split between them is the milestone
+// boundary: M4.3b owns the morale STATE and the rout THRESHOLD, this owns the
+// behaviour that moves the number and the behaviour that reads it.
+//
+// IT IS A FOURTH NARROW INTERFACE rather than a *Spawns, for the reason
+// Fitness, Bodies and Profiles are: the fence is in the type system instead of
+// in a comment, and the model can be tested with no spawn tables at all. It is
+// deliberately NOT three methods -- the earlier draft asked for a GroupOf, and
+// that symbol was already refused by name at step 4 because ProfileOf answers
+// it (spawns.go), and Profile.Group is how every caller here already gets a
+// pack key.
+//
+// A nil Morale is legal and means a fight against something with no pack
+// behind it: nothing routs, and nothing quick-resolves. Reported as
+// has_morale, on the has_notice precedent, so a playtest can tell "the wiring
+// is missing" from "the rule did not fire".
+type Morale interface {
+	// Hurt takes morale off a group. It is the decrement, not a write.
+	Hurt(groupID string, amount float64) bool
+
+	// Morale is the number and whether the group is known at all. The second
+	// return is load-bearing: an enemy the tables never placed is not an
+	// enemy with zero morale, and quick-resolve's mundane test turns on
+	// exactly that distinction.
+	Morale(groupID string) (morale float64, known bool)
+
+	// Routing is M4.3b's rout THRESHOLD, read rather than recomputed.
+	//
+	// THE BRIEF ASKED FOR TWO METHODS AND THIS IS THE THIRD, deliberately.
+	// The threshold is a spawn dial (RoutAt, settable at runtime), so testing
+	// morale <= 25 on this side would be a second home for one truth and
+	// would silently stop agreeing the first time a script tuned the dial.
+	// The ask that was signed refused a GroupOf, because ProfileOf already
+	// answers it, and that refusal stands -- this is not that symbol. It is
+	// also the clause M4.5 §3.9 needs: Spawns.Routing is one of the seven
+	// rows the milestone signs must all flip to wire, and a flag nothing
+	// reads cannot flip.
+	Routing(groupID string) (routing, known bool)
+}
+
+// Chases is how the combat model ends a chase, and it exists because
+// RELEASING A DEAD HUNTER IS NOT ENOUGH ON ITS OWN.
+//
+// The game screen calls startChasesForTheAware() every frame, immediately
+// before Advance, and that function has no liveness filter of any kind: it
+// walks AwarePairs() and chases anything not already chasing. So a Release on
+// death is undone on the very next frame unless the same death also stops the
+// watching. Both halves land together here -- Release through this interface,
+// Unwatch through the notice model this system already holds.
+//
+// A nil Chases means nothing is released, which is exactly what every build
+// before step 5 did.
+type Chases interface {
+	Release(hunterID string) bool
 }
 
 // Combatant is a participant. It is deliberately the same shape as Watcher --
@@ -238,6 +311,42 @@ type CombatDials struct {
 	// argument of §5.3: a script that could set health, land a blow or set an
 	// animation would prove something the game never does.
 	ForcedBand string
+
+	// --- step 5: rout and quick-resolve. Both are [DIAL]s and both are
+	// visible on purpose; R2 §5's header says the prototype answers these. ---
+
+	// LossWeight scales what one death costs a pack's nerve. The decrement is
+	// LossWeight * 100 / the pack's STARTING count, so losing one of two is
+	// half your pack and losing one of six is not.
+	//
+	// A FLAT DECREMENT WAS TRIED ON PAPER AND IS REFUTED BY THE AUTHORED
+	// ROWS. Dogs start at 50 and wolves at 60 against a rout threshold of 25,
+	// so any flat value large enough to break a wolf pack breaks a dog pack
+	// on the same loss -- the ten-point gap between the rows is smaller than
+	// the decrement, so it can never move the answer. Worse, it makes a lone
+	// boar (morale 70) unable to rout at ANY value that leaves dogs alive.
+	//
+	// At 1.0 the authored rows reproduce all three of N1 §5's phrasings: a
+	// pack of two or four dogs breaks on loss one ("rout early"), three
+	// wolves on loss two and six wolves on loss three ("rout at losses"), and
+	// a SOLITARY boar never breaks at all -- which is N1's own "dangerous
+	// cornered", the corpus answering rather than this dial inventing.
+	LossWeight float64
+
+	// QuickResolveAdvantage is how far ahead the player must be before a
+	// fight against mundane animals can be finished in one action.
+	//
+	// THE DIAL IS R2 §5's, NOT THIS MILESTONE'S: its list of open dials names
+	// "quick-resolve advantage threshold" outright, and the signed M4.5 note
+	// already carries QuickResolveAdvantage in its own dial table. So the
+	// build ships it with a visible starting value and the prototype answers
+	// it; a brief that legislated the number would be answering a question
+	// R2 reserved.
+	//
+	// It is measured as the fraction of the enemy side already gone: 0.75
+	// means three of a four-dog pack are down. Never against the dead -- see
+	// mundane(), and see the DoD for why that half is a named deferral.
+	QuickResolveAdvantage float64
 }
 
 // roundEpsilon absorbs the floating-point error in an ACCUMULATED world
@@ -278,6 +387,9 @@ func DefaultCombatDials() CombatDials {
 		LitLevel:     DefaultNoticeDials().LitLevel,
 		PlayerAction: PlayerActionAttack,
 		ForcedBand:   "",
+
+		LossWeight:            1.0,
+		QuickResolveAdvantage: 0.75,
 	}
 }
 
@@ -308,6 +420,30 @@ type encounter struct {
 	// cannot both leave that slice and keep a row.
 	dead map[string]bool
 
+	// routed is every enemy whose PACK broke. It is a third set beside dead
+	// rather than a removal from enemies, and the review that caught the
+	// alternative is the reason.
+	//
+	// REMOVING A ROUTER FROM enemies REPORTS EVERY ROUT AS A KILL. pruneOrEnd
+	// opens by looping the slice to see whether everything is dead, and a
+	// loop over an EMPTY slice leaves allDead true -- so in the single-pack
+	// case, which is the commonest fight in the game, the list empties and
+	// the encounter ends "enemies_dead". Removing only the LIVING routers
+	// fails the same way: the slice then holds corpses only, all of them in
+	// dead, and allDead is true again. The comment three lines into
+	// pruneOrEnd names that exact scenario as the defect step 4 was fixed to
+	// prevent.
+	//
+	// Keeping them and marking them is what works, and it costs one clause in
+	// three places: the all-gone test, the disengagement test and the order.
+	// A routed enemy takes no activation, keeps its participant row with
+	// routed:true, and STAYS STANDING ON THE MAP -- making it flee needs a
+	// destination, a router call per member per round and a rule for
+	// re-noticing, which is a named deferral (ask 2) rather than something
+	// half-built here. A wolf that stands still reads as a bug in a
+	// screenshot; a wolf that evaporates is a worse lie.
+	routed map[string]bool
+
 	// initiator, surprised and surpriseWhy are D8 §9's initiation facts, read
 	// ONCE at tryStart and then fixed for the fight. initiator is always
 	// "enemy" in v0: the only path into tryStart is AwarePairs(), i.e.
@@ -336,13 +472,16 @@ type encounter struct {
 // private to combat is what leaves every other system's draw sequence, and so
 // every seed-1462 measurement outside a fight, exactly where it was.
 //
-// profiles and animator may both be nil, and the model copes rather than
-// assuming: a nil Profiles means every enemy fights on the placeholder
-// profile, and a nil Animator means nothing swings on screen. Both are
-// reported (has_profiles, has_animator) on the has_notice precedent, so a
+// profiles, animator, morale and chases may all be nil, and the model copes
+// rather than assuming: a nil Profiles means every enemy fights on the
+// placeholder profile, a nil Animator means nothing swings on screen, a nil
+// Morale means nothing routs and nothing quick-resolves, and a nil Chases
+// means a dead hunter keeps its chase. All four are reported (has_profiles,
+// has_animator, has_morale, has_chases) on the has_notice precedent, so a
 // playtest can tell "the wiring is missing" from "the rule did not fire".
 func NewCombat(clock *Clock, notice *Notice, fitness Fitness, illum Illumination,
-	bodies Bodies, profiles Profiles, animator Animator, seed int64, dials CombatDials) *Combat {
+	bodies Bodies, profiles Profiles, animator Animator, morale Morale, chases Chases,
+	seed int64, dials CombatDials) *Combat {
 	c := &Combat{
 		dials:    dials,
 		clock:    clock,
@@ -352,6 +491,8 @@ func NewCombat(clock *Clock, notice *Notice, fitness Fitness, illum Illumination
 		bodies:   bodies,
 		profiles: profiles,
 		animator: animator,
+		morale:   morale,
+		chases:   chases,
 		rng:      rand.New(rand.NewSource(seed)), // nolint:gosec // gameplay RNG, seeded for reproducibility
 		nextID:   1,
 	}
@@ -420,8 +561,162 @@ func (c *Combat) Advance(worldMinutes float64) {
 	}
 
 	if c.encounter != nil {
+		c.reinforce()
 		c.pruneOrEnd()
 	}
+}
+
+// scanAware is the aware-and-in-reach sweep, and it is a function rather than
+// a loop inside tryStart because STEP 5 NEEDS IT TWICE: once to open a fight,
+// and once per tick during a live one to find reinforcements.
+//
+// THE EXTRACTION STOPS EXACTLY HERE, AND THAT IS THE POINT. tryStart does four
+// more things after the sweep -- it picks the quarry, reads D8's stance once
+// and fixes it, ASSIGNS c.encounter, and resets the action log. Any refactor
+// that let the reinforcement path reach the assignment would rebuild the fight
+// every tick: round back to 1, dead and routed emptied, surprised recomputed,
+// the activation order redrawn. So the sweep is lifted and the construction is
+// not, and the reinforcement caller is handed the quarry rather than choosing
+// one.
+//
+// A nil target means "choose one": the first aware pair in the stable order
+// names the quarry and anything aware of somebody else waits, which is v0's
+// dullest available answer to the target-selection question notice.go hands
+// this milestone. A non-nil target means "these are the terms" -- the sweep
+// may not repoint a fight that is already running at somebody.
+//
+// declined is returned rather than counted here so the caller decides whether
+// it means anything; see tryStart.
+func (c *Combat) scanAware(target Quarry) (enemies []Combatant, chosen Quarry, declined int) {
+	if c.notice == nil {
+		return nil, target, 0
+	}
+
+	for _, pair := range c.notice.AwarePairs() {
+		if pair.Target == nil || pair.Watcher == nil {
+			continue
+		}
+
+		if !c.inReach(pair.Watcher, pair.Target) {
+			declined++
+
+			continue
+		}
+
+		// A CORPSE DOES NOT START A FIGHT OR JOIN ONE, and this filter is
+		// load-bearing rather than tidy. The sweep runs on every tick and
+		// takes every noticed watcher. Step 5 now releases the chase and
+		// stops the watching when something dies, so this is belt-and-braces
+		// where it used to be the only thing standing -- AND IT MUST NOT BE
+		// DELETED, because it also stops a fight restarting against a body
+		// the registry never adopted.
+		//
+		// A watcher with NO body is alive by this test, which is the same
+		// answer has_body:false already gives: it cannot be hurt and cannot
+		// die, and "I do not know" must not read as "it is dead" (A3).
+		if c.deadByBody(pair.Watcher.WatcherID()) {
+			continue
+		}
+
+		if target == nil {
+			target = pair.Target
+		}
+
+		if pair.Target.QuarryID() != target.QuarryID() {
+			continue
+		}
+
+		enemies = append(enemies, pair.Watcher)
+	}
+
+	return enemies, target, declined
+}
+
+// reinforce is a monster arriving into a fight that is already running.
+//
+// UNTIL STEP 5 THE PARTICIPANT LIST COULD ONLY SHRINK: tryStart built it once
+// and pruneOrEnd removed from it, so a second pack that noticed the player
+// mid-fight stood outside the encounter doing nothing. docs/reachability.md
+// files it under the deferrals the register cannot carry, because no symbol is
+// dead -- the list is built and pruned in a shipped build -- and the gap is a
+// design one.
+//
+// IT RUNS AFTER THE ROUND LOOP, ONCE PER Advance, and both halves of that
+// matter. Once per call, because the loop can resolve several rounds and a
+// sweep inside it would let one arrival be counted repeatedly. After, because
+// a reinforcement must not act in the round it arrives -- resolveRound takes
+// its sequence once at the top, so an enemy inserted afterwards first acts in
+// the round that follows.
+//
+// IT NEVER REPOINTS THE FIGHT. The sweep is handed e.target, so a watcher
+// aware of somebody else is not a reinforcement; it is somebody else's
+// problem, and v0 has no second encounter for it.
+func (c *Combat) reinforce() {
+	e := c.encounter
+	if e == nil || e.target == nil {
+		return
+	}
+
+	arrivals, _, _ := c.scanAware(e.target)
+	if len(arrivals) == 0 {
+		return
+	}
+
+	known := make(map[string]bool, len(e.enemies))
+	for _, enemy := range e.enemies {
+		if enemy != nil {
+			known[enemy.WatcherID()] = true
+		}
+	}
+
+	for _, arrival := range arrivals {
+		id := arrival.WatcherID()
+		if known[id] {
+			continue
+		}
+
+		known[id] = true
+
+		e.enemies = append(e.enemies, arrival)
+		e.enemyOrder = insertBySpeed(e.enemyOrder, id, c.profileOf(id).Speed, c.speedOf)
+		c.joined++
+	}
+}
+
+// speedOf is the authored initiative Speed of one enemy already in a fight.
+func (c *Combat) speedOf(id string) int { return c.profileOf(id).Speed }
+
+// insertBySpeed puts one arrival into an activation order that already exists,
+// WITHOUT re-running the tie-break shuffle.
+//
+// Re-drawing the order mid-fight is worse than a D8 violation. d8Order takes
+// its tie-break from the combat RNG, so a second draw would move every
+// subsequent damage roll in the fight -- two launches of one build at one seed
+// would stop agreeing, which is R2 §3 bullet 12's determinism clause broken by
+// a feature that has nothing to do with damage.
+//
+// THE TIE IS DECIDED HERE AND IT IS DECIDED DELIBERATELY: an arrival goes in
+// front of the first member SLOWER than it, so at equal Speed it lands behind
+// everything already fighting. Two live dog packs are two groups on one row at
+// one Speed, and the tables can place them, so the case is reachable rather
+// than theoretical. Last among its equals is the answer that costs the fight
+// nothing: the pack that was already swinging keeps its place.
+func insertBySpeed(order []string, id string, speed int, speedOf func(string) int) []string {
+	at := len(order)
+
+	for i, other := range order {
+		if speedOf(other) < speed {
+			at = i
+
+			break
+		}
+	}
+
+	order = append(order, "")
+	copy(order[at+1:], order[at:])
+	order[at] = id
+
+	return order
 }
 
 // tryStart opens an encounter when something aware of the player is also in
@@ -444,53 +739,14 @@ func (c *Combat) tryStart() {
 		return
 	}
 
-	var (
-		enemies []Combatant
-		target  Quarry
-	)
+	enemies, target, declined := c.scanAware(nil)
 
-	for _, pair := range c.notice.AwarePairs() {
-		if pair.Target == nil || pair.Watcher == nil {
-			continue
-		}
-
-		if !c.inReach(pair.Watcher, pair.Target) {
-			c.declines++
-
-			continue
-		}
-
-		// A CORPSE DOES NOT START A FIGHT, and this filter is load-bearing
-		// rather than tidy. tryStart runs on EVERY tick the encounter is nil
-		// and takes every noticed watcher, and step 4 clears neither the
-		// notice model nor the chase when something dies -- both are step 5's
-		// (Notice.Unwatch, Pursuit.Release). So a dog killed this round is
-		// still noticed and still in reach on the next tick, and without this
-		// line the frame after "enemies_dead" opens a fresh encounter against
-		// the corpse, the policy re-kills it, and every counter a playtest
-		// asserts == 1 on climbs once a round for the rest of the night.
-		//
-		// A watcher with NO body is alive by this test, which is the same
-		// answer has_body:false already gives: it cannot be hurt and cannot
-		// die, and "I do not know" must not read as "it is dead" (A3).
-		if c.deadByBody(pair.Watcher.WatcherID()) {
-			continue
-		}
-
-		// One encounter, one quarry. A second target is the target-selection
-		// question notice.go:186 hands to this milestone, and v0 answers it
-		// the dullest way available: the first aware pair in the stable order
-		// names the quarry, and anything aware of somebody else waits.
-		if target == nil {
-			target = pair.Target
-		}
-
-		if pair.Target.QuarryID() != target.QuarryID() {
-			continue
-		}
-
-		enemies = append(enemies, pair.Watcher)
-	}
+	// DECLINES STILL MEAN WHAT THEY MEANT. The scan is now run in two places
+	// -- here, and once per tick during a live fight to find reinforcements
+	// -- and only this one adds to the counter. Counting both would make
+	// declines grow per tick per out-of-reach watcher for a whole fight's
+	// duration, which is a different quantity wearing the same name.
+	c.declines += declined
 
 	if len(enemies) == 0 {
 		return
@@ -532,6 +788,7 @@ func (c *Combat) tryStart() {
 		target:  target,
 		enemies: enemies,
 		dead:    map[string]bool{},
+		routed:  map[string]bool{},
 		round:   1,
 
 		// v0 has exactly one initiator. See encounter.initiator for why the
@@ -587,18 +844,24 @@ func (c *Combat) pruneOrEnd() {
 	// because a wolf lost its nerve would then be reported enemies_dead, and
 	// ended_enemies_dead -- which the thirteenth playtest asserts on -- would
 	// be counting the wrong thing.
-	allDead := true
+	//
+	// STEP 5 WIDENS "CORPSE" TO "GONE": dead OR routed. A pack that broke has
+	// left the fight without dying, and it is the same sentence -- the fight
+	// the player survived because a wolf lost its nerve -- that the paragraph
+	// above was written about. endingReason() decides which of the two it
+	// gets reported as.
+	allGone := true
 
 	for _, enemy := range e.enemies {
-		if enemy != nil && !e.dead[enemy.WatcherID()] {
-			allDead = false
+		if enemy != nil && !e.gone(enemy.WatcherID()) {
+			allGone = false
 
 			break
 		}
 	}
 
-	if allDead {
-		c.end("enemies_dead")
+	if allGone {
+		c.end(e.endingReason())
 
 		return
 	}
@@ -609,7 +872,7 @@ func (c *Combat) pruneOrEnd() {
 	kept := e.enemies[:0]
 
 	for _, enemy := range e.enemies {
-		if e.dead[enemy.WatcherID()] || c.inReach(enemy, e.target) {
+		if e.gone(enemy.WatcherID()) || c.inReach(enemy, e.target) {
 			kept = append(kept, enemy)
 		}
 	}
@@ -622,7 +885,7 @@ func (c *Combat) pruneOrEnd() {
 	living := false
 
 	for _, enemy := range e.enemies {
-		if !e.dead[enemy.WatcherID()] {
+		if !e.gone(enemy.WatcherID()) {
 			living = true
 
 			break
@@ -646,12 +909,33 @@ func (c *Combat) pruneOrEnd() {
 	order := e.enemyOrder[:0]
 
 	for _, id := range e.enemyOrder {
-		if live[id] && !e.dead[id] {
+		if live[id] && !e.gone(id) {
 			order = append(order, id)
 		}
 	}
 
 	e.enemyOrder = order
+}
+
+// gone is "takes no further part": dead, or its pack broke. Every place that
+// used to ask e.dead about PARTICIPATION asks this instead, and the places
+// that ask about DEATH -- the riposte's "nothing to answer if it is already
+// dead", the participant row's dead:true -- deliberately still ask e.dead.
+func (e *encounter) gone(id string) bool { return e.dead[id] || e.routed[id] }
+
+// endingReason names an ending in which nothing is left to fight.
+//
+// ROUT WINS WHEN ANYTHING ROUTED, and the precedence is a judgement rather
+// than an accident: "you survived because they broke" is the more interesting
+// fact about the night than "the rest of them happened to be dead", and a
+// fight that ends with survivors walking away is exactly the outcome
+// enemies_dead would misreport.
+func (e *encounter) endingReason() string {
+	if len(e.routed) > 0 {
+		return "enemies_routed"
+	}
+
+	return "enemies_dead"
 }
 
 // end closes the encounter and records WHY, both as the last reason and as a
@@ -670,6 +954,8 @@ func (c *Combat) end(reason string) {
 		c.endedPlayerDead++
 	case "disengaged":
 		c.endedDisengaged++
+	case "enemies_routed":
+		c.endedRouted++
 	}
 }
 
@@ -759,6 +1045,8 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"has_bodies":     c.bodies != nil,
 		"has_profiles":   c.profiles != nil,
 		"has_animator":   c.animator != nil,
+		"has_morale":     c.morale != nil,
+		"has_chases":     c.chases != nil,
 		"bodies_known":   0,
 
 		// The resolver's facts about the LAST encounter, reported whether or
@@ -768,9 +1056,19 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"ended_enemies_dead": c.endedEnemiesDead,
 		"ended_player_dead":  c.endedPlayerDead,
 		"ended_disengaged":   c.endedDisengaged,
-		"actions_total":      c.actions,
-		"actions_round":      c.actionsRound,
-		"actions":            c.actionRows(),
+		"ended_routed":       c.endedRouted,
+
+		// Step 5's three facts about what the fight DID, all reported whether
+		// or not one is running. joined is the only evidence a reinforcement
+		// ever arrived -- the participant list grows and shrinks, and a
+		// script that reads on the wrong tick sees neither.
+		"joined":               c.joined,
+		"quick_resolved":       c.quickResolved,
+		"last_quick_advantage": c.lastQuickAdvantage,
+
+		"actions_total": c.actions,
+		"actions_round": c.actionsRound,
+		"actions":       c.actionRows(),
 
 		// Empty until an encounter fills them in below, so that a script
 		// never has to tell "absent" from "no fight" (A3).
@@ -793,6 +1091,9 @@ func (c *Combat) HarnessState() map[string]interface{} {
 			"lit_level":       c.dials.LitLevel,
 			"player_action":   c.dials.PlayerAction,
 			"forced_band":     c.dials.ForcedBand,
+
+			"loss_weight":             c.dials.LossWeight,
+			"quick_resolve_advantage": c.dials.QuickResolveAdvantage,
 		},
 	}
 
@@ -889,9 +1190,15 @@ func (c *Combat) HarnessState() map[string]interface{} {
 
 			// A dead enemy KEEPS its row for the encounter's life and leaves
 			// the order. The resolver despawns nothing (the fence): it stays
-			// on the map in DD, stays in its spawn group, and its chase still
-			// exists. Clearing all three is step 5's.
+			// on the map in DD and stays in its spawn group -- but since step
+			// 5 its chase is released and nothing watches for it.
 			"dead": e.dead[enemy.WatcherID()],
+
+			// A ROUTED ENEMY IS NOT A DEAD ONE, and reporting them in one
+			// field would hide the whole point. It keeps its row, leaves the
+			// order, takes no activation, and is still standing where it
+			// stood: what a routing pack DOES on the map is a named deferral.
+			"routed": e.routed[enemy.WatcherID()],
 		}
 
 		if c.illum != nil {
@@ -944,7 +1251,8 @@ func (c *Combat) HarnessSettableFields() []string {
 	return []string{
 		"adjacent_tiles", "advantage_shift", "crit_band", "crit_factor",
 		"disengage", "forced_band", "graze_band", "graze_factor", "hit_factor",
-		"lit_level", "player_action", "round", "round_minutes", "shaken_penalty",
+		"lit_level", "loss_weight", "player_action", "quick_resolve_advantage",
+		"round", "round_minutes", "shaken_penalty",
 	}
 }
 
@@ -989,6 +1297,29 @@ func (c *Combat) HarnessSet(field string, value interface{}) error {
 		}
 
 		c.encounter.round = int(v)
+
+	case "loss_weight":
+		// Settable so a script can prove the arithmetic in both directions:
+		// drive it to zero and a pack that loses every member never routs,
+		// which is the negative control for the whole trigger.
+		v, ok := toFloat(value)
+		if !ok || v < 0 {
+			return fmt.Errorf("loss_weight wants a non-negative number, got %v", value)
+		}
+
+		c.dials.LossWeight = v
+
+	case "quick_resolve_advantage":
+		// R2 §5's own dial, and the prototype is what answers it. Above 1 it
+		// can never fire, which is a legitimate thing for a script to set:
+		// it is how quick-resolve is turned OFF for an assertion about the
+		// blow-by-blow path.
+		v, ok := toFloat(value)
+		if !ok || v < 0 {
+			return fmt.Errorf("quick_resolve_advantage wants a non-negative number, got %v", value)
+		}
+
+		c.dials.QuickResolveAdvantage = v
 
 	case "disengage":
 		// The emptying half of the first provider rule. A collection needs a

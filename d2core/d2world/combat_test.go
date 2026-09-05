@@ -86,7 +86,8 @@ func newTestCombatWith(t *testing.T, bodies Bodies) (*Combat, *Notice, *fakeQuar
 	// happens and what the provider says, and the resolver copes with both
 	// (every enemy fights on the placeholder profile; nothing is drawn).
 	// combat_resolver_test.go builds the wired-up version.
-	c := NewCombat(clock, notice, fitness, &fakeIllumination{}, bodies, nil, nil, 1462, DefaultCombatDials())
+	c := NewCombat(clock, notice, fitness, &fakeIllumination{}, bodies, nil, nil, nil, nil, 1462,
+		DefaultCombatDials())
 
 	t.Cleanup(c.Close)
 
@@ -244,8 +245,8 @@ func TestCombatInitiativeOrderIsDeterministic(t *testing.T) {
 		clock := NewClock(DefaultClockDials())
 		notice := NewNotice(&fakeSight{clear: true}, &fakeIllumination{}, DefaultNoticeDials())
 		target := &fakeQuarry{id: "p:1", x: 40, y: 40}
-		c := NewCombat(clock, notice, &fakeFitness{}, &fakeIllumination{}, nil, nil, nil, 1462,
-			DefaultCombatDials())
+		c := NewCombat(clock, notice, &fakeFitness{}, &fakeIllumination{}, nil, nil, nil, nil, nil,
+			1462, DefaultCombatDials())
 
 		defer c.Close()
 
@@ -313,7 +314,8 @@ func TestCombatSettableFields(t *testing.T) {
 	require.Equal(t, []string{
 		"adjacent_tiles", "advantage_shift", "crit_band", "crit_factor",
 		"disengage", "forced_band", "graze_band", "graze_factor", "hit_factor",
-		"lit_level", "player_action", "round", "round_minutes", "shaken_penalty",
+		"lit_level", "loss_weight", "player_action", "quick_resolve_advantage",
+		"round", "round_minutes", "shaken_penalty",
 	}, c.HarnessSettableFields())
 
 	// Setting a value on nothing is an error rather than a silent no-op.

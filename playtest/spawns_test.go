@@ -287,7 +287,13 @@ func TestSpawns(t *testing.T) {
 			int(num(arrived, "spawn_failures")))
 	}
 
-	group := firstGroup(t, arrived)
+	// THE NEWEST GROUP, NOT group_list[0], AND STEP 5 IS WHY. Until M4.5 step
+	// 5 nothing in the game could move a group's morale, so any live group
+	// still sat at its authored value and the first one would do. The rout
+	// trigger changed that: a group that has lost a member in a fight can be
+	// at zero, and this act read one and failed on its own premise. What it
+	// is about is a FRESHLY ARRIVED group, so it now asks for one by name.
+	group := newestGroup(t, arrived)
 	groupID := str(group, "group")
 
 	t.Logf("act 6: %s (%s, code %s) arrived with %d member(s), morale %.0f, %d aware",
@@ -309,7 +315,7 @@ func TestSpawns(t *testing.T) {
 		"value": map[string]any{"group": groupID, "value": 5},
 	})
 
-	if !flag(t, firstGroup(t, spawnsState(s)), "routing") {
+	if !flag(t, groupByID(t, spawnsState(s), groupID), "routing") {
 		t.Fatalf("act 6: morale 5 is under the rout threshold; the group must report routing")
 	}
 
@@ -318,7 +324,7 @@ func TestSpawns(t *testing.T) {
 		"value": map[string]any{"group": groupID, "value": 90},
 	})
 
-	if flag(t, firstGroup(t, spawnsState(s)), "routing") {
+	if flag(t, groupByID(t, spawnsState(s), groupID), "routing") {
 		t.Fatalf("act 6: morale 90 is well above the threshold; routing must clear again")
 	}
 
@@ -478,8 +484,11 @@ func rowWeight(t *testing.T, state map[string]any, name string) float64 {
 	return 0
 }
 
-// firstGroup returns group_list[0], which is ordered.
-func firstGroup(t *testing.T, state map[string]any) map[string]any {
+// newestGroup returns the group that arrived most recently, by born_at.
+//
+// Since M4.5 step 5 a group's morale can be moved by the game, so "any live
+// group" is no longer the same thing as "a group at its authored morale".
+func newestGroup(t *testing.T, state map[string]any) map[string]any {
 	t.Helper()
 
 	groups, ok := state["group_list"].([]any)
@@ -487,12 +496,41 @@ func firstGroup(t *testing.T, state map[string]any) map[string]any {
 		t.Fatalf("expected at least one live group, got %v", state["group_list"])
 	}
 
-	g, ok := groups[0].(map[string]any)
-	if !ok {
-		t.Fatalf("group_list[0] is not an object: %v", groups[0])
+	var best map[string]any
+
+	bornAt := -1.0
+
+	for _, raw := range groups {
+		g, ok := raw.(map[string]any)
+		if ok && num(g, "born_at") > bornAt {
+			best, bornAt = g, num(g, "born_at")
+		}
 	}
 
-	return g
+	if best == nil {
+		t.Fatalf("no group carried a born_at: %v", groups)
+	}
+
+	return best
+}
+
+// groupByID finds one group block by its id, so an assertion about a group
+// keeps reading the SAME group rather than whichever one sorts first.
+func groupByID(t *testing.T, state map[string]any, id string) map[string]any {
+	t.Helper()
+
+	groups, _ := state["group_list"].([]any)
+
+	for _, raw := range groups {
+		g, ok := raw.(map[string]any)
+		if ok && str(g, "group") == id {
+			return g
+		}
+	}
+
+	t.Fatalf("no group %q in %v", id, groups)
+
+	return nil
 }
 
 // awareList pulls the ids of every watcher currently aware of its target.

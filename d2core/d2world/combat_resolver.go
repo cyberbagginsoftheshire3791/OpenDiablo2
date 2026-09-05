@@ -72,6 +72,18 @@ type Profile struct {
 
 	Speed                int
 	DamageMin, DamageMax int
+
+	// Count is how many the PACK started with, and step 5 needs it twice: the
+	// rout decrement scales with it (a loss out of two is half the pack; a
+	// loss out of six is not), and quick-resolve's advantage is measured
+	// against it. It comes from the group rather than from the row, because
+	// the row gives a RANGE and what a fight is against is the pack that
+	// actually arrived.
+	//
+	// Zero means unknown -- the placeholder profile has no pack behind it --
+	// and both callers fall back to the participant list rather than dividing
+	// by it.
+	Count int
 }
 
 // Profiles is how the resolver asks what an enemy fights as. *Spawns
@@ -277,6 +289,142 @@ func (c *Combat) d8Order(enemies []Combatant) []string {
 	return out
 }
 
+// tryQuickResolve is R2 §2B: "quick-resolve exists for mundane animals at
+// overwhelming advantage (never for the dead)". It reports whether it fired.
+//
+// IT FIRES. An earlier draft had it report an offer and do nothing, and that
+// contradicts a SIGNED playtest assertion -- N1 §5: "quick-resolve fires
+// against a lone dog at advantage and never against the dead", which the
+// signed M4.5 note re-quotes and grades buildable in its first half.
+//
+// THE SECOND HALF IS A NAMED DEFERRAL TO M4.7 RATHER THAN A FALSE ASSERTION.
+// There are no dead in this engine: the rows are dogs, wolves, boar and
+// opportunists. The signed note says so itself -- "SECOND HALF UNASSERTABLE --
+// there are no dead until M4.7" -- so a test claiming to prove the prohibition
+// would be proving nothing about the rule and something false about the build.
+// What IS asserted instead is that an enemy with no known group never
+// quick-resolves, which is a true statement about this build.
+//
+// The threshold is R2 §5's open dial, not this milestone's number.
+func (c *Combat) tryQuickResolve() bool {
+	e := c.encounter
+	if e == nil || e.target == nil || c.morale == nil {
+		return false
+	}
+
+	if c.deadByBody(e.target.QuarryID()) {
+		return false
+	}
+
+	// THE ADVANTAGE IS MEASURED AGAINST THE FIGHT, NOT THE TABLE, and the
+	// first version of this got it wrong in a way only a real build showed.
+	//
+	// It divided by the pack's AUTHORED size, and in a shipped game a pack
+	// does not arrive together -- Spawns.spawn scatters its members
+	// independently between the row's MinTiles and MaxTiles, and only the
+	// ones that see the player ever join. So a fight against two dogs of an
+	// authored four already read as 50% advantage before a single blow
+	// landed, and with two packs represented it crossed the threshold at
+	// once: the fourteenth playtest caught quick-resolve MASSACRING fights in
+	// which nothing had died. What the rule is about is how much of the enemy
+	// side in front of you is already down, so the denominator is the
+	// participant list -- which never shrinks for the dead or the routed,
+	// because their rows last the encounter's life.
+	//
+	// Profile.Count is still exactly right for the ROUT decrement: morale is
+	// the GROUP's, and a group that lost one of four has lost one of four
+	// wherever the other three are standing.
+	living := make([]string, 0, len(e.enemies))
+	starting := 0
+
+	for _, enemy := range e.enemies {
+		if enemy == nil {
+			continue
+		}
+
+		starting++
+
+		id := enemy.WatcherID()
+
+		if e.gone(id) {
+			continue
+		}
+
+		// EVERY LIVING ENEMY MUST BE MUNDANE. One thing that is not is enough
+		// to refuse, because the prohibition is about what is in the fight,
+		// not about the majority of it.
+		if !c.mundane(id) {
+			return false
+		}
+
+		living = append(living, id)
+	}
+
+	// Nothing left to finish, and nothing to be at an advantage over.
+	if len(living) == 0 || starting <= 0 {
+		return false
+	}
+
+	advantage := 1 - float64(len(living))/float64(starting)
+	if advantage < c.dials.QuickResolveAdvantage {
+		return false
+	}
+
+	for _, id := range living {
+		if body := c.bodyOf(id); body != nil {
+			body.SetHealth(0)
+		}
+
+		e.dead[id] = true
+
+		c.animate(id, ActDie)
+
+		c.withdraw(id)
+	}
+
+	e.enemyOrder = e.enemyOrder[:0]
+
+	c.quickResolved++
+	c.lastQuickAdvantage = advantage
+
+	// THE ENDING IS enemies_dead EVEN IF SOMETHING ROUTED EARLIER, and the
+	// precedence is deliberate: a fight the player finished is a fight the
+	// player finished. endingReason() is for the case where the last thing
+	// standing walked away, which is not this one.
+	c.end("enemies_dead")
+
+	return true
+}
+
+// mundane is "a beast, and one this world placed".
+//
+// IT CANNOT BE morale > 0 ALONE, because "no morale" and "no group" are
+// different facts and the engine returns the second. Anything the tables never
+// placed -- and every playtest fight so far has been against exactly such a
+// stand-in -- gets the placeholder profile, whose group is its own id and
+// which the spawn tables have never heard of. Reading unknown as zero would
+// classify every harness-spawned NPC as the dead and refuse always; reading it
+// as mundane would offer against everything, including the day something
+// undead arrives through a path the tables do not own.
+//
+// So the test is: the group is KNOWN, and its morale is positive. M4.3b signs
+// the dead's morale as "none, ever", which makes the second clause the
+// prohibition stated in the only terms this engine has.
+func (c *Combat) mundane(id string) bool {
+	if c.morale == nil {
+		return false
+	}
+
+	group := c.profileOf(id).Group
+	if group == "" {
+		return false
+	}
+
+	morale, known := c.morale.Morale(group)
+
+	return known && morale > 0
+}
+
 // resolveRound runs one round: every activation in order, until the round is
 // done or a blow has ended the fight.
 func (c *Combat) resolveRound() {
@@ -290,6 +438,13 @@ func (c *Combat) resolveRound() {
 	// every frame that is not a round boundary, which is most of them.
 	c.lastActions = c.lastActions[:0]
 	c.actionsRound = e.round
+
+	// R2 §2B's quick-resolve, offered BEFORE the round rather than inside it:
+	// a fight already won against mundane animals is finished in one action
+	// instead of ground out a blow at a time.
+	if c.tryQuickResolve() {
+		return
+	}
 
 	playerID := e.target.QuarryID()
 
@@ -322,7 +477,7 @@ func (c *Combat) playerActivation() {
 	}
 
 	for _, id := range e.enemyOrder {
-		if e.dead[id] {
+		if e.gone(id) {
 			continue
 		}
 
@@ -347,7 +502,7 @@ func (c *Combat) playerActivation() {
 // a pack is MaxCount on its row, not a fudge here.
 func (c *Combat) enemyActivation(id string) {
 	e := c.encounter
-	if e == nil || e.target == nil || e.dead[id] {
+	if e == nil || e.target == nil || e.gone(id) {
 		return
 	}
 
@@ -554,13 +709,158 @@ func (c *Combat) reachedZero(id string) {
 
 	e.enemyOrder = kept
 
+	// The world stops paying attention to it. Before step 5 a dead dog kept
+	// its chase AND kept being noticed, so the next tick opened a fresh
+	// encounter against the corpse.
+	c.withdraw(id)
+
+	// And its pack feels it. This is the trigger M4.3b's signature left
+	// belonging to neither milestone: the state was built, the threshold was
+	// built, the report was built, and nothing could move the number.
+	c.loseNerve(id)
+
 	for _, enemy := range e.enemies {
-		if enemy != nil && !e.dead[enemy.WatcherID()] {
+		if enemy != nil && !e.gone(enemy.WatcherID()) {
 			return
 		}
 	}
 
-	c.end("enemies_dead")
+	c.end(e.endingReason())
+}
+
+// withdraw takes one enemy out of the world's attention: its chase ends and
+// nothing watches for it any more.
+//
+// BOTH HALVES OR NEITHER, and the reason is a frame long. The game screen runs
+// startChasesForTheAware() every frame immediately before Advance, and that
+// function has no liveness filter -- it walks AwarePairs() and chases anything
+// not already chasing. So Release on its own is undone on the very next frame:
+// read the chase list one frame later and the dead dog is chasing again, with
+// no harness verb called anywhere. Unwatch is what makes the release stick.
+//
+// Both are tolerant of a miss. Release returns false for a hunter with no
+// chase and Unwatch for a watcher already dropped, and neither is an error
+// here: something can die without ever having chased.
+func (c *Combat) withdraw(id string) {
+	if c.chases != nil {
+		c.chases.Release(id)
+	}
+
+	if c.notice != nil {
+		c.notice.Unwatch(id)
+	}
+}
+
+// loseNerve is what one death costs the pack that lost it, and it is the whole
+// of the rout TRIGGER.
+//
+// THE DECREMENT SCALES WITH THE PACK'S STARTING SIZE -- LossWeight * 100 /
+// count -- because a flat one is refuted by the authored rows: dogs at 50 and
+// wolves at 60 against a threshold of 25 are ten points apart, and any flat
+// decrement big enough to break the wolves breaks the dogs on the same loss.
+// See CombatDials.LossWeight for the worked table.
+//
+// A pack with no group, or one the tables never placed, loses nothing. Neither
+// does one with an unknown starting count: the placeholder profile has none,
+// and the participant list is used instead rather than dividing by zero.
+func (c *Combat) loseNerve(id string) {
+	if c.morale == nil {
+		return
+	}
+
+	profile := c.profileOf(id)
+	if profile.Group == "" {
+		return
+	}
+
+	if _, known := c.morale.Morale(profile.Group); !known {
+		return
+	}
+
+	count := profile.Count
+	if count <= 0 {
+		count = c.packSize(profile.Group)
+	}
+
+	if count <= 0 {
+		return
+	}
+
+	c.morale.Hurt(profile.Group, c.dials.LossWeight*100/float64(count))
+
+	c.routeIfBroken(profile.Group)
+}
+
+// routeIfBroken marks a whole pack routed once its morale is at or below the
+// threshold M4.3b signed.
+//
+// THE PACK BREAKS, NOT THE INDIVIDUAL. R2 §3 bullet 2 makes the pack the
+// activation unit and N1 §5 writes every rout phrasing about packs, so one
+// dog's nerve is not a thing this model has. Every LIVING member of the group
+// still in this fight leaves it at once, and each of them is withdrawn for the
+// same reason a dead one is -- otherwise the frame after the rout re-chases
+// them and tryStart opens a fresh fight against the pack that just fled.
+//
+// A routed member keeps its participant row, with routed:true, and keeps
+// standing where it stood. What a routing pack DOES on the map is a named
+// deferral (ask 2): fleeing needs a destination, a router call per member per
+// round and a rule for re-noticing.
+func (c *Combat) routeIfBroken(groupID string) {
+	e := c.encounter
+	if e == nil || c.morale == nil {
+		return
+	}
+
+	routing, known := c.morale.Routing(groupID)
+	if !known || !routing {
+		return
+	}
+
+	for _, enemy := range e.enemies {
+		if enemy == nil {
+			continue
+		}
+
+		id := enemy.WatcherID()
+		if e.gone(id) || c.profileOf(id).Group != groupID {
+			continue
+		}
+
+		e.routed[id] = true
+
+		c.withdraw(id)
+	}
+
+	kept := e.enemyOrder[:0]
+
+	for _, id := range e.enemyOrder {
+		if !e.gone(id) {
+			kept = append(kept, id)
+		}
+	}
+
+	e.enemyOrder = kept
+}
+
+// packSize counts how many of one group are participants in this fight. It is
+// the fallback for a profile with no authored count, and it is deliberately
+// the fight's view rather than the table's: what the player is up against is
+// what turned up.
+func (c *Combat) packSize(groupID string) int {
+	e := c.encounter
+	if e == nil {
+		return 0
+	}
+
+	n := 0
+
+	for _, enemy := range e.enemies {
+		if enemy != nil && c.profileOf(enemy.WatcherID()).Group == groupID {
+			n++
+		}
+	}
+
+	return n
 }
 
 // advantage is R2 §3 bullet 7, on ABSOLUTE levels against one threshold --

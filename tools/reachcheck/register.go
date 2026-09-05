@@ -189,7 +189,21 @@ var Register = []Entry{
 	{sym(pkgEntity, "NPC.SetAnimationMode"), BucketWire, VerdictLive,
 		"The first exported way to tell a monster to play a mode. Its only caller is NPC.StartAction, which is the honest reading: the row stays because the symbol stays, and it is wire because a real build now reaches it. tools/animcensus measured on 31 Aug that A1, GH, DT and DD all exist for the three codes the spawn tables use.", ""},
 	{sym(pkgWorld, "Spawns.ProfileOf"), BucketWire, VerdictLive,
-		"What one enemy fights as: its PACK (not its row -- two dog packs are two packs), its authored Speed and its bite. The resolver calls it through the Profiles interface to build D8's order and to draw damage. It is the seam that put speed and damage on the spawn row instead of reading them out of the D2 record.", ""},
+		"What one enemy fights as: its PACK (not its row -- two dog packs are two packs), its authored Speed and its bite. The resolver calls it through the Profiles interface to build D8's order and to draw damage. It is the seam that put speed and damage on the spawn row instead of reading them out of the D2 record. Since step 5 it also carries the pack's STARTING COUNT, which the rout decrement and quick-resolve's advantage are both measured against.", ""},
+
+	// M4.5 STEP 5 -- ROUT, QUICK-RESOLVE AND WITHDRAWAL. Three rows arrive
+	// wired and two move up from defer, and the pair below is the trigger
+	// M4.3b's signature left belonging to neither milestone: it built the
+	// morale STATE and signed the rout BEHAVIOUR over to M4.5, and nothing
+	// owned the thing that MOVES the number.
+	{sym(pkgWorld, "Spawns.Hurt"), BucketWire, VerdictLive,
+		"Takes morale off a group -- the DECREMENT SetMorale deliberately was not. Called from the resolver, in Go, every time an enemy reaches zero, through the Morale interface. It writes the field directly rather than calling SetMorale, so that row's harness-only claim stays true; deadcode is transitive and routing it through would have flipped it.", ""},
+	{sym(pkgWorld, "Spawns.Morale"), BucketWire, VerdictLive,
+		"One group's nerve, and whether the group is known at all. The second return is what quick-resolve's mundane test turns on: an enemy the tables never placed is not an enemy with zero morale.", ""},
+	{sym(pkgWorld, "Spawns.Routing"), BucketWire, VerdictLive,
+		"The rout THRESHOLD, read rather than recomputed. M4.3b built this flag and signed its behaviour over to M4.5; step 5 is where something finally reads it, from routeIfBroken, after a death has hurt the pack. Testing morale <= 25 on the combat side instead would have been a second home for a runtime-settable dial.", ""},
+	{sym(pkgWorld, "Pursuit.Release"), BucketWire, VerdictLive,
+		"The only way a chase ends, and step 5 is the step that ends one. Called from the resolver when an enemy dies, when a pack breaks, and when quick-resolve finishes a fight. IT IS HALF OF A PAIR: startChasesForTheAware runs every frame with no liveness filter, so a release on its own is undone on the very next frame, and the same death also calls Notice.Unwatch.", ""},
 
 	// ---------------------------------------------------------------
 	// DELETE -- empty, and that is the bucket working rather than an
@@ -242,10 +256,18 @@ var Register = []Entry{
 		"The activation sequence -- D8 section 9's since step 4, and no longer provisional. Reported and asserted by playtests; still read by nothing in Go, and the HUD is what will.", "M4.4 (the HUD milestone)"},
 	{sym(pkgWorld, "Meters.Dying"), BucketDefer, VerdictHarnessOnly,
 		"Neglect can already run the body to zero, but nothing acts on it: there is no death path and no death screen.", "M4.6 (death and the dead)"},
-	{sym(pkgWorld, "Spawns.Routing"), BucketDefer, VerdictDead,
-		"M4.3b built the rout STATE and signed the rout BEHAVIOUR over to M4.5. Step 4 kills things; a pack LEAVING because it is losing is step 5, and this is the flag that step reads.", "M4.5 (step 5: rout and quick-resolve)"},
+	// SPAWNS.GROUPS DID NOT FLIP AT STEP 5, AND THE ROW SAYS WHY RATHER THAN
+	// BEING QUIETLY MOVED. Josh signed ask 7 as "wire it rather than
+	// re-point it", and the build could not honour that without inventing a
+	// call site: what rout needs is the PACK's starting size, not how many
+	// packs are live, and that arrives through Spawns.ProfileOf -- which is
+	// precisely the route this row's old text called the step-4 workaround.
+	// Manufacturing a caller to turn the row green is the exact failure this
+	// register exists to catch, so the honest move is to leave it deferred,
+	// say so out loud, and put the amendment of M4.5 section 3.9's all-seven
+	// clause back to Josh.
 	{sym(pkgWorld, "Spawns.Groups"), BucketDefer, VerdictDead,
-		"The live group COUNT. Step 4 reaches groups through Spawns.ProfileOf instead, which answers per member; what still wants a count is step 5's rout.", "M4.5 (step 5: rout and quick-resolve)"},
+		"The live group COUNT. Nothing in the game wants it: the resolver reaches a pack through Spawns.ProfileOf, which answers per member and now carries the pack's starting size, and rout is measured against that. It is reported by the provider, so a script can see it; no Go caller needs it.", "unclaimed -- see the note above; M4.5 section 3.9's all-seven clause needs amending or a real caller"},
 	{sym(pkgWorld, "Spawns.OpenBodies"), BucketDefer, VerdictDead,
 		"The carrion count. Settable as a stand-in because the corpse machine that will drive it is not built.", "M4.7 (the corpse machine)"},
 
@@ -270,14 +292,13 @@ var Register = []Entry{
 	{sym(pkgScreen, "Game.BodiesKnown"), BucketObserve, VerdictHarnessOnly,
 		"How many monsters currently have a body. Observe rather than defer, and it is a READ: it exists so a playtest can watch the game adopt bodies when the spawn tables fire, which is the only way to tell eager adoption from BodyOf's on-demand fallback. Without it, deleting the eager path would break no test -- the M4.1 and M4.3b shape.", ""},
 
-	// Spawns.Despawn and Notice.Unwatch USED TO SIT HERE, deferred, as the
-	// spawn stall this register found on 28 Aug. They are wired now -- see
-	// the wire block above -- and the move is the register doing exactly what
-	// it is for: it named a hole, Josh ruled it a burst, and the gate went
-	// red until the hole was filled. Pursuit.Release is still deferred and
-	// still below, because ending a chase needs something that ends a fight.
-	{sym(pkgWorld, "Pursuit.Release"), BucketDefer, VerdictHarnessOnly,
-		"The only way a chase ends. Step 4 can now kill the thing doing the chasing and STILL does not release it -- a dead dog keeps its chase and keeps being noticed, which is exactly why tryStart has to filter the dead. Releasing them is step 5.", "M4.5 (step 5: rout and quick-resolve)"},
+	// Spawns.Despawn, Notice.Unwatch AND Pursuit.Release all used to sit here,
+	// deferred. All three are wired now -- see the wire block above -- and
+	// the moves are the register doing exactly what it is for: it named the
+	// holes, Josh ruled them bursts, and the gate stayed red until they were
+	// filled. Pursuit.Release was the last of the three and it waited for
+	// exactly what its row said it was waiting for: something that ends a
+	// fight.
 
 	// ---------------------------------------------------------------
 	// OBSERVE -- harness surface. Reads and dial writes only; see the
@@ -333,7 +354,7 @@ var Register = []Entry{
 	{sym(pkgWorld, "Notice.SetLitLevel"), BucketObserve, VerdictHarnessOnly,
 		"Writes the lit-level dial.", ""},
 	{sym(pkgWorld, "Spawns.SetMorale"), BucketObserve, VerdictHarnessOnly,
-		"Writes a group's morale so a script can drive it to the rout threshold. The behaviour that would move it on its own is M4.5's, and Spawns.Routing carries that deferral.", ""},
+		"Writes a group's morale so a script can drive it to the rout threshold. STILL HARNESS-ONLY AFTER STEP 5, and deliberately: the game hurts a pack through Spawns.Hurt, which subtracts and floors and writes the field itself. Routing this through here would have been the DRY refactor and would have flipped this row live transitively, which is the shape three earlier rows were caught by.", ""},
 	{sym(pkgWorld, "Spawns.SetOpenBodies"), BucketObserve, VerdictHarnessOnly,
 		"Writes the carrion stand-in. Spawns.OpenBodies carries the deferral to the corpse machine.", ""},
 }

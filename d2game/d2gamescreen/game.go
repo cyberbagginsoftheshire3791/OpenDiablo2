@@ -156,6 +156,16 @@ func CreateGame(
 		game.spawns,
 		game,
 
+		// STEP 5's TWO NEW SEAMS, and they are what turn three deferred rows
+		// into wired ones. The spawn tables own the morale state and the rout
+		// threshold, so the resolver HURTS them and READS them rather than
+		// keeping a second copy; and Pursuit is how a chase ends, which is
+		// the other half of a death -- releasing without unwatching is undone
+		// by startChasesForTheAware on the very next frame, so the resolver
+		// does both and this is the half it cannot reach on its own.
+		game.spawns,
+		game.pursuit,
+
 		gameClient.Seed,
 		d2world.DefaultCombatDials(),
 	)
