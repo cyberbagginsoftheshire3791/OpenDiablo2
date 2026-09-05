@@ -42,6 +42,19 @@ type PursuitDials struct {
 	// ArriveWithin is how close counts as caught. A pursuer that arrives
 	// simply stands next to its quarry: M4.3a has no combat, and pretending
 	// otherwise would be the diorama this milestone exists to avoid.
+	//
+	// IT IS 1.5 BECAUSE A DIAGONAL NEIGHBOUR IS 1.414 AWAY. Until the
+	// pursuer-adjacent burst the router walked a hunter onto the quarry's own
+	// tile, so every arrival was at distance 0.000 and 1.0 was never tested.
+	// Now that it stops BESIDE the quarry, an orthogonal stop is 1.000 and a
+	// diagonal one is 1.414: at 1.0 the diagonal case would never report
+	// arrived and would re-solve on the MinRepathMinutes cadence forever,
+	// which is exactly the churn M4.3a's re-path clock was added to stop.
+	//
+	// It stays SEPARATE from Combat's AdjacentTiles (a Chebyshev 1, so the
+	// eight neighbours) on purpose, and the M4.5 note's ask 6 says why: they
+	// are two facts that happen to agree, and one overloaded dial would hide
+	// the day they stop agreeing.
 	ArriveWithin float64
 
 	// MinRepathMinutes floors the re-solve rate in WORLD minutes, so a quarry
@@ -66,7 +79,7 @@ type PursuitDials struct {
 func DefaultPursuitDials() PursuitDials {
 	return PursuitDials{
 		RepathTiles:      1.5,
-		ArriveWithin:     1.0,
+		ArriveWithin:     1.5,
 		MinRepathMinutes: 2.0,
 		ProgressTiles:    0.5,
 	}

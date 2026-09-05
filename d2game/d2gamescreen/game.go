@@ -580,42 +580,102 @@ func (v *Game) startChasesForTheAware() {
 // in lives here, in one place.
 type mapRouter struct{ engine *d2mapengine.MapEngine }
 
-// routeNeighbours are the eight tiles around a goal, in a fixed order. When
-// the quarry's own tile cannot be routed to, standing next to it is the right
-// answer -- and the order is fixed because these routes move entities, and
-// entity positions are inside the state digest.
+// routeNeighbours are the eight tiles around a goal, in a fixed order. The
+// order is fixed because these routes move entities, and entity positions are
+// inside the state digest.
 var routeNeighbours = [8][2]float64{
 	{0, -1}, {1, -1}, {1, 0}, {1, 1},
 	{0, 1}, {-1, 1}, {-1, 0}, {-1, -1},
 }
 
+// Route walks a hunter to a tile BESIDE its quarry, and only onto the quarry's
+// own tile when nothing beside it can be reached.
+//
+// THE ORDER OF THOSE TWO ATTEMPTS IS THE WHOLE CHANGE, and it was measured
+// before it was made. M4.3a wrote the exact route first and the neighbours as
+// a fallback, on the reasonable assumption that a thing's own footprint is not
+// a place another thing can path to. IT IS: entities do not block the A*, so
+// routeExact succeeded every time and the fallback never fired. Step 4's
+// section 0 measured the consequence -- a pursuer walks to distance 0.000 and
+// stops ON the player -- and step 4's resolver comment recorded what it costs:
+// every participant in a settled fight floors to ONE tile and samples ONE
+// light level, so R2 section 3's dark-into-light advantage cannot fire in a v0
+// build AT ANY PLACEMENT, and neither can flanking or facing when they arrive.
+// Three signed rules, all built, none able to fire, for want of one tile.
+//
+// The neighbours are tried NEAREST FIRST rather than in the table's order.
+// Fixed order alone would send a hunter approaching from the south around to
+// the north tile, which is both absurd to watch and a longer walk; nearest
+// first is still fully deterministic -- the distance is computed from the
+// hunter's own position and ties break on the table's index -- and it is
+// cheaper, because the first candidate is usually the one that routes.
+//
+// M4.5 ask 8, its own burst as signed. ArriveWithin moves with it: a diagonal
+// stop sits at 1.414, and against the old 1.0 it would never report arrived
+// and would re-solve on the re-path cadence forever.
 func (r mapRouter) Route(fromX, fromY, toX, toY float64) ([][2]float64, bool) {
 	if r.engine == nil {
 		return nil, false
 	}
 
-	path, reachable := r.routeExact(fromX, fromY, toX, toY)
-	if reachable {
-		return path, true
-	}
-
-	// The quarry's own subtile is often not walkable -- it is standing on it,
-	// and a thing's own footprint is not a place another thing can path to.
-	// Without this a pursuer stops several tiles short and reports failure,
-	// which is what the first playtest run measured: distance 2.80 and
-	// reachable=false while the hunter was plainly right there. Standing
-	// beside the quarry is what "the pursuer arrives" means at M4.3a, since
-	// there is no combat for it to start.
-	for _, n := range routeNeighbours {
+	for _, n := range neighboursNearest(fromX, fromY, toX, toY) {
 		beside, ok := r.routeExact(fromX, fromY, toX+n[0], toY+n[1])
 		if ok {
 			return beside, true
 		}
 	}
 
-	// Nothing adjacent is reachable either. Return the direct partial route,
-	// which still walks the hunter as far toward the quarry as it can get.
+	// Nothing beside the quarry can be reached -- it is in a doorway, or
+	// walled in. Standing on its own tile is then the best available answer
+	// and is what every build before this one did everywhere.
+	path, reachable := r.routeExact(fromX, fromY, toX, toY)
+	if reachable {
+		return path, true
+	}
+
+	// Not even that. Return the direct partial route, which still walks the
+	// hunter as far toward the quarry as it can get.
 	return path, false
+}
+
+// neighboursNearest orders the eight offsets around a goal by how close each
+// candidate TILE would be to where the hunter already stands, ties broken by
+// the table's fixed index.
+//
+// The offsets are relative to the GOAL, so the distance has to be measured
+// against `to` plus the offset -- comparing the bare offset against the
+// hunter's position measures nothing, which is what the first draft of this
+// did.
+//
+// It is a pure function of two positions over a fixed table, so it is
+// deterministic -- which is what keeps entity positions, and therefore the
+// state digest, reproducible across two launches of one build. It is split out
+// with no receiver so it can be tested without a map engine.
+func neighboursNearest(fromX, fromY, toX, toY float64) [8][2]float64 {
+	idx := [8]int{0, 1, 2, 3, 4, 5, 6, 7}
+
+	dist := func(k int) float64 {
+		dx := toX + routeNeighbours[k][0] - fromX
+		dy := toY + routeNeighbours[k][1] - fromY
+
+		return dx*dx + dy*dy
+	}
+
+	// Insertion sort: eight elements, and it keeps the tie-break on index
+	// explicit rather than depending on a sort's stability guarantees.
+	for i := 1; i < len(idx); i++ {
+		for j := i; j > 0 && (dist(idx[j]) < dist(idx[j-1]) ||
+			(dist(idx[j]) == dist(idx[j-1]) && idx[j] < idx[j-1])); j-- {
+			idx[j], idx[j-1] = idx[j-1], idx[j]
+		}
+	}
+
+	var out [8][2]float64
+	for i, k := range idx {
+		out[i] = routeNeighbours[k]
+	}
+
+	return out
 }
 
 // routeExact asks for a route to precisely the given point.

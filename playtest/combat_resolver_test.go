@@ -3,6 +3,7 @@
 package playtest
 
 import (
+	"math"
 	"testing"
 )
 
@@ -505,12 +506,56 @@ func TestCombatResolverStanceAndReactions(t *testing.T) {
 		}
 	}
 
-	if !same {
-		t.Fatalf("act 7: PARTICIPANTS NO LONGER SHARE A TILE, and that is good news rather than a failure. "+
-			"Dark-into-light was unobservable in v0 only because a pursuer's route ends on the quarry's own "+
-			"tile, so everyone floored to one tile. Light levels now differ (%v), which means the rule can "+
-			"be asserted in a playtest at last: restore the step-4 brief's act 7 sweep and delete this.",
-			levels)
+	// THE TRIPWIRE FIRED, AND THIS IS WHAT IT LOOKS LIKE ON THE OTHER SIDE.
+	// It used to fail here if participants stopped sharing a light level,
+	// because that could only mean the router had changed. The router HAS
+	// changed -- the pursuer-adjacent burst made a hunter stop BESIDE its
+	// quarry instead of on top of it -- so the premise is now asserted
+	// directly rather than inferred from the light.
+	tiles := map[string][2]int{}
+
+	for _, raw := range parts {
+		row, _ := raw.(map[string]any)
+		tiles[str(row, "id")] = [2]int{
+			int(math.Floor(num(row, "x"))), int(math.Floor(num(row, "y"))),
+		}
+	}
+
+	playerTile, ok := tiles[playerID]
+	if !ok {
+		t.Fatalf("act 7: the player must be a participant to compare tiles: %v", tiles)
+	}
+
+	for id, tile := range tiles {
+		if id == playerID {
+			continue
+		}
+
+		dx, dy := tile[0]-playerTile[0], tile[1]-playerTile[1]
+		if dx == 0 && dy == 0 {
+			t.Fatalf("act 7: %s is standing ON the player's tile (%v). Since the pursuer-adjacent "+
+				"burst a hunter routes to the best free NEIGHBOUR, so this must not happen: "+
+				"either the router regressed or Route's neighbour attempt is being skipped.", id, tile)
+		}
+
+		if abs(dx) > 1 || abs(dy) > 1 {
+			t.Fatalf("act 7: %s is at %v against the player's %v -- adjacent means the eight "+
+				"neighbours, and a fight is only supposed to open in reach", id, tile, playerTile)
+		}
+	}
+
+	t.Logf("act 7a PASS: every enemy stands BESIDE the player rather than on him (%v vs %v) -- "+
+		"the one change that lets dark-into-light, flanking and facing ever fire", tiles, playerTile)
+
+	if same {
+		t.Logf("act 7b: every participant still reads light %.4f. They are on DIFFERENT tiles now, "+
+			"so this is the night being uniformly dark rather than the old one-tile collapse. "+
+			"Proving dark-into-light in a playtest now needs a PLACED source between them, which "+
+			"is its own act and its own burst.", first)
+	} else {
+		t.Logf("act 7b: participants read different light levels (%v) -- dark-into-light is "+
+			"observable in a real build for the first time. The step-4 brief's sweep is now "+
+			"worth restoring.", levels)
 	}
 
 	for _, level := range []float64{0.01, 0.99, 0.30} {
@@ -839,4 +884,14 @@ func stepToNewRound(t *testing.T, s *session) (map[string]any, []map[string]any)
 	t.Fatalf("no new round resolved in 12 world minutes: %v", combatState(s))
 
 	return nil, nil
+}
+
+// abs is the integer absolute value the tile comparisons in act 7 need; math's
+// is float-only and a tile index is not a float.
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+
+	return n
 }

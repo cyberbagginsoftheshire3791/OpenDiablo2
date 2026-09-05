@@ -83,3 +83,70 @@ func TestAdoptAndReleaseNPCBody(t *testing.T) {
 	v.adoptNPCBody("", 50)
 	require.True(t, v.BodyOf("") == nil)
 }
+
+// TestNeighboursNearestIsOrderedAndDeterministic pins the ordering the
+// pursuer-adjacent burst introduced.
+//
+// Route tries the eight tiles around a quarry NEAREST FIRST, so a hunter
+// approaching from the south stops on the south side rather than walking
+// around to the table's first entry. The ordering has to be deterministic,
+// because these routes move entities and entity positions are inside the state
+// digest -- so the tie-break is the table index and nothing else.
+func TestNeighboursNearestIsOrderedAndDeterministic(t *testing.T) {
+	const qx, qy = 10.0, 10.0
+
+	for _, tc := range []struct {
+		name         string
+		fromX, fromY float64
+		wantFirst    [2]float64
+	}{
+		{"hunter due south", qx, qy + 6, [2]float64{0, 1}},
+		{"hunter due north", qx, qy - 6, [2]float64{0, -1}},
+		{"hunter due east", qx + 6, qy, [2]float64{1, 0}},
+		{"hunter south-east", qx + 6, qy + 6, [2]float64{1, 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := neighboursNearest(tc.fromX, tc.fromY, qx, qy)
+			if got[0] != tc.wantFirst {
+				t.Fatalf("nearest offset should be %v, got %v (full order %v)",
+					tc.wantFirst, got[0], got)
+			}
+
+			// Every offset appears exactly once: it is a permutation of the
+			// table, not a filter. A dropped entry would silently stop a
+			// hunter from ever considering one approach tile.
+			seen := map[[2]float64]int{}
+			for _, n := range got {
+				seen[n]++
+			}
+
+			if len(seen) != len(routeNeighbours) {
+				t.Fatalf("expected all %d offsets exactly once, got %v", len(routeNeighbours), seen)
+			}
+
+			// And the distances are non-decreasing, which is the ordering
+			// claim itself rather than a proxy for it.
+			prev := -1.0
+
+			for _, n := range got {
+				dx, dy := qx+n[0]-tc.fromX, qy+n[1]-tc.fromY
+				d := dx*dx + dy*dy
+
+				if d < prev {
+					t.Fatalf("distances must not decrease; got %v in %v", d, got)
+				}
+
+				prev = d
+			}
+		})
+	}
+
+	// Determinism: the same inputs give the same order, every time. Two
+	// launches of one build at one seed have to agree.
+	a := neighboursNearest(3, 4, 10, 10)
+	for i := 0; i < 5; i++ {
+		if neighboursNearest(3, 4, 10, 10) != a {
+			t.Fatalf("neighboursNearest is not deterministic")
+		}
+	}
+}
