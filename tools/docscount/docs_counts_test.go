@@ -1,4 +1,4 @@
-package main
+package docscount
 
 // THREE NUMBERS IN docs/harness.md THAT USED TO BE TYPED FROM MEMORY, and a
 // gate so they cannot be again. Remediation R4: the doc said "seven scripts"
@@ -10,6 +10,8 @@ package main
 // are behind the `harness` and `playtest` tags and are not compiled here --
 // they are READ AS TEXT, which needs no tag -- so a plain `go test ./...`,
 // which is what CI runs, is enough to catch the drift.
+//
+// See doc.go for why this package is under tools/ rather than in package main.
 //
 // Each check names the derived value AND the string it looked for, because a
 // gate whose failure does not say what to type is a gate people disable.
@@ -23,7 +25,7 @@ import (
 	"testing"
 )
 
-// harnessDoc is the one document these numbers live in.
+// harnessDoc is the one document these numbers live in, relative to the root.
 const harnessDoc = "docs/harness.md"
 
 // playtestStart is the project's own definition of "a playtest script": a file
@@ -40,14 +42,43 @@ var playtestStart = regexp.MustCompile(`\bstart\(`)
 // entry, so the version the server reports is the version this gate compares.
 var harnessVersionRe = regexp.MustCompile(`harnessVersion\s*=\s*"([^"]+)"`)
 
+// repoRoot walks up from the working directory until it finds go.mod. `go test`
+// runs each package in its own directory, so nothing here may assume the root
+// is the working directory -- the first version of this gate did, which is one
+// of the two reasons it had to move.
+func repoRoot(t *testing.T) string {
+	t.Helper()
+
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("cannot read the working directory: %v", err)
+	}
+
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("no go.mod in any parent of the working directory -- this gate " +
+				"resolves every path from the repo root and cannot find it")
+		}
+
+		dir = parent
+	}
+}
+
 // mustRead fails the test rather than returning an error: every path below is
 // checked into the repo, so a missing one is a broken gate, not a skip.
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
 
-	b, err := os.ReadFile(filepath.FromSlash(path))
+	full := filepath.Join(repoRoot(t), filepath.FromSlash(path))
+
+	b, err := os.ReadFile(full)
 	if err != nil {
-		t.Fatalf("cannot read %s: %v (this test runs from the repo root)", path, err)
+		t.Fatalf("cannot read %s: %v", full, err)
 	}
 
 	return string(b)
@@ -59,7 +90,7 @@ func mustRead(t *testing.T, path string) string {
 func playtestScripts(t *testing.T) []string {
 	t.Helper()
 
-	paths, err := filepath.Glob(filepath.Join("playtest", "*_test.go"))
+	paths, err := filepath.Glob(filepath.Join(repoRoot(t), "playtest", "*_test.go"))
 	if err != nil {
 		t.Fatalf("globbing playtest/*_test.go: %v", err)
 	}
@@ -67,7 +98,12 @@ func playtestScripts(t *testing.T) []string {
 	var scripts []string
 
 	for _, p := range paths {
-		if playtestStart.MatchString(mustRead(t, p)) {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", p, err)
+		}
+
+		if playtestStart.Match(b) {
 			scripts = append(scripts, filepath.Base(p))
 		}
 	}
@@ -81,8 +117,8 @@ func playtestScripts(t *testing.T) []string {
 	return scripts
 }
 
-// harnessVersion reads d2app/harness.go, which is behind the harness tag and
-// is read here as bytes.
+// harnessVersionFromSource reads d2app/harness.go, which is behind the harness
+// tag and is read here as bytes.
 func harnessVersionFromSource(t *testing.T) string {
 	t.Helper()
 
@@ -101,7 +137,7 @@ func harnessVersionFromSource(t *testing.T) string {
 func harnessToolCount(t *testing.T) int {
 	t.Helper()
 
-	paths, err := filepath.Glob(filepath.Join("d2app", "harness*.go"))
+	paths, err := filepath.Glob(filepath.Join(repoRoot(t), "d2app", "harness*.go"))
 	if err != nil {
 		t.Fatalf("globbing d2app/harness*.go: %v", err)
 	}
@@ -109,7 +145,12 @@ func harnessToolCount(t *testing.T) int {
 	n, scanned := 0, 0
 
 	for _, p := range paths {
-		src := mustRead(t, p)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", p, err)
+		}
+
+		src := string(b)
 		if !strings.Contains(src, "//go:build harness") {
 			continue
 		}
@@ -147,7 +188,9 @@ func TestHarnessDocListsEveryScript(t *testing.T) {
 
 	var missing []string
 
-	for _, name := range playtestScripts(t) {
+	scripts := playtestScripts(t)
+
+	for _, name := range scripts {
 		if !strings.Contains(doc, name) {
 			missing = append(missing, name)
 		}
@@ -155,7 +198,7 @@ func TestHarnessDocListsEveryScript(t *testing.T) {
 
 	if len(missing) > 0 {
 		t.Fatalf("%s names %d of the playtest scripts but not these: %s. Add a line "+
-			"for each to the script list.", harnessDoc, len(playtestScripts(t))-len(missing),
+			"for each to the script list.", harnessDoc, len(scripts)-len(missing),
 			strings.Join(missing, ", "))
 	}
 }
