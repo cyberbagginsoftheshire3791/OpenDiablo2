@@ -7,11 +7,12 @@ import (
 	"testing"
 )
 
-// The controls for flag(), A3's replacement for the fail-open bool read.
+// The controls for flag(), A3's replacement for the fail-open bool read, and
+// for mustNum / mustStr, the same fix applied to the number and string reads.
 //
 // These need no game and no MPQs -- run them alone with
 //
-//	go test -tags playtest ./playtest/... -run TestFlag -count=1
+//	go test -tags playtest ./playtest/... -run 'TestFlag|TestMust' -count=1
 //
 // A helper whose entire purpose is to FAIL when a field is missing has to be
 // shown failing, or it is exactly the act of faith it was written to replace.
@@ -88,4 +89,72 @@ func contains(haystack, needle string) bool {
 	}
 
 	return false
+}
+
+// THE NEGATIVE CONTROL FOR mustNum, and it is the same argument one type over.
+// num() reads an absent or RENAMED key as 0, and 0 is "dead", "empty" and "at
+// the origin" -- so an assertion like `if num(meters, "health") > 0 { fail }`
+// passed on a field that was no longer there.
+func TestMustNumFailsOnAnAbsentField(t *testing.T) {
+	f := &fakeTB{}
+
+	mustNum(f, map[string]any{"health": 240.0}, "helth")
+
+	if !f.failed {
+		t.Fatal("a misspelt number field did not fail -- this is the fail-open read mustNum removes")
+	}
+
+	if !contains(f.msg, "health") {
+		t.Fatalf("the message must list the present keys or a rename is unreadable from it: %s", f.msg)
+	}
+
+	t.Logf("mustNum on an absent key: %s", f.msg)
+}
+
+func TestMustNumReadsARealNumberAndRejectsTheWrongType(t *testing.T) {
+	f := &fakeTB{}
+	if got := mustNum(f, map[string]any{"health": 240.0}, "health"); got != 240 || f.failed {
+		t.Fatalf("a real number read as %v (failed=%v, %s)", got, f.failed, f.msg)
+	}
+
+	f = &fakeTB{}
+
+	mustNum(f, map[string]any{"health": "240"}, "health")
+
+	if !f.failed {
+		t.Fatal("a string in a number's place did not fail")
+	}
+}
+
+// mustStr's control. "" is "no mode", "no reason", "no id" and "carrying
+// nothing", and every one of those is an assertion somewhere in these scripts.
+func TestMustStrFailsOnAnAbsentField(t *testing.T) {
+	f := &fakeTB{}
+
+	mustStr(f, map[string]any{"carried_source": ""}, "carried_sauce")
+
+	if !f.failed {
+		t.Fatal("a misspelt string field did not fail")
+	}
+
+	if !contains(f.msg, "carried_source") {
+		t.Fatalf("the message must list the present keys: %s", f.msg)
+	}
+
+	t.Logf("mustStr on an absent key: %s", f.msg)
+}
+
+func TestMustStrReadsARealStringAndRejectsTheWrongType(t *testing.T) {
+	f := &fakeTB{}
+	if got := mustStr(f, map[string]any{"mode": "DD"}, "mode"); got != "DD" || f.failed {
+		t.Fatalf("a real string read as %q (failed=%v, %s)", got, f.failed, f.msg)
+	}
+
+	f = &fakeTB{}
+
+	mustStr(f, map[string]any{"mode": 1.0}, "mode")
+
+	if !f.failed {
+		t.Fatal("a number in a string's place did not fail")
+	}
 }

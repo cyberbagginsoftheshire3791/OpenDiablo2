@@ -30,18 +30,39 @@ Scripts build + launch the harness binary themselves and keep the game's own
 stdout/stderr in `<Projects>\strigoi-harness-runs\game-<stamp>.log` (a script
 that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
-hand. The seven scripts: `town_walk_test.go` (live mode, §5.1),
-`determinism_test.go` (the two-launch digest proof, §5.2),
-`ui_inventory_test.go` (scripted input through the `ui` provider, M3.4),
-`night_light_test.go` (S1 §4's night-and-light assertion, M4.1),
-`night_render_test.go` (M4.1's second half: the same darkness, measured in
-pixels off four screenshots) and `night_placed_test.go` (M4.1's placed
-sources: a hearth nine tiles away lights its own ground and not the player's,
-asserted in the model and in pixels off the same frames, then put out so the
-dark closes back in) and `meters_test.go` (M4.2's survival meters: they drain
-on the world clock, the fatigue and thirst thresholds flip the flags M4.5
-will read, consuming moves them back the other way, and neglect runs the body
-to zero health).
+hand.
+
+**The 14 playtest scripts.** That count, the harness version below and the
+tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
+no build tag, so a plain `go test ./...` catches drift). Change the code and
+this doc fails until it agrees.
+
+* `town_walk_test.go` — live mode, §5.1.
+* `determinism_test.go` — the two-launch digest proof, §5.2.
+* `ui_inventory_test.go` — scripted input through the `ui` provider, M3.4.
+* `night_light_test.go` — S1 §4's night-and-light assertion, M4.1.
+* `night_render_test.go` — M4.1's second half: the same darkness, measured in
+  pixels off four screenshots.
+* `night_placed_test.go` — M4.1's placed sources: a hearth nine tiles away
+  lights its own ground and not the player's, asserted in the model and in
+  pixels off the same frames, then put out so the dark closes back in.
+* `meters_test.go` — M4.2's survival meters: they drain on the world clock,
+  the fatigue and thirst thresholds flip the flags M4.5 reads, consuming moves
+  them back the other way, and neglect runs the body to zero health.
+* `pathfinding_test.go` — M4.3a's script, the eighth: pathfinding and pursuit.
+* `spawns_test.go` — M4.3b's script, the ninth: a spawned thing notices the
+  player under stated conditions and does not otherwise.
+* `worldgen_test.go` — the tenth, written for a bug that only ever showed
+  itself on seeds nobody used.
+* `combat_body_test.go` — M4.5 step 3's script, the twelfth: a monster in a
+  fight has a body, sized from its own record, adopted by the game.
+* `combat_resolver_test.go` — M4.5 step 4's script, the thirteenth: a blow
+  does something and the game is what did it.
+* `combat_rout_test.go` — M4.5 step 5's script, the fourteenth: rout,
+  quick-resolve, withdrawal and reinforcements.
+* `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
+  window on the desktop): whether the game keeps ticking while minimized,
+  P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.
 
 ## Outputs (Article V)
 
@@ -72,7 +93,7 @@ with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING 
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
 
-## The tools (36; harness 0.9.1)
+## The tools (36; harness 0.10.0)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -229,29 +250,41 @@ the meters, not recomputed) and his placeholder melee profile; each enemy adds
 `pack`, `speed`, `damage_min` / `damage_max`, and `dead`.
 
 **A dead enemy KEEPS its row and leaves the order.** The resolver despawns
-nothing: a killed monster stays on the map holding DD, stays in its spawn
-group, and keeps being noticed and chased — clearing those is step 5's work
-(`Notice.Unwatch`, `Pursuit.Release`). What stops the corpse re-opening the
-fight it just lost is a filter in `tryStart`, which skips any watcher whose
-body reads 0 and refuses to start against a dead quarry.
+nothing: a killed monster stays on the map holding DD and stays in its spawn
+group. Since step 5 it is also WITHDRAWN — `Notice.Unwatch` *and*
+`Pursuit.Release`, because either alone is undone on the next frame by
+`startChasesForTheAware` — so it is no longer noticed or chased. What stops
+the corpse re-opening the fight it just lost is a filter in `tryStart`, which
+skips any watcher whose body reads 0 and refuses to start against a dead
+quarry.
 
-**Two rules are RIGHT and UNOBSERVABLE in a v0 build**, and both are proved
+**Two rules are RIGHT and NOT YET OBSERVED in a v0 build**, and both are proved
 in `d2core/d2world`'s unit tests with fakes rather than in a playtest:
 
-* *Dark-into-light.* A pursuer's route ends on the quarry's OWN tile —
-  entities do not block the search — so it walks to distance 0.000 and every
-  participant in a settled fight floors to one tile and samples one light
-  level. Measured 3 Sep 2026. Making a pursuer stop on an adjacent tile is the
-  one change that would make light, flank and facing real.
+* *Dark-into-light.* Until M4.5 ask 8 a pursuer's route ended on the quarry's
+  OWN tile — entities do not block the search — so it walked to distance 0.000
+  and every participant in a settled fight floored to one tile and sampled one
+  light level (measured 3 Sep 2026). **Ask 8 (`187d52db`) made it possible:** a
+  hunter now stops on the best free NEIGHBOUR, so participants stand on
+  different tiles and the resolver reads two independent levels. It is still
+  not *observed*, because at night the level is uniform at 0.5000 — asserting
+  the rule in a playtest needs a PLACED source between two participants, which
+  is its own act and its own burst. The thirteenth script's act 7a asserts the
+  new premise; act 7b reports the levels rather than asserting them.
 * *Shaken blocks Riposte.* `ShakenFatigue` (90) and `ThirstyShakenFatigue`
   (80) both exceed `NoReactionFatigue` (75), so in every shipped build Shaken
   already implies no Reaction and a withheld Riposte was withheld by the
   fatigue clause. What a playtest CAN see of Shaken is the accuracy penalty on
   the player's own blows.
 
-**Reinforcements do not join a running fight.** `tryStart` builds the
-participant list once and `pruneOrEnd` only ever removes from it, so something
-that arrives after a fight opens is not in it. Step 5's, beside rout.
+**Reinforcements DO join a running fight, since step 5.** `tryStart` used to
+build the participant list once while `pruneOrEnd` only ever removed from it,
+so something arriving after a fight opened stood outside it. `reinforce()` now
+re-runs the aware-and-in-reach sweep once per `Advance` call, after the round
+loop — so an arrival never acts in the round it arrives in — and inserts it by
+authored `Speed` **without re-running the initiative tie-break shuffle** —
+that shuffle draws from the combat RNG and would move every later damage roll.
+An arrival that ties on Speed goes LAST among its equals.
 
 **`has_body` is reported separately and always**, so a monster the game
 screen never adopted reads as "no body known" rather than as a monster on

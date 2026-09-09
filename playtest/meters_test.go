@@ -249,7 +249,9 @@ func TestSurvivalMeters(t *testing.T) {
 		t.Fatalf("neglect must kill: %v", dead)
 	}
 
-	if got := num(dead, "health"); got != 0 {
+	// mustNum throughout this block: every assertion below wants a ZERO or a
+	// no-change, which is exactly what a renamed field hands back for free.
+	if got := mustNum(t, dead, "health"); got != 0 {
 		t.Fatalf("dead at health %.0f, want 0", got)
 	}
 
@@ -257,20 +259,20 @@ func TestSurvivalMeters(t *testing.T) {
 	// read one field, so they cannot disagree.
 	player := s.call("strigoi_get_player", map[string]any{})
 	if state, ok := player["state"].(map[string]any); ok {
-		if got := num(state, "health"); got != 0 {
+		if got := mustNum(t, state, "health"); got != 0 {
 			t.Fatalf("the meters say dead but the player reports health %.0f", got)
 		}
 	}
 
 	// A dead body stops spending. (What it does NOT do is show a death
 	// screen — that is M4.6's, deliberately, per the signed build note.)
-	food := num(dead, "food")
-	fatigue := num(dead, "fatigue")
+	food := mustNum(t, dead, "food")
+	fatigue := mustNum(t, dead, "fatigue")
 
 	s.call("strigoi_step_world", map[string]any{"world_minutes": 6 * 60})
 
 	still := sub(s.call("strigoi_get_system_state", map[string]any{"system": "meters"}), "state")
-	if num(still, "food") != food || num(still, "fatigue") != fatigue {
+	if mustNum(t, still, "food") != food || mustNum(t, still, "fatigue") != fatigue {
 		t.Fatalf("a dead body kept draining: food %.2f->%.2f fatigue %.2f->%.2f",
 			food, num(still, "food"), fatigue, num(still, "fatigue"))
 	}

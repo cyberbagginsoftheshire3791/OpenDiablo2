@@ -113,7 +113,7 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 	}
 
 	light := sub(s.call("strigoi_get_system_state", map[string]any{"system": "light"}), "state")
-	if n := num(light, "lit_sources"); n != 0 {
+	if n := mustNum(t, light, "lit_sources"); n != 0 {
 		t.Fatalf("the night should open unlit, but %.0f source(s) burn: %v", n, light)
 	}
 
@@ -144,7 +144,9 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 
 	// 1. THE MODEL: placed, not carried; lighting its own ground and leaving
 	//    the player's at the floor.
-	if str(after, "carried_source") != "" {
+	// mustStr: this act's whole premise is "nothing is carried", and an absent
+	// or renamed key says exactly that without being asked.
+	if mustStr(t, after, "carried_source") != "" {
 		t.Fatalf("the player must be carrying nothing for this to prove anything: %v", after)
 	}
 
@@ -230,7 +232,7 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 		"system": "light", "field": "remove_source", "value": num(src, "id"),
 	}), "state")
 
-	if n := num(out, "sources"); n != 0 {
+	if n := mustNum(t, out, "sources"); n != 0 {
 		t.Fatalf("removing the only source left %.0f behind: %v", n, out)
 	}
 

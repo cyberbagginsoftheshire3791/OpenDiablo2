@@ -674,11 +674,12 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 // player keeps walking. That is grotesque and it is correct for this step.
 //
 // AN ENEMY AT 0: it is dead. It leaves the order and takes no further
-// activation, and it STAYS on the map, in its spawn group, with its chase
-// still running and its participant row reporting dead:true. The resolver
-// despawns nothing (the fence). N1's "dead is dead" is honoured and nothing
-// pretends it is a corpse yet; the corpse machine is M4.7's, and Notice.Unwatch
-// and Pursuit.Release are step 5's.
+// activation, and it STAYS on the map, in its spawn group, with its participant
+// row reporting dead:true. The resolver despawns nothing (the fence). Its chase
+// and its watch are both dropped -- step 5 added withdraw(), and Notice.Unwatch
+// without Pursuit.Release would be undone on the next frame by
+// startChasesForTheAware. N1's "dead is dead" is honoured and nothing pretends
+// it is a corpse yet; the corpse machine is M4.7's.
 func (c *Combat) reachedZero(id string) {
 	e := c.encounter
 	if e == nil {
@@ -867,17 +868,24 @@ func (c *Combat) packSize(groupID string) int {
 // deliberately the same threshold the notice model calls lit, so that "a wolf
 // can see you" and "you are lit for the wolf's blow" are one fact (S1 §4).
 //
-// IT CANNOT FIRE IN A v0 BUILD, AND THAT IS MEASURED RATHER THAN SUSPECTED.
-// A pursuer's route ends on the quarry's OWN tile -- entities do not block the
-// search -- so it walks to distance 0.000 and stops there, and every
-// participant in a settled fight floors to one tile and therefore samples one
-// light level. Measured 3 Sep 2026 at 696edbf2: twelve world minutes, two
-// monsters, every light_here reading identical to the player's.
+// IT COULD NOT FIRE IN A v0 BUILD UNTIL M4.5 ASK 8, AND THAT WAS MEASURED
+// RATHER THAN SUSPECTED. A pursuer's route used to end on the quarry's OWN
+// tile -- entities do not block the search -- so it walked to distance 0.000
+// and stopped there, and every participant in a settled fight floored to one
+// tile and therefore sampled one light level. Measured 3 Sep 2026 at 696edbf2:
+// twelve world minutes, two monsters, every light_here reading identical to
+// the player's.
 //
-// The rule stays, for the same reason "Shaken blocks Riposte" stays: it is
-// right, it is asserted in the unit tests with fakes, and the day a pursuer
-// stops on an ADJACENT tile it becomes visible with no change here. That one
-// change -- step 5's, or M4.3a's -- is also what flanking and facing need.
+// ASK 8 (187d52db) MADE IT POSSIBLE AND HAS NOT YET MADE IT OBSERVED. A
+// pursuer now stops on the best free NEIGHBOUR of its quarry, so participants
+// stand on DIFFERENT tiles and this function reads two independent levels.
+// What is still missing is a level that DIFFERS: at night the illumination is
+// uniform at 0.5000, so observing this rule in a real build needs a PLACED
+// source between two participants -- its own act and its own burst.
+//
+// So the rule stays proved where it was, for the same reason "Shaken blocks
+// Riposte" stays: it is right and it is asserted in the unit tests with fakes,
+// which is also where flanking and facing will be proved when they arrive.
 func (c *Combat) advantage(attackerID, targetID string) (int, string) {
 	if c.illum == nil {
 		return 0, ""

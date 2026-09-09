@@ -1,6 +1,8 @@
 # The green gate, run by GitHub on every push and pull request.
 #
-# Mirrors the command in CLAUDE.md (gofmt · go vet · go build · go test)
+# Mirrors the command in CLAUDE.md (gofmt · go vet · go build · go test),
+# compiles and vets the `harness` and `playtest` tagged sources WITHOUT
+# running either (Article V: no script, no harness binary, ever, on CI),
 # and adds the Article V check: every tracked file with a Diablo II
 # extension must be in docs/fixtures-allowlist.txt. Linux needs the
 # ebitengine system headers (cgo + X11/GL/ALSA) to *compile* the ebiten
@@ -62,6 +64,21 @@ jobs:
 
       - name: go build
         run: go build ./...
+
+      # THE TAGGED SOURCES ARE COMPILED AND VETTED, NEVER RUN. Until this step
+      # existed CI compiled neither build tag, so the harness server and every
+      # playtest script could stop compiling and the gate stayed green.
+      #
+      # ARTICLE V IS WHY THESE ARE BUILD AND VET ONLY. The playtest scripts
+      # launch the real game and need the Diablo II MPQs, which are not on CI
+      # and never will be. Nothing here may run a script or a harness binary:
+      # `go test -tags playtest` is FORBIDDEN on CI. Compiling is the whole
+      # value, and it is free.
+      - name: go build (harness tag)
+        run: go build -tags harness ./...
+
+      - name: go vet (harness + playtest tags)
+        run: go vet -tags "harness playtest" ./...
 
       - name: go test
         run: go test ./...

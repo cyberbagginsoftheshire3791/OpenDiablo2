@@ -146,7 +146,9 @@ func TestCombatRout(t *testing.T) {
 	// Fights happen while the player is walking to the pack, so the counter
 	// is already several by the time this one opens; what act F proves is
 	// that THIS fight did not add to it.
-	deadEndingsBefore := num(combatState(s), "ended_enemies_dead")
+	// Strict: act F's "a rout is NOT a kill" compares this against the same
+	// field later, so a rename would make it 0 == 0 and prove nothing.
+	deadEndingsBefore := mustNum(t, combatState(s), "ended_enemies_dead")
 
 	// --- act B first: the dial OFF, and the number does not move -------------
 	//
@@ -270,7 +272,7 @@ func TestCombatRout(t *testing.T) {
 		t.Fatalf("act F: the rout counter must count it; %v", end["ended_routed"])
 	}
 
-	if got := num(end, "ended_enemies_dead"); got != deadEndingsBefore {
+	if got := mustNum(t, end, "ended_enemies_dead"); got != deadEndingsBefore {
 		t.Fatalf("act F: a rout is NOT a kill, and ended_enemies_dead is what the thirteenth "+
 			"script asserts on; it went %.0f -> %.0f", deadEndingsBefore, got)
 	}
@@ -361,11 +363,13 @@ func TestCombatRout(t *testing.T) {
 	setField(s, "combat", "player_action", "attack")
 	setField(s, "combat", "forced_band", "crit")
 
-	quickBefore := num(combatState(s), "quick_resolved")
+	// Strict on both sides: this is a NEGATIVE assertion ("the counter did not
+	// move"), which a renamed field satisfies for free.
+	quickBefore := mustNum(t, combatState(s), "quick_resolved")
 
 	strays := stepUntilFightEnds(t, s)
 
-	if num(strays, "quick_resolved") != quickBefore {
+	if mustNum(t, strays, "quick_resolved") != quickBefore {
 		t.Fatalf("act E: nothing the spawn tables never placed may quick-resolve; %v -> %v",
 			quickBefore, strays["quick_resolved"])
 	}

@@ -240,22 +240,28 @@ type CombatDials struct {
 	// on the Chebyshev distance between floored tile positions -- so 1 means
 	// the eight neighbours and the tile itself.
 	//
-	// It is SEPARATE from Pursuit's ArriveWithin (1.0, a Euclidean distance)
-	// on purpose, and the note's ask 6 says why: the router already targets
-	// the eight neighbour tiles because a quarry's own footprint is not a
-	// place another thing can path to, so "arrived" and "in reach" are two
-	// facts that happen to agree today. One overloaded dial would hide the
-	// day they stop agreeing.
+	// It is SEPARATE from Pursuit's ArriveWithin (1.5, a Euclidean distance)
+	// on purpose, and the note's ask 6 says why: the router targets the eight
+	// neighbour tiles, so "arrived" and "in reach" are two facts that happen
+	// to agree today. One overloaded dial would hide the day they stop
+	// agreeing.
 	//
-	// MEASURED AT STEP 4, and the sentence above is wrong about the map: a
-	// quarry's footprint IS routable -- entities do not block the search --
-	// so a pursuer walks onto the player's own tile and stops there at
-	// distance 0.000 rather than beside him. Every participant in a settled
-	// fight therefore floors to ONE tile. That is why dark-into-light cannot
-	// fire in a v0 build (§4.3 of the step-4 brief, and the resolver's
-	// advantage() comment), and making a pursuer stop on an ADJACENT tile is
-	// the one change that would make light, flank and facing real. Step 5 /
-	// M4.3a's, not this dial's.
+	// MEASURED AT STEP 4: ask 6's REASON for that agreement was wrong about
+	// the map. A quarry's footprint IS routable -- entities do not block the
+	// search -- so the router's exact-tile attempt succeeded every time, a
+	// pursuer walked onto the player's own tile and stopped there at distance
+	// 0.000 rather than beside him, and every participant in a settled fight
+	// floored to ONE tile and sampled ONE light level.
+	//
+	// FIXED BY M4.5 ask 8 (mapRouter.Route, d2game/d2gamescreen/game.go): the
+	// eight neighbours are now tried NEAREST FIRST and the quarry's own tile
+	// is only the fallback, and ArriveWithin moved 1.0 -> 1.5 with it because
+	// a diagonal stop sits at 1.414. Participants therefore stand on
+	// DIFFERENT tiles and can sample different light levels. That does not on
+	// its own make dark-into-light FIRE -- at night the level is uniform, so
+	// observing it in a real build needs a PLACED source between two
+	// participants -- but it is the one change that made light, flank and
+	// facing possible to assert at all.
 	AdjacentTiles int
 
 	// --- step 4: the resolver's numbers. Every one is a [DIAL], every one is
@@ -637,9 +643,9 @@ func (c *Combat) scanAware(target Quarry) (enemies []Combatant, chosen Quarry, d
 // UNTIL STEP 5 THE PARTICIPANT LIST COULD ONLY SHRINK: tryStart built it once
 // and pruneOrEnd removed from it, so a second pack that noticed the player
 // mid-fight stood outside the encounter doing nothing. docs/reachability.md
-// files it under the deferrals the register cannot carry, because no symbol is
-// dead -- the list is built and pruned in a shipped build -- and the gap is a
-// design one.
+// FILED it under the deferrals the register cannot carry -- no symbol was dead,
+// the list was built and pruned in a shipped build, and the gap was a design
+// one -- and that entry is gone from the doc because this function closed it.
 //
 // IT RUNS AFTER THE ROUND LOOP, ONCE PER Advance, and both halves of that
 // matter. Once per call, because the loop can resolve several rounds and a
@@ -964,7 +970,7 @@ func (c *Combat) end(reason string) {
 // Chebyshev rather than Euclidean, and the difference is deliberate: R2 §3's
 // zone-of-control is stated in adjacency terms, the map is a tile grid, and a
 // diagonal neighbour is as adjacent as an orthogonal one. Pursuit's
-// ArriveWithin is a Euclidean 1.0 and answers a different question -- see the
+// ArriveWithin is a Euclidean 1.5 and answers a different question -- see the
 // AdjacentTiles dial.
 func (c *Combat) inReach(w Combatant, q Quarry) bool {
 	if w == nil || q == nil {

@@ -89,11 +89,13 @@ func TestNightAndLight(t *testing.T) {
 		t.Fatalf("after stepping to %s: stage %s, want night", str(clock, "time_of_day"), str(clock, "stage"))
 	}
 
-	if got := num(clock, "moon"); got != 0 {
+	// Both strict: "want 0" and "must be below 4" are each satisfied by the 0
+	// a renamed or absent key hands back.
+	if got := mustNum(t, clock, "moon"); got != 0 {
 		t.Fatalf("moon %v, want 0 (new)", got)
 	}
 
-	if got := num(clock, "rate"); got >= 4 {
+	if got := mustNum(t, clock, "rate"); got >= 4 {
 		t.Fatalf("night rate %v must be slower than the day's 4 world-min/s (D7 §6)", got)
 	}
 
@@ -103,7 +105,9 @@ func TestNightAndLight(t *testing.T) {
 		t.Fatalf("deep night, no light, new moon: radius %v, want the floor %v", got, floorRadius)
 	}
 
-	if str(light, "carried_source") != "" {
+	// mustStr: "carries nothing" is what an absent or renamed key reports, so
+	// num/str here would prove the premise by failing to look for it.
+	if mustStr(t, light, "carried_source") != "" {
 		t.Fatalf("the player should carry no light yet: %v", light)
 	}
 
@@ -142,7 +146,9 @@ func TestNightAndLight(t *testing.T) {
 	s.call("strigoi_step_world", map[string]any{"world_minutes": torchBurn})
 
 	light = sub(s.call("strigoi_get_system_state", map[string]any{"system": "light"}), "state")
-	if light["carried_lit"] != false || num(light, "carried_burn") != 0 {
+	// flag + mustNum rather than a raw map read and num: "out and empty" is
+	// what an absent key reports all by itself.
+	if flag(t, light, "carried_lit") || mustNum(t, light, "carried_burn") != 0 {
 		t.Fatalf("the torch must be out and empty: lit=%v burn=%v", light["carried_lit"], num(light, "carried_burn"))
 	}
 

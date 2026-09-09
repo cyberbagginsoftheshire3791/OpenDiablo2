@@ -10,7 +10,7 @@ date on the line above -- the old one drifted two days and nobody noticed.
 ## Where status actually lives -- read this before anything else
 
 **This file is NOT the status.** Status is `next-session-prompt.md`,
-rewritten every burst, in `OneDrive\Desktop\Video Game\Claude doc outputs\`
+rewritten every burst, in `Desktop\Video Game\Claude doc outputs\`
 and mirrored to the claude.ai project as `claude/next-session-prompt.md`.
 
 | File | What it is | How it changes |

@@ -278,8 +278,9 @@ func contentText(res *mcp.CallToolResult) string {
 // exact shape of a green suite over a broken system.
 //
 // Prefer this over the tolerant helpers below wherever the value carries an
-// assertion. num, str and pair are still fail-open, and that is A3's named
-// remainder rather than an oversight: see docs/harness.md.
+// assertion. num and str now have strict twins -- mustNum and mustStr, same
+// contract, same failure message. pair is still fail-open, and that is A3's
+// remaining named gap rather than an oversight: see docs/harness.md.
 // It takes a testing.TB rather than a *testing.T so that its own failure path
 // can be exercised by a fake -- a helper whose whole job is to fail has to be
 // shown failing, or it is the same act of faith it was written to replace.
@@ -325,6 +326,15 @@ func keysOf(m map[string]any) []string {
 	return out
 }
 
+// num and str are the TOLERANT reads, and they stay tolerant on purpose: most
+// of their 400-odd uses are logging, arithmetic on a value that is legitimately
+// optional, or a setup step whose own assertion comes later. Converting those
+// would be churn.
+//
+// USE mustNum / mustStr WHEREVER THE VALUE CARRIES THE ASSERTION. num reads an
+// absent or RENAMED key as 0 and str reads it as "", so `num(row, "health")`
+// against a field the provider has renamed says "dead" and the assertion
+// passes while measuring nothing -- flag()'s defect in a second shape.
 func num(m map[string]any, key string) float64 {
 	v, _ := m[key].(float64)
 	return v
@@ -333,6 +343,62 @@ func num(m map[string]any, key string) float64 {
 func str(m map[string]any, key string) string {
 	v, _ := m[key].(string)
 	return v
+}
+
+// mustNum is num with flag()'s contract: absent or wrong-typed is a FAILURE
+// naming the key and the keys that ARE present, because the failure it usually
+// reports is a rename and a rename is only legible beside its replacement.
+//
+// testing.TB rather than *testing.T for flag()'s reason: a helper whose whole
+// job is to fail has to be shown failing, and flag_test.go's fakeTB is what
+// shows it.
+func mustNum(t testing.TB, m map[string]any, key string) float64 {
+	t.Helper()
+
+	// The returns after each Fatalf are flag()'s, for flag()'s reason: without
+	// them the absent-key branch falls through into the type assertion and
+	// reports "<nil> is not a number", losing the list of present keys.
+	v, ok := m[key]
+	if !ok {
+		t.Fatalf("field %q is absent -- an assertion on a number that is not there proves nothing "+
+			"(a missing key reads as 0, which is \"dead\", \"empty\" and \"at the origin\"). present: %v",
+			key, keysOf(m))
+
+		return 0
+	}
+
+	f, ok := v.(float64)
+	if !ok {
+		t.Fatalf("field %q is %T (%v), not a number", key, v, v)
+
+		return 0
+	}
+
+	return f
+}
+
+// mustStr is str's strict twin. An absent key reads as "", which compares equal
+// to no mode, no reason and no id -- and every one of those is an assertion
+// somewhere in these scripts.
+func mustStr(t testing.TB, m map[string]any, key string) string {
+	t.Helper()
+
+	v, ok := m[key]
+	if !ok {
+		t.Fatalf("field %q is absent -- an assertion on a string that is not there proves nothing "+
+			"(a missing key reads as \"\"). present: %v", key, keysOf(m))
+
+		return ""
+	}
+
+	s, ok := v.(string)
+	if !ok {
+		t.Fatalf("field %q is %T (%v), not a string", key, v, v)
+
+		return ""
+	}
+
+	return s
 }
 
 func sub(m map[string]any, key string) map[string]any {

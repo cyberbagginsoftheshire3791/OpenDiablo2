@@ -207,9 +207,13 @@ func (v *NPC) rotate(direction int) {
 	// middle of a swing has that swing replaced by Walk.
 	//
 	// MEASURED 3 Sep 2026: a SETTLED fight never re-routes -- the pursuer
-	// ends its route on the quarry's own tile, reports arrived, and stops
-	// asking -- but a fight the player is walking away from re-solves every
-	// MinRepathMinutes and walks. That is the common case, not the rare one.
+	// ends its route within ArriveWithin of the quarry, reports arrived, and
+	// stops asking -- but a fight the player is walking away from re-solves
+	// every MinRepathMinutes and walks. That is the common case, not the rare
+	// one. (Measured when the route ended on the quarry's own tile at 0.000;
+	// since M4.5 ask 8 it ends BESIDE the quarry and ArriveWithin moved to
+	// 1.5 so a diagonal stop still reports arrived, which is why the finding
+	// survives the change.)
 	//
 	// The direction still turns. Which way a thing faces is not what it is
 	// doing, and a corpse that spins is worse than one that does not.

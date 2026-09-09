@@ -30,12 +30,14 @@ import (
 //     TWO rounds. The provider therefore reports every action of the last
 //     Advance CALL, and act 2 compares a health delta against the whole
 //     step's damage instead of one round's.
-//   - A pursuer's route ends on the quarry's OWN tile, so every participant
-//     in a settled fight floors to one tile and samples one light level.
-//     Dark-into-light cannot fire in a v0 build at any placement, so act 7
-//     asserts the DIAL PLUMBING and the rule itself is proved in the unit
-//     tests with fakes. The sweep the brief asked for would have failed at
-//     every placement for a reason that is not about light.
+//   - A pursuer's route USED to end on the quarry's OWN tile, so every
+//     participant in a settled fight floored to one tile and sampled one light
+//     level, and dark-into-light could not fire at any placement. M4.5 ask 8
+//     changed the router: a hunter now stops BESIDE its quarry. Act 7 still
+//     asserts the DIAL PLUMBING rather than sweeping placements, because a
+//     uniform night hands both tiles the same level -- proving the rule in a
+//     playtest needs a PLACED source between two participants, which is its
+//     own act. The rule itself stays proved in the unit tests with fakes.
 func TestCombatResolver(t *testing.T) {
 	s := start(t)
 
@@ -147,7 +149,7 @@ func TestCombatResolver(t *testing.T) {
 	// know which rounds fell inside it; target_health_after is the blow's own
 	// fact and needs no such alignment.
 	if last, ok := lastAgainst(rows, dogID); ok {
-		if got := num(participant(t, combat, dogID), "health"); got != num(last, "target_health_after") {
+		if got := mustNum(t, participant(t, combat, dogID), "health"); got != mustNum(t, last, "target_health_after") {
 			t.Fatalf("act 2: the dog's last blow reported it at %.0f and the fight reports %.0f: %v",
 				num(last, "target_health_after"), got, last)
 		}
@@ -160,7 +162,7 @@ func TestCombatResolver(t *testing.T) {
 		t.Fatalf("act 2: the dog must be able to hurt the player; actions=%v", rows)
 	}
 
-	if got := num(metersState(s), "health"); got != num(last, "target_health_after") {
+	if got := mustNum(t, metersState(s), "health"); got != mustNum(t, last, "target_health_after") {
 		t.Fatalf("act 2: the blow reported the player at %.0f and the METERS report %.0f -- the resolver "+
 			"and the meters must be writing one field through one adapter: %v",
 			num(last, "target_health_after"), got, last)
@@ -274,13 +276,14 @@ func TestCombatResolver(t *testing.T) {
 	// DISENGAGE AND LET THE FIGHT RE-OPEN, and the reason is a finding this
 	// act turned up rather than a trick.
 	//
-	// tryStart builds the participant list ONCE, and pruneOrEnd only ever
-	// REMOVES from it -- so a monster that arrives after a fight has started
-	// never joins it. The first run of this act spent ninety world minutes
+	// AT STEP 4 tryStart built the participant list ONCE and pruneOrEnd only
+	// ever REMOVED from it, so a monster that arrived after a fight started
+	// never joined it. The first run of this act spent ninety world minutes
 	// with three fresh dogs standing next to the player and took him from 240
-	// to 2, because only the one enemy that was there when the encounter
-	// opened was ever biting. Reinforcements are step 5's, beside rout and
-	// release; disengaging is how a v0 script gets everyone into one fight.
+	// to 2, because only the one enemy present when the encounter opened was
+	// ever biting. Step 5's reinforce() closed that. The disengage dial stays
+	// because it is still the shortest way to put everyone in one fight
+	// deliberately rather than waiting for arrivals.
 	setField(s, "combat", "disengage", true)
 	fightNow(t, s)
 
@@ -291,7 +294,7 @@ func TestCombatResolver(t *testing.T) {
 
 		elapsed++
 
-		if !flag(t, combatState(s), "fighting") && num(metersState(s), "health") <= 0 {
+		if !flag(t, combatState(s), "fighting") && mustNum(t, metersState(s), "health") <= 0 {
 			break
 		}
 	}
@@ -299,7 +302,9 @@ func TestCombatResolver(t *testing.T) {
 	combat = combatState(s)
 	meters := metersState(s)
 
-	if num(meters, "health") > 0 {
+	// mustNum, not num: a renamed health field reads 0 here, which IS "dead",
+	// so this whole act would pass while measuring nothing.
+	if mustNum(t, meters, "health") > 0 {
 		t.Fatalf("act 5: the pack failed to kill the player in %d world minutes (health %.0f of %.0f). "+
 			"Either the player's side is not being hurt, or the placeholder profiles are too kind.",
 			elapsed, num(meters, "health"), maxHealth)
@@ -313,8 +318,11 @@ func TestCombatResolver(t *testing.T) {
 		t.Fatalf("act 5: the meters and the resolver must agree the player is dead: %v", meters)
 	}
 
-	encountersAfterDeath := num(combat, "encounters")
-	deathsAfterDeath := num(combat, "ended_player_dead")
+	// Both baselines are strict, because the assertion below is a NEGATIVE one
+	// -- "these two numbers did not move" -- and a renamed field would make it
+	// 0 == 0 on both sides.
+	encountersAfterDeath := mustNum(t, combat, "encounters")
+	deathsAfterDeath := mustNum(t, combat, "ended_player_dead")
 
 	if deathsAfterDeath != 1 {
 		t.Fatalf("act 5: the player died once; ended_player_dead=%.0f", deathsAfterDeath)
@@ -326,10 +334,11 @@ func TestCombatResolver(t *testing.T) {
 
 	combat = combatState(s)
 
-	if num(combat, "encounters") != encountersAfterDeath || num(combat, "ended_player_dead") != deathsAfterDeath {
+	if mustNum(t, combat, "encounters") != encountersAfterDeath ||
+		mustNum(t, combat, "ended_player_dead") != deathsAfterDeath {
 		t.Fatalf("act 5: THE DEAD RESTARTED THE FIGHT. encounters %.0f -> %.0f, ended_player_dead %.0f -> %.0f. "+
-			"tryStart must skip a quarry whose body reads 0: nothing clears the notice model or the chase "+
-			"when something dies, so the corpse is still noticed and still in reach.",
+			"tryStart must skip a quarry whose body reads 0, and since step 5 a death also withdraws it "+
+			"from the notice model and the chase.",
 			encountersAfterDeath, num(combat, "encounters"), deathsAfterDeath, num(combat, "ended_player_dead"))
 	}
 
@@ -348,13 +357,19 @@ func TestCombatResolver(t *testing.T) {
 //
 // ACT 7 IS NOT WHAT THE STEP-4 BRIEF SPECIFIED, and the change is a finding
 // rather than a convenience. The brief had this act SWEEP placements around a
-// hearth until two adjacent tiles straddled lit_level. No placement can: a
-// pursuer's route ends on the quarry's own tile, so it walks to distance 0.000
-// and every participant floors to ONE tile and reads ONE light level. The
-// sweep would have failed six times for a reason that has nothing to do with
-// light. So act 7 asserts the dial plumbing and PINS THE REASON -- and the day
-// a pursuer stops on an adjacent tile instead, that assertion fails and tells
-// whoever finds it that dark-into-light has just become observable.
+// hearth until two adjacent tiles straddled lit_level. At step 4 no placement
+// could: a pursuer's route ended on the quarry's own tile, so it walked to
+// distance 0.000 and every participant floored to ONE tile and read ONE light
+// level. The sweep would have failed six times for a reason that has nothing
+// to do with light.
+//
+// M4.5 ASK 8 REMOVED THAT REASON: a pursuer stops on the best free NEIGHBOUR,
+// so act 7a asserts THAT premise directly rather than inferring it from the
+// light. The sweep is still not restored, because at night the level is
+// uniform and both tiles read the same -- restoring it needs a PLACED source
+// between two participants, which is its own act and its own burst. So act 7
+// asserts the dial plumbing, and 7b REPORTS the levels rather than asserting
+// them: the day they differ, that log line is the news.
 func TestCombatResolverStanceAndReactions(t *testing.T) {
 	s := start(t)
 
@@ -566,8 +581,9 @@ func TestCombatResolverStanceAndReactions(t *testing.T) {
 		}
 	}
 
-	t.Logf("act 7 PASS: the dial moves in both directions, and every participant reads light %.4f from "+
-		"one shared tile -- which is why the rule itself is proved in the unit tests", first)
+	t.Logf("act 7 PASS: the dial moves in both directions, and every participant reads its OWN tile "+
+		"(first reading %.4f) -- the rule itself is proved in the unit tests until a placed source "+
+		"makes two of those readings differ", first)
 }
 
 // TestCombatResolverCaughtHeadDown is D8 §9's branch and what a corpse does
@@ -624,7 +640,7 @@ func TestCombatResolverCaughtHeadDown(t *testing.T) {
 
 	t.Logf("act 8 PASS: caught foraging -- enemy first, player last in the order, meters on labour")
 
-	bodiesBefore := num(combat, "bodies_known")
+	bodiesBefore := mustNum(t, combat, "bodies_known")
 
 	setField(s, "combat", "forced_band", "crit")
 
@@ -642,26 +658,26 @@ func TestCombatResolverCaughtHeadDown(t *testing.T) {
 		t.Fatalf("act 9: when the fight ends the body goes back to what it was doing; activity=%q", got)
 	}
 
-	if got := num(combat, "bodies_known"); got != bodiesBefore {
+	if got := mustNum(t, combat, "bodies_known"); got != bodiesBefore {
 		t.Fatalf("act 9: bodies_known counts NPC bodies and nothing left the registry; %.0f -> %.0f",
 			bodiesBefore, got)
 	}
 
-	encounters := num(combat, "encounters")
+	encounters := mustNum(t, combat, "encounters")
 
 	for i := 0; i < 5; i++ {
 		s.call("strigoi_step_world", map[string]any{"world_minutes": 1.0})
 	}
 
-	if got := num(combatState(s), "encounters"); got != encounters {
-		t.Fatalf("act 9: THE CORPSE RESTARTED THE FIGHT; encounters %.0f -> %.0f. Nothing clears the "+
-			"notice model or the chase when something dies -- both are step 5's -- so tryStart must "+
+	if got := mustNum(t, combatState(s), "encounters"); got != encounters {
+		t.Fatalf("act 9: THE CORPSE RESTARTED THE FIGHT; encounters %.0f -> %.0f. Since step 5 a death "+
+			"withdraws the dead thing from the notice model AND the chase, and tryStart must still "+
 			"skip a watcher whose body reads 0.", encounters, got)
 	}
 
 	// The fence held: nothing was despawned. The dog is still on the map, in
-	// its spawn group, with its chase still running, holding a corpse's
-	// animation.
+	// its spawn group, holding a corpse's animation -- withdrawn from the
+	// notice model and the chase since step 5, but never removed.
 	mode := str(sub(s.call("strigoi_get_entity", map[string]any{"handle": dog}), "state"), "animation_mode")
 	if mode != "DT" && mode != "DD" {
 		t.Fatalf("act 9: a dead dog holds DT or DD; animation_mode=%q", mode)
@@ -677,10 +693,11 @@ func TestCombatResolverCaughtHeadDown(t *testing.T) {
 // clearNeighbour finds one of the four ORTHOGONAL neighbours of the player
 // with a clear line, and fails if there is none.
 //
-// Orthogonal on purpose: a diagonal neighbour is 1.41 tiles by Euclid, which
-// is outside Pursuit's ArriveWithin, so it takes a different path into the
-// fight. Combat's own reach is Chebyshev and treats the two alike; the setup
-// does not have to.
+// Orthogonal on purpose. It was chosen when Pursuit's ArriveWithin was 1.0,
+// which a diagonal neighbour's 1.41 tiles by Euclid sat OUTSIDE, so a diagonal
+// took a different path into the fight. Ask 8 moved ArriveWithin to 1.5 and
+// both readings now arrive, so this is conservative rather than necessary --
+// Combat's own reach is Chebyshev and treats the two alike either way.
 //
 // Seed 1462 draws a GENERATED map, so the bearing is swept rather than
 // hardcoded -- a fixed offset is a test that passes for one worldgen.

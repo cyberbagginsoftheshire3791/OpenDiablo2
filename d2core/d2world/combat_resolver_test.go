@@ -9,9 +9,11 @@ import (
 
 // THE RESOLVER'S UNIT TESTS. No game, no MPQs, every band and branch driven by
 // a fake -- which is the only place several of these rules can be tested at
-// all: "Shaken blocks Riposte" and "dark-into-light" are both unobservable in
-// a real v0 build (see combat_resolver.go on each), so if they are not proved
-// here they are not proved.
+// all: "Shaken blocks Riposte" and "dark-into-light" are neither of them
+// observed in a real v0 build (see combat_resolver.go on each -- since M4.5
+// ask 8 dark-into-light is POSSIBLE to observe, but a uniform night still
+// hands every participant the same level), so if they are not proved here they
+// are not proved.
 //
 // HOW EXPECTATIONS ARE DERIVED, and it is a deliberate departure from the
 // step-4 brief. The brief said to replay the seeded RNG in the test and

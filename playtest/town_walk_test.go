@@ -55,7 +55,10 @@ func TestTownWalk(t *testing.T) {
 		t.Fatalf("act: want 1, got %v", got)
 	}
 
-	if got := num(state, "gold"); got < 0 {
+	// mustNum: "gold >= 0" is satisfied by the 0 an absent or renamed key
+	// returns, so num() here would assert that the field exists by not
+	// noticing that it does not. stamina and act above already fail on 0.
+	if got := mustNum(t, state, "gold"); got < 0 {
 		t.Fatalf("gold: want >= 0, got %v", got)
 	}
 

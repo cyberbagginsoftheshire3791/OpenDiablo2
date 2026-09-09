@@ -169,10 +169,27 @@ deferral written only in a commit message is a deferral that has been lost.
   has no player attack verb. Every symbol involved is properly live; what is
   deferred is that a *human* should be choosing. M4.4.
 
-* **Reinforcements do not join a running fight.** `tryStart` builds the
-  participant list once and `pruneOrEnd` only removes from it. No symbol is
-  dead — the list is built and pruned in a shipped build — and yet a monster
-  that arrives mid-fight stands outside it. M4.5 step 5, beside rout.
+* **A routed pack stops fighting and does not FLEE.** `routeIfBroken` marks
+  every living member routed and withdraws it, so the pack leaves the fight —
+  but each member keeps standing where it stood. Every symbol is live;
+  what is deferred is the behaviour, because fleeing needs a destination, a
+  router call per member per round, and a rule for re-noticing. M4.5 step 5
+  ask 2 took this deliberately; it closes when something owns monster
+  movement outside a chase.
+
+* **Quick-resolve's never-the-dead half is asserted nowhere.**
+  `tryQuickResolve` fires against a mundane animal at overwhelming advantage,
+  which is the half of R2 §2B this build can honestly test. The prohibition —
+  *never for the dead* — has no rows to test against: this engine's monsters
+  are dogs, wolves, boar and opportunists. `tryQuickResolve` is fully live, so
+  no verdict can say so. **M4.7**, with the corpse machine.
+
+* **R2 §3 bullet 1's freeze clause is unimplemented, and reinforcements point
+  the other way.** Step 5 made arrivals join a running fight (`reinforce`);
+  the signed mode boundary says the world outside an encounter freezes while
+  one is resolving. Both cannot be right. Nothing is dead — `reinforce` runs
+  in a shipped build — and the contradiction is a design one that no register
+  row can hold. It closes when M4.5's DoD reading settles which clause wins.
 
 * **`bodies_known` counts NPC bodies only.** The player's body is answered by
   `Game.BodyOf` since step 4 but is not in that registry, so the count does not

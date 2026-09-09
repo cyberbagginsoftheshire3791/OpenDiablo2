@@ -156,8 +156,10 @@ func TestCombatStartsWhenAnAwareThingIsInReach(t *testing.T) {
 func TestCombatReachIsChebyshevNotEuclidean(t *testing.T) {
 	c, notice, target, _ := newTestCombat(t)
 
-	// (41,41) is 1.41 tiles away by Euclid -- outside Pursuit's ArriveWithin
-	// of 1.0 -- and one tile away on the grid.
+	// (41,41) is 1.41 tiles away by Euclid and ONE tile away on the grid.
+	// Since M4.5 ask 8 Pursuit's ArriveWithin is 1.5, so the two readings
+	// agree here; this test asserts the Chebyshev one directly rather than
+	// relying on that agreement.
 	wolf := &fakeWatcher{id: "w:1", x: 41, y: 41}
 	aware(t, notice, wolf, target)
 

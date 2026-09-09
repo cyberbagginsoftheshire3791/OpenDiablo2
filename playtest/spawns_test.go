@@ -145,7 +145,7 @@ func TestSpawns(t *testing.T) {
 		t.Fatalf("act 3: the blocked watcher must report sees=false, got %v", blindRow)
 	}
 
-	if d := num(blindRow, "distance"); d > num(seerRow, "distance")+1.5 {
+	if d := mustNum(t, blindRow, "distance"); d > mustNum(t, seerRow, "distance")+1.5 {
 		t.Fatalf("act 3: the control must be about the same distance away, got %.2f vs %.2f",
 			d, num(seerRow, "distance"))
 	}
@@ -238,7 +238,7 @@ func TestSpawns(t *testing.T) {
 		t.Fatalf("act 5: never reached the deep night, stage=%q", str(night, "stage"))
 	}
 
-	if band := num(night, "band"); band < 0 {
+	if band := mustNum(t, night, "band"); band < 0 {
 		t.Fatalf("act 5: the deep night must report a band, got %v", band)
 	}
 
