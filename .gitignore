@@ -47,3 +47,7 @@ heap.pdf
 # Resource Hacker's settings file. rh.exe (an orphaned binary) was removed on
 # 21 Aug; this is the .ini it leaves beside wherever it ran.
 rh.ini
+
+# Python bytecode cache from the docs/sky day-table tooling (M4.4a).
+__pycache__/
+*.pyc

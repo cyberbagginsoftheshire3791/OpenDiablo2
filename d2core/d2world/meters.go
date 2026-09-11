@@ -101,7 +101,8 @@ const (
 	// judgement: what a forager actually gains and burns is Phase 6's
 	// inventory work, and inventing a drain factor here would be a number
 	// nobody signed. NO GAME VERB SETS IT -- the harness is the only caller
-	// until M4.4's turn UI, and the reachability register carries that.
+	// until M4.4c's turn UI (M4.4a shipped the clock strip only; the hands are
+	// M4.4c), and the reachability register carries that.
 	ActivityForage Activity = "forage"
 )
 

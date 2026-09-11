@@ -1,6 +1,6 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-09-05 (16:20 CT). **This file is capped at one screen.** It
+Updated: 2026-09-11 (M4.4a build session, CT). **This file is capped at one screen.** It
 held 528 lines until today and told a session more about finished
 milestones than about the next hour; the body was frozen into
 `docs/focus-archive-2026-09-05.md` and is not appended to again. **If you
@@ -53,15 +53,17 @@ rather than improvising a shortened version of it.
 corpse machine** -- the corpse state machine, the per-band rising roll
 against soul pressure, the edge-arrival floor and the rite window; it shares
 content with M4.6 and drives `spawns.open_bodies`, which M4.3b built as a
-settable stand-in for exactly this. **M4.4 is the HUD milestone** (clock UI,
-meter HUD, first scripted event) and it floats.
+settable stand-in for exactly this. **M4.4 SPLIT into 4a/4b/4c (11 Sep):**
+4a the eyes -- the always-visible clock strip (date, feast/fast name,
+time-to-sunset, moon phase) -- is BUILT; 4b the 22 Jun flag + spawn-table
+swap; 4c the hands (turn UI + the meters HUD, whose unit is now the SQUAD).
+**The three meters are HELD to 4c**, not drawn beside the clock.
 
-**Map fires is the one short burst still approved outside the build order.**
-Ask 1 is DONE (`dd2b7d99`, `tools/mapfirecount`: the village places about
-twenty-one lit objects and **not one is lit in the mode it is placed in**).
-Ask 2 is ruled: a map fire is a hearth someone else lit, radius 8, Burn
-negative, no new category. **Asks 3, 4 and 5 are open and no lighting engine
-code may be written until 4 is answered.**
+**Map fires: RULED 11 Sep** (`dd2b7d99` / `tools/mapfirecount` did ask 1;
+about twenty-one lit objects, none lit in its placed mode). A map fire is a
+hearth someone else lit (radius 8, Burn negative, no new category), and the
+slice's fires are AUTHORED BY HAND after friends build #1 -- no lighting
+engine code, and time the per-tile loop, then.
 
 **The worldgen default branch was FIXED on 28 Aug** (`47f0dc95`,
 `pickTownWithWilderness` + `usableTownIndex`, asserted across six seeds by

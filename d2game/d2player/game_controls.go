@@ -19,6 +19,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2ui"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 )
 
 const (
@@ -119,6 +120,7 @@ func NewGameControls(
 	l d2util.LogLevel,
 	isSinglePlayer bool,
 	players map[string]*d2mapentity.Player,
+	clock *d2world.Clock,
 ) (*GameControls, error) {
 	var inventoryRecordKey string
 
@@ -247,7 +249,7 @@ func NewGameControls(
 		gc.PartyPanel = PartyPanel
 	}
 
-	hud := NewHUD(asset, ui, hero, miniPanel, actionableRegions, mapEngine, l, gc, mapRenderer)
+	hud := NewHUD(asset, ui, hero, miniPanel, actionableRegions, mapEngine, l, gc, mapRenderer, clock)
 	gc.hud = hud
 
 	hoverLabel := hud.nameLabel

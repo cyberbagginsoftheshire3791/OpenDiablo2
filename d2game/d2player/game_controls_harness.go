@@ -29,5 +29,16 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"right_panel_open":  g.isRightPanelOpen(),
 		"free_cam":          g.FreeCam,
 		"clock":             g.clock,
+
+		// The M4.4a clock strip -- exactly what the player reads at the top of
+		// the screen, so a playtest can assert the eyes work. These are the
+		// strings the HUD last computed (refreshed once a world minute), plus
+		// the raw time-to-sunset number the "Sunset in X.Xh" readout is
+		// formatted from. Empty until the HUD has advanced a frame with a clock.
+		"clock_strip_date":          g.hud.stripDate,
+		"clock_strip_feast":         g.hud.stripFeast,
+		"clock_strip_moon":          g.hud.stripMoon,
+		"clock_strip_hours_to_dusk": g.hud.stripHoursToDusk,
+		"clock_strip_text":          g.hud.stripText,
 	}
 }

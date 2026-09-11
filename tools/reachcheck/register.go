@@ -205,6 +205,34 @@ var Register = []Entry{
 	{sym(pkgWorld, "Pursuit.Release"), BucketWire, VerdictLive,
 		"The only way a chase ends, and step 5 is the step that ends one. Called from the resolver when an enemy dies, when a pack breaks, and when quick-resolve finishes a fight. IT IS HALF OF A PAIR: startChasesForTheAware runs every frame with no liveness filter, so a release on its own is undone on the very next frame, and the same death also calls Notice.Unwatch.", ""},
 
+	// M4.4a -- THE EYES. Five Clock reads for the HUD's always-visible clock
+	// strip, which is d2player's first d2core/d2world import (threaded in at
+	// construction, NewGameControls -> NewHUD). Clock.Date and Clock.Weekday
+	// moved up from observe; MinuteOfDay, HoursToDusk and Today are new. The
+	// strip changes the state digest by construction (the "ui" provider gained
+	// clock_strip_* fields), and only the full reach-gate catches these -- the
+	// register's unit test checks shape, not reachability.
+	//
+	// Clock.TimeOfDay did NOT move; it stays observe below. The strip shows
+	// time-to-SUNSET, not the HH:MM clock time (S1 section 3.4, "nothing
+	// else"), so the shipped game never calls it. The 11 Sep ruling expected
+	// all three clock rows to wire, but wiring TimeOfDay would need the strip
+	// to draw the clock time (scope creep against a signed fence) or a
+	// manufactured caller (the exact hollow-class shape this gate exists to
+	// catch -- see the Spawns.Groups note). The honest move is two rows moved
+	// and three added, not three moved; the code, and reach-gate, outrank the
+	// ruling's incidental count.
+	{sym(pkgWorld, "Clock.Date"), BucketWire, VerdictLive,
+		"The clock strip draws the Julian civil date. Wire since M4.4a; also reached transitively through Clock.Today. Was observe (harness-only) until the HUD read it.", ""},
+	{sym(pkgWorld, "Clock.Weekday"), BucketWire, VerdictLive,
+		"The clock strip draws the weekday beside the date. Wire since M4.4a; was observe until the HUD read it.", ""},
+	{sym(pkgWorld, "Clock.MinuteOfDay"), BucketWire, VerdictLive,
+		"The HUD refreshes the strip when int(MinuteOfDay) changes -- once a world minute, not every frame -- and Clock.HoursToDusk derives from it. Wire since M4.4a.", ""},
+	{sym(pkgWorld, "Clock.HoursToDusk"), BucketWire, VerdictLive,
+		"The strip's time-to-sunset readout: world hours to the clock's DuskStart (19:45). Built for M4.4a; the HUD is its only caller.", ""},
+	{sym(pkgWorld, "Clock.Today"), BucketWire, VerdictLive,
+		"Looks up today's generated day-table row for the strip's feast/fast name and moon-phase text. Built for M4.4a; the HUD is its only caller.", ""},
+
 	// ---------------------------------------------------------------
 	// DELETE -- empty, and that is the bucket working rather than an
 	// oversight.
@@ -238,11 +266,11 @@ var Register = []Entry{
 	{sym(pkgWorld, "Light.Remove"), BucketDefer, VerdictHarnessOnly,
 		"Puts a placed light out. This is the symbol M4.1 was reopened over; remove_source gave it a caller, and that caller is HarnessSet, so it is still harness-only one level down.", "Phase 6 inventory / the first interaction verbs"},
 	{sym(pkgWorld, "Meters.Food"), BucketDefer, VerdictDead,
-		"A read accessor with only test callers. The meters provider reads the field directly. The HUD is what will want these.", "M4.4 (the HUD milestone)"},
+		"A read accessor with only test callers. The meters provider reads the field directly. HELD at M4.4a (the eyes): the bar waits until a drink verb or a water-dial change makes it carry information -- water empties at 18:09 in every run today -- and the unit of every bar is now the squad, so it is redesigned in M4.4c, not drawn beside the clock strip.", "M4.4c (the meters HUD)"},
 	{sym(pkgWorld, "Meters.Water"), BucketDefer, VerdictDead,
-		"As Meters.Food.", "M4.4 (the HUD milestone)"},
+		"As Meters.Food.", "M4.4c (the meters HUD)"},
 	{sym(pkgWorld, "Meters.Fatigue"), BucketDefer, VerdictDead,
-		"As Meters.Food.", "M4.4 (the HUD milestone)"},
+		"As Meters.Food.", "M4.4c (the meters HUD)"},
 	// M4.5 step 1 wired the ENCOUNTER, not the resolver, and the two rows
 	// below are the honest consequence. Combat reads the meters' flags only
 	// inside HarnessState, which the registry dispatches and only harness-
@@ -319,12 +347,12 @@ var Register = []Entry{
 		"The same wrapper for awareness. The spawn tables call Notice.Watch directly, which is wired.", ""},
 	{sym(pkgScreen, "Game.Unwatch"), BucketObserve, VerdictHarnessOnly,
 		"The wrapper's other half. Note that the game's own unwatch path is missing entirely -- see Notice.Unwatch above.", ""},
-	{sym(pkgWorld, "Clock.Date"), BucketObserve, VerdictHarnessOnly,
-		"Reports the Julian civil date for the clock provider.", ""},
-	{sym(pkgWorld, "Clock.Weekday"), BucketObserve, VerdictHarnessOnly,
-		"Reports the weekday for the clock provider.", ""},
+	// Clock.Date and Clock.Weekday moved to the M4.4a WIRE block: the HUD's
+	// clock strip draws both since M4.4a. TimeOfDay stayed here -- the strip
+	// shows time-to-sunset, not the HH:MM clock time, so only the clock
+	// provider's HarnessState calls it. See the M4.4a note in the wire block.
 	{sym(pkgWorld, "Clock.TimeOfDay"), BucketObserve, VerdictHarnessOnly,
-		"Reports the time of day for the clock provider.", ""},
+		"Reports the time of day (HH:MM) for the clock provider. Harness-only: the HUD shows time-to-sunset, not the clock time (S1 section 3.4).", ""},
 	{sym(pkgWorld, "Clock.SetFrozen"), BucketObserve, VerdictHarnessOnly,
 		"Freezes the clock for a script. The game must never do this, so harness-only is the correct answer and not a deferral.", ""},
 	{sym(pkgWorld, "Clock.SetMoon"), BucketObserve, VerdictHarnessOnly,

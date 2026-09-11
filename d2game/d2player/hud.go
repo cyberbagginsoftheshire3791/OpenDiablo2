@@ -14,6 +14,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2ui"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 )
 
 const (
@@ -75,6 +76,17 @@ const (
 	addSkillButtonX, addSkillButtonY = 563, 561
 )
 
+// The always-visible clock strip (M4.4a). Sized from the §0 Font16
+// measurement: the widest full line is 686px, so the whole strip is one line
+// at the top-left, well inside the 800px viewport. Occlusion by an open panel
+// is accepted (ruling 11 Sep).
+const (
+	clockStripX      = 8
+	clockStripY      = 2
+	clockStripWidth  = 700
+	clockStripHeight = 18
+)
+
 // HUD represents the always visible user interface of the game
 type HUD struct {
 	actionableRegions  []actionableRegion
@@ -113,6 +125,23 @@ type HUD struct {
 	panelGroup         *d2ui.WidgetGroup
 	gameControls       *GameControls
 
+	// The clock strip (M4.4a): the world clock read at construction, an
+	// invisible Font16 label rendered manually inside a CustomWidget in
+	// panelGroup (seam B), and the strings it last computed. The strings are
+	// also what the "ui" harness provider reports, so a playtest can assert
+	// what the player sees. lastStripMinute gates the refresh on the integer
+	// minute-of-day changing, so the readout updates once a world minute
+	// rather than every frame.
+	clock            *d2world.Clock
+	clockStrip       *d2ui.Label
+	clockStripWidget *d2ui.CustomWidget
+	stripDate        string
+	stripFeast       string
+	stripMoon        string
+	stripText        string
+	stripHoursToDusk float64
+	lastStripMinute  int
+
 	*d2util.Logger
 }
 
@@ -127,6 +156,7 @@ func NewHUD(
 	l d2util.LogLevel,
 	gameControls *GameControls,
 	mapRenderer *d2maprenderer.MapRenderer,
+	clock *d2world.Clock,
 ) *HUD {
 	nameLabel := ui.NewLabel(d2resource.Font16, d2resource.PaletteStatic)
 	nameLabel.Alignment = d2ui.HorizontalAlignCenter
@@ -134,6 +164,12 @@ func NewHUD(
 
 	zoneLabel := ui.NewLabel(d2resource.Font30, d2resource.PaletteUnits)
 	zoneLabel.Alignment = d2ui.HorizontalAlignCenter
+
+	// The clock strip's label. It stays invisible (like nameLabel): the strip
+	// is drawn by clockStripWidget's render function, not by the UIManager, so
+	// making it visible here would double-render it.
+	clockStrip := ui.NewLabel(d2resource.Font16, d2resource.PaletteStatic)
+	clockStrip.Alignment = d2ui.HorizontalAlignLeft
 
 	healthGlobe := newGlobeWidget(ui, asset,
 		0, screenHeight,
@@ -160,6 +196,9 @@ func NewHUD(
 		healthGlobe:       healthGlobe,
 		manaGlobe:         manaGlobe,
 		gameControls:      gameControls,
+		clock:             clock,
+		clockStrip:        clockStrip,
+		lastStripMinute:   -1,
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -255,6 +294,13 @@ func (h *HUD) loadCustomWidgets() {
 	h.widgetRightSkill = h.uiManager.NewCustomWidget(rightRenderFunc, skillIconWidth, skillIconHeight)
 	h.widgetRightSkill.SetPosition(rightSkillX, screenHeight)
 	h.panelGroup.AddWidget(h.widgetRightSkill)
+
+	// The always-visible clock strip (M4.4a, seam B). Drawn last, over the map,
+	// so nothing but an open panel occludes it.
+	h.clockStripWidget = h.uiManager.NewCustomWidget(h.renderClockStrip, clockStripWidth, clockStripHeight)
+	h.clockStripWidget.SetPosition(clockStripX, clockStripY)
+	h.clockStripWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.clockStripWidget)
 }
 
 func (h *HUD) loadSkillResources() {
@@ -656,9 +702,64 @@ func (h *HUD) getSkillResourceByClass(class string) string {
 	return entry
 }
 
+// refreshClockStrip recomputes the clock strip's text when the world clock's
+// integer minute-of-day changes (the [DIAL] refresh trigger), so the strip
+// updates once a world minute instead of every frame. It reads the date and
+// weekday the clock computes, the feast and moon-phase names for today from
+// the generated day table, and the time-to-sunset the clock counts down to
+// DuskStart. Outside the slice the day table has no row, so the feast and moon
+// text are simply omitted. MinuteOfDay is float64; the truncation is explicit.
+func (h *HUD) refreshClockStrip() {
+	if h.clock == nil || h.clockStrip == nil {
+		return
+	}
+
+	minute := int(h.clock.MinuteOfDay())
+	if minute == h.lastStripMinute {
+		return
+	}
+
+	h.lastStripMinute = minute
+
+	year, month, day := h.clock.Date()
+	h.stripHoursToDusk = h.clock.HoursToDusk()
+	h.stripDate = fmt.Sprintf("%s %d %s %d", h.clock.Weekday(), day, strigoiMonthName(month), year)
+
+	h.stripFeast, h.stripMoon = "", ""
+	if entry, ok := h.clock.Today(); ok {
+		h.stripFeast, h.stripMoon = entry.Feast, entry.MoonPhase
+	}
+
+	parts := []string{h.stripDate}
+	if h.stripFeast != "" {
+		parts = append(parts, h.stripFeast)
+	}
+
+	parts = append(parts, strigoiSunsetLabel(h.stripHoursToDusk))
+
+	if h.stripMoon != "" {
+		parts = append(parts, h.stripMoon)
+	}
+
+	h.stripText = strings.Join(parts, strigoiStripSeparator)
+	h.clockStrip.SetText(h.stripText)
+}
+
+// renderClockStrip draws the clock strip. The label is invisible to the
+// UIManager, so this is the only thing that paints it (no double render).
+func (h *HUD) renderClockStrip(target d2interface.Surface) {
+	if h.clock == nil || h.clockStrip == nil || h.stripText == "" {
+		return
+	}
+
+	h.clockStrip.SetPosition(clockStripX, clockStripY)
+	h.clockStrip.Render(target)
+}
+
 // Advance updates syncs data on widgets that might have changed. I.e. the current stamina value
 // in the stamina tooltip
 func (h *HUD) Advance(elapsed float64) {
+	h.refreshClockStrip()
 	h.setStaminaTooltipText()
 	h.setExperienceTooltipText()
 

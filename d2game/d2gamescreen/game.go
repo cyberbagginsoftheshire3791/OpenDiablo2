@@ -1043,7 +1043,7 @@ func (v *Game) bindGameControls() error {
 		var err error
 		v.gameControls, err = d2player.NewGameControls(v.asset, v.renderer, player, v.gameClient.MapEngine,
 			v.escapeMenu, v.mapRenderer, v, v.terminal, v.uiManager, v.keyMap, v.audioProvider, v.logLevel,
-			v.gameClient.IsSinglePlayer(), v.gameClient.Players)
+			v.gameClient.IsSinglePlayer(), v.gameClient.Players, v.worldClock)
 
 		if err != nil {
 			return err

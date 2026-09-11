@@ -212,6 +212,22 @@ func (c *Clock) Stage() Stage {
 	}
 }
 
+// HoursToDusk returns world hours until the next DuskStart (19:45), always in
+// [0, 24). This is the HUD's "time to sunset" (S1 §3.4): it counts down to the
+// clock's own dusk transition — the moment the night rate and spawn stage
+// change — not to true astronomical sunset (19:49–19:50 this slice; ruled
+// 11 Sep, the gap being below the one-decimal-hour display precision). It is
+// 17.0 at the dawn epoch (02:45) and wraps to the following day's dusk
+// overnight, so the readout is never negative.
+func (c *Clock) HoursToDusk() float64 {
+	d := math.Mod(c.dials.DuskStart-c.MinuteOfDay(), minutesPerDay)
+	if d < 0 {
+		d += minutesPerDay
+	}
+
+	return d / minutesPerHour
+}
+
 // Date returns the Julian civil date (R1 §4: the calendar everyone in the
 // fiction keeps).
 func (c *Clock) Date() (year, month, day int) {

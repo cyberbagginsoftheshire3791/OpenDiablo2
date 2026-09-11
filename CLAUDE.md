@@ -140,7 +140,11 @@ capitalized `Docs/`, it aliases on Windows and collides on Linux).
   (`d2render/ebiten`, `d2audio/ebiten`, `d2input/ebiten`); before adding tests
   to a package, `go list -deps <pkg> | grep hajimehoshi/ebiten` must be empty
   (the M3.3 FrameDeltas placement, the GlyphPrinter move, and the M3.4
-  d2input fix were all this rule).
+  d2input fix were all this rule). **`d2game/d2player` must stay ebiten-free
+  too:** M4.4a gave it its first `d2core/d2world` import (the clock strip), and
+  it still links zero ebiten (`go list -deps ./d2game/d2player`). `gate.ps1`
+  checks `d2world`, `d2input`, `d2maprenderer` and now `d2player`; **CI does
+  not enforce the ebiten check** (it is a laptop-only gate).
 - `d2core/` — `d2asset` (asset manager, the hub), `d2records` (76 TXT tables
   → typed records; the layer our own data replaces), `d2map/*` (engine,
   Act-1-only generator, DS1 stamps, four-pass renderer), `d2mapentity`
