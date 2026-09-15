@@ -1,6 +1,6 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-09-14 (hardening burst, CT). **This file is capped at one screen.** It
+Updated: 2026-09-15 (M4.4c-1, CT). **This file is capped at one screen.** It
 held 528 lines until today and told a session more about finished
 milestones than about the next hour; the body was frozen into
 `docs/focus-archive-2026-09-05.md` and is not appended to again. **If you
@@ -46,26 +46,32 @@ rather than improvising a shortened version of it.
 
 ## The build order -- identities, not a schedule (ruled 12 Sep)
 
-    hardening burst (this) -> M4.4c-1 (squads on screen) -> the paper night
-    -> M4.4c-2 (the hands: turn UI, attack, light, DOUSE) -> death screen v0
-    -> pre-flight brief -> friends build #1 (amazon) -> M4.7 -> M4.6
+    [done] hardening burst -> [done] M4.4c-1 (squads on screen)
+    -> THE PAPER NIGHT (next; no code) -> M4.4c-2 (the hands: turn UI,
+    attack, light, DOUSE) -> death screen v0 -> pre-flight brief
+    -> friends build #1 (amazon) -> M4.7 -> M4.6
 
-**M4.5 CLOSED 9 Sep. M4.4a (the eyes -- the clock strip) SHIPPED 11 Sep.** The
-hardening burst is the 12 Sep audit's ten mechanical fixes (Escape pauses the
-world, no saved death, the delta clamp, ghost-chase release, the A* skip, the
-moon from the day table, day-table tests, a crash log, the loose-file Exists
-fix, S15/S6) plus the record. **The paper night is Josh + a friend with a
-stopwatch, no model, no code**, before c-2's brief. **M4.7 = the corpse machine
-+ one rite verb with a game caller**, owning 22:00-04:00; D9 (pack arrival)
-first. M4.6's note is the candidate owner of the world save (no mid-run save in
-build #1; load = a new dawn). The three meters are HELD to M4.4c; the unit of
-every bar is the SQUAD.
+**M4.5 CLOSED 9 Sep. M4.4a SHIPPED 11 Sep. The hardening burst SHIPPED 14 Sep
+(`aeabdb54`). M4.4c-1 SHIPPED 15 Sep (`affded41`)** -- the player commands
+squads; bars and cues over his models and over beasts and men, never the dead
+and never a corpse; click-or-`G` selection; the sheet of cards. **NEXT is the
+paper night: Josh + a friend with a stopwatch, no model, no code**, and its
+numbers open c-2's section 0. **M4.7 = the corpse machine + one rite verb with
+a game caller**, owning 22:00-04:00; D9 (pack arrival) first. M4.6's note is
+the candidate owner of the world save (no mid-run save in build #1; load = a
+new dawn).
 
-**Map fires: RULED 11 Sep** (`dd2b7d99` / `tools/mapfirecount` did ask 1;
-about twenty-one lit objects, none lit in its placed mode). A map fire is a
-hearth someone else lit (radius 8, Burn negative, no new category), and the
-slice's fires are AUTHORED BY HAND after friends build #1 -- no lighting
-engine code, and time the per-tile loop, then.
+**⚠ A GREEN GATE DOES NOT CATCH AN ASSERTION THAT CANNOT FAIL** (15 Sep).
+c-1 passed the gate, 25 scripts and six negative controls; an adversarial
+review then found eight A-severity findings, three of which were assertions
+that could not fail on any run. **Every new assertion gets its own negative
+control at the moment it is written**, and `brief-then-attack`'s second
+reader runs **on the diff, before the commit**. Read provider numbers through
+`mustNum`, never `num`: `num` cannot tell "absent" from "zero".
+
+**Map fires: RULED 11 Sep** -- a hearth someone else lit (radius 8, Burn
+negative, no new category), AUTHORED BY HAND after friends build #1; no
+lighting engine code. Detail in `state.md`.
 
 **The worldgen default branch was FIXED on 28 Aug** (`47f0dc95`,
 `pickTownWithWilderness` + `usableTownIndex`, asserted across six seeds by
