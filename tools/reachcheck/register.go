@@ -84,7 +84,7 @@ const (
 // nothing here has to be taken on trust.
 var Register = []Entry{
 	// ---------------------------------------------------------------
-	// WIRE -- the drive train. Sixteen rows, all measured live.
+	// WIRE -- the drive train, all measured live.
 	//
 	// These are also the gate's positive control: if the analysis ever
 	// silently stops reaching anything, these go red instead of the whole
@@ -203,7 +203,7 @@ var Register = []Entry{
 	{sym(pkgWorld, "Spawns.Routing"), BucketWire, VerdictLive,
 		"The rout THRESHOLD, read rather than recomputed. M4.3b built this flag and signed its behaviour over to M4.5; step 5 is where something finally reads it, from routeIfBroken, after a death has hurt the pack. Testing morale <= 25 on the combat side instead would have been a second home for a runtime-settable dial.", ""},
 	{sym(pkgWorld, "Pursuit.Release"), BucketWire, VerdictLive,
-		"The only way a chase ends, and step 5 is the step that ends one. Called from the resolver when an enemy dies, when a pack breaks, and when quick-resolve finishes a fight. IT IS HALF OF A PAIR: startChasesForTheAware runs every frame with no liveness filter, so a release on its own is undone on the very next frame, and the same death also calls Notice.Unwatch.", ""},
+		"The only way a chase ends. Called from the resolver when an enemy dies, when a pack breaks, and when quick-resolve finishes a fight -- and, since the hardening burst (14 Sep 2026), from Spawns.Despawn: a pack sent home at daybreak releases its members' chases too, or they become ghost pursuits re-pathing an A* forever for a member no longer on the map (audit B2). IT IS HALF OF A PAIR: startChasesForTheAware runs every frame with no liveness filter, so a release on its own is undone on the very next frame, and the same death also calls Notice.Unwatch.", ""},
 
 	// M4.4a -- THE EYES. Five Clock reads for the HUD's always-visible clock
 	// strip, which is d2player's first d2core/d2world import (threaded in at

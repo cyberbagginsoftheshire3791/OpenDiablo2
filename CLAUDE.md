@@ -110,6 +110,15 @@ closeout is how a step ships with the register half-run.
   `%AppData%\OpenDiablo2\config.json` (created on first run).
 - M1.1 verified by hand: trademark screen → single player → character
   created → Rogue Encampment walkable.
+- **Escape pauses the world** (14 Sep 2026): the escape menu freezes the
+  clock, meters, spawns, chases and combat — `advanceWorld` is gated in
+  `Game.Advance` on the same condition as `MapEngine.Advance`. The HUD strip
+  may still refresh; the world must not.
+- **Crash/diagnostic log** (14 Sep 2026): a friend's build tees `log` to
+  `%LOCALAPPDATA%\Strigoi\strigoi.log` (append) and writes a panic's stack
+  there before exiting — a double-clicked console-subsystem exe has its own
+  console freed by ebiten's `hideconsole`, so stderr is gone (`main.go`,
+  `d2app/logfile.go`).
 
 ## Commands
 
@@ -120,6 +129,11 @@ closeout is how a step ships with the register half-run.
     go run ./tools/strigoihook check-fixtures         # Article V (CI runs it too)
     go build -tags harness -o od2-harness.exe . && ./od2-harness.exe -harness   # the playtest harness (docs/harness.md)
     go test -tags playtest ./playtest/... -v -count=1  # playtest scripts: laptop only, never CI
+
+    # Versioned gate scripts (moved into scripts/ 14 Sep 2026; logs -> strigoi-harness-runs\):
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\gate.ps1        # the full gate into a log
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\reach-gate.ps1  # the reachability register (deadcode on PATH)
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\playtest.ps1 -Run .   # every playtest script
 
 ## Map of the code — verified by the M2.1 archaeology pass (2026-08-21)
 

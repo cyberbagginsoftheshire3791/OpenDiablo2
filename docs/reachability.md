@@ -119,8 +119,10 @@ go run ./tools/reachcheck -only Notice -v      # one system, with full deadcode 
 `go install golang.org/x/tools/cmd/deadcode@v0.49.0` (the version these
 controls were measured against).
 
-There is also `strigoi-harness-runs\reach-gate.ps1`, which runs it into a log
-the same way `gate.ps1` and `playtest.ps1` do. Launch minimized, poll the log.
+There is also `scripts\reach-gate.ps1`, which runs it into a log the same way
+`scripts\gate.ps1` and `scripts\playtest.ps1` do. Launch minimized, poll the log.
+(The four gate scripts moved into the repo's `scripts/` on 14 Sep 2026 so the
+instrument is versioned; the logs still go to `strigoi-harness-runs\`.)
 
 **Measured cost, 28 Aug 2026, warm build cache on the laptop: a mean of 4.7 s
 per `deadcode` invocation** over 136 invocations. Two invocations per symbol,
