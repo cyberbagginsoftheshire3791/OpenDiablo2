@@ -36,5 +36,6 @@ the hardening burst on is added here.
 | 2026-09-10 | 10 Sep suite | ≥15 | (unrecorded) | the playtest suite (`Session - Claude Code 10 Sep 2026.md`) |
 | 2026-09-11 | M4.4a | 4 | (unrecorded) | M4.4a build note |
 | 2026-09-14 | `344da610` (pre-edits) | 1 | 0 | §0(a) escape-pause act; clean launch, no map-load crash (`game-20260914-203931.log`) |
+| 2026-09-14 | hardening burst (harness) | 17 | 0 | full playtest suite via `scripts\playtest.ps1`, all 24 tests green, no map-load crash (`playtest-hardening-2026-09-14.txt`) |
 
 *The night is the enemy · history is the clock · grounded, then supernatural · one region done deeply.*
