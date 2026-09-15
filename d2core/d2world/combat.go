@@ -1169,12 +1169,20 @@ func (c *Combat) HarnessState() map[string]interface{} {
 			"damage_min": melee.DamageMin,
 			"damage_max": melee.DamageMax,
 
-			// NO health, deliberately, and combat_test.go:395 (unit) and
-			// combat_body_test.go:226-228 (playtest) pin the absence: the
-			// player's health is the meters', and one truth
-			// with two homes is the disease. A blow on the player is
-			// evidenced by its action row's target_health_after, which is the
-			// blow's own fact rather than a second copy of the meter.
+			// NO health, deliberately: the player's health is the meters',
+			// and one truth with two homes is the disease. A blow on the
+			// player is evidenced by its action row's target_health_after,
+			// which is the blow's own fact rather than a second copy of the
+			// meter.
+			//
+			// Two assertions pin the absence: combat_test.go:401 (unit -- the
+			// require.NotContains on parts[0]) and combat_body_test.go:226-228
+			// (playtest -- the playerRow["health"] dup check). Both are NAMED
+			// as well as numbered because this comment IS correction S6: it
+			// cited :395 until M4.4c-1's own six added lines in
+			// combat_test.go moved the assertion out from under it, which is
+			// the drift S6 was filed for, recurring in the same burst that
+			// was told to fix it.
 		}
 
 		if c.illum != nil {
