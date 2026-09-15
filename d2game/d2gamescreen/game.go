@@ -131,6 +131,13 @@ func CreateGame(
 			adopt:   game.adoptNPCBody,
 			release: game.releaseNPCBody,
 		},
+
+		// Pursuit is the Chases seam: despawning a pack releases its members'
+		// chases so a group sent home at daybreak leaves no ghost pursuit
+		// re-pathing forever (item 4). *Pursuit already satisfies Chases via
+		// Release; it is built above, so it is in hand here.
+		game.pursuit,
+
 		game.light,
 		gameClient.Seed,
 		d2world.DefaultSpawnDials(),
@@ -323,8 +330,15 @@ func (v *Game) OnUnload() error {
 		return err
 	}
 
-	if err := v.OnPlayerSave(); err != nil {
-		return err
+	// Do not write a dead hero (12 Sep 2026 ruling; audit A2): a saved 0-HP hero
+	// loads as an un-killable, un-feedable corpse on every launch of that .od2.
+	// The load path revives one anyway (d2hero.reviveIfDead), and the death
+	// screen v0's "quit" must not save either (attack catch 4a). Before the
+	// controls bind localPlayer is nil, and the original always-save stands.
+	if shouldSaveOnUnload(v.localPlayer) {
+		if err := v.OnPlayerSave(); err != nil {
+			return err
+		}
 	}
 
 	if err := v.gameClient.Close(); err != nil {
@@ -373,11 +387,19 @@ func (v *Game) Render(screen d2interface.Surface) {
 // Advance runs the update logic on the Gameplay screen
 // nolint:gocyclo // not need to change
 func (v *Game) Advance(elapsed float64) error {
-	v.advanceWorld(elapsed)
-
 	v.soundEngine.Advance(elapsed)
 
+	// The world pauses under the escape menu (ruled 12 Sep 2026). At 344da610
+	// advanceWorld ran ABOVE this gate, so the clock, meters, spawns, chases and
+	// combat rounds all ran while the menu was up -- a friend who pressed Esc to
+	// answer the door came back to a clock that had run ~4 world minutes per real
+	// second (audit A1; §0 measured +40 world minutes over 600 stepped frames
+	// under the menu). advanceWorld now shares MapEngine.Advance's condition: the
+	// HUD strip may still refresh (gameControls.Advance, below), but the world
+	// does not move. The gameClient.Players fence is the c-1 note's, and its
+	// stated reason -- the escape-menu pause -- is finally true.
 	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
+		v.advanceWorld(elapsed)
 		v.gameClient.MapEngine.Advance(elapsed)
 	}
 
@@ -618,7 +640,7 @@ func (r mapRouter) Route(fromX, fromY, toX, toY float64) ([][2]float64, bool) {
 		return nil, false
 	}
 
-	for _, n := range neighboursNearest(fromX, fromY, toX, toY) {
+	for _, n := range unblockedNeighbours(fromX, fromY, toX, toY, r.blockedTile) {
 		beside, ok := r.routeExact(fromX, fromY, toX+n[0], toY+n[1])
 		if ok {
 			return beside, true
@@ -676,6 +698,51 @@ func neighboursNearest(fromX, fromY, toX, toY float64) [8][2]float64 {
 	}
 
 	return out
+}
+
+// unblockedNeighbours is the eight tiles around a goal, nearest to the hunter
+// first (neighboursNearest), with the ones that are THEMSELVES blocked dropped
+// before Route pays for a search toward them.
+//
+// A blocked goal never enters the A*'s open set, so routeExact on one expands to
+// the whole budget (maxExpandedNodes) and returns nothing usable -- and Route
+// tries up to nine tiles per solve, every re-path, for every chasing hunter. A
+// quarry with a wall or fence beside it (a friend inside a yard, wolves outside)
+// is the reachable worst case (audit B3, 12 Sep 2026). Skipping a blocked
+// candidate changes no output -- routeExact would have returned ok=false for it
+// anyway -- so the route Pursuit gets is identical; only the wasted searches go.
+//
+// It takes a plain predicate so it is testable without a map engine, exactly as
+// neighboursNearest is; the nearest-first order is preserved, only blocked
+// candidates drop out.
+func unblockedNeighbours(fromX, fromY, toX, toY float64, blocked func(tileX, tileY float64) bool) [][2]float64 {
+	nearest := neighboursNearest(fromX, fromY, toX, toY)
+
+	out := make([][2]float64, 0, len(nearest))
+
+	for _, n := range nearest {
+		if blocked(toX+n[0], toY+n[1]) {
+			continue
+		}
+
+		out = append(out, n)
+	}
+
+	return out
+}
+
+// blockedTile reports whether a world tile is blocked, by asking the map engine
+// about the subtile routeExact would target: PathFind floors
+// NewPositionTile(tileX, tileY), i.e. the subtile at floor(tileX * 5).
+func (r mapRouter) blockedTile(tileX, tileY float64) bool {
+	if r.engine == nil {
+		return false
+	}
+
+	return r.engine.BlockedAt(
+		int(math.Floor(tileX*subTilesPerTile)),
+		int(math.Floor(tileY*subTilesPerTile)),
+	)
 }
 
 // routeExact asks for a route to precisely the given point.
@@ -1015,6 +1082,15 @@ type playerBody struct{ player *d2mapentity.Player }
 func (b playerBody) CurrentHealth() int { return b.player.Stats.Health }
 func (b playerBody) MaxHealth() int     { return b.player.Stats.MaxHealth }
 func (b playerBody) SetHealth(h int)    { b.player.Stats.Health = h }
+
+// shouldSaveOnUnload reports whether OnUnload should persist the hero. It saves
+// unless the local player is DEFINITIVELY dead (Stats.IsDead): a saved 0-HP hero
+// loads as an un-killable, un-feedable corpse (audit A2, 12 Sep 2026 ruling).
+// A nil player -- before the controls bind -- cannot be judged dead, so the
+// original always-save behaviour is kept (IsDead is nil-safe for nil stats).
+func shouldSaveOnUnload(p *d2mapentity.Player) bool {
+	return p == nil || !p.Stats.IsDead()
+}
 
 // Only Pursuit and Notice get an accessor, and the asymmetry is deliberate:
 // d2app does not import d2core/d2world, so it cannot name those two types, and

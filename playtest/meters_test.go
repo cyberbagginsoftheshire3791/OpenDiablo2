@@ -35,7 +35,7 @@ func TestSurvivalMeters(t *testing.T) {
 		// The signed dials (build note §4). Hardcoded on purpose: if a dial
 		// moves, this script should say so.
 		foodDrain    = 3.0
-		waterDrain   = 4.5
+		waterDrain   = 2.25 // [DIAL] halved from 4.5 on 11 Sep; moves with meters.go (S15)
 		fatigueDrain = 3.5
 		warnLevel    = 33.0
 		noReaction   = 75.0

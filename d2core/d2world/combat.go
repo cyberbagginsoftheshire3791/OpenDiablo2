@@ -301,7 +301,8 @@ type CombatDials struct {
 	// the first adjacent living enemy in the order, "hold" does nothing.
 	//
 	// IT IS A STAND-IN AND IT IS REPORTED AS ONE. There is no player attack
-	// verb in the engine, no turn UI until M4.4, and no blow tool in the
+	// verb in the engine, no turn UI until M4.4c-2 (M4.4a shipped the clock
+	// strip only; the hands are M4.4c-2), and no blow tool in the
 	// harness by design -- so without a policy a real build's fight has only
 	// one side acting and every fight ends player_dead, which is "you can
 	// lose" only in the sense that a wall can lose. The turn UI replaces the
@@ -835,9 +836,10 @@ func (c *Combat) deadByBody(id string) bool {
 //
 // This is R2 §3's "escape and sanctuary" seen from the other side --
 // disengagement is real and supported, and walking out of reach is the whole
-// of it in v0. What ENDS a chase is Pursuit.Release, which is still deferred:
-// a pack that loses its fight keeps following, and that is correct until the
-// resolver can kill something.
+// of it in v0. What ENDS a chase is Pursuit.Release, wired since step 5
+// (combat_resolver.go withdraw, on a death or a rout) and, since the hardening
+// burst, also from Spawns.Despawn when a pack is sent home at daybreak. Ending
+// the encounter here does not end the chase; that lives there.
 func (c *Combat) pruneOrEnd() {
 	e := c.encounter
 
@@ -1153,8 +1155,9 @@ func (c *Combat) HarnessState() map[string]interface{} {
 			"damage_min": melee.DamageMin,
 			"damage_max": melee.DamageMax,
 
-			// NO health, deliberately, and combat_body_test.go:208-209 pins
-			// the absence: the player's health is the meters', and one truth
+			// NO health, deliberately, and combat_test.go:395 (unit) and
+			// combat_body_test.go:226-228 (playtest) pin the absence: the
+			// player's health is the meters', and one truth
 			// with two homes is the disease. A blow on the player is
 			// evidenced by its action row's target_health_after, which is the
 			// blow's own fact rather than a second copy of the meter.

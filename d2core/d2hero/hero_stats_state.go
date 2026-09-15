@@ -54,3 +54,15 @@ func (f *HeroStateFactory) CreateHeroStatsState(heroClass d2enum.Hero, classStat
 
 	return &result
 }
+
+// IsDead reports whether these stats describe a hero at or below zero health.
+// It is nil-safe so callers need not guard a missing stats block.
+//
+// Ruled 12 Sep 2026: friends build #1 has no mid-run save, so "load last save"
+// is a new dawn -- a saved 0-HP hero must never persist as an un-killable,
+// un-feedable corpse (audit A2). This predicate is what the save guard
+// (OnUnload) and the load reset (reviveIfDead) both ask. A real world save
+// (clock, meters, day index, open bodies) is owed to a later milestone.
+func (s *HeroStatsState) IsDead() bool {
+	return s != nil && s.Health <= 0
+}

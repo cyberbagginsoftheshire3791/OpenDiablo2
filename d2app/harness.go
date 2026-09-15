@@ -207,12 +207,9 @@ func (a *App) harnessStart() {
 
 	base := *harness.outFlag
 	if base == "" {
-		root := os.Getenv("LOCALAPPDATA")
-		if root == "" {
-			root, _ = os.UserCacheDir()
-		}
-
-		base = filepath.Join(root, "Strigoi", "harness", "runs")
+		// Reuse the one place the root is derived (logfile.go), so the harness
+		// run dirs and the crash log agree on %LOCALAPPDATA%\Strigoi.
+		base = filepath.Join(DataDir(), "harness", "runs")
 	}
 
 	harness.runDir = filepath.Join(base, time.Now().Format("20060102-150405"))

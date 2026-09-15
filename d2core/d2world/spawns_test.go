@@ -109,7 +109,7 @@ func newTestSpawns(t *testing.T) (*Spawns, *Clock, *Notice, *fakeSpawner, *fakeQ
 	spawner := &fakeSpawner{}
 	target := &fakeQuarry{id: "p:1", x: 40, y: 40}
 
-	s := NewSpawns(clock, notice, spawner, &fakeIllumination{}, 1462, DefaultSpawnDials())
+	s := NewSpawns(clock, notice, spawner, nil, &fakeIllumination{}, 1462, DefaultSpawnDials())
 	s.SetTarget(target)
 
 	t.Cleanup(s.Close)
@@ -205,7 +205,7 @@ func TestSpawnsLightWeightDrawsTheHumanRow(t *testing.T) {
 	clock := NewClock(DefaultClockDials())
 	illum := &fakeIllumination{level: 0}
 	notice := NewNotice(&fakeSight{clear: true}, illum, DefaultNoticeDials())
-	s := NewSpawns(clock, notice, &fakeSpawner{}, illum, 1462, DefaultSpawnDials())
+	s := NewSpawns(clock, notice, &fakeSpawner{}, nil, illum, 1462, DefaultSpawnDials())
 
 	defer s.Close()
 
@@ -299,7 +299,7 @@ func TestSpawnsAreDeterministicUnderASeed(t *testing.T) {
 		dials := DefaultSpawnDials()
 		dials.Chance = 3
 
-		s := NewSpawns(clock, notice, spawner, &fakeIllumination{}, 1462, dials)
+		s := NewSpawns(clock, notice, spawner, nil, &fakeIllumination{}, 1462, dials)
 		defer s.Close()
 
 		s.SetTarget(&fakeQuarry{id: "p:1", x: 40, y: 40})
@@ -362,6 +362,51 @@ func TestSpawnsDespawnUnwatchesItsMembers(t *testing.T) {
 	}
 }
 
+// TestSpawnsDespawnReleasesChases pins item 4 (12 Sep 2026): a despawn releases
+// each member's chase through the Chases seam, or Pursuit re-solves an A* forever
+// for a member no longer on the map -- a ghost chase that only grows across the
+// night (audit B2). clearAtDaybreak sends home every un-aware pack, so this is
+// the daybreak path as well as the harness one.
+//
+// Negative control: drop the s.chases.Release call in Despawn and the fake's
+// release count falls to zero -- this fails.
+func TestSpawnsDespawnReleasesChases(t *testing.T) {
+	clock := NewClock(DefaultClockDials())
+	notice := NewNotice(&fakeSight{clear: true}, &fakeIllumination{}, DefaultNoticeDials())
+	spawner := &fakeSpawner{}
+	chases := &fakeChases{chasing: map[string]bool{}} // reuses combat_resolver_test.go's fake
+
+	s := NewSpawns(clock, notice, spawner, chases, &fakeIllumination{}, 1462, DefaultSpawnDials())
+	defer s.Close()
+
+	s.SetTarget(&fakeQuarry{id: "p:1", x: 40, y: 40})
+	advanceClockToStage(t, clock, StageNight)
+	require.NoError(t, s.HarnessSet("chance", 100.0))
+	s.Advance(s.dials.CheckMinutes)
+
+	require.Positive(t, s.Groups(), "a group must exist to despawn")
+
+	id := s.HarnessState()["group_list"].([]map[string]interface{})[0]["group"].(string)
+
+	// Mark every member as actively chasing, so Release reports true for each --
+	// the daybreak/ghost-chase case the fix targets.
+	grp := s.groups[id]
+	for _, m := range grp.members {
+		chases.chasing[m.WatcherID()] = true
+	}
+
+	members := len(grp.members)
+	require.Positive(t, members)
+
+	require.True(t, s.Despawn(id))
+
+	assert.Equal(t, members, len(chases.released),
+		"every member's chase is released on despawn")
+	assert.Equal(t, members, s.HarnessState()["chase_releases"].(int),
+		"the provider reports each released chase")
+	assert.True(t, s.HarnessState()["has_chases"].(bool))
+}
+
 // The morale STATE is this milestone's; the rout BEHAVIOUR is M4.5's. The
 // third provider rule says a reported value needs a verb that moves it.
 func TestSpawnsMoraleIsWritableAndRoutingFollowsIt(t *testing.T) {
@@ -398,7 +443,7 @@ func TestSpawnsFailedSpawnIsCountedNotFatal(t *testing.T) {
 	notice := NewNotice(&fakeSight{clear: true}, &fakeIllumination{}, DefaultNoticeDials())
 	spawner := &fakeSpawner{fail: true}
 
-	s := NewSpawns(clock, notice, spawner, &fakeIllumination{}, 1462, DefaultSpawnDials())
+	s := NewSpawns(clock, notice, spawner, nil, &fakeIllumination{}, 1462, DefaultSpawnDials())
 	defer s.Close()
 
 	s.SetTarget(&fakeQuarry{id: "p:1"})
@@ -438,7 +483,7 @@ func TestSpawnsReportsWhetherNoticeIsWired(t *testing.T) {
 	clock := NewClock(DefaultClockDials())
 	blind := NewNotice(nil, nil, DefaultNoticeDials())
 
-	s := NewSpawns(clock, blind, &fakeSpawner{}, nil, 1462, DefaultSpawnDials())
+	s := NewSpawns(clock, blind, &fakeSpawner{}, nil, nil, 1462, DefaultSpawnDials())
 	defer s.Close()
 
 	assert.False(t, s.HarnessState()["notice_wired"].(bool))
@@ -493,7 +538,7 @@ func TestSpawnsWithoutATargetDoesNothing(t *testing.T) {
 	notice := NewNotice(&fakeSight{clear: true}, &fakeIllumination{}, DefaultNoticeDials())
 	spawner := &fakeSpawner{}
 
-	s := NewSpawns(clock, notice, spawner, &fakeIllumination{}, 1462, DefaultSpawnDials())
+	s := NewSpawns(clock, notice, spawner, nil, &fakeIllumination{}, 1462, DefaultSpawnDials())
 	defer s.Close()
 
 	advanceClockToStage(t, clock, StageNight)

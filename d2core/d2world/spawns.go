@@ -43,6 +43,13 @@ type Spawns struct {
 	spawner Spawner
 	target  Quarry
 
+	// chases is how a despawn releases its members' pursuits. It is the same
+	// Chases seam the combat resolver uses to end a chase on a death, reused
+	// here so a pack sent home at daybreak does not leave ghost pursuits behind
+	// (audit B2, 12 Sep 2026). Nil is legal and means nothing is released, which
+	// is what every build before the hardening burst did.
+	chases Chases
+
 	rng *rand.Rand
 
 	groups  map[string]*group
@@ -57,6 +64,7 @@ type Spawns struct {
 	failures  int
 	despawned int // members taken back out of the world
 	cleared   int // groups sent home at daybreak
+	released  int // chases released on despawn
 }
 
 // Spawner is the only thing Spawns needs from the world outside: make count
@@ -299,7 +307,7 @@ type group struct {
 // of this system's own, seeded here, so two launches of one build at one seed
 // produce the same arrivals. Every draw below happens in a fixed order for the
 // same reason the A* never ranges a map.
-func NewSpawns(clock *Clock, notice *Notice, spawner Spawner, illum Illumination,
+func NewSpawns(clock *Clock, notice *Notice, spawner Spawner, chases Chases, illum Illumination,
 	seed int64, dials SpawnDials) *Spawns {
 	s := &Spawns{
 		dials:   dials,
@@ -307,6 +315,7 @@ func NewSpawns(clock *Clock, notice *Notice, spawner Spawner, illum Illumination
 		notice:  notice,
 		illum:   illum,
 		spawner: spawner,
+		chases:  chases,
 		rng:     rand.New(rand.NewSource(seed)), // nolint:gosec // gameplay RNG, seeded for reproducibility
 		groups:  make(map[string]*group),
 		nextID:  1,
@@ -595,9 +604,21 @@ func (s *Spawns) Despawn(groupID string) bool {
 		s.spawner.Despawn(g.members)
 	}
 
-	if s.notice != nil {
-		for _, m := range g.members {
-			s.notice.Unwatch(m.WatcherID())
+	// Stop watching AND release each member's chase. A daybreak clear (or a
+	// harness despawn) that removed the entity but left its pursuit made a GHOST
+	// chase -- Pursuit.Advance kept re-solving an A* for a member no longer on
+	// the map (audit B2, 12 Sep 2026). Notice.Unwatch is one half; releasing the
+	// chase through the Chases seam is the other, the same pairing withdraw()
+	// uses on a death.
+	for _, m := range g.members {
+		id := m.WatcherID()
+
+		if s.notice != nil {
+			s.notice.Unwatch(id)
+		}
+
+		if s.chases != nil && s.chases.Release(id) {
+			s.released++
 		}
 	}
 
@@ -898,6 +919,8 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 		"spawn_failures": s.failures,
 		"despawned":      s.despawned,
 		"cleared":        s.cleared,
+		"chase_releases": s.released,
+		"has_chases":     s.chases != nil,
 		"check_minutes":  s.dials.CheckMinutes,
 		"chance":         s.dials.Chance,
 		"rout_at":        s.dials.RoutAt,

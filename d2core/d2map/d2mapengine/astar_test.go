@@ -154,6 +154,29 @@ func TestPathFindOffTheMapDoesNotPanic(t *testing.T) {
 	})
 }
 
+// TestSearchExpansionIsVisibleAndBoundedByABlockedGoal pins item 5's measurement
+// side (12 Sep 2026): a search toward a reachable nearby goal expands few nodes,
+// while a search toward a blocked goal never enters the open set and expands to
+// the whole budget -- the cost mapRouter.Route's blocked-neighbour skip avoids
+// (audit B3). searchResult.expanded exposes the count through what the tests
+// already read.
+func TestSearchExpansionIsVisibleAndBoundedByABlockedGoal(t *testing.T) {
+	m := testEngine(20, 20) // 100x100 subtiles, wide open
+
+	// A reachable goal a short walk away: cheap.
+	near := m.search(subTile{10, 10}, subTile{16, 16})
+	require.True(t, near.exact, "the near goal is reachable")
+	require.Less(t, near.expanded, 100, "a short reachable route expands few nodes")
+
+	// Block the goal subtile itself, then search it from across the open map. It
+	// can never be reached, so the search expands until the budget stops it.
+	block(m, 60, 60)
+	walled := m.search(subTile{10, 10}, subTile{60, 60})
+	require.False(t, walled.exact, "a blocked goal is never reached")
+	require.Greater(t, walled.expanded, 100, "a blocked goal burns far more than a reachable one")
+	require.LessOrEqual(t, walled.expanded, maxExpandedNodes, "but never past the budget")
+}
+
 func TestOctileDistanceIsAdmissible(t *testing.T) {
 	// The heuristic must never exceed the true cost of an unobstructed walk,
 	// or the search stops returning shortest paths.

@@ -187,3 +187,73 @@ func TestClockHUD(t *testing.T) {
 		}
 	}
 }
+
+// TestEscapePausesTheWorld is the hardening burst's item 1 act (12 Sep 2026): with
+// the escape menu open, the world must not advance. At 344da610 advanceWorld ran
+// ABOVE the escape-menu gate (game.go:376 above :380), so the clock, meters,
+// spawns, chases and combat rounds all ran under the menu -- a friend who pressed
+// Esc to answer the door at night came back to a clock that had run ~4 world
+// minutes per real second, empty meters, and packs that had noticed and chased
+// (audit A1). Ruled 12 Sep: the world pauses under the menu.
+//
+// It joins this file rather than opening a sixteenth script: the docs-count gate
+// counts files matching \bstart\(, and clock_hud_test.go already matches.
+//
+// NEGATIVE CONTROL (and the §0(a) measurement): revert the advanceWorld move in
+// game.go and this act fails, reporting how many world minutes ran under the menu
+// across 600 stepped frames -- which is exactly what §0(a) went to measure.
+func TestEscapePausesTheWorld(t *testing.T) {
+	s := start(t)
+
+	// Harness-paused so stepping is under the script's control; the world is
+	// still born frozen until start_game returns (the M3.3 recipe).
+	s.call("strigoi_pause", map[string]any{})
+
+	s.call("strigoi_start_game", map[string]any{
+		"hero_name": "Esc", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
+	})
+
+	// Let the controls bind (the "ui" provider registers once the player exists).
+	// The born-frozen state ends when start_game returns, so plain frames now
+	// advance the clock.
+	s.call("strigoi_step", map[string]any{"frames": 30})
+
+	// POSITIVE CONTROL: the world really is running before the menu opens, so
+	// "unchanged under the menu" cannot pass merely because the clock was frozen.
+	w0 := num(sub(s.call("strigoi_get_system_state", map[string]any{"system": "clock"}), "state"), "world_minutes")
+	s.call("strigoi_step", map[string]any{"frames": 60})
+	wRun := num(sub(s.call("strigoi_get_system_state", map[string]any{"system": "clock"}), "state"), "world_minutes")
+
+	if wRun <= w0 {
+		t.Fatalf("positive control: the world was not running before the menu (%.4f -> %.4f)", w0, wRun)
+	}
+
+	// Open the escape menu.
+	s.call("strigoi_key", map[string]any{"key": "escape"})
+
+	ui := sub(s.call("strigoi_get_system_state", map[string]any{"system": "ui"}), "state")
+	if ui["escape_menu_open"] != true {
+		t.Fatalf("escape did not open the menu: %v", ui)
+	}
+
+	wMenu := num(sub(s.call("strigoi_get_system_state", map[string]any{"system": "clock"}), "state"), "world_minutes")
+
+	// Step 600 frames with the menu open. The HUD strip may refresh; the world
+	// must not move.
+	s.call("strigoi_step", map[string]any{"frames": 600})
+
+	wAfter := num(sub(s.call("strigoi_get_system_state", map[string]any{"system": "clock"}), "state"), "world_minutes")
+
+	// The menu is still up: gameControls.Advance still runs, only the world is
+	// gated.
+	ui = sub(s.call("strigoi_get_system_state", map[string]any{"system": "ui"}), "state")
+	if ui["escape_menu_open"] != true {
+		t.Fatalf("the menu closed itself during the step: %v", ui)
+	}
+
+	if math.Abs(wAfter-wMenu) > 1e-9 {
+		t.Fatalf("the world ran under the escape menu: world_minutes %.4f -> %.4f "+
+			"(+%.4f over 600 frames); advanceWorld must be gated on the menu (item 1)",
+			wMenu, wAfter, wAfter-wMenu)
+	}
+}

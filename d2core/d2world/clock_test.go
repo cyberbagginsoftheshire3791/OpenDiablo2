@@ -177,20 +177,40 @@ func TestClockFreezeHoldsTheWorld(t *testing.T) {
 	}
 }
 
+// TestMoonThinsAcrossTheRun pins Moon() to the generated day table (item 6, 12
+// Sep 2026): inside the slice the moon is the table's lit fraction, not the old
+// 0.55 − 0.09×night placeholder. The exact values are read FROM the table, not
+// typed here -- night one is the waning gibbous 0.693, the last night 0.152 --
+// and the moon must thin across the run (S1 §3.2).
+//
+// Negative control: point Moon() back at the MoonStart/MoonPerNight dial and the
+// night-one assertion fails (0.55 != 0.693).
 func TestMoonThinsAcrossTheRun(t *testing.T) {
 	c := NewClock(DefaultClockDials())
 	defer c.Close()
 
-	first := c.Moon()
+	firstRow := sliceDayTable[0]                   // 17 June 1462, night one
+	lastRow := sliceDayTable[len(sliceDayTable)-1] // 23 June 1462, the last night
 
-	// Six nights on: the last night must be darker than the first (S1 §3.2).
-	for c.DayIndex() < 5 {
+	first := c.Moon()
+	if math.Abs(first-firstRow.MoonLitPercent/100) > 1e-9 {
+		t.Fatalf("night-one moon %v, want the table's %v (0.693)", first, firstRow.MoonLitPercent/100)
+	}
+
+	// Step to the last row's day index.
+	target := julianDayNumber(lastRow.Year, lastRow.Month, lastRow.Day) -
+		julianDayNumber(EpochYear, EpochMonth, EpochDay)
+	for i := 0; c.DayIndex() < target && i < 100000; i++ {
 		c.Advance(60)
 	}
 
 	last := c.Moon()
+	if math.Abs(last-lastRow.MoonLitPercent/100) > 1e-9 {
+		t.Fatalf("last-night moon %v, want the table's %v (0.152)", last, lastRow.MoonLitPercent/100)
+	}
+
 	if last >= first {
-		t.Fatalf("moon did not thin: night 1 %v, night 6 %v", first, last)
+		t.Fatalf("moon did not thin: night one %v, last night %v", first, last)
 	}
 
 	if last < 0 {

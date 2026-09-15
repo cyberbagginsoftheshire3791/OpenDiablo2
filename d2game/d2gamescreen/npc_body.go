@@ -36,10 +36,10 @@ func (b *npcBody) CurrentHealth() int { return b.health }
 // MaxHealth is the monstats MaxHPNormal the body was adopted with.
 func (b *npcBody) MaxHealth() int { return b.maxHealth }
 
-// SetHealth writes the body's health. NOTHING CALLS THIS YET, deliberately:
-// a blow is what writes it, and the resolver that lands one is step 4. The
-// reachability register carries that as a deferral rather than leaving it to
-// be noticed.
+// SetHealth writes the body's health. The resolver that lands a blow is what
+// writes it -- M4.5 step 4, which shipped 3 Sep 2026: combat_resolver.go
+// reaches the body through Game.BodyOf (WIRE on the reachability register). The
+// "nothing calls this yet" the M4.1-era comment carried was true only until then.
 func (b *npcBody) SetHealth(h int) { b.health = h }
 
 // newNPCBody builds a body at full health from a monstats record's band.

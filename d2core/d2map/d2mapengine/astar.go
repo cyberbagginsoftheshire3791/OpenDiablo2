@@ -117,6 +117,13 @@ func (m *MapEngine) blockedAt(x, y int) bool {
 	return flags == nil || flags.BlockWalk
 }
 
+// BlockedAt reports whether a subtile cannot be walked, in the same terms the A*
+// uses. Exported so mapRouter.Route (d2game/d2gamescreen) can skip a neighbour
+// candidate tile that is itself blocked BEFORE paying for a full search toward
+// it: a blocked goal never enters the open set, so an unguarded routeExact there
+// expands to the whole budget and returns nothing usable (audit B3, 12 Sep 2026).
+func (m *MapEngine) BlockedAt(x, y int) bool { return m.blockedAt(x, y) }
+
 // octileDistance is the cost of an unobstructed 8-way walk between two
 // subtiles. It never overestimates -- a real route cannot beat a straight one
 // -- so it is admissible and the paths this search returns are shortest under
@@ -144,6 +151,11 @@ type searchResult struct {
 	cameFrom map[subTile]subTile
 	reached  subTile
 	exact    bool
+	// expanded is how many nodes this search popped and expanded. It is exposed
+	// so a test can prove that routing toward a blocked/walled goal burns the
+	// whole budget -- the cost mapRouter.Route's blocked-neighbour skip avoids
+	// (audit B3, 12 Sep 2026).
+	expanded int
 }
 
 // search runs the bounded A* and returns the route it found, or the closest
@@ -176,7 +188,7 @@ func (m *MapEngine) search(start, goal subTile) searchResult {
 		}
 
 		if here == goal {
-			return searchResult{cameFrom: cameFrom, reached: here, exact: true}
+			return searchResult{cameFrom: cameFrom, reached: here, exact: true, expanded: expanded}
 		}
 
 		if current.h < closestH {
@@ -225,7 +237,7 @@ func (m *MapEngine) search(start, goal subTile) searchResult {
 
 	// Either the budget ran out or the goal is walled off. Head for the
 	// closest approach instead of refusing to move.
-	return searchResult{cameFrom: cameFrom, reached: closest, exact: false}
+	return searchResult{cameFrom: cameFrom, reached: closest, exact: false, expanded: expanded}
 }
 
 // route walks the came-from chain back from the reached node and returns the

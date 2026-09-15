@@ -1,8 +1,10 @@
 package main
 
 import (
+	"io"
 	"log"
 	"os"
+	"runtime/debug"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2app"
 )
@@ -19,6 +21,27 @@ var GitCommit = "build"
 
 func main() {
 	log.SetFlags(log.Lshortfile)
+
+	// A friend's build writes a log and, on a panic, a stack to disk. A
+	// double-clicked Windows exe has its own console freed by ebiten's
+	// hideconsole (audit B6; §0(b) measured the exe as console-subsystem, so
+	// Windows allocates a console that hideconsole then frees), so stderr -- and
+	// a crash's stack -- would otherwise go nowhere. Tee log into the file
+	// BEFORE d2app.Create, so d2term's BindLogger wraps the file-inclusive
+	// writer (terminal.go) and the in-game console still works too.
+	if logFile := d2app.OpenLogFile(); logFile != nil {
+		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
+		log.Printf("OpenDiablo2 %s (%s) starting; log at %s", GitBranch, GitCommit, d2app.LogFilePath())
+	}
+
+	// A panic on the game loop would leave nothing on a double-clicked build.
+	// Write the panic and its stack to the tee'd log, then exit non-zero.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("OpenDiablo2 PANIC: %v\n%s", r, debug.Stack())
+			os.Exit(1)
+		}
+	}()
 
 	instance := d2app.Create(GitBranch, GitCommit)
 

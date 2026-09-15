@@ -183,6 +183,18 @@ func (f *HeroStateFactory) CreateTestGameState() *HeroState {
 	return result
 }
 
+// reviveIfDead brings a loaded hero back to full health when the save records a
+// death. See HeroStatsState.IsDead for the ruling. It is nil-safe: an old save
+// with no stats block (handled in GetAllHeroStates) passes a nil here.
+//
+// Negative control: remove the reset and TestReviveIfDead / the LoadHeroState
+// pin go red -- a state loaded at 0 stays at 0.
+func reviveIfDead(s *HeroStatsState) {
+	if s.IsDead() {
+		s.Health = s.MaxHealth
+	}
+}
+
 // LoadHeroState loads the player state from the file
 func (f *HeroStateFactory) LoadHeroState(filePath string) *HeroState {
 	strData, err := ioutil.ReadFile(filepath.Clean(filePath))
@@ -198,6 +210,12 @@ func (f *HeroStateFactory) LoadHeroState(filePath string) *HeroState {
 	if err != nil {
 		return nil
 	}
+
+	// A loaded death is a new dawn, not an un-killable corpse (12 Sep 2026
+	// ruling; audit A2). This is the one place every load passes through, and it
+	// revives only the in-memory state -- the .od2 on disk is untouched -- so
+	// "load last save means a new dawn" without rewriting the file.
+	reviveIfDead(result.Stats)
 
 	// Here, we turn the Shallow skill data back into records from the asset manager.
 	// This is because this factory has a reference to the asset manager with loaded records.

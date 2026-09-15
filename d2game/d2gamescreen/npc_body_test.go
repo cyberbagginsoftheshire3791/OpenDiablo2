@@ -150,3 +150,41 @@ func TestNeighboursNearestIsOrderedAndDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestUnblockedNeighboursSkipsBlockedTiles pins item 5 (12 Sep 2026): Route drops
+// a neighbour candidate tile that is itself blocked before paying for a full A*
+// toward it, and keeps nearest-first order among the rest. A blocked goal never
+// enters the search's open set and burns the whole budget (proved separately in
+// d2mapengine.TestSearchExpansionIsVisibleAndBoundedByABlockedGoal); Route tries
+// up to nine tiles per solve, so skipping the blocked ones is the fix (audit B3).
+//
+// Negative control: drop the `if blocked continue` in unblockedNeighbours and the
+// blocked tile reappears -- Len and the NotEqual below both fail.
+func TestUnblockedNeighboursSkipsBlockedTiles(t *testing.T) {
+	const qx, qy = 10.0, 10.0
+
+	// Hunter due south of the quarry, so the nearest candidate is the south tile
+	// (0,+1) -- block exactly that one.
+	blockedTile := [2]float64{0, 1}
+	blocked := func(tileX, tileY float64) bool {
+		return tileX == qx+blockedTile[0] && tileY == qy+blockedTile[1]
+	}
+
+	got := unblockedNeighbours(qx, qy+6, qx, qy, blocked)
+
+	require.Len(t, got, len(routeNeighbours)-1, "exactly the one blocked tile is dropped")
+
+	for _, n := range got {
+		require.NotEqual(t, blockedTile, n, "the blocked tile must be skipped")
+	}
+
+	// Nearest-first is preserved: with due-south gone, the nearest survivor is
+	// the south-east diagonal (equal distance to south-west, tie broken on the
+	// lower table index).
+	require.Equal(t, [2]float64{1, 1}, got[0], "the nearest surviving candidate is the SE diagonal")
+
+	// Positive control: with nothing blocked, all eight survive, due-south first.
+	all := unblockedNeighbours(qx, qy+6, qx, qy, func(float64, float64) bool { return false })
+	require.Len(t, all, len(routeNeighbours))
+	require.Equal(t, [2]float64{0, 1}, all[0], "unblocked, the nearest is due south")
+}

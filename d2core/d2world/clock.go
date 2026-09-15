@@ -129,6 +129,13 @@ type Clock struct {
 	// sets it in M4.1 except the harness: there are no safe zones until
 	// there are houses.
 	frozen bool
+
+	// moonOverride, when non-nil, is the harness's SetMoon value and takes
+	// precedence over the generated day table (S1 §4's new-moon assertion needs
+	// to force a value). nil means "read the sky": the day table inside the
+	// six-night slice, the thinning dial outside it. A pointer rather than a
+	// sentinel so a zero-value Clock reads as "unset" rather than "new moon".
+	moonOverride *float64
 }
 
 // NewClock returns a clock at the epoch and registers it as the harness
@@ -249,19 +256,34 @@ var weekdayNames = [daysPerWeek]string{
 }
 
 // Moon returns the moon's illuminated fraction tonight, [0, 1] — the ambient
-// floor of the deep night (S1 §3.2). It thins across the run, so the last
-// night is darker than the first.
+// floor of the deep night (S1 §3.2). Inside the six-night slice it reads the
+// generated day table (daytable_gen.go), the same source the HUD's phase name
+// comes from, so the light floor and the strip can no longer disagree: at
+// 344da610 the floor used the 0.55 placeholder while the strip already showed
+// the table's 69.3% on night one (audit B4, 12 Sep 2026; A8b signed the sky
+// canon 11 Sep). Outside the slice it keeps the MoonStart − MoonPerNight ×
+// DayIndex dial. A harness SetMoon overrides both.
 func (c *Clock) Moon() float64 {
+	if c.moonOverride != nil {
+		return *c.moonOverride
+	}
+
+	if today, ok := c.Today(); ok {
+		return clamp01(today.MoonLitPercent / 100)
+	}
+
 	f := c.dials.MoonStart - c.dials.MoonPerNight*float64(c.DayIndex())
 
-	return math.Max(0, math.Min(1, f))
+	return clamp01(f)
 }
 
 // SetMoon overrides the moon's fraction. This is world state, not the
 // clock's arithmetic, so unlike the time itself it is settable from a test
 // (P3 §4.5 forbids setting the time; S1 §4's assertion requires a new moon).
+// The override takes precedence over the day table for the rest of the run.
 func (c *Clock) SetMoon(fraction float64) {
-	c.dials.MoonStart = math.Max(0, math.Min(1, fraction)) + c.dials.MoonPerNight*float64(c.DayIndex())
+	f := clamp01(fraction)
+	c.moonOverride = &f
 }
 
 // Clock returns the wall-clock-free time of day as HH:MM.

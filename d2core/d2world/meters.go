@@ -62,7 +62,7 @@ type MeterDials struct {
 func DefaultMeterDials() MeterDials {
 	return MeterDials{
 		FoodDrain:            3.0,
-		WaterDrain:           4.5,
+		WaterDrain:           2.25, // [DIAL] halved from 4.5 on 11 Sep (a policy run, not a ruling); the winnability re-run is HELD until a human plays a night (S15)
 		FatigueDrain:         3.5,
 		DaylightWaterFactor:  1.5,
 		LabourFoodFactor:     2.0,
