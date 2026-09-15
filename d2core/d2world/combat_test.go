@@ -30,6 +30,12 @@ func (f *fakeFitness) Activity() Activity {
 	return f.activity
 }
 
+// FitnessOf makes the fake a FitnessSource (M4.4c-1 clause 4: Combat looks up a
+// combatant's Fitness by id now that the player commands squads). A single-body
+// unit test has one fitness, and every lookup yields it -- the resolver only
+// ever looks it up for the player side.
+func (f *fakeFitness) FitnessOf(string) Fitness { return f }
+
 // fakeBodies stands in for the game screen's body registry (M4.5 step 3).
 //
 // BodyOf returns an UNTYPED nil for an id it does not know, which is the

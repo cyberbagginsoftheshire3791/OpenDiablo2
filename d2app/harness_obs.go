@@ -59,17 +59,24 @@ func harnessEntityFor(client *d2client.GameClient, handle string) (d2interface.M
 // ---------------------------------------------------------------- entities --
 
 type harnessEntityInfo struct {
-	Handle  string                 `json:"handle"`
-	ID      string                 `json:"id"`
-	Kind    string                 `json:"kind"`
-	Label   string                 `json:"label,omitempty"`
-	X       float64                `json:"x"`
-	Y       float64                `json:"y"`
-	Tile    [2]int                 `json:"tile"`
-	Layer   int                    `json:"layer"`
-	Target  *[2]float64            `json:"target,omitempty"`
-	PathLen int                    `json:"path_len,omitempty"`
-	State   map[string]interface{} `json:"state,omitempty"`
+	Handle string                 `json:"handle"`
+	ID     string                 `json:"id"`
+	Kind   string                 `json:"kind"`
+	Label  string                 `json:"label,omitempty"`
+	X      float64                `json:"x"`
+	Y      float64                `json:"y"`
+	Tile   [2]int                 `json:"tile"`
+	Layer  int                    `json:"layer"`
+	State  map[string]interface{} `json:"state,omitempty"`
+
+	// An entity's PATH LENGTH and move target are not fields here: they are
+	// inside State, filled by the entity's own HarnessState
+	// ("path_len", d2core/d2map/d2mapentity/harness_state.go:22). Two
+	// never-assigned fields named Target and PathLen used to sit above; being
+	// omitempty they were absent from every response, so a script that read
+	// "path_len" at the TOP level silently got 0 on every run and its
+	// assertion could not fail. The c-1 review (15 Sep 2026) found
+	// squads_test.go doing exactly that. Deleted so the next script cannot.
 
 	// Screen is the entity's current screen-pixel position (camera-relative;
 	// presentation, so it is filled only by get_entity/get_player and never

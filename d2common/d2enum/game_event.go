@@ -80,4 +80,9 @@ const (
 	TakeScreenShot
 	ClearScreen // closes all active menus/panels
 	ClearMessages
+
+	// CycleSquad selects the next squad the player commands (M4.4c-1). Appended
+	// at the end so every existing iota value is unchanged. Tab is taken
+	// (ToggleAutomap), so the default binding is a free key.
+	CycleSquad
 )

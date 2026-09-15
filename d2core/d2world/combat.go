@@ -34,7 +34,7 @@ type Combat struct {
 	dials    CombatDials
 	clock    *Clock
 	notice   *Notice
-	fitness  Fitness
+	fitness  FitnessSource
 	illum    Illumination
 	bodies   Bodies
 	profiles Profiles
@@ -486,7 +486,7 @@ type encounter struct {
 // means a dead hunter keeps its chase. All four are reported (has_profiles,
 // has_animator, has_morale, has_chases) on the has_notice precedent, so a
 // playtest can tell "the wiring is missing" from "the rule did not fire".
-func NewCombat(clock *Clock, notice *Notice, fitness Fitness, illum Illumination,
+func NewCombat(clock *Clock, notice *Notice, fitness FitnessSource, illum Illumination,
 	bodies Bodies, profiles Profiles, animator Animator, morale Morale, chases Chases,
 	seed int64, dials CombatDials) *Combat {
 	c := &Combat{
@@ -511,6 +511,20 @@ func NewCombat(clock *Clock, notice *Notice, fitness Fitness, illum Illumination
 
 // Close unregisters the provider.
 func (c *Combat) Close() { d2harness.Unregister(c) }
+
+// fitnessOf looks up a combatant's Fitness by entity id (M4.4c-1 clause 4). It
+// replaces the singular fitness field's five read sites: with squads on the
+// map, "the player's fatigue" is a lookup, not a handle. It is nil-safe both
+// ways -- a nil source (every unit test above the resolver still passes one)
+// and an id no squad owns both return nil, which each site handles exactly as
+// it handled a nil fitness before.
+func (c *Combat) fitnessOf(id string) Fitness {
+	if c.fitness == nil {
+		return nil
+	}
+
+	return c.fitness.FitnessOf(id)
+}
 
 // Advance runs the encounter on the world minutes that just passed.
 //
@@ -775,8 +789,8 @@ func (c *Combat) tryStart() {
 	// not defensive -- the constructor allows a nil fitness and every unit
 	// test above the resolver uses one.
 	stance := ActivityIdle
-	if c.fitness != nil {
-		stance = c.fitness.Activity()
+	if f := c.fitnessOf(target.QuarryID()); f != nil {
+		stance = f.Activity()
 	}
 
 	surprised, why := false, ""
@@ -1167,9 +1181,9 @@ func (c *Combat) HarnessState() map[string]interface{} {
 			row["light_here"] = c.illum.Level(int(math.Floor(px)), int(math.Floor(py)))
 		}
 
-		if c.fitness != nil {
-			row["reaction_available"] = c.fitness.ReactionAvailable()
-			row["shaken"] = c.fitness.Shaken()
+		if f := c.fitnessOf(e.target.QuarryID()); f != nil {
+			row["reaction_available"] = f.ReactionAvailable()
+			row["shaken"] = f.Shaken()
 		}
 
 		parts = append(parts, row)

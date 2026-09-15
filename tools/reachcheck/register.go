@@ -178,6 +178,50 @@ var Register = []Entry{
 		"What the body is doing. The resolver reads it ONCE at the start of a fight, through the Fitness interface, to decide D8 section 9's caught-head-down branch -- a player caught foraging or labouring loses round one's initiative and his Reaction with it.", ""},
 	{sym(pkgWorld, "Meters.SetActivity"), BucketWire, VerdictLive,
 		"The write half. The game screen sets labour while a fight runs and puts back what the body was doing when it ends, which is S1 section 5's signed food drain -- faster when digging, fighting, carrying -- finally getting a consumer.", ""},
+
+	// M4.4c-1 MOVED these three from defer/dead: the selected-squad sheet reads
+	// them (HUD.renderSquadSheet -> Squads.SheetCards -> Meters.Food/Water/
+	// Fatigue). A drink verb is still Phase 6, but the SHEET is what makes the
+	// number carry information now, and the unit is the squad.
+	{sym(pkgWorld, "Meters.Food"), BucketWire, VerdictLive,
+		"Read by the selected-squad sheet through Squads.SheetCards. Moved to wire at M4.4c-1.", ""},
+	{sym(pkgWorld, "Meters.Water"), BucketWire, VerdictLive,
+		"As Meters.Food -- read by the squad sheet.", ""},
+	{sym(pkgWorld, "Meters.Fatigue"), BucketWire, VerdictLive,
+		"As Meters.Food -- read by the squad sheet.", ""},
+	{sym(pkgWorld, "Meters.Dying"), BucketWire, VerdictLive,
+		"The overhead DYING cue reads it (Squads.cues -> Meters.Dying), drawn by the bar widget. Moved from defer/M4.6 at M4.4c-1: c-1 gives Dying a CUE, not a consequence -- the death path is still M4.6.", ""},
+
+	// THE SQUADS OWNER (M4.4c-1): the player commands squads, and this type is
+	// the "meters" provider now. These rows are the drive train of that -- the
+	// game screen advances and binds it, combat looks up fitness through it, and
+	// the HUD draws its bars and sheet and takes selection input.
+	{sym(pkgWorld, "Squads.Advance"), BucketWire, VerdictLive,
+		"Game.advanceWorld drains every squad's meters here, so a second squad drains independently of the player's.", ""},
+	{sym(pkgWorld, "Squads.BindPlayer"), BucketWire, VerdictLive,
+		"The metersBodied latch binds s:1 to the player's body and entity id on the first frame that has a player.", ""},
+	{sym(pkgWorld, "Squads.Close"), BucketWire, VerdictLive,
+		"Game.OnUnload unregisters the provider with the screen.", ""},
+	{sym(pkgWorld, "Squads.PlayerMeters"), BucketWire, VerdictLive,
+		"The game screen holds s:1's meters for the fighting-activity edge; construction reads it here.", ""},
+	{sym(pkgWorld, "Squads.FitnessOf"), BucketWire, VerdictLive,
+		"Combat looks up the player squad's fitness by entity id at five read sites (clause 4), through the FitnessSource interface this satisfies.", ""},
+	{sym(pkgWorld, "Squads.Bars"), BucketWire, VerdictLive,
+		"Game.OverheadBars reads it to draw a bar over every player squad model; the HUD projects and paints it every frame.", ""},
+	{sym(pkgWorld, "Squads.SheetCards"), BucketWire, VerdictLive,
+		"HUD.renderSquadSheet reads it to draw the selected-squad sheet's cards.", ""},
+	{sym(pkgWorld, "Squads.SetSelected"), BucketWire, VerdictLive,
+		"A select-click sets the selected squad (GameControls.selectSquad, from OnMouseButtonDown).", ""},
+	{sym(pkgWorld, "Squads.Cycle"), BucketWire, VerdictLive,
+		"The cycle key selects the next squad (GameControls.cycleSquad, from OnKeyDown).", ""},
+	{sym(pkgWorld, "Squads.ModelEntities"), BucketWire, VerdictLive,
+		"The selection hit test iterates squad model entities (GameControls.squadAtScreen).", ""},
+	{sym(pkgWorld, "Squads.SquadOf"), BucketWire, VerdictLive,
+		"Game.OverheadBars asks which squad owns a model entity, so a player model is barred as its squad and not as an enemy.", ""},
+	{sym(pkgScreen, "Game.OverheadBars"), BucketWire, VerdictLive,
+		"The bar source the HUD asks each frame: assembles a bar per player squad model and per beast/man body, never adopting a body. The HUD's refreshOverheadBars calls it.", ""},
+	{sym(pkgScreen, "Game.ShowsBar"), BucketWire, VerdictLive,
+		"R2 section 1's fence in code (ruled ask 4/7): beasts and men get a bar, the dead never. Game.OverheadBars calls it per candidate body. Keyed on the SPAWN ROW through Spawns.ProfileOf, not on the monstats group: N1 section 5's codes are stand-in sprites (the wolves wear zombie1), so the group answers what the art is, not what the thing is -- the c-1 review, 15 Sep 2026.", ""},
 	{sym(pkgWorld, "Combat.Fighting"), BucketWire, VerdictLive,
 		"Whether an encounter is live, asked in Go rather than read out of harness state. advanceWorld reads it every tick to apply and take back the labour activity. This is the row that stops Pursuit's arrived mistake happening twice.", ""},
 	{sym(pkgScreen, "Game.BodyOf"), BucketWire, VerdictLive,
@@ -189,7 +233,7 @@ var Register = []Entry{
 	{sym(pkgEntity, "NPC.SetAnimationMode"), BucketWire, VerdictLive,
 		"The first exported way to tell a monster to play a mode. Its only caller is NPC.StartAction, which is the honest reading: the row stays because the symbol stays, and it is wire because a real build now reaches it. tools/animcensus measured on 31 Aug that A1, GH, DT and DD all exist for the three codes the spawn tables use.", ""},
 	{sym(pkgWorld, "Spawns.ProfileOf"), BucketWire, VerdictLive,
-		"What one enemy fights as: its PACK (not its row -- two dog packs are two packs), its authored Speed and its bite. The resolver calls it through the Profiles interface to build D8's order and to draw damage. It is the seam that put speed and damage on the spawn row instead of reading them out of the D2 record. Since step 5 it also carries the pack's STARTING COUNT, which the rout decrement and quick-resolve's advantage are both measured against.", ""},
+		"What one enemy fights as: its PACK (not its row -- two dog packs are two packs), its authored Speed and its bite. The resolver calls it through the Profiles interface to build D8's order and to draw damage. It is the seam that put speed and damage on the spawn row instead of reading them out of the D2 record. Since step 5 it also carries the pack's STARTING COUNT, which the rout decrement and quick-resolve's advantage are both measured against. Since M4.4c-1 it has a SECOND Go caller: Game.ShowsBar asks it what a spawned enemy IS, because the monstats code is only its sprite.", ""},
 
 	// M4.5 STEP 5 -- ROUT, QUICK-RESOLVE AND WITHDRAWAL. Three rows arrive
 	// wired and two move up from defer, and the pair below is the trigger
@@ -265,25 +309,37 @@ var Register = []Entry{
 		"Places a light source. The game has no verb that lights a fire -- place_source is a harness field.", "Phase 6 inventory / the first interaction verbs"},
 	{sym(pkgWorld, "Light.Remove"), BucketDefer, VerdictHarnessOnly,
 		"Puts a placed light out. This is the symbol M4.1 was reopened over; remove_source gave it a caller, and that caller is HarnessSet, so it is still harness-only one level down.", "Phase 6 inventory / the first interaction verbs"},
-	{sym(pkgWorld, "Meters.Food"), BucketDefer, VerdictDead,
-		"A read accessor with only test callers. The meters provider reads the field directly. HELD at M4.4a (the eyes): the bar waits until a drink verb or a water-dial change makes it carry information -- water empties at 18:09 in every run today -- and the unit of every bar is now the squad, so it is redesigned in M4.4c, not drawn beside the clock strip.", "M4.4c (the meters HUD)"},
-	{sym(pkgWorld, "Meters.Water"), BucketDefer, VerdictDead,
-		"As Meters.Food.", "M4.4c (the meters HUD)"},
-	{sym(pkgWorld, "Meters.Fatigue"), BucketDefer, VerdictDead,
-		"As Meters.Food.", "M4.4c (the meters HUD)"},
-	// M4.5 step 1 wired the ENCOUNTER, not the resolver, and the two rows
-	// below are the honest consequence. Combat reads the meters' flags only
-	// inside HarnessState, which the registry dispatches and only harness-
-	// tagged code consumes -- so the flags are still harness-only, one level
-	// down, exactly as Light.Remove was after M4.1's remove_source. They flip
-	// to wire when the RESOLVER reads them, and not a commit before: marking
-	// them wired now would be the lie this register exists to catch.
+	// Meters.Food/Water/Fatigue and Meters.Dying MOVED to wire at M4.4c-1 (see
+	// the wire block above): the selected-squad sheet reads the three meters,
+	// and the overhead dying cue reads Dying, both through the Squads owner.
+	//
+	// Combat.Round/Order STAY deferred and restamp M4.4 -> M4.4c-2 (ruled ask
+	// 5): the turn UI is what reads a round number and an activation order, and
+	// c-1 builds no such readout, so wiring them here would manufacture a call
+	// site -- the exact lie this register exists to catch. c-1's sheet shows the
+	// squad's meters, not the fight's round.
 	{sym(pkgWorld, "Combat.Round"), BucketDefer, VerdictDead,
-		"The current round. The resolver spends world time on rounds but reads it off the encounter directly; the HUD is what will want the accessor.", "M4.4 (the HUD milestone)"},
+		"The current round. The resolver spends world time on rounds but reads it off the encounter directly; the turn UI is what will want the accessor.", "M4.4c-2 (the hands: the turn UI)"},
 	{sym(pkgWorld, "Combat.Order"), BucketDefer, VerdictDead,
-		"The activation sequence -- D8 section 9's since step 4, and no longer provisional. Reported and asserted by playtests; still read by nothing in Go, and the HUD is what will.", "M4.4 (the HUD milestone)"},
-	{sym(pkgWorld, "Meters.Dying"), BucketDefer, VerdictHarnessOnly,
-		"Neglect can already run the body to zero, but nothing acts on it: there is no death path and no death screen.", "M4.6 (death and the dead)"},
+		"The activation sequence -- D8 section 9's since step 4. Reported and asserted by playtests; still read by nothing in Go, and the turn UI is what will.", "M4.4c-2 (the hands: the turn UI)"},
+
+	// THE N-PATH IS HARNESS-DRIVEN, and the register says so rather than
+	// claiming a green (brief §9 objection 3): squad_add/squad_remove are
+	// settable provider fields handled inside HarnessSet, so addSquad/removeSquad
+	// and the deployer they drive are harness-only one level down -- exactly
+	// Meters.Consume's shape. A shipped build has ONE squad (the player) and
+	// never deploys a second (ruled ask 10(b): s:1's model is the player, no
+	// entity created, no RNG drawn).
+	{sym(pkgWorld, "Squads.addSquad"), BucketDefer, VerdictHarnessOnly,
+		"squad_add's implementation: deploys a second squad's model. Reached only from HarnessSet, so a shipped build never runs it.", "the campaign, when a found survivor is a selectable squad"},
+	{sym(pkgWorld, "Squads.removeSquad"), BucketDefer, VerdictHarnessOnly,
+		"squad_remove's implementation, harness-only for the same reason.", "the campaign"},
+	{sym(pkgWorld, "Squads.Selected"), BucketDefer, VerdictHarnessOnly,
+		"The selected squad id, read only by the ui provider's HarnessState. The game reads selection through Bars()'s Selected flag, not this accessor.", "M4.4c-2 or later, when a readout wants it"},
+	{sym(pkgScreen, "squadDeployer.Deploy"), BucketDefer, VerdictHarnessOnly,
+		"Places a second squad's model entity. Reached only from Squads.addSquad <- HarnessSet <- the harness.", "the campaign"},
+	{sym(pkgScreen, "squadDeployer.Recall"), BucketDefer, VerdictHarnessOnly,
+		"Removes a deployed model, harness-only for the same reason as Deploy.", "the campaign"},
 	// SPAWNS.GROUPS DID NOT FLIP AT STEP 5, AND THE ROW SAYS WHY RATHER THAN
 	// BEING QUIETLY MOVED. Josh signed ask 7 as "wire it rather than
 	// re-point it", and the build could not honour that without inventing a

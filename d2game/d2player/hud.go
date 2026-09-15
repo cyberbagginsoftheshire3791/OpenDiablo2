@@ -142,6 +142,22 @@ type HUD struct {
 	stripHoursToDusk float64
 	lastStripMinute  int
 
+	// The overhead bars (M4.4c-1): one uncached CustomWidget in panelGroup
+	// draws a thin bar over the player's squad and over beasts and men, from
+	// the bar source the game screen provides. overheadBars is the projected
+	// cache the render callback draws and the "ui" harness provider reports,
+	// so a playtest can assert on the same rects the player sees.
+	bars              BarSource
+	overheadBarWidget *d2ui.CustomWidget
+	overheadBars      []overheadBarRender
+
+	// The selected-squad sheet (M4.4c-1, ruled ask 2/6): a panel of cards drawn
+	// by sheetWidget when sheetOpen, its Font16 lines painted through the
+	// invisible sheetLabel. It opens on selection and closes on deselect.
+	sheetOpen   bool
+	sheetLabel  *d2ui.Label
+	sheetWidget *d2ui.CustomWidget
+
 	*d2util.Logger
 }
 
@@ -157,6 +173,7 @@ func NewHUD(
 	gameControls *GameControls,
 	mapRenderer *d2maprenderer.MapRenderer,
 	clock *d2world.Clock,
+	bars BarSource,
 ) *HUD {
 	nameLabel := ui.NewLabel(d2resource.Font16, d2resource.PaletteStatic)
 	nameLabel.Alignment = d2ui.HorizontalAlignCenter
@@ -170,6 +187,11 @@ func NewHUD(
 	// making it visible here would double-render it.
 	clockStrip := ui.NewLabel(d2resource.Font16, d2resource.PaletteStatic)
 	clockStrip.Alignment = d2ui.HorizontalAlignLeft
+
+	// The selected-squad sheet's label (M4.4c-1). Invisible like clockStrip: the
+	// sheet is drawn by sheetWidget's render func, not by the UIManager.
+	sheetLabel := ui.NewLabel(d2resource.Font16, d2resource.PaletteStatic)
+	sheetLabel.Alignment = d2ui.HorizontalAlignLeft
 
 	healthGlobe := newGlobeWidget(ui, asset,
 		0, screenHeight,
@@ -199,6 +221,8 @@ func NewHUD(
 		clock:             clock,
 		clockStrip:        clockStrip,
 		lastStripMinute:   -1,
+		bars:              bars,
+		sheetLabel:        sheetLabel,
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -301,6 +325,23 @@ func (h *HUD) loadCustomWidgets() {
 	h.clockStripWidget.SetPosition(clockStripX, clockStripY)
 	h.clockStripWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
 	h.panelGroup.AddWidget(h.clockStripWidget)
+
+	// The overhead bars (M4.4c-1). ONE widget for all bars, declared at the
+	// full viewport, positioned (0,0), foreground priority so nothing but an
+	// open panel occludes it; the callback iterates the cache and DrawRects.
+	// No tooltip: a CustomWidget swallows no clicks and its declared size is
+	// nearly inert (brief §3.10), so the full-viewport size costs nothing.
+	h.overheadBarWidget = h.uiManager.NewCustomWidget(h.renderOverheadBars, screenWidth, screenHeight)
+	h.overheadBarWidget.SetPosition(0, 0)
+	h.overheadBarWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.overheadBarWidget)
+
+	// The selected-squad sheet (M4.4c-1). A full-viewport foreground widget that
+	// draws the cards when the sheet is open; sized from §0 part 1.
+	h.sheetWidget = h.uiManager.NewCustomWidget(h.renderSquadSheet, screenWidth, screenHeight)
+	h.sheetWidget.SetPosition(0, 0)
+	h.sheetWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.sheetWidget)
 }
 
 func (h *HUD) loadSkillResources() {
@@ -760,6 +801,7 @@ func (h *HUD) renderClockStrip(target d2interface.Surface) {
 // in the stamina tooltip
 func (h *HUD) Advance(elapsed float64) {
 	h.refreshClockStrip()
+	h.refreshOverheadBars()
 	h.setStaminaTooltipText()
 	h.setExperienceTooltipText()
 

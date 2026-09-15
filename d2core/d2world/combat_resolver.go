@@ -560,7 +560,7 @@ func (c *Combat) riposteAllowed(idx int, attackerID string) bool {
 		return false
 	}
 
-	if c.fitness == nil || !c.fitness.ReactionAvailable() || c.fitness.Shaken() {
+	if f := c.fitnessOf(e.target.QuarryID()); f == nil || !f.ReactionAvailable() || f.Shaken() {
 		return false
 	}
 
@@ -607,7 +607,7 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 	// Shaken costs the PLAYER accuracy. An enemy is never Shaken in v0 -- the
 	// condition is a fact about the player's body and nothing computes one
 	// for a beast.
-	if attackerIsPlayer && c.fitness != nil && c.fitness.Shaken() {
+	if f := c.fitnessOf(attackerID); attackerIsPlayer && f != nil && f.Shaken() {
 		mod -= c.dials.ShakenPenalty
 		why = joinWhy(why, whyShaken)
 	}

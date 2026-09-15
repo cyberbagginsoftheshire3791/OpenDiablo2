@@ -121,6 +121,8 @@ func NewGameControls(
 	isSinglePlayer bool,
 	players map[string]*d2mapentity.Player,
 	clock *d2world.Clock,
+	squads *d2world.Squads,
+	bars BarSource,
 ) (*GameControls, error) {
 	var inventoryRecordKey string
 
@@ -220,6 +222,7 @@ func NewGameControls(
 		questLog:       questLog,
 		HelpOverlay:    helpOverlay,
 		keyMap:         keyMap,
+		squads:         squads,
 		bottomMenuRect: &d2geom.Rectangle{
 			Left:   menuBottomRectX,
 			Top:    menuBottomRectY,
@@ -249,7 +252,7 @@ func NewGameControls(
 		gc.PartyPanel = PartyPanel
 	}
 
-	hud := NewHUD(asset, ui, hero, miniPanel, actionableRegions, mapEngine, l, gc, mapRenderer, clock)
+	hud := NewHUD(asset, ui, hero, miniPanel, actionableRegions, mapEngine, l, gc, mapRenderer, clock, bars)
 	gc.hud = hud
 
 	hoverLabel := hud.nameLabel
@@ -303,6 +306,12 @@ type GameControls struct {
 	lastRightBtnActionTime float64
 	FreeCam                bool
 	isSinglePlayer         bool
+
+	// squads is the owner the player commands (M4.4c-1): the click handler and
+	// the cycle key select through it, and the selection hit test reads its
+	// model entities. It is the same instance the game screen registered as the
+	// "meters" provider.
+	squads *d2world.Squads
 
 	// clock is the controls' own monotonic clock in seconds, accumulated from
 	// the deltas Advance receives. It replaces wall-clock reads for click
@@ -399,6 +408,8 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 		g.hud.onToggleRunButton(false)
 	case d2enum.HoldRun:
 		g.hud.onToggleRunButton(true)
+	case d2enum.CycleSquad:
+		g.cycleSquad()
 	case d2enum.ToggleHelpScreen:
 		g.toggleHelpOverlay()
 	default:
@@ -468,6 +479,23 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 
 	if isLeft && shouldDoLeft && inRect && !g.hero.IsCasting() {
 		g.lastLeftBtnActionTime = now
+
+		// A HELD click over a squad model must not walk the hero either. The
+		// single-click path consumes the select by returning before
+		// OnPlayerMove (OnMouseButtonDown below); THIS is a SECOND caller of
+		// OnPlayerMove, reached once the button is down past
+		// mouseBtnActionsThreshold (0.25 s, d2core/d2input/input_manager.go),
+		// so without this guard holding the button on a model orders exactly
+		// the walk clause 10 forbids. Found by the c-1 review, 15 Sep 2026.
+		//
+		// The playtest cannot reach this line: strigoi_click presses AND
+		// releases inside one frame (d2app/harness_input.go), so
+		// repeatDue(now, now) is false by construction. It is verified by
+		// reading, and the gap is named in the build note rather than papered
+		// over with a script that does not exercise it.
+		if g.squadAtScreen(event.X(), event.Y()) != "" {
+			return true
+		}
 
 		if event.KeyMod() == d2enum.KeyModShift {
 			g.inputListener.OnPlayerCast(g.hero.LeftSkill.ID, px, py)
@@ -560,6 +588,20 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 
 	if event.Button() == d2enum.MouseButtonLeft && !g.isInActiveMenusRect(mx, my) && !g.hero.IsCasting() {
 		g.lastLeftBtnActionTime = g.clock
+
+		// A select-click on a squad model selects that squad and opens its
+		// sheet, and is CONSUMED by returning BEFORE OnPlayerMove, so it does
+		// not also order a walk (brief §4.5, clause 10). The EARLY RETURN is
+		// what stops the walk -- returning true does not, because escapeMenu and
+		// gameControls bind at the same input priority (brief §3.11).
+		if squadID := g.squadAtScreen(mx, my); squadID != "" {
+			g.selectSquad(squadID)
+			return true
+		}
+
+		// A left click on empty ground orders a walk and closes the sheet
+		// (ruled ask 6: the sheet closes on deselect).
+		g.closeSquadSheet()
 
 		if event.KeyMod() == d2enum.KeyModShift {
 			g.inputListener.OnPlayerCast(g.hero.LeftSkill.ID, px, py)

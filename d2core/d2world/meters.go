@@ -148,7 +148,21 @@ type Meters struct {
 // NewMeters returns a full, rested body reading the given clock, and
 // registers it as the harness "meters" provider.
 func NewMeters(clock *Clock, dials MeterDials) *Meters {
-	m := &Meters{
+	m := newMeters(clock, dials)
+	d2harness.Register(m)
+
+	return m
+}
+
+// newMeters builds a full, rested body WITHOUT registering it. The Squads
+// owner (M4.4c-1) holds one *Meters per squad and is itself the single
+// registered "meters" provider, so a per-squad meters must not register a
+// second one: Register appends and the digest keeps the newest, so a leaked
+// duplicate would be silently invisible (registry.go, harness_time.go). The
+// fence is that the only registering path is NewMeters, which the game screen
+// no longer calls.
+func newMeters(clock *Clock, dials MeterDials) *Meters {
+	return &Meters{
 		dials:    dials,
 		clock:    clock,
 		food:     meterFull,
@@ -156,9 +170,6 @@ func NewMeters(clock *Clock, dials MeterDials) *Meters {
 		fatigue:  0,
 		activity: ActivityIdle,
 	}
-	d2harness.Register(m)
-
-	return m
 }
 
 // Close unregisters the provider.

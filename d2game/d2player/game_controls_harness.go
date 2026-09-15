@@ -16,6 +16,56 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		partyOpen = g.PartyPanel.IsOpen()
 	}
 
+	// The overhead bars the HUD last projected (M4.4c-1, clauses 6/8): the same
+	// rects the player sees, so a playtest asserts on them without re-deriving
+	// the offset (the harness reports the entity's feet, not the bar). Ordered
+	// as the HUD drew them (squads by ordinal, enemies by id), so the digest is
+	// deterministic.
+	bars := make([]map[string]interface{}, 0, len(g.hud.overheadBars))
+	cues := make([]map[string]interface{}, 0)
+	selectedSquad := ""
+
+	sheetCards := make([]map[string]interface{}, 0)
+
+	if g.squads != nil {
+		selectedSquad = g.squads.Selected()
+
+		for _, c := range g.squads.SheetCards() {
+			sheetCards = append(sheetCards, map[string]interface{}{
+				"squad":      c.Squad,
+				"food":       c.Food,
+				"water":      c.Water,
+				"fatigue":    c.Fatigue,
+				"stance":     c.Stance,
+				"members":    c.Members,
+				"health":     c.Health,
+				"max_health": c.MaxHealth,
+				"cues":       c.Cues,
+				"selected":   c.Selected,
+			})
+		}
+	}
+
+	for _, b := range g.hud.overheadBars {
+		bars = append(bars, map[string]interface{}{
+			"id":       b.entity,
+			"x":        b.x,
+			"y":        b.y,
+			"w":        b.w,
+			"h":        b.h,
+			"fill":     b.fill,
+			"selected": b.selected,
+			"enemy":    b.enemy,
+		})
+
+		if len(b.cues) > 0 {
+			cues = append(cues, map[string]interface{}{
+				"id":   b.entity,
+				"cues": b.cues,
+			})
+		}
+	}
+
 	return map[string]interface{}{
 		"inventory_open":    g.inventory.IsOpen(),
 		"skilltree_open":    g.skilltree.IsOpen(),
@@ -40,5 +90,13 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"clock_strip_moon":          g.hud.stripMoon,
 		"clock_strip_hours_to_dusk": g.hud.stripHoursToDusk,
 		"clock_strip_text":          g.hud.stripText,
+
+		// The overhead bars and stage cues, the selected squad, and the sheet
+		// (M4.4c-1, clauses 6/8/9/11).
+		"bars":           bars,
+		"cues":           cues,
+		"selected_squad": selectedSquad,
+		"sheet_open":     g.hud.sheetOpen,
+		"sheet_cards":    sheetCards,
 	}
 }

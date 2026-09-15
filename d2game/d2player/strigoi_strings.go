@@ -44,3 +44,45 @@ func strigoiMonthName(month int) string {
 func strigoiSunsetLabel(hoursToDusk float64) string {
 	return fmt.Sprintf("Sunset in %.1fh", hoursToDusk)
 }
+
+// The M4.4c-1 squad sheet and overhead cues. The stage names (S1 §5) and the
+// sheet's labels are ours, so they live here beside the clock strip's month
+// names (Article V.2). The cue KEYS ("hungry", ...) are the machine contract
+// the Squads owner and the overhead marks share; these are their display
+// strings. ASCII throughout, Font16 measured in §0 part 1.
+//
+// nolint:gochecknoglobals // constant lookup tables
+var strigoiCueLabels = map[string]string{
+	"hungry":      "Hungry",
+	"thirsty":     "Thirsty",
+	"no_reaction": "No reaction",
+	"shaken":      "Shaken",
+	"dying":       "Dying",
+}
+
+// strigoiCueLabel returns a stage cue's display string, or the key unchanged if
+// it is one this file does not name.
+func strigoiCueLabel(cue string) string {
+	if s, ok := strigoiCueLabels[cue]; ok {
+		return s
+	}
+
+	return cue
+}
+
+// nolint:gochecknoglobals // constant lookup table
+var strigoiStanceLabels = map[string]string{
+	"idle":   "Idle",
+	"labour": "Labouring",
+	"watch":  "On watch",
+	"forage": "Foraging",
+}
+
+// strigoiStanceLabel returns a squad stance's display string.
+func strigoiStanceLabel(stance string) string {
+	if s, ok := strigoiStanceLabels[stance]; ok {
+		return s
+	}
+
+	return stance
+}

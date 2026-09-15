@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
@@ -97,10 +99,15 @@ func CreateGame(
 	game.light = d2world.NewLight(game.worldClock, d2world.DefaultLightDials())
 	game.light.SetPlayer(startX, startY)
 
-	// The survival meters (M4.2, S1 §5) read the same clock. The health they
-	// spend belongs to a player entity that does not exist yet, so the body
-	// is attached on the first frame that has one — see advanceWorld.
-	game.meters = d2world.NewMeters(game.worldClock, d2world.DefaultMeterDials())
+	// The squads the player commands (M4.4c-1, S1 §5), the "meters" provider.
+	// s:1 is the player's squad of one; the health it spends belongs to a
+	// player entity that does not exist yet, so the body is attached on the
+	// first frame that has one — see advanceWorld — exactly as the single
+	// meters was. Each squad has its own non-registering meters; the owner
+	// holds the one Register call. squadDeployer is how a second squad's model
+	// becomes a real map entity (ruled ask 10(b)); s:1 deploys nothing.
+	game.squads = d2world.NewSquads(game.worldClock, d2world.DefaultMeterDials(), squadDeployer{game: game})
+	game.meters = game.squads.PlayerMeters()
 
 	// Pursuit (M4.3a) routes through the map engine and steps on the same
 	// world clock as everything else here.
@@ -144,15 +151,17 @@ func CreateGame(
 	)
 
 	// Combat comes last of the world systems because it is downstream of all
-	// of them: it asks Notice who is aware, reads the meters' derived facts
-	// through the two-method Fitness interface, and samples the light model
-	// at a participant's tile. It seeds from the run's seed like the tables,
-	// so two launches of one build fight the same fight: since step 4 that
-	// seed drives D8's initiative tie-break and every roll of every blow.
+	// of them: it asks Notice who is aware, LOOKS UP a squad's derived facts
+	// through the Squads owner's FitnessOf (M4.4c-1: the player commands
+	// squads, so "the player's fatigue" is a lookup by entity id, not a single
+	// handle), and samples the light model at a participant's tile. It seeds
+	// from the run's seed like the tables, so two launches of one build fight
+	// the same fight: since step 4 that seed drives D8's initiative tie-break
+	// and every roll of every blow.
 	game.combat = d2world.NewCombat(
 		game.worldClock,
 		game.notice,
-		game.meters,
+		game.squads,
 		game.light,
 		game,
 
@@ -216,11 +225,16 @@ type Game struct {
 	// The simulated world's own systems (M4.1, M4.2). They advance from the
 	// same delta this screen receives — the harness's when it is stepping —
 	// and register themselves as the "clock", "light" and "meters" harness
-	// providers. metersBodied records that the local player's health has
-	// been handed to the meters, which cannot happen at construction because
-	// the player entity does not exist yet.
+	// providers. Since M4.4c-1 the "meters" provider is the Squads owner: the
+	// player commands squads, each with its own meters, and squads is the one
+	// registered provider (its flat face is the selected squad's). meters
+	// points at the player's squad (s:1) for the fighting-activity edge.
+	// metersBodied records that the local player's health has been handed to
+	// s:1, which cannot happen at construction because the player does not
+	// exist yet.
 	worldClock   *d2world.Clock
 	light        *d2world.Light
+	squads       *d2world.Squads
 	meters       *d2world.Meters
 	metersBodied bool
 	pursuit      *d2world.Pursuit
@@ -300,8 +314,8 @@ func (v *Game) OnUnload() error {
 		v.pursuit.Close()
 	}
 
-	if v.meters != nil {
-		v.meters.Close()
+	if v.squads != nil {
+		v.squads.Close() // the registered "meters" provider; s:1's meters does not register
 	}
 
 	if v.combat != nil {
@@ -480,13 +494,17 @@ func (v *Game) advanceWorld(elapsed float64) {
 		v.light.Advance(worldMinutes)
 	}
 
-	if v.meters != nil {
+	if v.squads != nil {
 		if !v.metersBodied && v.localPlayer != nil && v.localPlayer.Stats != nil {
-			v.meters.SetBody(playerBody{player: v.localPlayer})
+			v.squads.BindPlayer(playerBody{player: v.localPlayer}, v.localPlayer.ID())
 			v.metersBodied = true
 		}
 
-		v.meters.Advance(worldMinutes)
+		// Every squad drains, so a harness-placed second squad drains
+		// independently of the player's (brief §10). s:1's meters IS v.meters,
+		// so it is advanced here exactly once and the fighting-activity edge
+		// below still reads the same instance.
+		v.squads.Advance(worldMinutes)
 	}
 
 	if v.pursuit != nil {
@@ -1083,6 +1101,191 @@ func (b playerBody) CurrentHealth() int { return b.player.Stats.Health }
 func (b playerBody) MaxHealth() int     { return b.player.Stats.MaxHealth }
 func (b playerBody) SetHealth(h int)    { b.player.Stats.Health = h }
 
+// squadDeployer places and removes the map entity a squad MODEL is (M4.4c-1,
+// ruled ask 10(b): a model is a real thing on the map). It is the Squads
+// owner's Deployer, the same shape as gameSpawner: d2world names the act, the
+// screen builds the entity, and the body is adopted HERE so a deployed model
+// counts in bodies_known -- which is why the N-path asserts on that and never
+// on world_draws (NewNPC draws the world RNG by construction, unreadable and
+// hashed). It places STANDALONE entities via AddEntity, never into a spawn
+// group (clearAtDaybreak would despawn the player's own men at first light) and
+// never into gameClient.Players (the escape-menu pause fence). s:1 deploys
+// nothing: its one model is the player, already on the map.
+type squadDeployer struct{ game *Game }
+
+// squadModelCode is the stand-in monstats.txt Id a deployed squad model uses.
+// The sprite is irrelevant in c-1: build #1's only squad is the player (no
+// deployment), and the N-path's second squad is harness-placed for the
+// collection assertion and selected by squad membership, not by its sprite.
+const squadModelCode = "fallen1"
+
+func (d squadDeployer) Deploy(x, y float64) (string, int, bool) {
+	v := d.game
+	if v == nil || v.gameClient == nil || v.gameClient.MapEngine == nil || v.asset == nil {
+		return "", 0, false
+	}
+
+	// A missing position deploys near the player, two tiles east of him.
+	if x == 0 && y == 0 && v.localPlayer != nil {
+		world := v.localPlayer.Position.World()
+		x, y = world.X()+2, world.Y()
+	}
+
+	monstat := v.asset.Records.Monster.Stats[squadModelCode]
+	if monstat == nil {
+		return "", 0, false
+	}
+
+	npc, err := v.gameClient.MapEngine.NewNPC(int(x*subTilesPerTile), int(y*subTilesPerTile), monstat, 0)
+	if err != nil {
+		return "", 0, false
+	}
+
+	v.gameClient.MapEngine.AddEntity(npc)
+	v.adoptNPCBody(npc.ID(), monstat.MaxHPNormal)
+
+	return npc.ID(), monstat.MaxHPNormal, true
+}
+
+func (d squadDeployer) Recall(id string) bool {
+	v := d.game
+	if v == nil || v.gameClient == nil || v.gameClient.MapEngine == nil {
+		return false
+	}
+
+	entity, ok := v.gameClient.MapEngine.Entities()[id]
+	if !ok {
+		return false
+	}
+
+	v.gameClient.MapEngine.RemoveEntity(entity)
+	v.releaseNPCBody(id)
+
+	return true
+}
+
+// deadSpawnRows are the SPAWN TABLE rows that count as "the dead": R2 §1
+// fences the UNKNOWN (the risen dead) -- no bar until the hearth unlocks the
+// bestiary (ruled ask 4/7). N1 §5's four rows are beasts and men (dogs, wolves,
+// boar, opportunists), so this gate is EMPTY and never fires in friends build
+// #1; it is written NOW, keyed on the row, so M4.7 inherits a gate rather than
+// retrofitting one into shipped UI, and M4.7 fills in its risen-corpse rows.
+var deadSpawnRows = map[string]bool{}
+
+// deadMonsterGroups is the FALLBACK gate, for an NPC the spawn tables did not
+// place (a map-native monster, or a harness placement): for a real D2 monster
+// the monstats MonType group is its kind.
+var deadMonsterGroups = map[string]bool{
+	"skeleton": true, "zombie": true, "undead": true, "wraith": true, "ghost": true,
+}
+
+// ShowsBar reports whether an entity gets an overhead bar: beasts and men yes,
+// the dead never (ruled ask 4/7).
+//
+// THE SPAWN ROW IS THE AUTHORITY, not the monstats code, because N1 §5's codes
+// are STAND-IN SPRITES: the wolves wear "zombie1" and the boar wears
+// "skeleton1" (d2core/d2world/spawns.go:238, :251). Keying this gate on
+// MonStatRecord.MonsterGroup -- which it did until the c-1 review, 15 Sep 2026
+// -- asks what the ART is, not what the THING is, and would have taken the bar
+// off night one's main threat, inverting the ruling it was written to serve.
+// The monstats group survives below as the fallback for an NPC the tables did
+// not place. The player is not judged here: the player's squad bar is decided
+// by the Squads owner.
+func (v *Game) ShowsBar(id string) bool {
+	if v.gameClient == nil || v.gameClient.MapEngine == nil {
+		return false
+	}
+
+	entity, ok := v.gameClient.MapEngine.Entities()[id]
+	if !ok {
+		return false
+	}
+
+	npc, ok := entity.(*d2mapentity.NPC)
+	if !ok {
+		return false
+	}
+
+	if v.spawns != nil {
+		if p, ok := v.spawns.ProfileOf(id); ok {
+			return !deadSpawnRows[strings.ToLower(p.Row)]
+		}
+	}
+
+	monstat := npc.MonStat()
+	if monstat == nil {
+		return false
+	}
+
+	return !deadMonsterGroups[strings.ToLower(monstat.MonsterGroup)]
+}
+
+// OverheadBars assembles the bars the HUD draws (M4.4c-1): one per player-squad
+// model (its squad's pooled health and stage cues), and one per beast or man
+// with a body, never the dead. It is READ-ONLY -- it peeks v.bodies directly
+// and never calls BodyOf, which adopts on read and would break the
+// eager-adoption test (combat_body_test.go act 5). The enemy bars are sorted by
+// id so the "ui" provider's list is deterministic (determinism_test.go).
+func (v *Game) OverheadBars() []d2player.OverheadBar {
+	out := []d2player.OverheadBar{}
+
+	if v.squads != nil {
+		for _, sb := range v.squads.Bars() {
+			for _, ent := range sb.Entities {
+				out = append(out, d2player.OverheadBar{
+					Entity:   ent,
+					Cur:      sb.Cur,
+					Max:      sb.Max,
+					Cues:     sb.Cues,
+					Selected: sb.Selected,
+				})
+			}
+		}
+	}
+
+	ids := make([]string, 0, len(v.bodies))
+	for id := range v.bodies {
+		ids = append(ids, id)
+	}
+
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		body := v.bodies[id]
+		if body == nil {
+			continue
+		}
+
+		if v.squads != nil && v.squads.SquadOf(id) != "" {
+			continue // a player squad model, already barred above
+		}
+
+		// NEVER THE DEAD (clause 7) in its literal sense: a body at or below
+		// 0 health is a CORPSE, and nothing in this build removes a killed
+		// NPC from the map -- ActDie only plays the animation, MapEngine
+		// .Advance removes nothing, and the only despawn is a spawn group at
+		// rout or daybreak. Without this guard every kill leaves an empty bar
+		// hanging over the ground until dawn, and each one puts another rect
+		// in the band night_render_test.go samples.
+		if body.CurrentHealth() <= 0 {
+			continue
+		}
+
+		if !v.ShowsBar(id) {
+			continue
+		}
+
+		out = append(out, d2player.OverheadBar{
+			Entity: id,
+			Cur:    body.CurrentHealth(),
+			Max:    body.MaxHealth(),
+			Enemy:  true,
+		})
+	}
+
+	return out
+}
+
 // shouldSaveOnUnload reports whether OnUnload should persist the hero. It saves
 // unless the local player is DEFINITIVELY dead (Stats.IsDead): a saved 0-HP hero
 // loads as an un-killable, un-feedable corpse (audit A2, 12 Sep 2026 ruling).
@@ -1119,7 +1322,7 @@ func (v *Game) bindGameControls() error {
 		var err error
 		v.gameControls, err = d2player.NewGameControls(v.asset, v.renderer, player, v.gameClient.MapEngine,
 			v.escapeMenu, v.mapRenderer, v, v.terminal, v.uiManager, v.keyMap, v.audioProvider, v.logLevel,
-			v.gameClient.IsSinglePlayer(), v.gameClient.Players, v.worldClock)
+			v.gameClient.IsSinglePlayer(), v.gameClient.Players, v.worldClock, v.squads, v)
 
 		if err != nil {
 			return err

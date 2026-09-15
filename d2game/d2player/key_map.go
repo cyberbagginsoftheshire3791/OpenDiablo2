@@ -297,6 +297,10 @@ func (km *KeyMap) ResetToDefault() {
 		d2enum.TakeScreenShot: {d2enum.KeyPrintScreen, -1},
 		d2enum.ClearScreen:    {d2enum.KeySpace, -1},
 		d2enum.ClearMessages:  {d2enum.KeyN, -1},
+
+		// Cycle the selected squad (M4.4c-1). Tab is ToggleAutomap; KeyG is free
+		// in this table, so it is the default.
+		d2enum.CycleSquad: {d2enum.KeyG, -1},
 	}
 
 	for gameEvent, keys := range defaultControls {

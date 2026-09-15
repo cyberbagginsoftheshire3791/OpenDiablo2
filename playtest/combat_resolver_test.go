@@ -94,6 +94,18 @@ func TestCombatResolver(t *testing.T) {
 	t.Logf("act 1: encounter %v round %.0f order %v first_side=%v",
 		combat["encounter"], num(combat, "round"), order, combat["first_side"])
 
+	// THE LIVE ENEMY HAS A BAR (M4.4c-1 clause 7, the positive half). It is
+	// asserted HERE so that act 4's "the corpse has none" is a control rather
+	// than a claim: same entity, same script, one difference -- it died in
+	// between. The fight has resolved a round against the dog by now, so its
+	// body exists (Bodies.BodyOf adopts on the resolver's read).
+	if b := barFor(t, uiState(s), dogID, false); b.fill <= 0 {
+		t.Fatalf("act 1: the live dog's overhead bar reads empty (%+v) -- a living enemy's bar "+
+			"must show its health", b)
+	}
+
+	t.Logf("act 1: the live dog has an overhead bar")
+
 	// --- act 2: a blow does something, and the arithmetic is checkable -----
 	//
 	// THE DISCRIMINATING ASSERTION OF THE WHOLE SCRIPT. The test chooses the
@@ -233,6 +245,22 @@ func TestCombatResolver(t *testing.T) {
 	// Re-opening the fight here also exercises tryStart's dead filter for
 	// free: the dog's corpse is still noticed and still in reach, and the new
 	// encounter must contain only the zombie.
+	// THE CORPSE HAS NO BAR (M4.4c-1 clause 7, and the c-1 review's first
+	// finding, 15 Sep 2026). The dog is dead here, and NOTHING in this build
+	// removes a killed NPC from the map -- ActDie only plays the animation and
+	// the corpse machine is M4.7 -- so without the health guard in
+	// Game.OverheadBars its empty bar hangs over the ground until dawn, and
+	// every kill adds another rect to the band night_render_test.go samples.
+	// Act 1 asserted this same entity HAD a bar while it lived.
+	dogMode := str(sub(s.call("strigoi_get_entity", map[string]any{"handle": dog}), "state"), "animation_mode")
+
+	if b := barFor(t, uiState(s), dogID, true); b != nil {
+		t.Fatalf("act 4: the dead dog %s (animation %s) still has an overhead bar %+v -- "+
+			"a corpse must never be barred", dogID, dogMode, b)
+	}
+
+	t.Logf("act 4: the dead dog (animation %s) has no overhead bar; the live one in act 1 did", dogMode)
+
 	setField(s, "combat", "player_action", "hold")
 
 	wolf := spawnNPC(t, s, "zombie1", spot[0], spot[1])

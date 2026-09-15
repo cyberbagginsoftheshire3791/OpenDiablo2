@@ -22,6 +22,8 @@ intermittent: **re-run before investigating.**
 | BUG-2 | pre-fork (upstream) | any | `d2dt1.DecodeTileGfxData` indexes `(*pixels)[offset]` with no bound — index-out-of-range on malformed tile gfx (`d2common/d2fileformats/d2dt1/gfx_decode.go:30,60`) | intermittent (map load) | the DT1 milestone | PARKED |
 | BUG-3 | pre-fork (upstream) | any | `MainMenu.createLogos` logs then dereferences a nil logo (`d2game/d2gamescreen/main_menu.go:325-331`) | intermittent (startup) | the DT1 milestone | PARKED |
 | BUG-4 | ~Aug 2026 | any | the black floor: cached floor tiles are provably fully coloured while the composite draws nothing. A NIGHT screenshot is useless as evidence — the night scripts sample daylight control frames for exactly this reason | unmeasured, per launch | unassigned | PARKED |
+| BUG-6 | 2026-09-15 | M4.4c-1 | a squad model that dies keeps its squad's overhead bar: `Squads.Bars` lists every member entity with `entity != ""` regardless of `health` (`d2core/d2world/squads.go`), and the corpse guard added to `Game.OverheadBars` only covers the ENEMY loop. **It cannot happen in friends build #1** -- `s:1`'s one model is the player, and a dead player is the death screen -- so the fix waits for the milestone that ships a second squad in a shipped build | not reproducible in build #1 (needs N>1) | M4.4c-2 | OPEN |
+| BUG-7 | 2026-09-15 | M4.4c-1 | **no playtest can exercise a HELD mouse button.** `strigoi_click` presses and releases inside one frame (`d2app/harness_input.go`), so `repeatDue(now, now)` is false by construction and `GameControls.OnMouseButtonRepeat` is unreachable from any script. The squad guard added there on 15 Sep is verified by READING only. A harness verb that holds a button for N frames would close it | always (instrument gap) | M4.4c-2 | OPEN |
 | BUG-5 | ~Aug 2026 | any | the startup / map-load crash — presents as one of BUG-1/2/3. Intermittent; **re-run before investigating**. Every playtest launch is counted in the ledger below so the rate can be measured before friends build #1 (9 Sep G9) | intermittent | unassigned | PARKED |
 
 ## Launch ledger
@@ -37,5 +39,7 @@ the hardening burst on is added here.
 | 2026-09-11 | M4.4a | 4 | (unrecorded) | M4.4a build note |
 | 2026-09-14 | `344da610` (pre-edits) | 1 | 0 | §0(a) escape-pause act; clean launch, no map-load crash (`game-20260914-203931.log`) |
 | 2026-09-14 | hardening burst (harness) | 17 | 0 | full playtest suite via `scripts\playtest.ps1`, all 24 tests green, no map-load crash (`playtest-hardening-2026-09-14.txt`) |
+| 2026-09-15 | M4.4c-1 (overnight, Claude Code) | (unrecorded) | 0 | the build's own closeout run: 25 tests green including `TestSquadsOnScreen`, per the session transcript; the launch count was not recorded before the session hit its usage limit |
+| 2026-09-15 | M4.4c-1 review repairs (Cowork) | 31 | 0 | 1 squads act + 4 squads/resolver + 8 negative-control runs + the 18-launch full suite. **Seven of those runs went red on purpose** (the negative controls); **no map-load crash in any of the 31** (`playtest-c1-2026-09-15.txt`) |
 
 *The night is the enemy · history is the clock · grounded, then supernatural · one region done deeply.*
