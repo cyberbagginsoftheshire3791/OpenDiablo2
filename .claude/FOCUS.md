@@ -1,6 +1,7 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-09-15 (M4.4c-1, CT). **This file is capped at one screen.** It
+Updated: 2026-09-17 (c-2a pointer, CT). **This file is capped at one
+screen.** It
 held 528 lines until today and told a session more about finished
 milestones than about the next hour; the body was frozen into
 `docs/focus-archive-2026-09-05.md` and is not appended to again. **If you
@@ -47,19 +48,20 @@ rather than improvising a shortened version of it.
 ## The build order -- identities, not a schedule (ruled 12 Sep)
 
     [done] hardening burst -> [done] M4.4c-1 (squads on screen)
-    -> THE PAPER NIGHT (next; no code) -> M4.4c-2 (the hands: turn UI,
-    attack, light, DOUSE) -> death screen v0 -> pre-flight brief
+    -> M4.4c-2a (NEXT: the seam, the verbs by key, the pace instrument)
+    -> M4.4c-2b (the strip, click-to-strike, the ambush)
+    -> death screen v0 -> pre-flight brief
     -> friends build #1 (amazon) -> M4.7 -> M4.6
 
 **M4.5 CLOSED 9 Sep. M4.4a SHIPPED 11 Sep. The hardening burst SHIPPED 14 Sep
-(`aeabdb54`). M4.4c-1 SHIPPED 15 Sep (`affded41`)** -- the player commands
-squads; bars and cues over his models and over beasts and men, never the dead
-and never a corpse; click-or-`G` selection; the sheet of cards. **NEXT is the
-paper night: Josh + a friend with a stopwatch, no model, no code**, and its
-numbers open c-2's section 0. **M4.7 = the corpse machine + one rite verb with
-a game caller**, owning 22:00-04:00; D9 (pack arrival) first. M4.6's note is
-the candidate owner of the world save (no mid-run save in build #1; load = a
-new dawn).
+(`aeabdb54`). M4.4c-1 SHIPPED 15 Sep (`affded41`)** -- squads on screen; what
+it contains is in its build note, not here. **PAPER NIGHT RETIRED 16 Sep**;
+its instrument is in c-2, measured on a real launch. **NEXT is M4.4c-2a**,
+from its opening prompt. **Brief + prompt reconciled 17 Sep** (the Action does
+not end the turn; `end` is the fifth `Commit` choice) -- read the live copies.
+**M4.7 = the corpse machine + one rite verb with a game caller**, owning
+22:00-04:00; D9 (pack arrival) first. M4.6's note is the candidate owner of
+the world save (no mid-run save in build #1; load = a new dawn).
 
 **⚠ A GREEN GATE DOES NOT CATCH AN ASSERTION THAT CANNOT FAIL** (15 Sep).
 c-1 passed the gate, 25 scripts and six negative controls; an adversarial
