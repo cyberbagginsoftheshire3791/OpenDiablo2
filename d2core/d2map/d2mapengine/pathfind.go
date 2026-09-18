@@ -118,12 +118,29 @@ func (m *MapEngine) checkLos(start, end d2vector.Position) (bool, d2vector.Posit
 
 	xstep := dx * divN
 	ystep := dy * divN
-	x := start.X()
-	y := start.Y()
 
-	for i := 0; i <= int(N); i++ {
-		x += xstep
-		y += ystep
+	// BUG-8: the walk must REACH the destination and must not pass it. The old
+	// loop ran i <= int(N) and incremented before sampling, so it took int(N)+1
+	// unit steps along a segment only N long -- a full extra subtile whenever N
+	// was whole, which is every axis-aligned and 45-degree ray between
+	// grid-aligned entities. A blocker beyond the target blocked the ray while
+	// the reverse ray stayed clear, and a legal endpoint on the map's last
+	// subtile was rejected because the sample past it read nil.
+	//
+	// Ceil(N) steps with the final one clamped to N lands the last sample ON
+	// the destination for both whole and fractional N. Plain i < int(N) is NOT
+	// the fix: it reaches the endpoint only when N is whole, and for a
+	// fractional N it stops short and never examines the destination subtile --
+	// a watcher would see through a blocker standing on the player.
+	//
+	// The position is computed from start each step rather than accumulated, so
+	// a long ray does not drift.
+	steps := int(math.Ceil(N))
+
+	for i := 1; i <= steps; i++ {
+		travelled := math.Min(float64(i), N)
+		x := start.X() + xstep*travelled
+		y := start.Y() + ystep*travelled
 
 		// SubTileAt returns nil off the map, and off the map is not walkable:
 		// the same answer as a wall, and the walk stops at the last good point
@@ -132,7 +149,9 @@ func (m *MapEngine) checkLos(start, end d2vector.Position) (bool, d2vector.Posit
 		// does no bounds checking of its own.
 		flags := m.SubTileAt(int(math.Floor(x)), int(math.Floor(y)))
 		if flags == nil || flags.BlockWalk {
-			return false, d2vector.NewPosition(x-xstep, y-ystep)
+			previous := math.Min(float64(i-1), N)
+
+			return false, d2vector.NewPosition(start.X()+xstep*previous, start.Y()+ystep*previous)
 		}
 	}
 
