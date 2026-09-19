@@ -1,4 +1,4 @@
-package d2app
+package d2logfile
 
 import (
 	"os"
@@ -18,6 +18,11 @@ import (
 // They work by pointing DataDir at a temp directory through the one environment
 // variable it reads, rather than by introducing a seam. A seam here would be a
 // second thing to keep right on the path whose entire job is to survive a panic.
+//
+// THEY ALSO MOVED THIS CODE OUT OF d2app, and that is worth knowing. d2app
+// imports ebiten, whose init() wants a display, so the moment d2app gained its
+// first test file `go test ./...` panicked on the headless CI runner while
+// passing on the developer's Windows machine. See the package comment.
 func logDir(t *testing.T) string {
 	t.Helper()
 

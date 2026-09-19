@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2app"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2logfile"
 )
 
 // GitBranch is set by the CI build process to the name of the branch
@@ -29,9 +30,9 @@ func main() {
 	// a crash's stack -- would otherwise go nowhere. Tee log into the file
 	// BEFORE d2app.Create, so d2term's BindLogger wraps the file-inclusive
 	// writer (terminal.go) and the in-game console still works too.
-	if logFile := d2app.OpenLogFile(); logFile != nil {
+	if logFile := d2logfile.OpenLogFile(); logFile != nil {
 		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
-		log.Printf("OpenDiablo2 %s (%s) starting; log at %s", GitBranch, GitCommit, d2app.LogFilePath())
+		log.Printf("OpenDiablo2 %s (%s) starting; log at %s", GitBranch, GitCommit, d2logfile.LogFilePath())
 	}
 
 	// A panic on the game loop would leave nothing on a double-clicked build.

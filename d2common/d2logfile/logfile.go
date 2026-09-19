@@ -1,16 +1,31 @@
-package d2app
+package d2logfile
 
 import (
 	"os"
 	"path/filepath"
 )
 
+// Package d2logfile owns the per-user directory Strigoi writes into and the log
+// a friend's build tees its output to.
+//
+// IT IS ITS OWN PACKAGE BECAUSE OF WHERE ITS TESTS HAVE TO RUN. It lived in
+// d2app, which is the right place by responsibility -- main.go (untagged) and
+// the build-tagged harness both need it, and d2app is the one package both can
+// see. But d2app imports ebiten, whose package init() opens a window: the
+// moment d2app gained its FIRST test file, `go test ./...` began building and
+// RUNNING a binary in that package, and on a headless CI runner ebiten's init
+// panicked with "glfw: X11: The DISPLAY environment variable is missing".
+// Measured 19 Sep 2026: the local gate passed (Windows has a display) and CI
+// went red on the same commit. A package with no ebiten in its import graph can
+// be tested anywhere, which is the same argument the gate's ebiten-free check
+// makes for the four leaf packages.
+
 // DataDir is the per-user directory Strigoi writes into: %LOCALAPPDATA%\Strigoi
 // on Windows, the user cache dir elsewhere. The harness run directories and the
 // crash/diagnostic log both live under it. It is the one place the root is
-// derived -- the harness (harness.go, build-tagged) reuses it rather than
+// derived -- the harness (d2app/harness.go, build-tagged) reuses it rather than
 // repeating the os.Getenv("LOCALAPPDATA") logic, and main.go (untagged) cannot
-// see the tagged code, so the helper lives here in an untagged file.
+// see the tagged code.
 func DataDir() string {
 	root := os.Getenv("LOCALAPPDATA")
 	if root == "" {

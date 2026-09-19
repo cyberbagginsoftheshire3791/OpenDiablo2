@@ -28,6 +28,13 @@ $deps = & go list -deps ./d2core/d2map/d2maprenderer 2>&1
 "ebiten in d2maprenderer deps: $(($deps | Where-Object { $_ -match 'hajimehoshi/ebiten' }).Count)" | Out-File $Log -Append
 $deps = & go list -deps ./d2game/d2player 2>&1
 "ebiten in d2player deps: $(($deps | Where-Object { $_ -match 'hajimehoshi/ebiten' }).Count)" | Out-File $Log -Append
+# d2logfile, added 19 Sep 2026: it exists BECAUSE of this property. It lived in
+# d2app, which imports ebiten, and the moment d2app gained its first test file
+# `go test ./...` ran a binary there and ebiten's init panicked on the headless
+# CI runner -- while this gate passed on a Windows machine with a display. A
+# package whose tests must run anywhere may not reach ebiten.
+$deps = & go list -deps ./d2common/d2logfile 2>&1
+"ebiten in d2logfile deps: $(($deps | Where-Object { $_ -match 'hajimehoshi/ebiten' }).Count)" | Out-File $Log -Append
 $o = & go run ./tools/strigoihook check-fixtures 2>&1; "check-fixtures exit=$LASTEXITCODE $o" | Out-File $Log -Append
 $o = & go mod tidy -diff 2>&1; "mod tidy -diff exit=$LASTEXITCODE $o" | Out-File $Log -Append
 "DONE" | Out-File $Log -Append

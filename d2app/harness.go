@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2logfile"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2input"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client"
@@ -209,7 +210,7 @@ func (a *App) harnessStart() {
 	if base == "" {
 		// Reuse the one place the root is derived (logfile.go), so the harness
 		// run dirs and the crash log agree on %LOCALAPPDATA%\Strigoi.
-		base = filepath.Join(DataDir(), "harness", "runs")
+		base = filepath.Join(d2logfile.DataDir(), "harness", "runs")
 	}
 
 	harness.runDir = filepath.Join(base, time.Now().Format("20060102-150405"))
