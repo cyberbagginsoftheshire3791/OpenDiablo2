@@ -38,6 +38,14 @@ type MapEngine struct {
 	startSubTileY int                       // Starting Y position
 	dt1Files      []string                  // List of DS1 strings
 
+	// Which authored bits line of sight obeys. Set explicitly in
+	// CreateMapEngine rather than left to the zero value, because the zero
+	// value is the pre-19-September rule and a shipped rule that arrives by
+	// accident is the kind of default this project keeps punishing. See
+	// MapEngine.sightBlocked in pathfind.go for the measurements behind all
+	// three.
+	sightRule SightRule
+
 	// https://github.com/OpenDiablo2/OpenDiablo2/issues/789
 	IsLoading bool // (temp) Whether we have processed the GenerateMapPacket(only for remote client)
 
@@ -59,6 +67,11 @@ func CreateMapEngine(l d2util.LogLevel, asset *d2asset.AssetManager) *MapEngine 
 		StampFactory:     stamp,
 		// This will be set to true when we are using a remote client connection, and then set to false after we process the GenerateMapPacket
 		IsLoading: false,
+
+		// The shipped sight rule, named at the construction site rather than
+		// left to be inferred from a constant's position, even though the zero
+		// value is deliberately the same thing (docs/bugs.md BUG-9).
+		sightRule: SightBlockedBySightFlag,
 	}
 
 	engine.Logger = d2util.NewLogger()

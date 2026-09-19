@@ -3,6 +3,7 @@
 package playtest
 
 import (
+	"math"
 	"testing"
 )
 
@@ -59,33 +60,68 @@ func TestSpawns(t *testing.T) {
 	// guaranteed to be blocked. Sweep a ring and take the first pair that
 	// disagree about line of sight at the SAME radius -- holding distance
 	// equal is what makes act 3 a control rather than a second variable.
-	const ring = 6.0
+	//
+	// THE RING IS SWEPT WITH THIRTY-TWO BEARINGS, AND THE NUMBER IS MEASURED
+	// (19 Sep 2026, BUG-9). This act used ONE ring of 6 tiles and EIGHT
+	// bearings, and it went red the day sight started reading the bit D2
+	// authored for it, reporting "need one clear and one blocked bearing" -- which
+	// names the symptom and hides the fact.
+	//
+	// The fact, from a throwaway cover census over 32 bearings at nine radii
+	// (kept at strigoi-harness-runs\bug11-keep\zz_cover_test.go.keep):
+	//
+	//	r= 4: 2 blocked of 32 · r= 6: 1 · r= 8: 1 · r=10: 2 · r=12: 2
+	//	r=14: 3 · r=16: 3 · r=20: 4 · r=24: 9
+	//
+	// So cover under the shipped rule is real but SPARSE -- 3% to 9% of bearings
+	// inside the notice radius, against roughly a quarter of them under the old
+	// walk-flag rule. Eight bearings is a coin toss at that density; thirty-two
+	// finds one at every radius measured. The sweep over radii stays as the
+	// fallback, and the pair still has to come from a SINGLE radius, which is the
+	// control this act rests on.
+	//
+	// 12 is deliberately NOT in the radius list: the shipped notice radius IS 12,
+	// and act 2 needs its seer comfortably INSIDE the radius rather than sitting
+	// on the boundary where `distance <= reach` turns on a float.
+	rings := []float64{6, 8, 4, 10}
 
-	var clearX, clearY, blockedX, blockedY float64
+	const bearings = 32
+
+	var ring, clearX, clearY, blockedX, blockedY float64
 
 	var haveClear, haveBlocked bool
 
-	for _, d := range [][2]float64{
-		{1, 0}, {0, 1}, {-1, 0}, {0, -1},
-		{0.7, 0.7}, {-0.7, 0.7}, {0.7, -0.7}, {-0.7, -0.7},
-	} {
-		x, y := px+d[0]*ring, py+d[1]*ring
+	for _, r := range rings {
+		haveClear, haveBlocked = false, false
 
-		path := s.call("strigoi_find_path", map[string]any{"to_x": x, "to_y": y})
+		for i := 0; i < bearings; i++ {
+			a := 2 * math.Pi * float64(i) / float64(bearings)
+			x, y := px+math.Cos(a)*r, py+math.Sin(a)*r
 
-		clear := flag(t, path, "straight_line_clear")
-		if clear && !haveClear {
-			clearX, clearY, haveClear = x, y, true
+			path := s.call("strigoi_find_path", map[string]any{"to_x": x, "to_y": y})
+
+			clear := flag(t, path, "straight_line_clear")
+			if clear && !haveClear {
+				clearX, clearY, haveClear = x, y, true
+			}
+
+			if !clear && !haveBlocked {
+				blockedX, blockedY, haveBlocked = x, y, true
+			}
 		}
 
-		if !clear && !haveBlocked {
-			blockedX, blockedY, haveBlocked = x, y, true
+		if haveClear && haveBlocked {
+			ring = r
+
+			break
 		}
 	}
 
 	if !haveClear || !haveBlocked {
-		t.Fatalf("need one clear and one blocked bearing at %.0f tiles; clear=%t blocked=%t",
-			ring, haveClear, haveBlocked)
+		t.Fatalf("no radius in %v carries BOTH a clear and a sight-blocked bearing out of %d from "+
+			"%.1f,%.1f -- under the shipped sight rule cover is sparse (3-9%% of bearings), so suspect "+
+			"the spawn point's neighbourhood before the sight model (clear=%t blocked=%t)",
+			rings, bearings, px, py, haveClear, haveBlocked)
 	}
 
 	t.Logf("act 1: clear line to %.1f,%.1f · blocked line to %.1f,%.1f (both %.0f tiles out)",

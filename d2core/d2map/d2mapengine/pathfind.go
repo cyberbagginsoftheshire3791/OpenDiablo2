@@ -3,6 +3,7 @@ package d2mapengine
 import (
 	"math"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2dt1"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 )
 
@@ -148,7 +149,7 @@ func (m *MapEngine) checkLos(start, end d2vector.Position) (bool, d2vector.Posit
 		// crashed the process on a move target past the map edge, because it
 		// does no bounds checking of its own.
 		flags := m.SubTileAt(int(math.Floor(x)), int(math.Floor(y)))
-		if flags == nil || flags.BlockWalk {
+		if flags == nil || m.sightBlocked(flags) {
 			previous := math.Min(float64(i-1), N)
 
 			return false, d2vector.NewPosition(start.X()+xstep*previous, start.Y()+ystep*previous)
@@ -156,4 +157,125 @@ func (m *MapEngine) checkLos(start, end d2vector.Position) (bool, d2vector.Posit
 	}
 
 	return true, end
+}
+
+// SightRule names which authored bits stop a ray. It is a DIAL rather than a
+// constant because measurement made it one, and because it took three
+// measurements on 19 September 2026 to find out which rule the game needs.
+type SightRule int
+
+// The three rules, and THE ZERO VALUE IS THE SHIPPED ONE. That ordering is
+// deliberate and was chosen after getting it wrong: the package's own tests
+// build an engine as `&MapEngine{}`, so with anything else at zero the tests
+// silently measure a different sight model from the game, and two tests written
+// to pin the shipped rule pinned the helper instead. A field nobody sets must
+// mean what the game means.
+const (
+	// SightBlockedBySightFlag is the SHIPPED rule: BlockLOS alone, the bit D2
+	// authored for sight. On the inherited Act 1 art this is a large change and
+	// the comment on sightBlocked below is the argument for it.
+	SightBlockedBySightFlag SightRule = iota
+
+	// SightBlockedByEither stops a ray on BlockWalk OR BlockLOS. It reads the
+	// authored sight bit, which is what BUG-9 asked for in the narrow sense, and
+	// because the census found BlockLOS to be a strict SUBSET of BlockWalk in
+	// this art it is behaviourally identical to the pre-fork rule here -- which
+	// is to say it reproduces the night that does not happen. Kept as the
+	// conservative option and as the rule to switch to if the slice's own art
+	// ever marks its walls opaque properly.
+	SightBlockedByEither
+
+	// SightBlockedByWalkFlag is the PRE-19-September behaviour: BlockWalk alone,
+	// so the authored sight bit is never read. Kept because every number in this
+	// project's record before that date was measured under it, and because it is
+	// the negative control that names BUG-9.
+	SightBlockedByWalkFlag
+)
+
+// sightBlocked decides which authored bits stop a ray, and choosing between
+// them is the largest single lever in this build.
+//
+// D2 authors two bits. BlockWalk marks anything you cannot walk through --
+// walls, but also water, low fences, carts, ledges. BlockLOS is meant to mark
+// what is genuinely opaque. checkLos consulted BlockWalk alone from the fork
+// onwards, so the sight bit was decoded and read nowhere: docs/bugs.md BUG-9.
+//
+// THE CENSUS FIRST, because it is what makes this a design decision rather than
+// a typo. tools/subtilecensus counted every DT1 of Act 1 Town, Wilderness and
+// Cave: 38,425 subtiles, BlockWalk 10,252 (26.7%), BlockLOS 1,194 (3.1%), both
+// bits 1,194, **BlockLOS-only ZERO**. The sight bit is a strict SUBSET of the
+// walk bit here, so honouring it alone REMOVES 9,058 blockers and adds none --
+// an 88.4% cut in sight blocking. It is not a neutral correction and this
+// comment does not pretend it is.
+//
+// SO IT WAS DECIDED BY MEASURING BOTH WORLDS, at shipped dials, one full cycle
+// each, on the same seed, with nothing spawned and nothing watched:
+//
+//	walls as cover (walk bit, or the union -- identical on this art):
+//	    1 encounter · peak hunters aware 0-1 · health 240 -> 232
+//	    and at the old MaxGroups 8 the record's own six-night run called it
+//	    "one squall at dusk then a long empty walk" (9 Sep, F6)
+//	darkness as cover (sight bit):
+//	    12 encounters · peak aware 5 · health 240 -> 13, survived
+//
+// The first is not a harder game, it is an ABSENT one: on this art the town's
+// clutter means a ray of eight to twelve tiles is almost never clear, so
+// nothing ever notices the player and the night does not happen. That is the
+// build Josh launched on 19 September and could do nothing in but walk around
+// and die of thirst. playtest/spawns_test.go measured the same fact from the
+// other side: under the sight bit, sixty-four rays from the spawn across radii
+// 4, 6, 8 and 10 are ALL clear -- there is no geometric cover near where the
+// game starts, at all.
+//
+// AND THAT IS WHAT THE DESIGN ASKS FOR ANYWAY. Cover in this game is darkness
+// and distance, not geometry: the notice radius is 12 tiles and DOUBLES for a
+// lit target (NoticeDials.LitMultiplier), R2 makes light a combat system with
+// advantage for striking out of the dark, and the whole slice is "the night is
+// the enemy". Hiding behind a cart was never the mechanic. Walls-as-cover at
+// 26.7% density is an accident of inherited art, not a rule anyone chose.
+//
+// WHAT IT COSTS, stated rather than buried: water, low fences, carts and ledges
+// no longer stop the eye, and neither does anything else the art failed to mark
+// BlockLOS -- which on these DT1s is most things. If the slice's own authored
+// maps (M5.4) mark their walls properly, this rule becomes exactly right; until
+// then it is the better of two wrong worlds, chosen on the numbers above.
+//
+// Pathfinding is NOT affected. The A* reads flags.BlockWalk directly
+// (astar.go:117); checkLos feeds sight and the harness's straight-line control
+// and nothing else, so no route smooths itself through a wall.
+//
+// The difficulty this unlocks is carried by the spawn dials, deliberately, and
+// MaxGroups is where it lives (d2world/spawns.go) -- measured 8 -> 2 in the
+// same commit.
+func (m *MapEngine) sightBlocked(flags *d2dt1.SubTileFlags) bool {
+	switch m.sightRule {
+	case SightBlockedByWalkFlag:
+		return flags.BlockWalk
+	case SightBlockedByEither:
+		return flags.BlockWalk || flags.BlockLOS
+	default:
+		return flags.BlockLOS
+	}
+}
+
+// setSightRule chooses which authored bits stop a ray. The zero value is the
+// shipped rule, so an engine nobody configures sees what the game sees;
+// CreateMapEngine sets it anyway, because the intent should be readable at the
+// construction site rather than inferred from a constant's position.
+//
+// UNEXPORTED, AND THAT IS THE POINT. An exported setter with no caller outside
+// its own tests is the hollow-symbol class this project's reachability register
+// exists to find, and adding two of them to claim a seam would have been the
+// sixth costume of it. Re-running the A/B means changing the one line in
+// CreateMapEngine, which is what the 19 September measurements did. The shipped
+// rule is pinned by TestSightShipsTheSightFlagAndTheZeroValueIsThatRule, in CI,
+// so a silent flip fails a test rather than quietly invalidating a night's
+// numbers -- which is the assurance an exported getter would have been for.
+func (m *MapEngine) setSightRule(rule SightRule) {
+	m.sightRule = rule
+}
+
+// sightRuleOf reports the rule sight obeys.
+func (m *MapEngine) sightRuleOf() SightRule {
+	return m.sightRule
 }

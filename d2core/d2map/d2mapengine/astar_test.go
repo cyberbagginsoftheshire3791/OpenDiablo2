@@ -16,7 +16,11 @@ func block(m *MapEngine, subX, subY int) {
 		panic("test blocked a subtile that is not on the map")
 	}
 
+	// A WALL, so both bits: the A* needs BlockWalk and
+	// TestPathFindRoutesAroundAWall's control needs checkLos to refuse it too,
+	// which since BUG-9's fix means BlockLOS (19 Sep 2026).
 	flags.BlockWalk = true
+	flags.BlockLOS = true
 }
 
 // blockColumn walls off a whole column of subtiles, leaving a gap of the given

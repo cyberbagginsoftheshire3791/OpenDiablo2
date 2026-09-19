@@ -37,7 +37,12 @@ func blockAt(t *testing.T, m *MapEngine, x, y int) {
 		t.Fatalf("test setup: subtile (%d,%d) is off the map", x, y)
 	}
 
+	// BUG-9: this is a SIGHT test, so its blockers set the SIGHT bit. Until
+	// 19 Sep 2026 checkLos consulted BlockWalk and these set BlockWalk to
+	// match -- the test encoded the defect, which is why the swap turned three
+	// untagged tests red and why none of them could ever have caught it.
 	flags.BlockWalk = true
+	flags.BlockLOS = true
 }
 
 func TestCheckLosStopsAtItsDestination(t *testing.T) {
@@ -137,4 +142,119 @@ func TestCheckLosStillBlocksAndStillIgnoresTheStartCell(t *testing.T) {
 
 	zeroOnBlocked, _ := onStart.checkLos(d2vector.NewPosition(2, 2), d2vector.NewPosition(2, 2))
 	assert.True(t, zeroOnBlocked, "a zero-length ray from inside a blocker is clear")
+}
+
+// BUG-9, and the three cases no test had: WHICH bits stop a ray.
+//
+// checkLos consulted BlockWalk alone from the fork onwards, so BlockLOS -- the
+// bit D2 authored for exactly this question -- was decoded and read nowhere. The
+// whole corpus built its blockers with BlockWalk and so encoded the defect it
+// should have caught.
+//
+// THE SHIPPED RULE IS THE SIGHT BIT ALONE, AND IT IS A DESIGN DECISION MADE ON
+// MEASUREMENTS, not a typo repair. The census found BlockLOS to be a strict
+// SUBSET of BlockWalk across Act 1 (1,194 against 10,252, BlockLOS-only ZERO),
+// so the shipped rule removes 9,058 blockers. Both worlds were then measured
+// over a full cycle at shipped dials: walls-as-cover gives 1 encounter and peak
+// 0-1 hunters aware, darkness-as-cover gives 12 encounters and a player who
+// survives on 13 of 240. The first is not a harder game, it is an absent one.
+// sightBlocked's comment carries the whole argument.
+func TestCheckLosNoLongerStopsAtAWalkOnlyBlocker(t *testing.T) {
+	m := testEngine(4, 4)
+
+	// A low wall, water, a ledge, a cart. 9,058 of Act 1's subtiles are exactly
+	// this (tools/subtilecensus), and under the shipped rule the eye passes all
+	// of them -- which is the 88.4% cut, seen one subtile at a time.
+	flags := m.SubTileAt(3, 2)
+	if flags == nil {
+		t.Fatal("test setup: subtile (3,2) is off the map")
+	}
+
+	flags.BlockWalk = true
+
+	clear, _ := m.checkLos(d2vector.NewPosition(2, 2), d2vector.NewPosition(5, 2))
+	assert.True(t, clear, "a subtile that blocks WALKING does not block SIGHT under the shipped rule")
+
+	// AND BOTH ALTERNATIVES ARE REACHABLE, because this is a dial and the record
+	// needs to be able to re-measure under the rule it was written beneath.
+	m.setSightRule(SightBlockedByEither)
+
+	clear, _ = m.checkLos(d2vector.NewPosition(2, 2), d2vector.NewPosition(5, 2))
+	assert.False(t, clear, "the union stops it -- on this art that rule IS the pre-fork rule")
+
+	m.setSightRule(SightBlockedByWalkFlag)
+
+	clear, _ = m.checkLos(d2vector.NewPosition(2, 2), d2vector.NewPosition(5, 2))
+	assert.False(t, clear, "and so does the pre-19-September rule every old number was measured under")
+}
+
+// THE ASSERTION BUG-9 WAS ACTUALLY ABOUT: the sight bit is read at all. Nothing
+// in the engine read it before 19 September 2026, and under the pre-fork rule
+// this test is red.
+func TestCheckLosHonoursASightOnlyBlocker(t *testing.T) {
+	m := testEngine(4, 4)
+
+	// Opaque but walkable. Act 1 carries none of these (BlockLOS-only = 0 across
+	// 38,425 subtiles), so this pins the RULE rather than the data -- if the
+	// slice's own art ever marks one, sight obeys it.
+	flags := m.SubTileAt(3, 2)
+	if flags == nil {
+		t.Fatal("test setup: subtile (3,2) is off the map")
+	}
+
+	flags.BlockLOS = true
+
+	clear, _ := m.checkLos(d2vector.NewPosition(2, 2), d2vector.NewPosition(5, 2))
+	assert.False(t, clear, "a subtile that blocks SIGHT must block sight even when walkable")
+
+	// The negative control that names the defect: under the pre-19-September
+	// rule the engine cannot see this blocker at all.
+	m.setSightRule(SightBlockedByWalkFlag)
+
+	clear, _ = m.checkLos(d2vector.NewPosition(2, 2), d2vector.NewPosition(5, 2))
+	assert.True(t, clear, "BUG-9 itself: the old rule reads the walk bit and misses an opaque subtile")
+}
+
+// The DEFAULT is pinned, and every rule with it, because "which bits ship" is
+// the single most consequential line in the sight model: it is the difference
+// between 1 encounter a night and 12. A silent flip either way changes the whole
+// game, so it fails a test.
+func TestSightShipsTheSightFlagAndTheZeroValueIsThatRule(t *testing.T) {
+	m := testEngine(4, 4)
+
+	assert.Equal(t, SightBlockedBySightFlag, m.sightRuleOf(), "the shipped rule is the sight bit")
+	assert.Equal(t, SightBlockedBySightFlag, SightRule(0),
+		"and the ZERO VALUE is that same rule on purpose: this helper builds &MapEngine{}, and a field "+
+			"nobody sets must mean what the game means -- the first cut of this had another rule at zero "+
+			"and these assertions pinned the helper instead of the engine")
+
+	for _, tc := range []struct {
+		name      string
+		rule      SightRule
+		walk, los bool
+		wantClear bool
+	}{
+		{"shipped: a properly marked wall stops it", SightBlockedBySightFlag, true, true, false},
+		{"shipped: a walk-only blocker does not", SightBlockedBySightFlag, true, false, true},
+		{"shipped: an opaque walkable subtile does", SightBlockedBySightFlag, false, true, false},
+		{"shipped: open ground is clear", SightBlockedBySightFlag, false, false, true},
+		{"union: a walk-only blocker stops it", SightBlockedByEither, true, false, false},
+		{"union: an opaque walkable subtile stops it", SightBlockedByEither, false, true, false},
+		{"union: open ground is still clear", SightBlockedByEither, false, false, true},
+		{"pre-fork: the sight bit is invisible", SightBlockedByWalkFlag, false, true, true},
+		{"pre-fork: the walk bit is everything", SightBlockedByWalkFlag, true, false, false},
+	} {
+		m := testEngine(4, 4)
+		m.setSightRule(tc.rule)
+
+		flags := m.SubTileAt(3, 2)
+		if flags == nil {
+			t.Fatal("test setup: subtile (3,2) is off the map")
+		}
+
+		flags.BlockWalk, flags.BlockLOS = tc.walk, tc.los
+
+		clear, _ := m.checkLos(d2vector.NewPosition(2, 2), d2vector.NewPosition(5, 2))
+		assert.Equal(t, tc.wantClear, clear, tc.name)
+	}
 }

@@ -75,6 +75,34 @@ func TestNightIsVisiblyDark(t *testing.T) {
 	}
 
 	// --- the deep night, no light ----------------------------------------
+	//
+	// NOTHING ALIVE IN THE FRAME, AND THIS IS A MEASUREMENT (19 Sep 2026,
+	// BUG-11). Reaching the deep night costs a full day of world time and the
+	// spawn tables run the whole way. Until the group cap was fixed they stalled
+	// after a couple of packs, so the night frame happened to contain almost
+	// nothing; with the cap recycling the slots of packs the player has beaten,
+	// a monster can be standing inside the two-tile "near" bucket when the
+	// shutter opens. Measured: `near` rose from x0.136 to x0.153 of its daylight
+	// value while `far` did not move at all, and the uniformity check failed at
+	// 32% against its 25% tolerance -- a sprite, not a vignette.
+	//
+	// The claim this script makes is about PER-TILE GROUND LIGHT. A lit sprite in
+	// one bucket and not the other is noise in exactly the term the check
+	// divides by, so the tap goes off and the map is cleared first. Widening the
+	// tolerance instead would have hidden the one thing the check exists to
+	// catch.
+	s.call("strigoi_set_system_field", map[string]any{
+		"system": "spawns", "field": "chance", "value": 0,
+	})
+
+	for _, raw := range asList(spawnsState(s)["group_list"]) {
+		if row, ok := raw.(map[string]any); ok {
+			s.call("strigoi_set_system_field", map[string]any{
+				"system": "spawns", "field": "despawn", "value": str(row, "group"),
+			})
+		}
+	}
+
 	s.call("strigoi_set_system_field", map[string]any{"system": "clock", "field": "moon", "value": 0})
 
 	clock := sub(s.call("strigoi_get_system_state", map[string]any{"system": "clock"}), "state")

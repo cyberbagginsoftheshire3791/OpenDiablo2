@@ -239,10 +239,23 @@ is the part ask 6 asked for — a `notice` block per group plus `notice_list`
 for **every** watcher, carrying `sees`, `distance`, `light_at_quarry` and
 `noticed`. `notice_wired` tells a script "nothing could have noticed you"
 apart from "nothing did". Settable: `chance`, `check_minutes`, `despawn`,
-`morale` (an object, `{"group","value"}`), `notice_lit_level`,
+`max_groups`, `morale` (an object, `{"group","value"}`), `notice_lit_level`,
 `notice_radius`, `open_bodies`, `rout_at`. There is deliberately no spawn
 verb: a script forces an arrival by raising `chance` and stepping the clock,
 which exercises the real table rather than bypassing it.
+
+**`groups`, `live_groups` and `spent_groups` are three different numbers, and
+the difference is BUG-11** (19 Sep 2026). `groups` is every group the tables
+have made and not yet sent home; a group is **spent** when nothing is watching
+any member of it any more, which happens exactly when every member has died or
+its pack has broken (`Combat.withdraw` is the only thing that unwatches). The
+group cap counts the **live** ones. It used to count `groups`, so a pack the
+player beat held a slot until daybreak and the tables stalled — at the old cap
+of 8 that was the permanent stall `clearAtDaybreak` was written for in August,
+and at the cap of 2 the measured dial pass chose, it was a night that simply
+went quiet after two fights. `max_groups` became settable in the same change,
+because the dial was reported from the day it existed with no verb to move it
+and the sweep that tunes it had to edit the source between runs.
 
 **`combat`** (M4.5). Steps 1 and 2 built the encounter — that a fight IS
 happening, who is in it, and whose turn it is — step 3 gave the monsters

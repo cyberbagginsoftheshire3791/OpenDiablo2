@@ -85,7 +85,49 @@ func TestCombatRout(t *testing.T) {
 		t.Fatalf("never reached the deep night, stage=%q", stage)
 	}
 
+	// CLEAR THE WALK'S LEFTOVERS FIRST, and this is the other half of the same
+	// measurement. Getting to the deep night costs up to forty world hours, and
+	// the tables run the whole way: the first run under the fix arrived at night
+	// with SEVEN groups already placed (g:7 was the tour's target), and act A
+	// died because a member of g:5 -- a different pack entirely -- walked into
+	// the fight as a reinforcement. `ended_reason` is then a fact about two
+	// packs, which is not a fact this script can assert anything about.
+	//
+	// Despawn is "sent home": the same verb clearAtDaybreak uses, on groups this
+	// script never looked at. Nothing about the pack it then tours is arranged --
+	// the tables place it, size it and time it.
+	for _, raw := range asList(spawnsState(s)["group_list"]) {
+		if row, ok := raw.(map[string]any); ok {
+			setField(s, "spawns", "despawn", str(row, "group"))
+		}
+	}
+
+	if n := mustNum(t, spawnsState(s), "groups"); n != 0 {
+		t.Fatalf("the walk's leftovers must be gone before the night's one pack arrives, %v remain", n)
+	}
+
 	setField(s, "spawns", "chance", 100)
+
+	// ONE PACK AT A TIME, and this line is a measurement (19 Sep 2026, BUG-11).
+	//
+	// Before the group cap counted LIVE groups, `chance` 100 filled the cap once
+	// and the tables then stalled for the rest of the night -- so this script
+	// faced whatever that one fill produced and nothing more. With the cap
+	// recycling the slots of packs the player has beaten, `chance` 100 is an
+	// UNBOUNDED STREAM of arrivals, and the first run under the fix died in act
+	// A: `fighting=player_dead`, 400 iterations of "morale 60.00", against a
+	// six-strong wolf pack (zombie1, 181 HP each) with reinforcements walking in
+	// behind it.
+	//
+	// max_groups 1 is the honest control, not a dodge. Every act of this script
+	// is about ONE pack -- its morale, its losses, its rout ending -- and a
+	// second pack joining the same fight makes `ended_reason` a fact about two
+	// packs. It also makes the target DETERMINISTIC: rows are consulted in
+	// declaration order, so the one live group at night is the dogs row, which is
+	// the row N1 §5 calls the first thing a player meets and the row the corpus
+	// describes routing. The tables still place it, still choose its size, and
+	// still decide when it arrives.
+	setField(s, "spawns", "max_groups", 1)
 	setField(s, "spawns", "notice_radius", 24)
 	setField(s, "light", "carried_source", "torch")
 	setField(s, "combat", "player_action", "hold")
@@ -124,6 +166,13 @@ func TestCombatRout(t *testing.T) {
 	}
 
 	group, groupID, inFight := walkToAPack(t, s, 2)
+
+	// AND NOW THE TAP GOES OFF. The pack is placed and in the fight; every
+	// later act is about THIS pack, and a fresh arrival joining would make
+	// act F's ended_reason a fact about two of them. Setting chance rather
+	// than max_groups leaves the cap where the game ships it, so nothing
+	// after this line depends on the dial this script moved.
+	setField(s, "spawns", "chance", 0)
 
 	spawned := num(group, "spawned")
 	moraleAtArrival := num(group, "morale")
@@ -686,6 +735,17 @@ func stepUntilMoraleMoves(t *testing.T, s *session, groupID string, from float64
 
 		if num(g, "morale") != from {
 			return true
+		}
+
+		// A DEAD PLAYER IS NOT A PACK THAT KEPT ITS NERVE, and telling them
+		// apart cost a whole suite run. The first run under the BUG-11 cap fix
+		// spent 390 of these iterations logging "morale 60.00 | fighting=
+		// player_dead" and then failed with "morale never moved", which names
+		// the symptom and hides the cause.
+		if hp := mustNum(t, metersState(s), "health"); hp <= 0 {
+			t.Fatalf("the player died waiting for %s to lose its nerve (iteration %d) -- "+
+				"the act cannot assert a rout it did not live to see: %s",
+				groupID, i, describeFight(t, s))
 		}
 
 		s.call("strigoi_step", map[string]any{"frames": 4})

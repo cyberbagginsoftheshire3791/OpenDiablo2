@@ -197,8 +197,13 @@ type SpawnDials struct {
 	// STATE lives here; the behaviour is M4.5's.
 	RoutAt float64
 
-	// MaxGroups bounds how many live groups the tables will create, so a
+	// MaxGroups bounds how many LIVE groups the tables will create, so a
 	// forced-chance script cannot fill the map.
+	//
+	// "Live" is load-bearing and it was not always honoured. Until 19 Sep 2026
+	// the cap counted len(groups), which includes packs that have already been
+	// killed or broken -- so a beaten pack held a slot for the rest of the
+	// night and the tables stalled. See liveGroups.
 	MaxGroups int
 
 	// Rows are the tables themselves.
@@ -216,7 +221,42 @@ func DefaultSpawnDials() SpawnDials {
 		CarrionCap:     3,
 		LightWeight:    2,
 		RoutAt:         25,
-		MaxGroups:      8,
+		// [DIAL] PROVISIONAL. 8 -> 2, 19 Sep 2026, and the number survived a
+		// correction on the same day that voided the sweep which chose it.
+		//
+		// THE FIRST SWEEP MEASURED A STALLED WORLD. It read 2 as "survived a
+		// full cycle on 99/240 after 11 encounters", which was true and
+		// meaningless: the cap counted beaten packs, so 2 meant two packs and
+		// then silence until sunrise (BUG-11, liveGroups). Re-swept with the cap
+		// counting live groups, same seed, same probe, one full cycle each:
+		//
+		//	cap 1 -> SURVIVED 106/240 ·  5 encounters · peak  3 aware
+		//	cap 2 -> SURVIVED  13/240 · 12 encounters · peak  5 aware
+		//	cap 3 -> DIED 20:43       · 12 encounters · peak  8 aware
+		//	cap 5 -> DIED 05:34       ·  7 encounters · peak 12 aware
+		//
+		// 2 rather than 1 because the record's standing complaint about the
+		// night is that it is EMPTY -- the 9 Sep six-night run's F6 is "one
+		// squall at dusk then a long empty walk" -- and 5 encounters a cycle is
+		// that night again. 2 rather than 3 because 3 kills an hour into the
+		// dark. 13/240 is a FLOOR, not an expectation: the probe runs on
+		// player_control=policy, which never retreats, never disengages (R2 §3)
+		// and never uses the torch tactically, so a human has strictly more
+		// room than this number shows.
+		//
+		// WHAT IT DOES NOT MEASURE, and this half cannot be measured without a
+		// human at the keyboard: the signed run budget is REAL minutes -- combat
+		// [1-3.5] a night, a routine encounter under [2] -- and the 9 Sep run's
+		// F4 measured 9-19 real SECONDS a night, far under it. A policy run
+		// cannot settle that. Josh's own launch is the instrument, and his felt
+		// reaction to it is what retires this marker.
+		//
+		// Health is one-way in this build: there is no regeneration and no
+		// recovery verb anywhere, which is Phase 6 by Josh's ruling of 28 Aug
+		// (M4.5 note §7) and R2's "wounds heal through time and resources". So
+		// this dial is tuned against ONE night, deliberately. Whether six nights
+		// are survivable is arithmetic that Phase 6 owns, not a spawn dial.
+		MaxGroups: 2,
 		Rows: []SpawnRow{
 			{
 				// N1 §5: dusk into night, near bodies and roads, drawn by
@@ -464,6 +504,11 @@ func (s *Spawns) Advance(worldMinutes float64) {
 // life of the screen. Found by the reachability register on its first run and
 // ruled a burst of its own by Josh, 28 Aug.
 //
+// AND IT WAS ONLY HALF THE FIX, which is BUG-11 and was not found until 19 Sep
+// 2026. Daybreak retires a pack that went home; nothing retired a pack the
+// player BEAT. The cap counted those too, so the stall came back the moment the
+// cap was small enough to reach -- see liveGroups.
+//
 // StageDay rather than !Stage().IsDark(), and the difference is not cosmetic:
 // IsDark() is true for StageNight ALONE (clock.go:52), so "not dark" would
 // include dusk -- and the dogs row carries a 0.6 dusk weight, so a pack could
@@ -507,6 +552,72 @@ func (s *Spawns) aware(groupID string) bool {
 	return false
 }
 
+// spent reports whether a group is OVER: nothing is watching any member of it
+// any more.
+//
+// THIS IS THE LIVENESS TEST, AND IT IS DERIVED FROM THE MECHANISM RATHER THAN
+// FROM A SYMPTOM. A member leaves the notice model in exactly two places, both
+// in Combat.withdraw: when it dies, and when its pack breaks. So a group with
+// no watched member left has had every member killed or routed, and it can
+// never notice the player, never start a chase and never open a fight again --
+// it is bookkeeping standing over corpses. Reading morale instead would answer
+// a narrower question (a pack can be wiped out without its morale reaching
+// RoutAt if the last death is also the last member), and counting bodies would
+// need a system this one does not have.
+//
+// THE NIL-NOTICE CASE IS NOT HANDLED HERE, and the first draft of this method
+// handled it twice. liveGroups answers "cannot tell" before it ever asks, so a
+// second nil check in here was unreachable -- and the control written to prove
+// it load-bearing passed with the guard inverted, which is how it was found.
+// One condition, one place, and that place is the caller.
+func (s *Spawns) spent(g *group) bool {
+	if g == nil {
+		return false
+	}
+
+	for _, m := range g.members {
+		if m == nil {
+			continue
+		}
+
+		if _, watching := s.notice.Noticed(m.WatcherID()); watching {
+			return false
+		}
+	}
+
+	return true
+}
+
+// liveGroups counts the groups that can still do something to the player.
+//
+// IT IS WHAT THE CAP COUNTS, and that sentence is the whole of BUG-11. The
+// group cap exists so a forced-chance script cannot fill the map; it was
+// implemented as len(groups), which is every group the tables have ever made
+// and not yet sent home. Nothing retires a pack the player BEAT: Despawn is
+// called by the harness and by clearAtDaybreak, and daybreak is hours away and
+// skips any group that has noticed the player. So two dead packs at MaxGroups 2
+// meant the tables never fired again until sunrise -- the same permanent spawn
+// stall clearAtDaybreak was written for in August, in a second costume, and
+// this time visible only as a night that went quiet.
+//
+// Measured 19 Sep 2026 (TestCombatRout, sight-final run): two groups, both
+// `morale:0 routing:true notice:[]`, 40 five-minute steps, not one new arrival.
+func (s *Spawns) liveGroups() int {
+	if s.notice == nil {
+		return len(s.groups)
+	}
+
+	n := 0
+
+	for _, g := range s.groups {
+		if !s.spent(g) {
+			n++
+		}
+	}
+
+	return n
+}
+
 // check consults every row once, in declaration order.
 func (s *Spawns) check() {
 	s.checks++
@@ -535,7 +646,7 @@ func (s *Spawns) check() {
 			continue
 		}
 
-		if len(s.groups) >= s.dials.MaxGroups {
+		if s.liveGroups() >= s.dials.MaxGroups {
 			continue
 		}
 
@@ -718,8 +829,9 @@ func (s *Spawns) Routing(groupID string) (routing, known bool) {
 // would collapse them into a single activation and make N1 §5's pack-size
 // dials cosmetic.
 //
-// The scan is over at most MaxGroups (8) groups of at most MaxCount (6)
-// members. A map from member id to group would be faster and would be a
+// The scan is over the live groups plus however many spent ones the night has
+// accumulated -- the cap bounds the live ones only (liveGroups) -- of at most
+// MaxCount (6) members each. A map from member id to group would be faster and would be a
 // second index over state this file already owns, which is the kind of
 // duplicate the reachability work keeps deleting; if a profile lookup ever
 // shows up in a profile, build the index then.
@@ -906,6 +1018,8 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 
 	out := map[string]interface{}{
 		"groups":         len(s.groups),
+		"live_groups":    s.liveGroups(),
+		"spent_groups":   len(s.groups) - s.liveGroups(),
 		"group_list":     groups,
 		"rows":           rows,
 		"stage":          stage,
@@ -972,7 +1086,7 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 // -- a spawn verb here would let a script prove something the game never does.
 func (s *Spawns) HarnessSettableFields() []string {
 	return []string{
-		"chance", "check_minutes", "despawn", "morale",
+		"chance", "check_minutes", "despawn", "max_groups", "morale",
 		"notice_lit_level", "notice_radius", "open_bodies", "rout_at",
 	}
 }
@@ -1017,6 +1131,26 @@ func (s *Spawns) HarnessSet(field string, value interface{}) error {
 		}
 
 		s.dials.CheckMinutes = f
+
+		return nil
+
+	case "max_groups":
+		// THE THIRD PROVIDER RULE, paid late. max_groups was reported by
+		// HarnessState from the day it existed and no verb could move it, so
+		// the 19 Sep dial sweep had to EDIT THE SOURCE between runs -- four
+		// rebuilds to answer one question, and a sweep that cannot be re-run
+		// from a script is a sweep nobody re-runs. A script may move it; the
+		// game ships whatever DefaultSpawnDials says.
+		f, ok := toFloat(value)
+		if !ok {
+			return fmt.Errorf("max_groups wants a number of live groups, got %T", value)
+		}
+
+		if f < 1 {
+			return fmt.Errorf("max_groups wants at least 1 live group, got %v", f)
+		}
+
+		s.dials.MaxGroups = int(f)
 
 		return nil
 
