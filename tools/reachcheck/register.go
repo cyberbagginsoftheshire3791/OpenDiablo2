@@ -69,6 +69,11 @@ const (
 	// exported members that combat cares about. Before that, nothing in
 	// d2mapentity was worth a claim: the entity was a sprite on a path.
 	pkgEntity = "d2core/d2map/d2mapentity"
+	// pkgPlayer joined at M4.4c-2a, with the first keys that reach the world.
+	// Before that, d2player held HUD drawing and nothing a register row could
+	// usefully claim; F, L and E are the first three handlers whose going dark
+	// would mean a person cannot play the game at all.
+	pkgPlayer = "d2game/d2player"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -226,6 +231,56 @@ var Register = []Entry{
 		"Whether an encounter is live, asked in Go rather than read out of harness state. advanceWorld reads it every tick to apply and take back the labour activity. This is the row that stops Pursuit's arrived mistake happening twice.", ""},
 	{sym(pkgScreen, "Game.BodyOf"), BucketWire, VerdictLive,
 		"How the resolver reaches a body -- the PLAYER'S included, since step 4, which is what makes losing possible. Called from Combat.Advance, in Go, on every blow. It was harness-only for one milestone because only HarnessState read it.", ""},
+	// ---------------------------------------------------------------
+	// M4.4c-2a -- THE HANDS. A round can stop and wait for a person, and
+	// these rows are the only reason that is true outside a script.
+	//
+	// The five MOVED rows below (Combat.Round, Light.Add, Light.Remove,
+	// Light.Carried, Clock.TimeOfDay) were all measured harness-only or dead
+	// on 18 Sep 2026 at dc7149d3 and are live now because a KEY reaches them,
+	// not because a caller was manufactured. Light.Remove is the symbol M4.1
+	// was reopened over; it has a shipped caller for the first time.
+	//
+	// Combat.Order did NOT move and c-2's brief expected it to -- see the
+	// defer block below for why, and state.md for the finding.
+	// ---------------------------------------------------------------
+	{sym(pkgWorld, "Combat.Commit"), BucketWire, VerdictLive,
+		"The player's slot, resolved by a person. GameControls.combatStrike/combatTorch/combatEndTurn all call it from OnKeyDown in a shipped build, and the harness's commit settable field calls the SAME method -- two paths, one implementation, which is what keeps commits_by_input honest.", ""},
+	{sym(pkgWorld, "Combat.Awaiting"), BucketWire, VerdictLive,
+		"Whether a turn is open and waiting for a person. Game.worldRunning gates the whole world on it, and the torch key refuses to spend when it is false. If this goes dark the world never stops for the player.", ""},
+	{sym(pkgWorld, "Combat.Wait"), BucketWire, VerdictLive,
+		"The decision timer. Game.Advance hands it the frame's elapsed while a turn is open -- a delta, never a wall-clock read inside the simulation. It is also what opens the pace window, so a fight nobody waited in writes no PACE line.", ""},
+	{sym(pkgWorld, "Combat.SpendMove"), BucketWire, VerdictLive,
+		"Marks the Move pip spent when a walk is ordered during the player's turn. It is the THIRD entry point to finishRound: without a Go caller here, a strike-then-move turn could never close itself and AutoEndTurn would be a dial that does nothing.", ""},
+	{sym(pkgWorld, "Combat.ActionSpent"), BucketWire, VerdictLive,
+		"Which of the two things E means. GameControls.combatEndTurn asks it to choose between hold (Action unspent, its signed meaning) and end (Action spent). One key, two choices, and the player never learns the difference.", ""},
+	{sym(pkgWorld, "Combat.LastRound"), BucketWire, VerdictLive,
+		"The closed round's row. writeRoundLine reads it every frame and writes one ROUND line per round -- the edge is the ROW changing, not Combat.Round(), which is the correction that stopped a three-round fight writing two lines.", ""},
+	{sym(pkgWorld, "Combat.LastPace"), BucketWire, VerdictLive,
+		"The finished fight's row. writePaceLine reads it on the fight-closed edge. Captured inside end() rather than by a caller a frame later, because a fight that opened and closed between two frames is otherwise invisible.", ""},
+	{sym(pkgWorld, "Combat.Round"), BucketWire, VerdictLive,
+		"The current round. MOVED from defer/dead at M4.4c-2a: the wish note stamps the round the player is in, and the ROUND line is the readout that row was waiting for since M4.4.", ""},
+	{sym(pkgWorld, "Light.Add"), BucketWire, VerdictLive,
+		"Lights a torch. MOVED from defer/harness-only at M4.4c-2a: the L key is the verb that block said did not exist. In a fight it costs the Action; out of one it is free and real-time.", ""},
+	{sym(pkgWorld, "Light.Remove"), BucketWire, VerdictLive,
+		"Spends a burnt-out torch. MOVED from defer/harness-only at M4.4c-2a, and this is the symbol M4.1 WAS REOPENED OVER -- exported, callable only by a test, a placed fire that could not be put out in any playable build. Game.writeTorchOut is its first shipped caller: a torch at 0 minutes is gone, not carried as an empty stick (Josh, 12 Sep). DOUSE does not call it; douse keeps the burn.", ""},
+	{sym(pkgWorld, "Light.Carried"), BucketWire, VerdictLive,
+		"What is in the player's hand. MOVED from observe/harness-only at M4.4c-2a: the L key asks before it decides whether L means light, relight or douse, and the ROUND and PACE lines read the burn off it.", ""},
+	{sym(pkgWorld, "Clock.TimeOfDay"), BucketWire, VerdictLive,
+		"HH:MM. MOVED from observe/harness-only at M4.4c-2a: the PACE, TORCH_OUT and WISH lines all stamp it. The HUD still shows time-to-sunset and still does not call it -- the row moved because the instrument appeared, not because S1 section 3.4 changed.", ""},
+	// The three verbs by key. The brief asks for a row per EVENT; an event is
+	// an enum constant and deadcode classifies functions, so the rows are the
+	// handlers behind them -- which is the executable claim anyway. If one of
+	// these goes dark the key still exists in the table and does nothing,
+	// which is the failure a player would report as "F is broken".
+	{sym(pkgPlayer, "GameControls.combatStrike"), BucketWire, VerdictLive,
+		"F. Commits the Action against the first living adjacent enemy in D8 order -- it passes an EMPTY target and lets Combat.Commit choose, so the key and the harness field cannot drift apart. Reached from OnKeyDown.", ""},
+	{sym(pkgPlayer, "GameControls.combatTorch"), BucketWire, VerdictLive,
+		"L. One key: light, relight or douse, decided before anything is spent so that a refused commit changes nothing. Reached from OnKeyDown.", ""},
+	{sym(pkgPlayer, "GameControls.combatEndTurn"), BucketWire, VerdictLive,
+		"E. Ends the turn -- hold when the Action is unspent, end when it is spent. Reached from OnKeyDown. Without it a turn with an unspent Move waits forever.", ""},
+	{sym(pkgScreen, "Game.worldRunning"), BucketWire, VerdictLive,
+		"The one boolean that stops the world for an open turn, keeping BOTH of its original terms (menu closed OR not single-player) and adding !Awaiting. advanceWorld is gated on it; MapEngine.Advance deliberately is NOT, so sprites animate and in-flight walks finish while a person thinks.", ""},
 	{sym(pkgWorld, "Combat.Encounter"), BucketWire, VerdictLive,
 		"Which fight is live RIGHT NOW. The wish console verb asks it as the player types, from Game.commandWish, bound in Game.OnLoad in a shipped build. It exists because the two things that look like an answer are not one: LastRound names the last CLOSED round and is empty through the whole of round one, LastPace only exists after the fight is over and goes on naming it.", ""},
 	// The class pin (ruled 11 Sep 2026, built in M4.4c-2a). Two rows, not one:
@@ -313,23 +368,29 @@ var Register = []Entry{
 	// than finding it again every burst.
 	{sym(pkgWorld, "Meters.Consume"), BucketDefer, VerdictHarnessOnly,
 		"The only way to refill food or water or to rest off fatigue. No eat, drink or sleep verb exists in the game, so the meters are a one-way ratchet in every playable build.", "Phase 6 inventory"},
-	{sym(pkgWorld, "Light.Add"), BucketDefer, VerdictHarnessOnly,
-		"Places a light source. The game has no verb that lights a fire -- place_source is a harness field.", "Phase 6 inventory / the first interaction verbs"},
-	{sym(pkgWorld, "Light.Remove"), BucketDefer, VerdictHarnessOnly,
-		"Puts a placed light out. This is the symbol M4.1 was reopened over; remove_source gave it a caller, and that caller is HarnessSet, so it is still harness-only one level down.", "Phase 6 inventory / the first interaction verbs"},
+	// Light.Add and Light.Remove MOVED to wire at M4.4c-2a (see the wire block
+	// above). The torch key is the verb that lights a fire, and a torch at 0
+	// minutes is removed -- the two call sites this block said did not exist.
+	// Light.Remove was the symbol M4.1 was REOPENED over; it closes by being
+	// used, not by being re-bucketed.
 	// Meters.Food/Water/Fatigue and Meters.Dying MOVED to wire at M4.4c-1 (see
 	// the wire block above): the selected-squad sheet reads the three meters,
 	// and the overhead dying cue reads Dying, both through the Squads owner.
 	//
-	// Combat.Round/Order STAY deferred and restamp M4.4 -> M4.4c-2 (ruled ask
-	// 5): the turn UI is what reads a round number and an activation order, and
-	// c-1 builds no such readout, so wiring them here would manufacture a call
-	// site -- the exact lie this register exists to catch. c-1's sheet shows the
-	// squad's meters, not the fight's round.
-	{sym(pkgWorld, "Combat.Round"), BucketDefer, VerdictDead,
-		"The current round. The resolver spends world time on rounds but reads it off the encounter directly; the turn UI is what will want the accessor.", "M4.4c-2 (the hands: the turn UI)"},
+	// Combat.Round MOVED to wire at M4.4c-2a (see the wire block above): the
+	// ROUND line is the readout this row was waiting for.
+	//
+	// Combat.Order DID NOT MOVE, and c-2's brief expected it to. MEASURED 18
+	// Sep 2026: still dead. The reason is a design call c-2a made and did not
+	// announce -- the strike key commits with an EMPTY target and the target
+	// is chosen inside Combat.Commit, one implementation for the key and the
+	// settable field both, rather than the key asking for the order and
+	// picking the first living adjacent enemy itself. That is the better
+	// shape; it just leaves this accessor with no Go caller, which is the
+	// truth and is what the row now says. Recorded in state.md before this
+	// text was written, per this file's own rule.
 	{sym(pkgWorld, "Combat.Order"), BucketDefer, VerdictDead,
-		"The activation sequence -- D8 section 9's since step 4. Reported and asserted by playtests; still read by nothing in Go, and the turn UI is what will.", "M4.4c-2 (the hands: the turn UI)"},
+		"The activation sequence -- D8 section 9's since step 4. Reported and asserted by playtests; still read by nothing in Go. c-2a did NOT give it a caller: the strike key commits an empty target and Combat.Commit resolves D8 order internally, so the turn UI that DISPLAYS an order is what will want this.", "M4.4c-2b (the squad strip) or the first order readout"},
 
 	// THE N-PATH IS HARNESS-DRIVEN, and the register says so rather than
 	// claiming a green (brief §9 objection 3): squad_add/squad_remove are
@@ -415,16 +476,37 @@ var Register = []Entry{
 	// clock strip draws both since M4.4a. TimeOfDay stayed here -- the strip
 	// shows time-to-sunset, not the HH:MM clock time, so only the clock
 	// provider's HarnessState calls it. See the M4.4a note in the wire block.
-	{sym(pkgWorld, "Clock.TimeOfDay"), BucketObserve, VerdictHarnessOnly,
-		"Reports the time of day (HH:MM) for the clock provider. Harness-only: the HUD shows time-to-sunset, not the clock time (S1 section 3.4).", ""},
+	// Clock.TimeOfDay MOVED to wire at M4.4c-2a (see the wire block above).
+	// The M4.4a note two blocks up is kept as written and is no longer true of
+	// this symbol: the HUD still shows time-to-sunset and still never calls
+	// it, but the PACE, TORCH_OUT and WISH lines stamp HH:MM and they are
+	// written by the game screen in every shipped build. The row moved because
+	// a caller appeared, not because the reasoning changed.
 	{sym(pkgWorld, "Clock.SetFrozen"), BucketObserve, VerdictHarnessOnly,
 		"Freezes the clock for a script. The game must never do this, so harness-only is the correct answer and not a deferral.", ""},
 	{sym(pkgWorld, "Clock.SetMoon"), BucketObserve, VerdictHarnessOnly,
 		"Sets the moon phase for a script. A dial, not a world change.", ""},
 	{sym(pkgWorld, "Light.Radius"), BucketObserve, VerdictHarnessOnly,
 		"Reports the lit radius around the player.", ""},
-	{sym(pkgWorld, "Light.Carried"), BucketObserve, VerdictHarnessOnly,
-		"Reports the carried source's state.", ""},
+	// Light.Carried MOVED to wire at M4.4c-2a (see the wire block above): the
+	// torch key asks what is in the player's hand before it decides what L
+	// means, and the ROUND and PACE lines read the burn.
+	// M4.4c-2a's read-only half. These two report the turn seam to a script
+	// and the game never asks them, which is correct and not a deferral: the
+	// game ACTS on the seam through Awaiting, ActionSpent and Commit, all
+	// wired above. A script needs the numbers; a player needs the behaviour.
+	{sym(pkgWorld, "Combat.MoveSpent"), BucketObserve, VerdictHarnessOnly,
+		"Whether the Move pip is spent. The game SETS it (Combat.SpendMove, wired) and never reads it back -- the auto-end decision is made inside maybeEndTurn, which is the single decision point.", ""},
+	//
+	// Combat.DecisionSeconds and Combat.DecisionSecondsRound had rows here for
+	// about an hour on 18 Sep 2026 and are GONE: the gate measured them DEAD,
+	// not harness-only, because HarnessState reads the two fields straight off
+	// the struct in the same package. Two exported accessors with no reader in
+	// either build is the hollow-class shape, so they were deleted rather than
+	// given a caller. The register caught them the day they were written,
+	// which is the fastest it has ever caught anything.
+	{sym(pkgWorld, "Combat.CommitsRefused"), BucketObserve, VerdictHarnessOnly,
+		"How many commits were refused because no turn was waiting. A script counts them; the game just refuses. This is how act 2's menu control proves a key was swallowed rather than silently doing nothing.", ""},
 	{sym(pkgWorld, "Pursuit.Count"), BucketObserve, VerdictHarnessOnly,
 		"Reports how many chases are live.", ""},
 	{sym(pkgWorld, "Pursuit.Solves"), BucketObserve, VerdictHarnessOnly,

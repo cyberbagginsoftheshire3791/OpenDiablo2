@@ -267,6 +267,12 @@ type Game struct {
 	torchLitRounds int
 	torchWasOut    bool
 
+	// The pace row reads the carried source at the fight's close, and a torch
+	// that burnt out mid-fight is no longer there to be read. These two carry
+	// the fact across the removal so the row still says light ran out.
+	torchOutThisFight     bool
+	torchesBurntThisFight int
+
 	// bodies is where a monster's health lives (M4.5 step 3), keyed by the
 	// entity id d2world knows it by. It is on the screen rather than on the
 	// entity for the reasons npc_body.go states. Game satisfies
@@ -696,11 +702,33 @@ func (v *Game) writeTorchOut() {
 	if out && !v.torchWasOut {
 		encounter := "-"
 		if v.combat != nil && v.combat.Fighting() {
-			encounter = v.combat.LastRound().Encounter
+			encounter = v.combat.Encounter()
 		}
 
 		v.Infof("TORCH_OUT day=%d clock=%s encounter=%s",
 			v.worldClock.DayIndex(), v.worldClock.TimeOfDay(), encounter)
+
+		// A TORCH AT 0 MINUTES IS GONE, not carried as an empty stick. Josh's
+		// 12 September ruling (brief ask 1) puts Light.Remove here and only
+		// here: DOUSE keeps the burn, burn-out spends the torch. This is
+		// Light.Remove's first caller in a shipped build -- it was the M4.1
+		// harness-only bug, and it closes by being used, not by being moved.
+		//
+		// The pace row's torch fields are captured BEFORE the source goes,
+		// because after it goes there is nothing to read and a fight in which
+		// the torch burnt out would report torch_out=false -- the opposite of
+		// criterion 3's telemetry.
+		v.torchOutThisFight = true
+		v.torchesBurntThisFight++
+
+		v.light.Remove(carried.ID)
+
+		// Removed means gone: the next frame reads no carried source, so the
+		// edge must reset here or a second torch could never report its own
+		// burn-out.
+		v.torchWasOut = false
+
+		return
 	}
 
 	v.torchWasOut = out
@@ -728,6 +756,8 @@ func (v *Game) applyFightingActivity() {
 		}
 
 		v.torchLitRounds = 0
+		v.torchOutThisFight = false
+		v.torchesBurntThisFight = 0
 		v.paceRoundKey = ""
 
 	case !fighting && v.wasFighting:
@@ -773,11 +803,22 @@ func (v *Game) writePaceLine() {
 	// NO TORCH IS NOT A BURNT-OUT TORCH. Measured: defaulting torch_out to
 	// true reported light exhaustion on a fight fought with no torch at all --
 	// criterion 3's telemetry saying the opposite of what happened.
-	burnAfter, torchesUsed, torchOut := 0.0, 0, false
+	//
+	// A torch that burnt out DURING the fight is gone by now -- writeTorchOut
+	// removes it, which is the 12 Sep ruling -- so the carried source alone
+	// would report torch_out=false on exactly the fight where light ran out.
+	// torchOutThisFight and torchesBurntThisFight carry that across.
+	burnAfter, torchOut := 0.0, v.torchOutThisFight
+	torchesUsed := v.torchesBurntThisFight
 
 	if v.light != nil {
 		if carried := v.light.Carried(); carried != nil {
-			burnAfter, torchesUsed, torchOut = carried.Burn, 1, carried.Burn <= 0
+			burnAfter = carried.Burn
+			torchesUsed++
+
+			if carried.Burn <= 0 {
+				torchOut = true
+			}
 		}
 	}
 

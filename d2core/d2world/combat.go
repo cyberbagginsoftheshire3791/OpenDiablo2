@@ -815,13 +815,14 @@ func (c *Combat) playerHealth() int {
 	return body.CurrentHealth()
 }
 
-// DecisionSeconds is the fight's total thinking time, and DecisionSecondsRound
-// the open turn's. Both are reported.
-func (c *Combat) DecisionSeconds() float64 { return c.decisionSeconds }
-
-// DecisionSecondsRound is the open turn's thinking time; it resets at each
-// turn-open.
-func (c *Combat) DecisionSecondsRound() float64 { return c.decisionSecondsRound }
+// DecisionSeconds and DecisionSecondsRound were DELETED on 18 September 2026,
+// hours after they were written, because the reach gate measured them DEAD:
+// nothing called them in either build. HarnessState reads decisionSeconds and
+// decisionSecondsRound straight off the struct, in the same package, and the
+// PACE line reads the totals off the pace row. Two exported accessors with no
+// reader is the hollow-class shape this project has been caught by twice, and
+// the honest fix for a symbol nobody calls is to remove it, not to find it a
+// caller. If a reader ever appears outside d2world, they come back with it.
 
 // Awaiting reports whether the player's turn is open. Game.worldRunning() is
 // its one live reader, and the harness reports it.
@@ -831,6 +832,11 @@ func (c *Combat) Awaiting() bool {
 
 // CommitsRefused counts commits that arrived with no turn waiting, or with the
 // wrong choice for the turn's state. A refused commit resolves nothing.
+//
+// HarnessState reads the count THROUGH this method, as it does Awaiting and
+// MoveSpent, so there is one reading path rather than two. That is also what
+// keeps the row honest at harness-only: five seam tests assert on it, and a
+// method whose only callers are tests is dead in both builds.
 func (c *Combat) CommitsRefused() int { return c.commitsRefused }
 
 // Commit is the player's choice, and the verb the whole seam exists for.
@@ -1570,7 +1576,7 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"move_spent":             c.MoveSpent(),
 		"decision_seconds":       c.decisionSeconds,
 		"decision_seconds_round": c.decisionSecondsRound,
-		"commits_refused":        c.commitsRefused,
+		"commits_refused":        c.CommitsRefused(),
 		"commits_by_input":       c.commitsByInput,
 		"commits_by_field":       c.commitsByField,
 		"wall_seconds":           c.wallSeconds,
