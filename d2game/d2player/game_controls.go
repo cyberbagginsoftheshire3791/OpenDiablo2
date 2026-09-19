@@ -122,6 +122,8 @@ func NewGameControls(
 	players map[string]*d2mapentity.Player,
 	clock *d2world.Clock,
 	squads *d2world.Squads,
+	combat *d2world.Combat,
+	light *d2world.Light,
 	bars BarSource,
 ) (*GameControls, error) {
 	var inventoryRecordKey string
@@ -223,6 +225,9 @@ func NewGameControls(
 		HelpOverlay:    helpOverlay,
 		keyMap:         keyMap,
 		squads:         squads,
+		combat:         combat,
+		light:          light,
+		torchesCarried: defaultTorchesCarried,
 		bottomMenuRect: &d2geom.Rectangle{
 			Left:   menuBottomRectX,
 			Top:    menuBottomRectY,
@@ -306,6 +311,18 @@ type GameControls struct {
 	lastRightBtnActionTime float64
 	FreeCam                bool
 	isSinglePlayer         bool
+
+	// combat and light are M4.4c-2a's seam into d2player, threaded the way
+	// clock was for M4.4a and squads for c-1. The key handlers are the only
+	// readers: F commits the Action, L works the carried source, E closes the
+	// turn.
+	combat *d2world.Combat
+	light  *d2world.Light
+
+	// torchesCarried is how many unlit torches remain to be taken out. [DIAL],
+	// 1 for the slice: the ration is the sixty minutes of burn, not the number
+	// of sticks, and one torch is what makes the rationing bite.
+	torchesCarried int
 
 	// squads is the owner the player commands (M4.4c-1): the click handler and
 	// the cycle key select through it, and the selection hit test reads its
@@ -410,6 +427,12 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 		g.hud.onToggleRunButton(true)
 	case d2enum.CycleSquad:
 		g.cycleSquad()
+	case d2enum.CombatStrike:
+		g.combatStrike()
+	case d2enum.CombatTorch:
+		g.combatTorch()
+	case d2enum.CombatEndTurn:
+		g.combatEndTurn()
 	case d2enum.ToggleHelpScreen:
 		g.toggleHelpOverlay()
 	default:
@@ -647,6 +670,118 @@ func (g *GameControls) clearScreen() {
 	g.clearLeftScreenSide()
 	g.hud.skillSelectMenu.ClosePanels()
 	g.HelpOverlay.Close()
+}
+
+// defaultTorchesCarried is the [DIAL] at 1.
+const defaultTorchesCarried = 1
+
+// combatStrike is F. It commits the Action against the first living adjacent
+// enemy in D8 order -- the policy's own target, exactly -- so the key
+// reproduces what the stand-in would have done and the only NEW choice is the
+// click, which is c-2b's.
+//
+// EACH OF THESE THREE HANDLERS OPENS WITH THE MENU GUARD, and section 0
+// measured that the guard is currently UNREACHABLE -- which contradicts the
+// brief and is recorded rather than quietly built around.
+//
+// The brief's premise was that "G and H work under an open escape menu today".
+// They do not, at this HEAD. Measured twice, two keys, counters read directly:
+// CycleSquad under an open menu did not change the selection, and F under an
+// open menu moved neither commits_by_input nor commits_refused. The key is
+// consumed upstream and never reaches OnKeyDown at all.
+//
+// The line stays for two reasons and neither is "just in case". First, it is
+// the only thing that makes this handler correct ON ITS OWN, rather than
+// correct because something else upstream happens to be. Second, input routing
+// is not this milestone's to depend on: a later change to the escape menu's
+// consumption would make the guard load-bearing without anyone editing these
+// three functions.
+//
+// WHAT IT COSTS, NAMED: the brief's negative control 12 -- "F/L/E lose their
+// escapeMenu.IsOpen() line, and act 2's menu control goes red" -- CANNOT FIRE,
+// because the menu blocks the key before the missing guard would matter. An
+// assertion that cannot fail is this project's named disease, so act 2's menu
+// control asserts the behaviour that IS observable (the key is consumed
+// upstream: no commit and no refusal) against the paired positive case (the
+// same F with the menu closed does commit).
+//
+// A refused commit is silent here on purpose. commits_refused counts it and
+// the harness reports it; the strip that would SAY so is c-2b's, and inventing
+// a message channel for it now would be building c-2b early.
+func (g *GameControls) combatStrike() {
+	if g.escapeMenu.IsOpen() || g.combat == nil {
+		return
+	}
+
+	_ = g.combat.Commit(d2world.CommitStrike, "")
+}
+
+// combatTorch is L, and it is ONE key: light if there is no carried source,
+// relight if there is an unlit one with burn left, douse if it is lit.
+//
+// Out of a fight it is free and real-time. IN a fight it costs the Action --
+// the one place rationing bites -- and a refused commit must change nothing,
+// which is why the light is not touched until the commit has been accepted.
+// Douse KEEPS THE BURN: S1 §4 says a source burns "only while lit", and the
+// 12 Sep ruling's Light.Remove belongs to the burnt-out torch, not to douse.
+func (g *GameControls) combatTorch() {
+	if g.escapeMenu.IsOpen() || g.light == nil {
+		return
+	}
+
+	carried := g.light.Carried()
+
+	// Decide what the key means before anything is spent.
+	var choice string
+
+	switch {
+	case carried == nil:
+		if g.torchesCarried <= 0 {
+			return // refused: no torch remains
+		}
+
+		choice = d2world.CommitLight
+	case carried.Lit:
+		choice = d2world.CommitDouse
+	case carried.Burn > 0:
+		choice = d2world.CommitLight
+	default:
+		return // a burnt-out torch lights nothing
+	}
+
+	if g.combat != nil && g.combat.Awaiting() {
+		if err := g.combat.Commit(choice, ""); err != nil {
+			return
+		}
+	}
+
+	if carried == nil {
+		g.light.Add(d2world.SourceTorch, true, 0, 0)
+		g.torchesCarried--
+
+		return
+	}
+
+	carried.Lit = choice == d2world.CommitLight
+}
+
+// combatEndTurn is E, and it is one key with two verbs behind it: hold ends a
+// turn whose Action is UNSPENT (its signed meaning) and end closes one whose
+// Action is already spent. The gap end fills had no verb at all until it was
+// ruled on 17 September 2026 -- Commit is refused unless a turn is waiting,
+// and hold is defined as the unspent case, so nothing could close a turn after
+// a strike or a torch.
+func (g *GameControls) combatEndTurn() {
+	if g.escapeMenu.IsOpen() || g.combat == nil {
+		return
+	}
+
+	choice := d2world.CommitHold
+	if g.combat.ActionSpent() {
+		choice = d2world.CommitEnd
+	}
+
+	_ = g.combat.Commit(choice, "")
 }
 
 func (g *GameControls) openLeftPanel(panel Panel) {

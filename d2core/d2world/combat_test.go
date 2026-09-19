@@ -319,10 +319,16 @@ func TestCombatProviderReportsTheFight(t *testing.T) {
 func TestCombatSettableFields(t *testing.T) {
 	c, notice, target, _ := newTestCombat(t)
 
+	// M4.4c-2a adds auto_end_turn, commit and player_control, merged in
+	// alphabetically. This pin is the reason the list is worth keeping sorted:
+	// it fails on an addition, which is the point -- a settable field that
+	// arrives without anyone noticing is a verb the harness gained by
+	// accident.
 	require.Equal(t, []string{
-		"adjacent_tiles", "advantage_shift", "crit_band", "crit_factor",
-		"disengage", "forced_band", "graze_band", "graze_factor", "hit_factor",
-		"lit_level", "loss_weight", "player_action", "quick_resolve_advantage",
+		"adjacent_tiles", "advantage_shift", "auto_end_turn", "commit",
+		"crit_band", "crit_factor", "disengage", "forced_band", "graze_band",
+		"graze_factor", "hit_factor", "lit_level", "loss_weight",
+		"player_action", "player_control", "quick_resolve_advantage",
 		"round", "round_minutes", "shaken_penalty",
 	}, c.HarnessSettableFields())
 

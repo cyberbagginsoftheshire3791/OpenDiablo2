@@ -301,6 +301,14 @@ func (km *KeyMap) ResetToDefault() {
 		// Cycle the selected squad (M4.4c-1). Tab is ToggleAutomap; KeyG is free
 		// in this table, so it is the default.
 		d2enum.CycleSquad: {d2enum.KeyG, -1},
+
+		// The player's hands (M4.4c-2a). D E F J K L U X Y are the free
+		// letters in this table; F, L and E read as strike, light and end.
+		// SPACE IS NOT FREE -- it is ClearScreen, which is why the end-turn
+		// key is a letter.
+		d2enum.CombatStrike:  {d2enum.KeyF, -1},
+		d2enum.CombatTorch:   {d2enum.KeyL, -1},
+		d2enum.CombatEndTurn: {d2enum.KeyE, -1},
 	}
 
 	for gameEvent, keys := range defaultControls {

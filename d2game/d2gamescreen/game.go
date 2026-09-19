@@ -412,9 +412,36 @@ func (v *Game) Advance(elapsed float64) error {
 	// HUD strip may still refresh (gameControls.Advance, below), but the world
 	// does not move. The gameClient.Players fence is the c-1 note's, and its
 	// stated reason -- the escape-menu pause -- is finally true.
-	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
+	// M4.4c-2a: the world sim and the map's animations part company here.
+	//
+	// advanceWorld is gated on worldRunning(), which now carries a second
+	// term: an open player turn stops the world exactly as the escape menu
+	// does. MapEngine.Advance is NOT gated on it, and that is a decision
+	// rather than an oversight -- sprites keep breathing, a swing plays out,
+	// and the player's Move (a real walk) completes while he thinks about the
+	// rest of his turn. A frozen tableau would read as a hang.
+	//
+	// CONSEQUENCE, NAMED: an enemy already walking its last computed path
+	// keeps walking during the think. It cannot strike him -- resolveBlow's
+	// only callers sit under resolveRound, which the gate stops -- and
+	// Pursuit does not re-path, because that lives inside advanceWorld. R2 §3
+	// bullet 1's "actors outside the encounter freeze" is contradicted by
+	// this, knowingly, and carries a dated marker saying so.
+	if v.worldRunning() {
 		v.advanceWorld(elapsed)
+	}
+
+	// The map keeps its ORIGINAL condition: the escape menu still freezes the
+	// animations, because that pause is a pause of the whole screen.
+	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
 		v.gameClient.MapEngine.Advance(elapsed)
+	}
+
+	// The decision timer counts only frames on which the world stopped FOR THE
+	// COMBAT REASON: Wait() tests awaiting itself, so a frame paused under the
+	// escape menu adds nothing to the player's thinking time.
+	if v.combat != nil {
+		v.combat.Wait(elapsed)
 	}
 
 	if v.gameControls != nil {
@@ -478,6 +505,23 @@ func (v *Game) Advance(elapsed float64) error {
 // (M4.1). It is driven by the same delta the rest of the screen receives, so
 // under the playtest harness's stepped clock the world is reproducible and
 // nothing here ever reads the wall clock.
+// worldRunning is one home for one truth, with three readers: advanceWorld's
+// gate, the pace timer, and the harness.
+//
+// BOTH ORIGINAL TERMS ARE KEPT -- the world runs when the menu is closed OR
+// the game is not single-player, because the menu never pauses a multiplayer
+// world, and v1.0 of c-2's note inverted that clause. The new term is the
+// player's own turn: an open turn stops the world, which is R2 §2A's "paused
+// clock" and the DecisionRate dial at zero.
+func (v *Game) worldRunning() bool {
+	menuClosed := v.escapeMenu != nil && !v.escapeMenu.IsOpen()
+	if !menuClosed && len(v.gameClient.Players) == 1 {
+		return false
+	}
+
+	return v.combat == nil || !v.combat.Awaiting()
+}
+
 func (v *Game) advanceWorld(elapsed float64) {
 	if v.worldClock == nil {
 		return
@@ -1322,7 +1366,7 @@ func (v *Game) bindGameControls() error {
 		var err error
 		v.gameControls, err = d2player.NewGameControls(v.asset, v.renderer, player, v.gameClient.MapEngine,
 			v.escapeMenu, v.mapRenderer, v, v.terminal, v.uiManager, v.keyMap, v.audioProvider, v.logLevel,
-			v.gameClient.IsSinglePlayer(), v.gameClient.Players, v.worldClock, v.squads, v)
+			v.gameClient.IsSinglePlayer(), v.gameClient.Players, v.worldClock, v.squads, v.combat, v.light, v)
 
 		if err != nil {
 			return err
@@ -1346,6 +1390,18 @@ func (v *Game) bindGameControls() error {
 
 // OnPlayerMove sends the player move action to the server
 func (v *Game) OnPlayerMove(targetX, targetY float64) {
+	// THE MOVE IS A PIP, and spending it is what can close a both-spent turn.
+	// This is the third entry point into finishRound, beside Advance and
+	// Commit: every sentence in the design says a Move click ends a turn whose
+	// Action is already spent, and a turn-over check that lived only inside
+	// Commit could never deliver it, because a Move is not a commit.
+	//
+	// SpendMove does nothing unless a turn is open, so an ordinary walk
+	// outside a fight is untouched.
+	if v.combat != nil {
+		v.combat.SpendMove()
+	}
+
 	worldPosition := v.localPlayer.Position.World()
 
 	playerID, worldX, worldY := v.gameClient.PlayerID, worldPosition.X(), worldPosition.Y()

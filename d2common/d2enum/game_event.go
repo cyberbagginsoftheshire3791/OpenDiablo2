@@ -85,4 +85,17 @@ const (
 	// at the end so every existing iota value is unchanged. Tab is taken
 	// (ToggleAutomap), so the default binding is a free key.
 	CycleSquad
+
+	// The player's hands (M4.4c-2a), appended at the END for CycleSquad's
+	// reason: these values are persisted in the key-binding config, so an
+	// insertion anywhere above would silently re-map a saved keyboard.
+	//
+	// CombatStrike is the Action against the first living adjacent enemy in D8
+	// order -- the policy's own target, exactly. CombatTorch is one key that
+	// lights, relights or douses. CombatEndTurn ends the turn: it sends
+	// Commit(hold) when the Action is unspent and Commit(end) when it is
+	// spent, so the player sees one key and never learns the difference.
+	CombatStrike
+	CombatTorch
+	CombatEndTurn
 )

@@ -68,11 +68,38 @@ type Combat struct {
 
 	// Counters, all reported. An encounter that started and ended between two
 	// harness reads is invisible in the state and obvious in the counters.
-	started  int
-	ended    int
-	rounds   int
-	declines int
-	actions  int
+	started int
+	ended   int
+	rounds  int
+
+	// commitsRefused counts commits that arrived with no turn waiting, or with
+	// the wrong choice for the turn's state. It is reported, because a script
+	// or a game screen sending the wrong verb should be visible rather than
+	// silently absorbed.
+	commitsRefused int
+
+	// The decision timer. decisionSecondsRound resets at each turn-open;
+	// decisionSeconds is the fight's total.
+	//
+	// IT TAKES A DELTA AND NEVER READS A WALL CLOCK. A time.Now() anywhere in
+	// a provider would break determinism_test.go, which JSON-marshals every
+	// provider and compares two launches of one build. Under a script the
+	// delta is the stepped dt, so N frames read exactly N*dt; in a live build
+	// it is the loop's elapsed, which IS wall time -- clamped at 0.25 s per
+	// frame and timescale-scaled (gameclock.go:21-35). The clamp is
+	// deliberate: a closed laptop lid is not a decision.
+	decisionSeconds      float64
+	decisionSecondsRound float64
+
+	// Which path a commit arrived by. The playtest's primary path is the real
+	// one -- strigoi_key through the input overlay, exactly what a friend
+	// presses -- and the settable field exists for scripts that are not
+	// testing input. Counting both is what stops one standing in for the
+	// other.
+	commitsByInput int
+	commitsByField int
+	declines       int
+	actions        int
 
 	// endedReason is why the LAST encounter ended, and it persists after the
 	// encounter is gone -- an encounter that begins and ends between two
@@ -310,6 +337,18 @@ type CombatDials struct {
 	// that the player's blow came from the policy rather than from a person.
 	PlayerAction string
 
+	// PlayerControl decides whether a round waits at the player's slot.
+	// DefaultCombatDials keeps "policy" so the resolver's own unit tests stand
+	// as written; the game screen sets "human" at construction, so the shipped
+	// build is the one that waits. The harness reports which it was.
+	PlayerControl string
+
+	// AutoEndTurn ends the turn when BOTH Move and Action are spent. With it
+	// false, only hold or end close a turn. It is a [DIAL] because the first
+	// human night is what says whether an automatic close feels like losing
+	// the turn or like being spared a keystroke.
+	AutoEndTurn bool
+
 	// ForcedBand pins every blow's band to "graze", "hit" or "crit" ("" is
 	// off). BOTH RNG DRAWS STILL HAPPEN when it is set, so forcing one blow
 	// does not shift the sequence the next one sees.
@@ -395,6 +434,11 @@ func DefaultCombatDials() CombatDials {
 		PlayerAction: PlayerActionAttack,
 		ForcedBand:   "",
 
+		// POLICY, deliberately: the world package's ~40 resolver tests at four
+		// construction sites stand as written, and the game screen sets human.
+		PlayerControl: PlayerControlPolicy,
+		AutoEndTurn:   true,
+
 		LossWeight:            1.0,
 		QuickResolveAdvantage: 0.75,
 	}
@@ -468,6 +512,29 @@ type encounter struct {
 
 	round     int
 	sinceTurn float64
+
+	// --- M4.4c-2a: the seam. The round that stops and waits. ---------------
+	//
+	// sequence is the round's activation order, FROZEN at the top of the round
+	// and walked from cursor. It is stored rather than recomputed because the
+	// player's slot moves between rounds -- a surprised round one puts him
+	// last -- so a resumed walk that re-read activation() would index a
+	// different list than the one it stopped in.
+	sequence []string
+	cursor   int
+
+	// awaiting means THE PLAYER'S TURN IS OPEN and the world sim is frozen
+	// with it. It is not "waiting for an Action": it stays true after a strike
+	// while the Move is still unspent, because the turn is not over and the
+	// world must not run. Game.worldRunning() reads it.
+	awaiting bool
+
+	// The turn's economy, reset at the top of each round. AutoEndTurn ends the
+	// turn when BOTH are spent -- the ruling's words, "after Move + Action" --
+	// so a turn with the Action spent and the Move unspent WAITS for a Move
+	// click or the End key, and Move-after-Action stays reachable.
+	moveSpent   bool
+	actionSpent bool
 }
 
 // NewCombat builds the encounter model and registers the "combat" provider.
@@ -545,6 +612,15 @@ func (c *Combat) Advance(worldMinutes float64) {
 		return
 	}
 
+	// A waiting turn freezes the encounter: no world time accumulates, no
+	// round resolves, no tail runs. The gate in Game.worldRunning() means
+	// Advance is not normally reached at all while awaiting -- this is the
+	// second lock, so a caller that steps combat directly cannot run the world
+	// out from under an open turn either.
+	if c.encounter.awaiting {
+		return
+	}
+
 	c.encounter.sinceTurn += worldMinutes
 
 	// Rounds consume world time (R2 §2A). Several rounds can fall inside one
@@ -569,7 +645,15 @@ func (c *Combat) Advance(worldMinutes float64) {
 		// running, exactly as they did before the resolver existed.
 		c.resolveRound()
 
-		c.rounds++
+		// The round stopped at the player's slot. Nothing is counted and the
+		// tail does not run: the round is half-resolved and stays that way
+		// until a commit closes it. finishRound and the tail are reached from
+		// endTurn instead -- the same code, entered from a different line.
+		if c.encounter != nil && c.encounter.awaiting {
+			return
+		}
+
+		c.finishRound()
 
 		// A blow can end the encounter -- the player died, or that was the
 		// last of them. The remaining world minutes of that step buy no
@@ -577,9 +661,208 @@ func (c *Combat) Advance(worldMinutes float64) {
 		if c.encounter == nil {
 			break
 		}
+	}
 
+	if c.encounter != nil {
+		c.reinforce()
+		c.pruneOrEnd()
+	}
+}
+
+// finishRound closes the round that just resolved: it counts the round entered
+// and moves the encounter to the next one. It is the second half of what the
+// Advance loop used to do inline, lifted out because it is now reached from
+// TWO lines -- Advance, when a policy round walks straight through, and
+// endTurn, when the player closes a turn that stopped part-way.
+//
+// The counters mean exactly what they meant before the seam: rounds is rounds
+// ENTERED (tryStart counts round 1 and each close counts the next), and it is
+// incremented even when the round that just ran ended the fight.
+func (c *Combat) finishRound() {
+	c.rounds++
+
+	if c.encounter != nil {
 		c.encounter.round++
 	}
+}
+
+// ActionSpent reports whether the open turn's Action is gone. It is what lets
+// ONE key mean two things: E sends hold while this is false and end once it is
+// true, so the player never learns there are two verbs.
+func (c *Combat) ActionSpent() bool {
+	return c.encounter != nil && c.encounter.actionSpent
+}
+
+// MoveSpent reports whether the open turn's Move is gone.
+func (c *Combat) MoveSpent() bool {
+	return c.encounter != nil && c.encounter.moveSpent
+}
+
+// Wait accumulates the player's thinking time. The game screen hands it the
+// frame's elapsed while a turn is open; it does nothing at any other time, so
+// a caller that forgets to check cannot poison the number.
+func (c *Combat) Wait(elapsed float64) {
+	if elapsed <= 0 || c.encounter == nil || !c.encounter.awaiting {
+		return
+	}
+
+	c.decisionSeconds += elapsed
+	c.decisionSecondsRound += elapsed
+}
+
+// DecisionSeconds is the fight's total thinking time, and DecisionSecondsRound
+// the open turn's. Both are reported.
+func (c *Combat) DecisionSeconds() float64 { return c.decisionSeconds }
+
+// DecisionSecondsRound is the open turn's thinking time; it resets at each
+// turn-open.
+func (c *Combat) DecisionSecondsRound() float64 { return c.decisionSecondsRound }
+
+// Awaiting reports whether the player's turn is open. Game.worldRunning() is
+// its one live reader, and the harness reports it.
+func (c *Combat) Awaiting() bool {
+	return c.encounter != nil && c.encounter.awaiting
+}
+
+// CommitsRefused counts commits that arrived with no turn waiting, or with the
+// wrong choice for the turn's state. A refused commit resolves nothing.
+func (c *Combat) CommitsRefused() int { return c.commitsRefused }
+
+// Commit is the player's choice, and the verb the whole seam exists for.
+//
+// EXECUTING THE ACTION IS NOT FINISHING THE TURN. strike, light and douse
+// spend the Action and leave the turn OPEN when the Move is unspent -- the
+// world stays frozen, the player can still walk, and either AutoEndTurn or an
+// explicit end closes the round. hold and end close it outright.
+//
+// hold and end are two names for one key: E sends hold when the Action is
+// unspent (its signed meaning -- "end the turn with the Action unspent") and
+// end when it is spent. They are checked rather than aliased so that a game
+// screen sending the wrong one is loud instead of silently fine.
+// Commit is the INPUT path: a key press through the game controls. It counts
+// separately from the settable field so that one cannot quietly stand in for
+// the other -- the playtest's primary path is the real one a friend presses.
+func (c *Combat) Commit(choice, targetID string) error {
+	if err := c.commit(choice, targetID); err != nil {
+		return err
+	}
+
+	c.commitsByInput++
+
+	return nil
+}
+
+// commit is the one code path both callers share.
+func (c *Combat) commit(choice, targetID string) error {
+	e := c.encounter
+	if e == nil || !e.awaiting {
+		c.commitsRefused++
+
+		return fmt.Errorf("commit %q refused: no turn is waiting", choice)
+	}
+
+	switch choice {
+	case CommitStrike, CommitLight, CommitDouse:
+		if e.actionSpent {
+			c.commitsRefused++
+
+			return fmt.Errorf("commit %q refused: the Action is already spent this turn", choice)
+		}
+
+		if choice == CommitStrike {
+			c.commitStrike(targetID)
+		}
+
+		// light and douse resolve in the light model, which lives on the game
+		// screen; what they spend is the same Action, and that is this
+		// package's half of the verb.
+		e.actionSpent = true
+
+		// The encounter can end on the player's own blow.
+		if c.encounter == nil {
+			return nil
+		}
+
+		c.maybeEndTurn()
+
+	case CommitHold:
+		if e.actionSpent {
+			c.commitsRefused++
+
+			return fmt.Errorf("commit %q refused: the Action is spent -- %q closes a spent turn", choice, CommitEnd)
+		}
+
+		c.endTurn()
+
+	case CommitEnd:
+		if !e.actionSpent {
+			c.commitsRefused++
+
+			return fmt.Errorf("commit %q refused: the Action is unspent -- %q closes an unspent turn", choice, CommitHold)
+		}
+
+		c.endTurn()
+
+	default:
+		c.commitsRefused++
+
+		return fmt.Errorf("commit %q refused: want one of %q, %q, %q, %q, %q",
+			choice, CommitStrike, CommitLight, CommitDouse, CommitHold, CommitEnd)
+	}
+
+	return nil
+}
+
+// SpendMove marks the player's Move spent. The game screen calls it when a
+// walk is ordered during the player's own turn.
+//
+// It exists so that the turn-over check runs on the MOVE path too. Putting
+// that check only inside Commit is the defect this seam was reconciled to
+// avoid: every sentence in the design says a Move click can close a both-spent
+// turn, and a Commit-only check cannot deliver it.
+func (c *Combat) SpendMove() {
+	e := c.encounter
+	if e == nil || !e.awaiting {
+		return
+	}
+
+	e.moveSpent = true
+
+	c.maybeEndTurn()
+}
+
+// maybeEndTurn closes the turn if and only if AutoEndTurn's both-spent
+// condition is met. It is the ONE place that decision is made, and it runs
+// wherever a pip is spent -- at the end of Commit and on the Move path.
+func (c *Combat) maybeEndTurn() {
+	e := c.encounter
+	if e == nil || !e.awaiting {
+		return
+	}
+
+	if !c.dials.AutoEndTurn || !e.moveSpent || !e.actionSpent {
+		return
+	}
+
+	c.endTurn()
+}
+
+// endTurn closes an open turn: it walks the rest of the frozen sequence -- the
+// remaining enemy slots, liveness-tested -- then finishes the round and runs
+// the tail. It is the same code Advance runs, entered from a different line.
+func (c *Combat) endTurn() {
+	e := c.encounter
+	if e == nil || !e.awaiting {
+		return
+	}
+
+	e.awaiting = false
+
+	// Past the player's own slot, which the commit just resolved.
+	e.cursor++
+
+	c.walkSequence()
+	c.finishRound()
 
 	if c.encounter != nil {
 		c.reinforce()
@@ -1088,6 +1371,18 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"quick_resolved":       c.quickResolved,
 		"last_quick_advantage": c.lastQuickAdvantage,
 
+		// M4.4c-2a, the seam. awaiting is the one a script steps frames toward
+		// (fighting is true from tryStart, a round before the first slot
+		// resolves), and it is what Game.worldRunning() reads.
+		"awaiting":               c.Awaiting(),
+		"action_spent":           c.ActionSpent(),
+		"move_spent":             c.MoveSpent(),
+		"decision_seconds":       c.decisionSeconds,
+		"decision_seconds_round": c.decisionSecondsRound,
+		"commits_refused":        c.commitsRefused,
+		"commits_by_input":       c.commitsByInput,
+		"commits_by_field":       c.commitsByField,
+
 		"actions_total": c.actions,
 		"actions_round": c.actionsRound,
 		"actions":       c.actionRows(),
@@ -1112,6 +1407,8 @@ func (c *Combat) HarnessState() map[string]interface{} {
 			"shaken_penalty":  c.dials.ShakenPenalty,
 			"lit_level":       c.dials.LitLevel,
 			"player_action":   c.dials.PlayerAction,
+			"player_control":  c.dials.PlayerControl,
+			"auto_end_turn":   c.dials.AutoEndTurn,
 			"forced_band":     c.dials.ForcedBand,
 
 			"loss_weight":             c.dials.LossWeight,
@@ -1280,9 +1577,21 @@ func (c *Combat) HarnessState() map[string]interface{} {
 // bite spawns a different row.
 func (c *Combat) HarnessSettableFields() []string {
 	return []string{
-		"adjacent_tiles", "advantage_shift", "crit_band", "crit_factor",
-		"disengage", "forced_band", "graze_band", "graze_factor", "hit_factor",
-		"lit_level", "loss_weight", "player_action", "quick_resolve_advantage",
+		// M4.4c-2a adds three, merged in alphabetically rather than appended,
+		// because the list is sorted and TestCombatSettableFields compares it
+		// element by element. auto_end_turn and player_control are dials;
+		// commit is a VERB expressed as a settable field, which is c-1's
+		// ruling and what keeps the tool count at 36.
+		//
+		// commit calls the SAME code path Combat.Commit calls -- two paths,
+		// one implementation, which is the fourth provider rule's trap taken
+		// seriously. commits_by_input and commits_by_field report which was
+		// used, so a script cannot quietly prove the input path with the
+		// field path.
+		"adjacent_tiles", "advantage_shift", "auto_end_turn", "commit",
+		"crit_band", "crit_factor", "disengage", "forced_band", "graze_band",
+		"graze_factor", "hit_factor", "lit_level", "loss_weight",
+		"player_action", "player_control", "quick_resolve_advantage",
 		"round", "round_minutes", "shaken_penalty",
 	}
 }
@@ -1290,6 +1599,43 @@ func (c *Combat) HarnessSettableFields() []string {
 // HarnessSet writes one allow-listed field.
 func (c *Combat) HarnessSet(field string, value interface{}) error {
 	switch field {
+	case "player_control":
+		kind, ok := value.(string)
+		if !ok || (kind != PlayerControlPolicy && kind != PlayerControlHuman) {
+			return fmt.Errorf("player_control wants %q or %q, got %v", PlayerControlPolicy, PlayerControlHuman, value)
+		}
+
+		c.dials.PlayerControl = kind
+
+		return nil
+
+	case "auto_end_turn":
+		on, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("auto_end_turn wants a bool, got %v", value)
+		}
+
+		c.dials.AutoEndTurn = on
+
+		return nil
+
+	case "commit":
+		choice, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("commit wants a string, got %v", value)
+		}
+
+		// THE SAME VERB THE KEYS CALL. A script that does not care about the
+		// input overlay uses this; one that is testing the input path uses
+		// strigoi_key, and the two counters say which happened.
+		if err := c.commit(choice, ""); err != nil {
+			return err
+		}
+
+		c.commitsByField++
+
+		return nil
+
 	case "round_minutes":
 		// FLOORED, NOT MERELY POSITIVE. Advance resolves rounds in a loop
 		// that subtracts this from an accumulator, so a value below the

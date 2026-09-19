@@ -66,7 +66,15 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		}
 	}
 
+	// casting is the swing in flight (M4.4c-2a, section 0 item 5). It gates
+	// the click handlers already (three call sites in this file) but nothing
+	// reported it, so "how many stepped frames until IsCasting clears" -- the
+	// number c-2b's break-away act must wait -- was unmeasurable from a
+	// script. It is one bool and it answers that.
+	casting := g.hero != nil && g.hero.IsCasting()
+
 	return map[string]interface{}{
+		"casting":           casting,
 		"inventory_open":    g.inventory.IsOpen(),
 		"skilltree_open":    g.skilltree.IsOpen(),
 		"hero_stats_open":   g.heroStatsPanel.IsOpen(),

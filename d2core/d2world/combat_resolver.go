@@ -49,6 +49,31 @@ const (
 	PlayerActionHold   = "hold"
 )
 
+// PlayerControl decides whether a round WAITS at the player's slot or resolves
+// it with the stand-in policy. The default stays "policy" in
+// DefaultCombatDials so the ~40 resolver unit tests at four construction sites
+// stand as written; the game screen sets "human", so the shipped build waits.
+const (
+	PlayerControlPolicy = "policy"
+	PlayerControlHuman  = "human"
+)
+
+// The player's Commit choices. FIVE of them, and `end` is the one that took a
+// ruling (Josh, 17 Sep 2026): `hold` is signed as "end the turn with the
+// Action UNSPENT", and Commit is refused unless a turn is waiting, so before
+// `end` existed nothing could close a turn AFTER a strike or a torch.
+//
+// EXECUTING THE ACTION IS NOT FINISHING THE TURN. A commit resolves the
+// player's slot; the turn closes only when AutoEndTurn's both-spent condition
+// is met, or when the player says so with hold or end.
+const (
+	CommitStrike = "strike"
+	CommitLight  = "light"
+	CommitDouse  = "douse"
+	CommitHold   = "hold"
+	CommitEnd    = "end"
+)
+
 // The reasons a blow's roll was shifted, reported per blow. Both can apply at
 // once, comma-joined: "dark-into-light,shaken".
 const (
@@ -425,8 +450,9 @@ func (c *Combat) mundane(id string) bool {
 	return known && morale > 0
 }
 
-// resolveRound runs one round: every activation in order, until the round is
-// done or a blow has ended the fight.
+// resolveRound opens a round and walks it. Under the policy it runs straight
+// through, exactly as it did before the seam existed. Under human control it
+// STOPS at the player's slot with awaiting set, and the world stops with it.
 func (c *Combat) resolveRound() {
 	e := c.encounter
 	if e == nil || e.target == nil {
@@ -441,31 +467,77 @@ func (c *Combat) resolveRound() {
 
 	// R2 §2B's quick-resolve, offered BEFORE the round rather than inside it:
 	// a fight already won against mundane animals is finished in one action
-	// instead of ground out a blow at a time.
+	// instead of ground out a blow at a time. It runs at the TOP of the round
+	// and therefore never during a wait -- Advance is not called while the
+	// encounter is awaiting, so a waiting turn cannot be quick-resolved out
+	// from under the player.
 	if c.tryQuickResolve() {
 		return
 	}
 
+	// THE SEQUENCE IS FROZEN HERE, once, and walked from a cursor. v1.0 of
+	// this note re-read e.activation() on resume, which is unsafe: the
+	// player's slot MOVES between rounds (a surprised round one puts him
+	// last), so a resumed walk would have indexed a different list than the
+	// one it stopped in.
+	e.sequence = e.activation()
+	e.cursor = 0
+	e.moveSpent = false
+	e.actionSpent = false
+
+	c.walkSequence()
+}
+
+// walkSequence runs the frozen sequence from the cursor, and is the ONLY place
+// a slot is resolved. It returns true when the round's sequence is exhausted.
+//
+// It is entered from two lines: resolveRound at the top of a round, and
+// endTurn when the player closes a turn that stopped part-way through.
+func (c *Combat) walkSequence() bool {
+	e := c.encounter
+	if e == nil || e.target == nil {
+		return false
+	}
+
 	playerID := e.target.QuarryID()
 
-	// The sequence is taken once, at the top of the round. Something that
-	// dies mid-round is skipped by the liveness test in enemyActivation
-	// rather than by rebuilding the list underneath the loop.
-	for _, id := range e.activation() {
+	for e.cursor < len(e.sequence) {
 		// A blow can end the encounter (the player died, or that was the last
 		// of them). Nothing further happens in a fight that is over.
 		if c.encounter == nil {
-			return
+			return false
 		}
+
+		id := e.sequence[e.cursor]
 
 		if id == playerID {
-			c.playerActivation()
+			if c.dials.PlayerControl == PlayerControlHuman {
+				// Frozen mid-round, by construction: the cursor still points
+				// AT the player's slot, so the commit that follows resolves
+				// this slot and the walk resumes from the next one.
+				e.awaiting = true
 
-			continue
+				// The per-turn timer starts at the turn-OPEN, which is here
+				// and nowhere else. Resetting it at the close instead would
+				// leave the last turn's number readable for exactly as long
+				// as nobody looked.
+				c.decisionSecondsRound = 0
+
+				return false
+			}
+
+			c.playerActivation()
+		} else {
+			c.enemyActivation(id)
 		}
 
-		c.enemyActivation(id)
+		e.cursor++
 	}
+
+	e.sequence = nil
+	e.cursor = 0
+
+	return true
 }
 
 // playerActivation is the stand-in policy: strike the first adjacent living
@@ -490,6 +562,32 @@ func (c *Combat) playerActivation() {
 
 		return
 	}
+}
+
+// commitStrike is the player's chosen blow. It goes through resolveBlow
+// unchanged -- the roll, the bands, the light advantage, the animation, the
+// body write -- so NO BLOW LANDS BY ANY PATH THE POLICY COULD NOT HAVE TAKEN.
+//
+// An empty or unreachable target falls through to playerActivation, which is
+// the policy's own choice: the first living adjacent enemy in D8 order. That
+// is deliberate and it is what makes the strike KEY equal to the policy's
+// target exactly; choosing a different one is the click, and the click is
+// c-2b's.
+func (c *Combat) commitStrike(targetID string) {
+	e := c.encounter
+	if e == nil || e.target == nil {
+		return
+	}
+
+	if targetID != "" && !e.gone(targetID) {
+		if enemy := e.enemyByID(targetID); enemy != nil && c.inReach(enemy, e.target) {
+			c.resolveBlow(e.round, e.target.QuarryID(), targetID, true, "")
+
+			return
+		}
+	}
+
+	c.playerActivation()
 }
 
 // enemyActivation is one enemy's blow on the player, and the Riposte it may
