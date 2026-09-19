@@ -10,11 +10,27 @@ const (
 	// CfgReachable: deadcode printed a path from a main function to the symbol.
 	CfgReachable ConfigVerdict = "reachable"
 	// CfgUnreachable: the symbol exists but no path reaches it. deadcode says
-	// "reachable only through reflection" rather than "dead" because every
-	// world system registers itself with d2harness and is JSON-encoded, which
-	// makes its receiver a reflection-live type; RTA then soundly marks the
-	// type's whole method set live. That message is therefore our word for
-	// unreachable, not a hint that reflection actually calls it.
+	// this two different ways and BOTH mean unreachable:
+	//
+	//	"is reachable only through reflection" -- for a method on a
+	//	reflection-live receiver. Every world system registers itself with
+	//	d2harness and is JSON-encoded, which makes its receiver a
+	//	reflection-live type; RTA then soundly marks the type's whole method
+	//	set live. That message is our word for unreachable, not a hint that
+	//	reflection actually calls it.
+	//
+	//	"is dead code" -- for a plain package-level function, which has no
+	//	reflection-live receiver to be dragged live by.
+	//
+	// The second message was unhandled until 18 Sep 2026 and fell through to
+	// CfgBroken. It could not be reached before then: every row in the
+	// register was a method. The class pin's two rows are the first plain
+	// functions, and the miss was found by running their negative control --
+	// the gate went red, which is why nothing shipped behind it, but it said
+	// GATE BROKEN ("no verdict was produced") about a symbol deadcode had
+	// just given a perfectly clear verdict on. A harness-only plain function
+	// would have read the same way: red, but filed as an unmeasurable gate
+	// rather than as the finding the gate exists to make.
 	CfgUnreachable ConfigVerdict = "unreachable"
 	// CfgNotFound: no such symbol in the program. The register is stale --
 	// something was renamed or removed. This shares an exit code with
@@ -65,6 +81,8 @@ func Classify(exitCode int, output string) ConfigVerdict {
 	case strings.Contains(text, "packages contain errors"):
 		return CfgBroken
 	case strings.Contains(text, "is reachable only through reflection"):
+		return CfgUnreachable
+	case strings.Contains(text, "is dead code"):
 		return CfgUnreachable
 	case exitCode == 0 && strings.Contains(text, "-->"):
 		return CfgReachable

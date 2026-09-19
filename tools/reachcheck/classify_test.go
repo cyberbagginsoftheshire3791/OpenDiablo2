@@ -44,6 +44,21 @@ reflection`
 	// same as CONTROL 2, which is why the text and not the code decides.
 	outNotFound = `deadcode: function "github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen.Game.ZzNoSuchMethodQq" not found in program`
 
+	// CONTROL 5. The OTHER unreachable message. Captured VERBATIM on 18 Sep
+	// 2026 against the class-pin commit with getHeroRenderConfiguration
+	// temporarily returning the roster straight, so that pinRoster had no
+	// caller at all: exit 1 under BOTH default and -tags=harness. A plain
+	// package-level function has no reflection-live receiver to be dragged
+	// live by, so deadcode says "is dead code" here and never says
+	// "reachable only through reflection". Classify read this as CfgBroken
+	// until that day, because every register row before the pin was a method.
+	outDeadFunction = `deadcode: function github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen.pinRoster is dead code`
+
+	// CONTROL 5b. The same message wrapped the way PowerShell 5.1 wrapped
+	// CONTROL 2b. Same answer required, for the same reason.
+	outDeadFunctionWrapped = `deadcode.exe : deadcode: function github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen.pinRoster is dead
+code`
+
 	// The build-is-broken case. A gate that reads this as "dead" invents a
 	// finding out of a compile error.
 	outPackagesBroken = `deadcode: packages contain errors`
@@ -59,6 +74,8 @@ func TestClassify(t *testing.T) {
 		{"live path, exit 0", 0, outLivePath, CfgReachable},
 		{"reflection message, exit 1", 1, outReflection, CfgUnreachable},
 		{"reflection message wrapped by the console", 1, outReflectionWrapped, CfgUnreachable},
+		{"dead function message, exit 1", 1, outDeadFunction, CfgUnreachable},
+		{"dead function message wrapped by the console", 1, outDeadFunctionWrapped, CfgUnreachable},
 		{"not found in program", 1, outNotFound, CfgNotFound},
 		{"packages contain errors", 1, outPackagesBroken, CfgBroken},
 		{"empty output with exit 0", 0, "", CfgBroken},

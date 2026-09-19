@@ -48,12 +48,20 @@ deadcode -tags=harness -whylive=SYM .
 | default tags | `-tags=harness` | verdict | meaning |
 |---|---|---|---|
 | exit 0, a path is printed | exit 0 | `live` | the game calls it |
-| exit 1, *"is reachable only through reflection"* | **exit 0** | `harness-only` | **the bug class** |
-| exit 1, reflection | exit 1, reflection | `dead` | nothing calls it in either build |
+| exit 1, unreachable (either message — see below) | **exit 0** | `harness-only` | **the bug class** |
+| exit 1, unreachable | exit 1, unreachable | `dead` | nothing calls it in either build |
 | either config, *"not found in program"* | — | `missing` | renamed or deleted; the register is stale |
 | *"packages contain errors"* | — | `broken` | never a verdict about the code |
 
-Two things that will bite, both encoded in `classify_test.go`:
+**"Unreachable" above is two different messages, and the gate must know both.**
+A method on a receiver the harness
+registry JSON-encodes is reflection-live, so RTA drags its whole method set
+live and the message is *"is reachable only through reflection"*. A plain
+package-level function has no such receiver, so the message is *"function X is
+dead code"*. Both mean the same thing here and `Classify` maps both to
+unreachable.
+
+Three things that will bite, all encoded in `classify_test.go`:
 
 * **The exit code alone cannot tell `dead` from `missing`** — both are exit 1.
   The message text decides, or a rename passes the gate silently.
@@ -63,6 +71,15 @@ Two things that will bite, both encoded in `classify_test.go`:
   collapses whitespace before matching for exactly this reason. An ad-hoc awk
   version of the same check, written the same evening without that step,
   mis-tagged 9 of 68 symbols.
+* **A message the gate does not recognise reads as `broken`, which the gate
+  reports as "no verdict was produced" — the same words it uses for a build
+  that did not compile.** *"function X is dead code"* sat in that hole from 28
+  August to 18 September 2026. It was unreachable the whole time, because every
+  register row was a method; the class pin's `pinRoster` was the first plain
+  function, and its own negative control walked straight into it. Nothing
+  shipped behind it — the gate still exited non-zero — but a harness-only plain
+  function would have been filed as an unmeasurable gate rather than as the
+  finding this whole tool exists to make.
 
 ## The four buckets
 
