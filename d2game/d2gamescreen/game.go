@@ -1168,12 +1168,18 @@ func (m mapSight) Clear(fromX, fromY, toX, toY float64) bool {
 //
 // PLACEMENT IS DELIBERATELY NOT RANDOM. The pack size and which row fires are
 // already drawn from the spawn system's own seeded RNG; adding a second RNG
-// here would be a second thing to keep deterministic for no design gain. So
-// members land on evenly spaced bearings around the ring, with the starting
-// bearing walked on by each arrival so successive packs do not all come from
-// due east. A real "wolves come from the woods, dogs come from the road"
-// model needs terrain semantics this build does not have, and it is content
-// work rather than this milestone's.
+// here would be a second thing to keep deterministic for no design gain. So a
+// group's direction and distance are walked on by each arrival -- see packSpots
+// -- so successive packs do not all come from due east at the same range. A
+// real "wolves come from the woods, dogs come from the road" model needs
+// terrain semantics this build does not have, and it is content work rather
+// than this milestone's.
+//
+// CORRECTED 19 Sep 2026 (BUG-12): the even spacing used to be applied to the
+// members of ONE group, spreading a pack of four over the whole circle and the
+// whole radial band. It is applied to successive ARRIVALS instead, and a
+// group's members stand in a knot around one anchor. packSpots carries the
+// measurement.
 type gameSpawner struct {
 	engine  *d2mapengine.MapEngine
 	asset   *d2asset.AssetManager
@@ -1191,7 +1197,79 @@ type gameSpawner struct {
 const (
 	spawnBearingStep = 2.39996 // ~137.5 degrees, so successive arrivals spread
 	spawnSearchRings = 6       // how far out to look for walkable ground
+
+	// spawnRadialStep walks each arrival's DISTANCE across the row's band the
+	// same way spawnBearingStep walks its direction: the golden ratio's
+	// conjugate, so the sequence of fractions is low-discrepancy and no RNG
+	// draw is consumed. A second RNG here is what the type's own comment
+	// refuses, and for the same reason.
+	spawnRadialStep = 0.6180339887
+
+	// packSpread is how far a pack's members stand from its anchor, in tiles.
+	//
+	// [DIAL], and it exists because of BUG-12. Before 19 Sep 2026 members were
+	// placed on bearings spread over the WHOLE circle at ranges spread over the
+	// whole band, so a pack of four arrived at four compass points at four
+	// different distances -- typically 15 to 30 tiles apart from each other.
+	// That is a surround, not a pack, and it made every pack-level rule in the
+	// design unreachable: measured, never more than ONE member of a group was
+	// ever in a fight at the shipped AdjacentTiles of 1, across 13 encounters.
+	// 2 tiles puts a pack of four in a knot four tiles wide, which is a thing
+	// that can arrive together and a thing a player can be surrounded BY.
+	packSpread = 2.0
 )
+
+// packSpots decides where one arriving group stands, and it is a pure function
+// so the arithmetic can be asserted without a map, an asset manager or ebiten.
+//
+// ONE ANCHOR PER GROUP. The pack comes FROM somewhere: a single bearing and a
+// single distance are drawn for the whole group, and the members stand in a
+// knot around that point. Before this, each member got its own bearing from an
+// even division of the full circle AND its own distance from an even division
+// of the row's band -- so the four members of a dog pack landed north, east,
+// south and west of the player at 8, 10.7, 13.3 and 16 tiles.
+//
+// WHY THAT MATTERED MORE THAN IT LOOKS. N1 §5 authors pack SIZES (dogs 2-4,
+// wolves 3-6); R2 §3 says same-species groups activate as packs; Combat's
+// loseNerve scales the morale decrement by the pack's starting size; N1 §5
+// writes every rout phrasing about packs. All of it presupposes that the pack
+// arrives as a group. Measured at the shipped AdjacentTiles of 1 before this
+// change: 13 encounters, 5 sampled fights, **most of one pack ever in a fight:
+// ONE**, `ended_routed` 0 and `quick_resolved` 0 for the whole run. The rout and
+// quick-resolve systems were not broken; nothing could ever reach them.
+//
+// The record had already written the symptom down as a fact of life --
+// combat_rout_test.go's own comment says a group of four "can be four separate
+// corners of the map" and that a search for three members within five tiles of
+// each other "found a best of ONE, across all eight live groups". It is a bug.
+//
+// Successive arrivals still come from different directions, which is what
+// spawnBearingStep is for, and now from different distances too.
+func packSpots(aroundX, aroundY, minTiles, maxTiles float64, count, arrival int) [][2]float64 {
+	if count <= 0 {
+		return nil
+	}
+
+	bearing := float64(arrival) * spawnBearingStep
+	frac := math.Mod(float64(arrival)*spawnRadialStep, 1.0)
+	reach := minTiles + (maxTiles-minTiles)*frac
+
+	anchorX := aroundX + reach*math.Cos(bearing)
+	anchorY := aroundY + reach*math.Sin(bearing)
+
+	spots := make([][2]float64, 0, count)
+	spots = append(spots, [2]float64{anchorX, anchorY})
+
+	for i := 1; i < count; i++ {
+		angle := bearing + 2*math.Pi*float64(i-1)/float64(count-1)
+		spots = append(spots, [2]float64{
+			anchorX + packSpread*math.Cos(angle),
+			anchorY + packSpread*math.Sin(angle),
+		})
+	}
+
+	return spots
+}
 
 func (g *gameSpawner) Spawn(code string, count int, aroundX, aroundY,
 	minTiles, maxTiles float64) []d2world.Watcher {
@@ -1208,22 +1286,11 @@ func (g *gameSpawner) Spawn(code string, count int, aroundX, aroundY,
 	}
 
 	g.arrival++
-	bearing := float64(g.arrival) * spawnBearingStep
 
 	out := make([]d2world.Watcher, 0, count)
 
-	for i := 0; i < count; i++ {
-		angle := bearing + 2*math.Pi*float64(i)/float64(count)
-
-		reach := minTiles
-		if count > 1 {
-			reach += (maxTiles - minTiles) * float64(i) / float64(count-1)
-		}
-
-		x, y, ok := g.walkableNear(
-			aroundX+reach*math.Cos(angle),
-			aroundY+reach*math.Sin(angle),
-		)
+	for _, spot := range packSpots(aroundX, aroundY, minTiles, maxTiles, count, g.arrival) {
+		x, y, ok := g.walkableNear(spot[0], spot[1])
 		if !ok {
 			continue
 		}

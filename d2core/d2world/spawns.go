@@ -221,42 +221,55 @@ func DefaultSpawnDials() SpawnDials {
 		CarrionCap:     3,
 		LightWeight:    2,
 		RoutAt:         25,
-		// [DIAL] PROVISIONAL. 8 -> 2, 19 Sep 2026, and the number survived a
-		// correction on the same day that voided the sweep which chose it.
+		// [DIAL] PROVISIONAL. 8 -> 1, 19 Sep 2026, after THREE sweeps in one
+		// evening, each of which was voided by a bug found after it. That
+		// sequence is the point of this comment, not the number.
 		//
-		// THE FIRST SWEEP MEASURED A STALLED WORLD. It read 2 as "survived a
-		// full cycle on 99/240 after 11 encounters", which was true and
-		// meaningless: the cap counted beaten packs, so 2 meant two packs and
-		// then silence until sunrise (BUG-11, liveGroups). Re-swept with the cap
-		// counting live groups, same seed, same probe, one full cycle each:
+		// SWEEP 1 measured a stalled world. It read 2 as "survived a full cycle
+		// on 99/240 after 11 encounters", which was true and meaningless: the
+		// cap counted beaten packs, so 2 meant two packs and then silence until
+		// sunrise (BUG-11, liveGroups).
 		//
-		//	cap 1 -> SURVIVED 106/240 ·  5 encounters · peak  3 aware
-		//	cap 2 -> SURVIVED  13/240 · 12 encounters · peak  5 aware
-		//	cap 3 -> DIED 20:43       · 12 encounters · peak  8 aware
-		//	cap 5 -> DIED 05:34       ·  7 encounters · peak 12 aware
+		// SWEEP 2, with the cap counting live groups, read 2 as "survived on
+		// 13/240 after 12 encounters". Also true, also void: a pack of four was
+		// being placed at four compass points 15 to 30 tiles apart, so those 12
+		// encounters were twelve ONE-ON-ONE skirmishes and no pack-level rule in
+		// the design could fire at all (BUG-12, packSpots).
 		//
-		// 2 rather than 1 because the record's standing complaint about the
-		// night is that it is EMPTY -- the 9 Sep six-night run's F6 is "one
-		// squall at dusk then a long empty walk" -- and 5 encounters a cycle is
-		// that night again. 2 rather than 3 because 3 kills an hour into the
-		// dark. 13/240 is a FLOOR, not an expectation: the probe runs on
+		// SWEEP 3, with packs arriving as packs, same seed, one full cycle each:
+		//
+		//	cap 1 -> SURVIVED 162/240 · 4 encounters · peak 4 aware
+		//	cap 2 -> DIED 21:29       · 8 encounters · peak 7 aware
+		//	cap 3 -> DIED 20:58       · 7 encounters · peak 7 aware
+		//
+		// So 1, and the number means something different from what it did this
+		// morning: ONE live pack is two to six hunters arriving together, which
+		// is an encounter rather than a skirmish. Four of those a cycle against
+		// the twelve skirmishes sweep 2 measured is fewer fights and more game --
+		// rout fires (3 of 8 encounters in the unaided run, against 0 before) and
+		// `joined` went 1 -> 6, so reinforcements arrive.
+		//
+		// A DIAL CANNOT BE TUNED OVER A BROKEN MECHANISM. Every sweep above was
+		// run properly and every one of them was answering a question about a
+		// world that did not work yet. If a mechanism fix lands, this number is
+		// void again and the sweep is cheap: max_groups is settable now.
+		//
+		// 162/240 is a FLOOR, not an expectation: the probe runs on
 		// player_control=policy, which never retreats, never disengages (R2 §3)
-		// and never uses the torch tactically, so a human has strictly more
-		// room than this number shows.
+		// and never uses the torch tactically.
 		//
-		// WHAT IT DOES NOT MEASURE, and this half cannot be measured without a
-		// human at the keyboard: the signed run budget is REAL minutes -- combat
-		// [1-3.5] a night, a routine encounter under [2] -- and the 9 Sep run's
-		// F4 measured 9-19 real SECONDS a night, far under it. A policy run
-		// cannot settle that. Josh's own launch is the instrument, and his felt
-		// reaction to it is what retires this marker.
+		// WHAT IT STILL DOES NOT MEASURE: the signed budget is in REAL minutes --
+		// combat [1-3.5] a night, a routine encounter under [2] -- and the 9 Sep
+		// run's F4 measured 9-19 real SECONDS. A policy run cannot settle that.
+		// Josh's own launch is the instrument and his felt reaction retires this
+		// marker.
 		//
-		// Health is one-way in this build: there is no regeneration and no
-		// recovery verb anywhere, which is Phase 6 by Josh's ruling of 28 Aug
-		// (M4.5 note §7) and R2's "wounds heal through time and resources". So
-		// this dial is tuned against ONE night, deliberately. Whether six nights
-		// are survivable is arithmetic that Phase 6 owns, not a spawn dial.
-		MaxGroups: 2,
+		// Health is one-way in this build: no regeneration and no recovery verb
+		// anywhere, which is Phase 6 by Josh's ruling of 28 Aug (M4.5 note §7)
+		// and R2's "wounds heal through time and resources". So this dial is
+		// tuned against ONE night, deliberately. Whether six nights are
+		// survivable is arithmetic Phase 6 owns, not a spawn dial.
+		MaxGroups: 1,
 		Rows: []SpawnRow{
 			{
 				// N1 §5: dusk into night, near bodies and roads, drawn by
