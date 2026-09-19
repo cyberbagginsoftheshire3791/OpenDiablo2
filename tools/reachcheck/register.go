@@ -226,6 +226,8 @@ var Register = []Entry{
 		"Whether an encounter is live, asked in Go rather than read out of harness state. advanceWorld reads it every tick to apply and take back the labour activity. This is the row that stops Pursuit's arrived mistake happening twice.", ""},
 	{sym(pkgScreen, "Game.BodyOf"), BucketWire, VerdictLive,
 		"How the resolver reaches a body -- the PLAYER'S included, since step 4, which is what makes losing possible. Called from Combat.Advance, in Go, on every blow. It was harness-only for one milestone because only HarnessState read it.", ""},
+	{sym(pkgWorld, "Combat.Encounter"), BucketWire, VerdictLive,
+		"Which fight is live RIGHT NOW. The wish console verb asks it as the player types, from Game.commandWish, bound in Game.OnLoad in a shipped build. It exists because the two things that look like an answer are not one: LastRound names the last CLOSED round and is empty through the whole of round one, LastPace only exists after the fight is over and goes on naming it.", ""},
 	// The class pin (ruled 11 Sep 2026, built in M4.4c-2a). Two rows, not one:
 	// the second is the gate on the pin itself.
 	{sym(pkgScreen, "getHeroRenderConfiguration"), BucketWire, VerdictLive,

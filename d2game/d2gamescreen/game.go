@@ -297,6 +297,11 @@ func (v *Game) OnLoad(_ d2screen.LoadingState) {
 		{"spawnitemat", "spawns an item at the x,y coordinates",
 			[]string{"x", "y", "code1", "code2", "code3", "code4", "code5"}, v.commandSpawnItemAt},
 		{"spawnmon", "spawn monster at the local player position", []string{"name"}, v.commandSpawnMon},
+		// The wish note. "text..." is the variadic marker (d2term.Terminal
+		// Execute): the rest of the line arrives as one argument, so a friend
+		// writes `wish I wanted to hide` and does not have to remember quotes.
+		{"wish", "note what you reached for that is not there",
+			[]string{"text..."}, v.commandWish},
 	}
 
 	for _, cmd := range commands {
@@ -357,7 +362,7 @@ func (v *Game) OnUnload() error {
 		return err
 	}
 
-	if err := v.terminal.Unbind("spawnitemat", "spawnitem", "spawnmon"); err != nil {
+	if err := v.terminal.Unbind("spawnitemat", "spawnitem", "spawnmon", "wish"); err != nil {
 		return err
 	}
 
@@ -789,6 +794,39 @@ func (v *Game) writePaceLine() {
 		row.HealthOpen, row.HealthClose, v.torchLitRounds, torchOut,
 		burnAfter, torchesUsed, row.EndReason, row.Enemies,
 		strings.Join(row.Kinds, ","), row.Initiator, row.Surprised, row.Control)
+}
+
+// commandWish writes the "what he reached for that isn't there" column of the
+// instrument (state.md:168, ruling (b)). One console line, appended to the same
+// log the ROUND and PACE lines go to, so that a friend's sentence lands beside
+// the numbers it belongs to instead of in a separate feedback form nobody fills
+// in:
+//
+//	WISH day=1 clock=21:15 encounter=e:7 round=3 text="I wanted to hide"
+//
+// The fight is read LIVE, at the moment the line is written. Outside a fight
+// the encounter is "-" and the round is 0; reading either from a source that
+// survives the fight's end would report a fight the player is not in, which is
+// the break this note's negative control makes on purpose.
+func (v *Game) commandWish(args []string) error {
+	text := strings.TrimSpace(strings.Join(args, " "))
+	if text == "" {
+		return errors.New("wish: say what you reached for")
+	}
+
+	day, clock := 0, "--:--"
+	if v.worldClock != nil {
+		day, clock = v.worldClock.DayIndex(), v.worldClock.TimeOfDay()
+	}
+
+	encounter, round := "-", 0
+	if v.combat != nil && v.combat.Fighting() {
+		encounter, round = v.combat.Encounter(), v.combat.Round()
+	}
+
+	v.Infof("WISH day=%d clock=%s encounter=%s round=%d text=%q", day, clock, encounter, round, text)
+
+	return nil
 }
 
 // startChasesForTheAware is the line that makes M4.3b a milestone rather than

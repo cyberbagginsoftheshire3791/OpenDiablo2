@@ -1467,6 +1467,21 @@ func (c *Combat) inReach(w Combatant, q Quarry) bool {
 // made, where the fact is reported and no Go caller can reach it.
 func (c *Combat) Fighting() bool { return c.encounter != nil }
 
+// Encounter reports the LIVE encounter's id, or "" when nothing is happening.
+//
+// LastRound().Encounter cannot stand in for this and the difference is not
+// cosmetic: that one names the last CLOSED round, so it is empty for the whole
+// of round one and it goes on naming a fight that has already ended. The wish
+// note needs the fight the player is IN at the moment he writes, which is the
+// only fight he could be writing about.
+func (c *Combat) Encounter() string {
+	if c.encounter == nil {
+		return ""
+	}
+
+	return c.encounter.id
+}
+
 // Round reports the current round, or 0 when nothing is happening.
 func (c *Combat) Round() int {
 	if c.encounter == nil {
