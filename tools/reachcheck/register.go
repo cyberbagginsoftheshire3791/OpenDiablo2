@@ -226,6 +226,12 @@ var Register = []Entry{
 		"Whether an encounter is live, asked in Go rather than read out of harness state. advanceWorld reads it every tick to apply and take back the labour activity. This is the row that stops Pursuit's arrived mistake happening twice.", ""},
 	{sym(pkgScreen, "Game.BodyOf"), BucketWire, VerdictLive,
 		"How the resolver reaches a body -- the PLAYER'S included, since step 4, which is what makes losing possible. Called from Combat.Advance, in Go, on every blow. It was harness-only for one milestone because only HarnessState read it.", ""},
+	// The class pin (ruled 11 Sep 2026, built in M4.4c-2a). Two rows, not one:
+	// the second is the gate on the pin itself.
+	{sym(pkgScreen, "getHeroRenderConfiguration"), BucketWire, VerdictLive,
+		"The select-hero screen loads one sprite set per entry in the map this returns. CreateSelectHeroClass ranges over it, in a shipped build, with no harness in the path.", ""},
+	{sym(pkgScreen, "pinRoster"), BucketWire, VerdictLive,
+		"Reduces the seven-class roster to the one class a new game offers. This row is the pin's own gate: if someone unpins by returning the roster straight out of getHeroRenderConfiguration, nothing calls this any more and it goes DEAD here before anyone has to notice the screen.", ""},
 	{sym(pkgEntity, "NPC.MonStat"), BucketWire, VerdictLive,
 		"The monstats record an NPC was built from. Reached from Game.BodyOf's on-demand adoption path, so it inherits that row's verdict exactly, as its own comment has said since step 3.", ""},
 	{sym(pkgEntity, "NPC.StartAction"), BucketWire, VerdictLive,

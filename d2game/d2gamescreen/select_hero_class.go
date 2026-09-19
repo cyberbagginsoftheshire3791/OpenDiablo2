@@ -102,8 +102,47 @@ const (
 
 const heroDescCharWidth = 37
 
-//nolint:funlen // this func returns a map of structs and the structs are big, deal with it
+// pinnedHeroClass is the single class a new game offers. Josh ruled the pin on
+// 11 September 2026: the amazon's 240 health is the buffer the winnability run
+// measured, and the barbarian's 400 is not offered, so every player faces the
+// night on the same terms. Changing this constant changes the offer. There is
+// deliberately no "offer them all" value -- a Strigoi build offers exactly one.
+const pinnedHeroClass = d2enum.HeroAmazon
+
+// getHeroRenderConfiguration returns the classes the select-hero screen renders.
+// Strigoi renders one. The loop that loads the sprites ranges over this map, so
+// a class absent here is never loaded, never drawn, never hovered and never
+// clickable.
+//
+// The pin is applied here, at the map's source, and NOT by refusing the click
+// downstream: the early return in updateHeroSelectionHover that would block the
+// click also skips setCurrentFrame, which would leave six pinned heroes
+// animating exactly like the live one while silently eating hover and click.
 func getHeroRenderConfiguration() map[d2enum.Hero]*heroRenderConfig {
+	return pinRoster(allHeroRenderConfigurations(), pinnedHeroClass)
+}
+
+// pinRoster reduces a roster to the one class the build offers, keeping that
+// class's own config rather than a substitute, so the pinned hero renders
+// exactly as Diablo II rendered it.
+func pinRoster(roster map[d2enum.Hero]*heroRenderConfig, pin d2enum.Hero) map[d2enum.Hero]*heroRenderConfig {
+	pinned := roster[pin]
+	if pinned == nil {
+		// The pinned class has no render config. Falling back to the whole
+		// roster would quietly unpin the build; an empty screen is worse to
+		// look at and better to have, because it is visible on the first launch.
+		return map[d2enum.Hero]*heroRenderConfig{}
+	}
+
+	return map[d2enum.Hero]*heroRenderConfig{pin: pinned}
+}
+
+// allHeroRenderConfigurations is the full Diablo II roster, kept whole so the
+// pin above is one constant to move rather than six blocks to delete and
+// restore. Nothing but getHeroRenderConfiguration may call it.
+//
+//nolint:funlen // this func returns a map of structs and the structs are big, deal with it
+func allHeroRenderConfigurations() map[d2enum.Hero]*heroRenderConfig {
 	configs := make(map[d2enum.Hero]*heroRenderConfig)
 
 	configs[d2enum.HeroBarbarian] = &heroRenderConfig{
