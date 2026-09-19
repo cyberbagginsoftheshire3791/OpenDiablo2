@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 17 playtest scripts.** That count, the harness version below and the
+**The 18 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -81,6 +81,20 @@ this doc fails until it agrees.
   finishing the turn), E ends it, a Move plus the Action auto-ends it; L lights,
   burns and douses a torch and spends the Action in a fight; the pace lines land
   in the log ring and agree with the combat provider's `pace{}` block.
+* `unaided_test.go` — M4.4c-2a's closeout script, the eighteenth, and the only
+  one that measures the GAME rather than a world a script arranged. With nothing
+  spawned, nothing watched and no dial touched, it walks a full day–night cycle
+  and asserts the five links in order — the table rolls and places (1–2),
+  something notices through the real raycast (3), a chase starts and routes (4),
+  and something gets in reach so a fight opens (5) — so a failure names the link
+  that broke instead of saying only "no fight". It **pins the shipped dials it
+  must not have changed** (`spawns.chance` 0.35, `combat.adjacent_tiles` 1) and
+  fails if a later edit forces the table to help the chain along. Written 19 Sep
+  2026 after a launch that could only walk around and die while every other
+  instrument was green: 21 of the 23 monsters in the whole corpus's assertions
+  were placed by their script and 21 awareness relationships were granted by
+  `strigoi_watch`, so nothing asserted that the chain works unaided. **It must
+  never call `strigoi_spawn_entity`, `strigoi_watch` or `strigoi_pursue`.**
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.
