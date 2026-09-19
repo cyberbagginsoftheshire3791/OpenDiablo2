@@ -320,6 +320,21 @@ func (t *Terminal) Execute(command string) error {
 		return errors.New("command not found")
 	}
 
+	// A command whose LAST declared argument ends in "..." takes the rest of
+	// the line as that one argument, re-joined with single spaces. Nothing
+	// else changes: a command with no variadic tail still needs its exact
+	// count, and quoting still works, because a quoted argument arrives as one
+	// word and re-joining one word is the identity.
+	//
+	// This exists for `wish` (M4.4c-2a). parseCommand splits on spaces unless
+	// inside quotes, so `wish I wanted to hide` was four arguments against one
+	// declared, and a friend writing a sentence got "command requires
+	// different argument count" instead of a note. Telling friends to quote
+	// was the alternative and they will forget.
+	if n := len(entry.arguments); n > 0 && strings.HasSuffix(entry.arguments[n-1], "...") && len(args) >= n {
+		args = append(args[:n-1:n-1], strings.Join(args[n-1:], " "))
+	}
+
 	if len(args) != len(entry.arguments) {
 		return errors.New("command requires different argument count")
 	}
