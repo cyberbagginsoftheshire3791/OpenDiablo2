@@ -233,7 +233,59 @@ func (s *session) call(name string, args map[string]any) map[string]any {
 
 	s.t.Logf("%s -> %s", name, contentText(res))
 
+	if name == startGameTool {
+		s.dropToPolicy()
+	}
+
 	return out
+}
+
+// startGameTool is the one tool that brings a game screen -- and with it a
+// Combat -- into existence.
+const startGameTool = "strigoi_start_game"
+
+// dropToPolicy puts a freshly started game back on the POLICY round.
+//
+// M4.4c-2a ask 5 made the shipped screen take the player's turn itself
+// (shippedCombatDials), which is what makes the seam real for a person. Every
+// script that steps world minutes therefore meets a round that waits, and a
+// wait it never commits is a script that dies on AWAITING_PLAYER -- sixteen of
+// the seventeen scripts were written against a world that resolves its own
+// fights, and the spawn chance can open one in any of them (spawns_test and
+// meters_test have met a fight on the 43-hour walk by their own comments).
+//
+// So the opt-out lives HERE, once, rather than in fourteen start_game call
+// sites that would drift apart: a script runs on policy unless it asks for
+// human, which is exactly what hands_test's acts do, after start_game. The GAME
+// keeps one code path -- human, always -- and the divergence is test-side and
+// visible in one place.
+func (s *session) dropToPolicy() {
+	s.t.Helper()
+
+	// Not through s.call: that would recurse on the name check, and a session
+	// attached to a game someone else started (STRIGOI_HARNESS_ADDR) has no
+	// business being reconfigured either.
+	if s.attached {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+
+	res, err := s.sess.CallTool(ctx, &mcp.CallToolParams{
+		Name: "strigoi_set_system_field",
+		Arguments: map[string]any{
+			"system": "combat", "field": "player_control", "value": "policy",
+		},
+	})
+	if err != nil {
+		s.t.Fatalf("player_control=policy after start_game: transport error: %v\n--- game output (tail) ---\n%s",
+			err, s.gameTail(40))
+	}
+
+	if res.IsError {
+		s.t.Fatalf("player_control=policy after start_game: %s", contentText(res))
+	}
 }
 
 // callErr invokes a tool and returns the tool-error text ("" on success).

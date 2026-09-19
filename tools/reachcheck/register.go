@@ -289,6 +289,8 @@ var Register = []Entry{
 		"The select-hero screen loads one sprite set per entry in the map this returns. CreateSelectHeroClass ranges over it, in a shipped build, with no harness in the path.", ""},
 	{sym(pkgScreen, "pinRoster"), BucketWire, VerdictLive,
 		"Reduces the seven-class roster to the one class a new game offers. This row is the pin's own gate: if someone unpins by returning the roster straight out of getHeroRenderConfiguration, nothing calls this any more and it goes DEAD here before anyone has to notice the screen.", ""},
+	{sym(pkgScreen, "shippedCombatDials"), BucketWire, VerdictLive,
+		"The dials a real launch runs on -- the signed defaults with PlayerControl flipped to human (ask 5). Called from CreateGame, so it is live in every shipped build. This row exists because the gate could NOT see the gap it closes: the keys call Combat.Commit either way, so every row stayed green while the seam was harness-only. If someone drops the flip, the register cannot catch it and TestTheShippedScreenTakesTheTurn is what does.", ""},
 	{sym(pkgEntity, "NPC.MonStat"), BucketWire, VerdictLive,
 		"The monstats record an NPC was built from. Reached from Game.BodyOf's on-demand adoption path, so it inherits that row's verdict exactly, as its own comment has said since step 3.", ""},
 	{sym(pkgEntity, "NPC.StartAction"), BucketWire, VerdictLive,

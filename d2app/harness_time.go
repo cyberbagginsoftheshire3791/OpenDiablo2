@@ -17,6 +17,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -582,7 +583,15 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 		// next call (S0 item 1: the gated call had not returned at 64.76s).
 		// The guard turns that wedge into a one-frame error the moment the turn
 		// is open, whether it was open on entry or a fight opened mid-step.
-		if harnessCombatAwaiting() {
+		awaiting, err := harnessCombatAwaiting()
+		if err != nil {
+			return nil, out, harnessErr("INTERNAL",
+				fmt.Sprintf("the AWAITING_PLAYER guard cannot read the combat provider: %v", err),
+				"the `awaiting` field was renamed or changed type -- fix the provider or this guard, "+
+					"because a silent false here restores the 60-second step_world wedge")
+		}
+
+		if awaiting {
 			out.SimSeconds = harnessTimeSnapshot().SimSeconds
 
 			return nil, out, harnessErr("AWAITING_PLAYER",
@@ -667,9 +676,12 @@ func harnessClockRate() (rate float64, ok bool) {
 // same reason the clock helpers do: the harness package must not import
 // d2world, and the provider registry is the seam that keeps it out. False when
 // no combat provider is registered, so a world with no fight steps freely.
-func harnessCombatAwaiting() bool {
-	awaiting := false
-
+// It reads the field STRICTLY: a registered combat provider that does not
+// report `awaiting`, or reports it as something other than a bool, is a rename
+// or a type change, and returning false there would silently restore the
+// 60-second wedge this guard exists to remove -- the absent-reads-as-zero trap
+// (A3) one layer up from mustNum. No provider at all is the honest false.
+func harnessCombatAwaiting() (awaiting bool, err error) {
 	_ = harnessOnUpdate(func() {
 		p, found := d2harness.Lookup("combat")
 		if !found {
@@ -678,15 +690,22 @@ func harnessCombatAwaiting() bool {
 
 		v, present := p.HarnessState()["awaiting"]
 		if !present {
+			err = errors.New("the combat provider reports no `awaiting` field")
+
 			return
 		}
 
-		if b, isBool := v.(bool); isBool {
-			awaiting = b
+		b, isBool := v.(bool)
+		if !isBool {
+			err = fmt.Errorf("the combat provider's `awaiting` is %T, not a bool", v)
+
+			return
 		}
+
+		awaiting = b
 	})
 
-	return awaiting
+	return awaiting, err
 }
 
 func harnessClockField(field string) (value float64, ok bool) {

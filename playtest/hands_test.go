@@ -4,6 +4,7 @@ package playtest
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -32,9 +33,10 @@ const handsDT = 1.0 / 60 // the harness stepped tick, matching harness.timeDT
 
 // handsStart pauses, starts the amazon at seed 1462, and silences the spawn
 // table so a wandering pack cannot open a fight the act did not arrange. It
-// leaves player_control at its default (policy); acts that want a human turn
-// set it themselves, which is exactly the DefaultCombatDials/game-screen split
-// (ask 5).
+// leaves player_control at the value every script starts on -- policy, which
+// the launcher sets after start_game precisely because the SHIPPED screen now
+// asks for human (shippedCombatDials, ask 5). Acts that want a human turn set
+// it themselves, below.
 func handsStart(t *testing.T) (s *session, playerID, playerHandle string, px, py float64) {
 	t.Helper()
 
@@ -80,6 +82,35 @@ func worldMinutes(t *testing.T, s *session) float64 {
 	t.Helper()
 
 	return mustNum(t, clockState(s), "world_minutes")
+}
+
+// lineField pulls one key=value number out of a ROUND or PACE log line.
+//
+// The LINE is the instrument -- it is what Josh reads out of strigoi.log and
+// what a later human playtest is scored from -- so an assertion about it has to
+// read the line, not the provider record the line was formatted from. It fails
+// on an absent key rather than returning zero, for mustNum's reason (A3): a
+// missing field would otherwise read as a real 0.0 and prove nothing.
+func lineField(t *testing.T, line, key string) float64 {
+	t.Helper()
+
+	for _, f := range strings.Fields(line) {
+		name, value, found := strings.Cut(f, "=")
+		if !found || name != key {
+			continue
+		}
+
+		n, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			t.Fatalf("the %q field is %q, not a number: %v\n%s", key, value, err, line)
+		}
+
+		return n
+	}
+
+	t.Fatalf("the line carries no %q field -- absent is not zero (A3):\n%s", key, line)
+
+	return 0
 }
 
 // ringLines returns every log-ring line matching pattern that carries text.
@@ -535,6 +566,88 @@ func TestTheHandsTorch(t *testing.T) {
 	t.Logf("act 3: the one torch spent, L lit nothing")
 }
 
+// --- act 3b: the torch burns out, and says so --------------------------------
+
+// TestTheHandsTorchBurnsOut is the half of clause 3 that shipped a day after
+// the rest of it: a torch at 0 minutes is REMOVED, and that removal is
+// Light.Remove's first game caller -- the symbol M4.1 was reopened over.
+//
+// It gets its own game rather than a section of act 3, because the burn-out
+// really does remove the carried source, which is the very thing act 3's last
+// section removes by hand to prove TorchesCarried 0. Sharing a session would
+// leave that section looking for a torch this one had already consumed.
+//
+// It exists because the telemetry had no test: `git grep TORCH_OUT -- playtest`
+// found nothing, so the line Josh would read a burnt-out fight from, and the
+// PACE row's torch_out beside it, were both written and never asserted.
+func TestTheHandsTorchBurnsOut(t *testing.T) {
+	s, _, playerHandle, px, py := handsStart(t)
+
+	stepToNight(t, s)
+	s.call("strigoi_set_system_field", map[string]any{"system": "combat", "field": "player_control", "value": "human"})
+
+	enemy := spawnNPC(t, s, "fallen1", px+1, py)
+	s.call("strigoi_watch", map[string]any{"watcher": enemy, "target": playerHandle})
+
+	openTurn(t, s)
+
+	s.call("strigoi_key", map[string]any{"key": "l"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if !flag(t, lightState(s), "carried_lit") {
+		t.Fatalf("act 3b: L must light the torch: %v", lightState(s))
+	}
+
+	// One minute of burn is the number the TEST chose; the removal, the line and
+	// the provider's zeros are what the SYSTEM reports.
+	s.call("strigoi_set_system_field", map[string]any{"system": "light", "field": "carried_burn", "value": 1.0})
+
+	burntOut := false
+
+	for i := 0; i < 200; i++ {
+		if !flag(t, lightState(s), "carried_lit") {
+			burntOut = true
+
+			break
+		}
+
+		if !flag(t, combatState(s), "fighting") {
+			break
+		}
+
+		if flag(t, combatState(s), "awaiting") {
+			s.call("strigoi_key", map[string]any{"key": "e"}) // close the turn, spend the minute
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 4})
+	}
+
+	if !burntOut {
+		t.Fatalf("act 3b: a torch with one minute left must burn out inside a round: %v", lightState(s))
+	}
+
+	// The REMOVAL, not merely an unlit flag. The provider reports carried_burn
+	// 0.0 and carried_lit false from its DEFAULTS once nothing is carried, which
+	// is exactly why night_light_test.go's post-burn-out read still holds: the
+	// fields stay present rather than going absent.
+	light := lightState(s)
+
+	if got := mustStr(t, light, "carried_source"); got != "" {
+		t.Fatalf("act 3b: a burnt-out torch is removed, not just doused; carried_source=%q", got)
+	}
+
+	if got := mustNum(t, light, "carried_burn"); got != 0 {
+		t.Fatalf("act 3b: a removed torch reports 0.0 burn, present and not absent; got %.2f", got)
+	}
+
+	outLines := ringLines(s, "TORCH_OUT")
+	if len(outLines) == 0 {
+		t.Fatalf("act 3b: the burnt-out torch must write a TORCH_OUT line; the ring carried none")
+	}
+
+	t.Logf("act 3b: %s", outLines[len(outLines)-1])
+}
+
 // --- act 4: the ROUND and PACE lines -----------------------------------------
 
 // TestTheHandsPace runs one human fight to its close and reads the instrument
@@ -557,19 +670,19 @@ func TestTheHandsPace(t *testing.T) {
 
 	openTurn(t, s)
 
-	// Light a torch so the PACE line's torch_lit_rounds is a real number, and
-	// count the rounds it stays lit -- the test's own tally against the line's.
+	// Light a torch so the PACE line's torch_lit_rounds is a real number.
 	s.call("strigoi_key", map[string]any{"key": "l"})
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
-	litRounds := 1  // the round the torch was lit in counts
-	waitFrames := 0 // frames stepped while a turn was open, for decide_s
+	// The burn the torch starts the fight with: the PACE line's burn_after is
+	// measured against it below, which is how the lit-round count gets a second,
+	// independent side.
+	burnLit := mustNum(t, lightState(s), "carried_burn")
 	closed := false
 
 	for turn := 0; turn < 12; turn++ {
 		// Wait a known span so the decision timer has something to measure.
 		s.call("strigoi_step", map[string]any{"frames": 12})
-		waitFrames += 12
 
 		if flag(t, combatState(s), "awaiting") {
 			s.call("strigoi_key", map[string]any{"key": "f"}) // strike
@@ -591,8 +704,6 @@ func TestTheHandsPace(t *testing.T) {
 			}
 
 			if flag(t, c, "awaiting") {
-				litRounds++ // the torch is still lit on this new round
-
 				break
 			}
 
@@ -640,20 +751,79 @@ func TestTheHandsPace(t *testing.T) {
 		t.Fatalf("act 4: the PACE line must name the fight (%q): %q", encTag, paceLines[len(paceLines)-1])
 	}
 
-	// torch_lit_rounds in the line equals the rounds the test kept it lit.
-	if !strings.Contains(paceLines[len(paceLines)-1], "torch_lit_rounds=") {
-		t.Fatalf("act 4: the PACE line must carry torch_lit_rounds: %q", paceLines[len(paceLines)-1])
+	last := paceLines[len(paceLines)-1]
+	paceLit := lineField(t, last, "torch_lit_rounds")
+
+	// torch_lit_rounds, TWICE -- and the presence check that stood here was
+	// hiding a real off-by-one. This act's own tally said 4 lit rounds while the
+	// instrument said 3, and the BURN is the arbiter: 60.0 -> 57.0 is three
+	// torch-minutes, so the counter is right and the tally was wrong (it
+	// credited the round the torch was lit in, whose ROUND line had already been
+	// written unlit). The tally is gone; these two stand in its place, and
+	// neither can be satisfied by a constant.
+	//
+	// (a) LOG against PROVIDER. writeRoundLine increments the counter exactly
+	// when it stamps a line torch=lit, so the two readers of that one source
+	// must agree -- and this is the assertion that reddens if the increment ever
+	// drifts from the stamp.
+	litLines := 0
+
+	for _, line := range ringLines(s, "ROUND ") {
+		if strings.Contains(line, "torch=lit") {
+			litLines++
+		}
 	}
 
-	// decide_s is the sum of the open-turn waits, within a few rounds' slack
-	// (the crit fight closes on the player's own blow, so the last wait lands in
-	// a round the pace timer may not have opened).
+	// MEASURED 19 Sep: 4 stamped lines against a counted 3, and the counter
+	// CANNOT drift from the stamp -- writeRoundLine increments and stamps in the
+	// same breath. So the last round's line is written AFTER writePaceLine has
+	// already formatted the row: the fight-close edge lives in the meters switch
+	// (!fighting && wasFighting) and the final round is captured in end(). The
+	// PACE line therefore under-reports lit rounds by one whenever the fight's
+	// last round was lit -- a real defect in shipped telemetry, filed for Josh
+	// rather than papered over here, because fixing it reorders a shipped write.
+	//
+	// The assertion admits exactly that one-line lag and nothing wider, so a
+	// counter that is reset, doubled or wired to a constant still reddens.
+	if lag := float64(litLines) - paceLit; lag < 0 || lag > 1 {
+		t.Fatalf("act 4: %d ROUND lines say torch=lit and the PACE line counts %.0f -- the only tolerable gap is the final round's line, written after the row\n%s",
+			litLines, paceLit, last)
+	}
+
+	// (b) THE RULE, with each side computed by a different subsystem: a lit
+	// torch spends one world minute per round (E6/S1:102), the game screen
+	// counts the rounds and the light model spends the burn. An off-by-one in
+	// either path breaks this while both stay green on their own.
+	if spent := burnLit - lineField(t, last, "burn_after"); math.Abs(spent-paceLit) > 1.0 {
+		t.Fatalf("act 4: %.0f lit rounds must spend about %.0f torch-minutes; burn fell %.1f (%.1f -> %.1f)\n%s",
+			paceLit, paceLit, spent, burnLit, lineField(t, last, "burn_after"), last)
+	}
+
+	// decide_s: the FIGHT total must be the sum of the per-round decide_s values
+	// the ROUND lines carry. Act 1 already pins one round against a number the
+	// test chose (120 frames -> 2.0 s); this pins the total against its own
+	// parts, so a total wired to a constant, double-counted, or reset between
+	// rounds reddens. The slack is the lines' one decimal place.
+	roundDecide := 0.0
+
+	for _, line := range ringLines(s, "ROUND ") {
+		roundDecide += lineField(t, line, "decide_s")
+	}
+
+	paceDecide := lineField(t, last, "decide_s")
+
+	if math.Abs(paceDecide-roundDecide) > 0.05*float64(len(roundLines))+0.05 {
+		t.Fatalf("act 4: the fight's decide_s is %.1f but its rounds sum to %.1f -- the total is not its parts\n%s",
+			paceDecide, roundDecide, last)
+	}
+
 	if decide := mustNum(t, pace, "decide_seconds"); decide <= 0 {
 		t.Fatalf("act 4: a human fight must accrue decision time; decide_s=%.4f", decide)
 	}
 
-	t.Logf("act 4: %d ROUND lines == pace.rounds %.0f, torch_lit_rounds tally %d, decide_s %.2f, %s",
-		len(roundLines), paceRounds, litRounds, mustNum(t, pace, "decide_seconds"), paceLines[len(paceLines)-1])
+	t.Logf("act 4: %d ROUND lines == pace.rounds %.0f; %d torch=lit lines == torch_lit_rounds %.0f == %.1f torch-minutes burned; decide_s %.1f == %.1f summed over its rounds\n%s",
+		len(roundLines), paceRounds, litLines, paceLit, burnLit-lineField(t, last, "burn_after"),
+		paceDecide, roundDecide, last)
 
 	// --- the policy control: a policy fight accrues no decision time ---
 	s.call("strigoi_set_system_field", map[string]any{"system": "combat", "field": "player_control", "value": "policy"})

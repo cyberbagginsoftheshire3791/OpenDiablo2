@@ -70,10 +70,13 @@ this doc fails until it agrees.
   daybreak; water crosses Thirsty during night one; the bar clears the D5
   contrast floor on a daylight frame and a dark one.
 * `hands_test.go` — M4.4c-2a's script, the seventeenth: the player's hands.
-  Seven acts (the wait, the strike by key, the torch by key, the ROUND/PACE
-  lines, the wish note, dark-into-light against a placed hearth, no turn for the
-  dead), three more (break-away, click-to-strike, the ambush) skipped as c-2b's
-  so the count is honest. A human turn opens on round one and freezes the world
+  Eight acts (the wait, the strike by key, the torch by key, the torch burning
+  OUT and saying so, the ROUND/PACE lines, the wish note, dark-into-light against
+  a placed hearth, no turn for the dead), three more (break-away,
+  click-to-strike, the ambush) skipped as c-2b's so the count is honest. The
+  burn-out is its own act and its own game because the removal really does spend
+  the carried torch, which act 3's last section removes by hand to prove
+  `TorchesCarried` 0. A human turn opens on round one and freezes the world
   clock with it; F strikes and leaves the turn open (executing the Action is not
   finishing the turn), E ends it, a Move plus the Action auto-ends it; L lights,
   burns and douses a torch and spends the Action in a fight; the pace lines land
@@ -285,7 +288,18 @@ closed FIGHT, one PACE line's worth), plus the running `decision_seconds` /
 PACE log lines from these same records, so the log and the provider are one
 source with two readers. `player_control` (`human` | `policy`) and `auto_end_turn`
 join `commit` as the milestone's three new settable fields; `DefaultCombatDials`
-keeps `policy` and the game screen sets `human` at construction.
+keeps `policy` and the game screen sets `human` at construction
+(`shippedCombatDials`, asserted by `TestTheShippedScreenTakesTheTurn` — the
+screen's half of ask 5 was missing for a day and no gate could see it, because
+the keys call `Combat.Commit` either way).
+
+**So a PLAYTEST meets a waiting round by default, and the launcher opts out for
+it.** `session.call` sets `player_control=policy` immediately after every
+`strigoi_start_game`, once, in `playtest/launcher.go`: sixteen of the seventeen
+scripts were written against a world that resolves its own fights, and the spawn
+chance can open one in any of them. A script that wants the human seam sets
+`player_control=human` after `start_game`, which is what every act of
+`hands_test.go` does. The GAME has one code path — human, always.
 
 Each `participants` row carries `id`, `side`, `x`, `y`, `adjacent` and
 `light_here`; the player side adds `reaction_available`, `shaken` (read from

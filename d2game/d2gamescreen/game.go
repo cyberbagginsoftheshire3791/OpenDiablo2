@@ -43,6 +43,28 @@ const (
 	black50alpha = 0x0000007f // rgba
 )
 
+// shippedCombatDials are the combat dials a REAL LAUNCH runs on: the signed
+// defaults with PlayerControl flipped to "human" (M4.4c-2a, ask 5).
+//
+// DefaultCombatDials deliberately keeps "policy" so the resolver's ~40 unit
+// tests at four construction sites stand unchanged, and ask 5 put the other
+// half here, on the screen a player actually looks at. The other half was
+// missing for a day and the reachability gate could not see it: the keys still
+// CALL Combat.Commit from OnKeyDown, so every register row stayed green, while
+// every press answered "refused: no turn is waiting" and every PACE line read
+// control=policy decide_s=0.0. The seam was harness-only in a shipped build --
+// the hollow class one level up, a live call with a dead effect.
+//
+// It is a function rather than a literal in the constructor so that the value
+// can be asserted without building a screen. TestTheShippedScreenTakesTheTurn
+// is that assertion, and it pins BOTH halves of the split.
+func shippedCombatDials() d2world.CombatDials {
+	dials := d2world.DefaultCombatDials()
+	dials.PlayerControl = d2world.PlayerControlHuman
+
+	return dials
+}
+
 // CreateGame creates the Gameplay screen and returns a pointer to it
 func CreateGame(
 	navigator d2interface.Navigator,
@@ -183,7 +205,7 @@ func CreateGame(
 		game.pursuit,
 
 		gameClient.Seed,
-		d2world.DefaultCombatDials(),
+		shippedCombatDials(),
 	)
 
 	// The renderer asks the light model how lit each tile is; it knows the
