@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.10.0"         // M4.5 step 4: the resolver -- bands, advantage, damage, D8's order
+	harnessVersion     = "0.11.0"         // M4.4c-2a: the seam -- awaiting/commit fields, player_control/commit settable, AWAITING_PLAYER
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64

@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 16 playtest scripts.** That count, the harness version below and the
+**The 17 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -69,6 +69,15 @@ this doc fails until it agrees.
   second squad is drawn, selectable, drains independently and survives
   daybreak; water crosses Thirsty during night one; the bar clears the D5
   contrast floor on a daylight frame and a dark one.
+* `hands_test.go` — M4.4c-2a's script, the seventeenth: the player's hands.
+  Seven acts (the wait, the strike by key, the torch by key, the ROUND/PACE
+  lines, the wish note, dark-into-light against a placed hearth, no turn for the
+  dead), three more (break-away, click-to-strike, the ambush) skipped as c-2b's
+  so the count is honest. A human turn opens on round one and freezes the world
+  clock with it; F strikes and leaves the turn open (executing the Action is not
+  finishing the turn), E ends it, a Move plus the Action auto-ends it; L lights,
+  burns and douses a torch and spends the Action in a fight; the pace lines land
+  in the log ring and agree with the combat provider's `pace{}` block.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.
@@ -100,9 +109,15 @@ player is always handle `p:1`; other entities are `e:N` in first-seen order
 (stable under a seed, per process). Errors come back as `CODE: message — hint`
 with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING ·
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
-FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · INTERNAL`.
+FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · AWAITING_PLAYER · INTERNAL`.
+`AWAITING_PLAYER` (M4.4c-2a) is `strigoi_step_world`'s refusal when a human turn
+is open: the turn freezes the world clock (`Game.worldRunning()` reads
+`Combat.Awaiting()`), so a `world_minutes` step would never converge and would
+spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
+(`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
+`combat.player_control=policy`, then step again.
 
-## The tools (36; harness 0.10.0)
+## The tools (36; harness 0.11.0)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -251,6 +266,26 @@ compare `actions_round` to tell a new round from a retained one.
 `player_dead`, `disengaged`) persists after the encounter is gone, with
 `ended_enemies_dead` / `ended_player_dead` / `ended_disengaged` beside it,
 because a fight that begins and ends between two reads is otherwise invisible.
+
+**The seam (M4.4c-2a).** A round STOPS at the player's slot when
+`player_control` is `human`, and the world clock stops with it. `awaiting` is
+true while a turn is open — step FRAMES toward it, not `awaiting`'s parent
+`fighting`, which goes true a round earlier — and `action_spent` / `move_spent`
+track the turn's two pips. The turn closes on `Commit` (a `strike`/`light`/
+`douse` that spends the last pip, or a `hold`/`end`), or on the Move that spends
+the last pip: `finishRound` has three entry points. `commit` is a settable field
+that calls the SAME `Combat.Commit` the F/L/E keys call, with `commits_by_input`
+/ `commits_by_field` saying which path was used and `commits_refused` counting a
+commit that arrived with no turn waiting. The pace instrument reads off two more
+blocks: `round_row{encounter, round, decide_seconds, action, move}` (the last
+closed round, one ROUND line's worth) and `pace{encounter, rounds, wall_seconds,
+decide_seconds, health_open, health_close, end_reason, control, …}` (the last
+closed FIGHT, one PACE line's worth), plus the running `decision_seconds` /
+`decision_seconds_round` / `wall_seconds`. The game screen formats its ROUND and
+PACE log lines from these same records, so the log and the provider are one
+source with two readers. `player_control` (`human` | `policy`) and `auto_end_turn`
+join `commit` as the milestone's three new settable fields; `DefaultCombatDials`
+keeps `policy` and the game screen sets `human` at construction.
 
 Each `participants` row carries `id`, `side`, `x`, `y`, `adjacent` and
 `light_here`; the player side adds `reaction_available`, `shaken` (read from

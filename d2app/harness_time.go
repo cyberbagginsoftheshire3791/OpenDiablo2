@@ -574,6 +574,22 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 	target := start + worldMinutes
 
 	for out.Ticks < maxTicks {
+		// M4.4c-2a: an open player turn freezes the world clock exactly as the
+		// escape menu does (Game.worldRunning() reads Combat.Awaiting()), so a
+		// step_world into a waiting turn would never converge -- it spins to
+		// maxTicks while the playtest client's 60s callTimeout fires first,
+		// Fatalf's the script and leaves harness.stepping true, poisoning the
+		// next call (S0 item 1: the gated call had not returned at 64.76s).
+		// The guard turns that wedge into a one-frame error the moment the turn
+		// is open, whether it was open on entry or a fight opened mid-step.
+		if harnessCombatAwaiting() {
+			out.SimSeconds = harnessTimeSnapshot().SimSeconds
+
+			return nil, out, harnessErr("AWAITING_PLAYER",
+				fmt.Sprintf("stepped %d ticks and a player turn is now open -- the world clock is frozen with it", out.Ticks),
+				"commit (strigoi_key f/l/e, or set combat.commit), or set combat.player_control=policy")
+		}
+
 		now, ok := harnessClockMinutes()
 		if !ok {
 			return nil, out, harnessErr("INTERNAL", "the clock provider vanished mid-step", "")
@@ -644,6 +660,33 @@ func harnessClockMinutes() (minutes float64, ok bool) {
 // simulated second).
 func harnessClockRate() (rate float64, ok bool) {
 	return harnessClockField("rate")
+}
+
+// harnessCombatAwaiting reports whether the combat provider has an open player
+// turn (M4.4c-2a). It reads through Lookup rather than a typed accessor for the
+// same reason the clock helpers do: the harness package must not import
+// d2world, and the provider registry is the seam that keeps it out. False when
+// no combat provider is registered, so a world with no fight steps freely.
+func harnessCombatAwaiting() bool {
+	awaiting := false
+
+	_ = harnessOnUpdate(func() {
+		p, found := d2harness.Lookup("combat")
+		if !found {
+			return
+		}
+
+		v, present := p.HarnessState()["awaiting"]
+		if !present {
+			return
+		}
+
+		if b, isBool := v.(bool); isBool {
+			awaiting = b
+		}
+	})
+
+	return awaiting
 }
 
 func harnessClockField(field string) (value float64, ok bool) {
