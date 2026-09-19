@@ -1,6 +1,6 @@
 # Focus -- printed into every session by the SessionStart hook
 
-Updated: 2026-09-17 (the sight burst SHIPPED; c-2a is next, CT).
+Updated: 2026-09-19 (M4.4c-2a SHIPPED on branch `c-2a`, CI green; c-2b is next, CT).
 **This file is capped at one screen.** It held 528 lines until today and told
 a session more about finished milestones than about the next hour; the body
 was frozen into `docs/focus-archive-2026-09-05.md` and is not appended to
@@ -49,9 +49,10 @@ rather than improvising a shortened version of it.
 
     [done] hardening burst -> [done] M4.4c-1 (squads on screen)
     -> [done] the sight burst (BUG-8, the checkLos overshoot)
-    -> M4.4c-2a (NEXT: the seam, the verbs by key, the pace
-       instrument, the amazon pin)
-    -> M4.4c-2b (the strip, click-to-strike, the ambush)
+    -> [done] M4.4c-2a (the seam, the verbs by key, the pace
+       instrument, the amazon pin; branch c-2a, CI green)
+    -> M4.4c-2b (NEXT: the strip, click-to-strike, the ambush,
+       hold_frames, the MoveTiles guard; own branch)
     -> death screen v0 -> M4.7 -> M4.6
 
 **M4.5 CLOSED 9 Sep; M4.4a 11 Sep; hardening burst 14 Sep; M4.4c-1 15 Sep
@@ -59,10 +60,12 @@ rather than improvising a shortened version of it.
 is in c-2, measured on a real launch. **FRIENDS BUILD #1 RETIRED 17 Sep**
 (Josh); the amazon pin (240) survives as a build constant. **THE SIGHT BURST
 SHIPPED 17 Sep** -- `checkLos` no longer samples past its destination;
-awareness is symmetric and a map-edge endpoint is reachable. **NEXT is
-M4.4c-2a**, from its opening prompt; it carries the amazon pin too. **Brief +
-prompt reconciled 17 Sep** (the Action does not end the turn; `end` is the
-fifth `Commit` choice) -- read the live copies. **M4.7 = the corpse machine +
+awareness is symmetric and a map-edge endpoint is reachable. **M4.4c-2a
+SHIPPED 19 Sep** on branch `c-2a` (`c9a6ddf8`, CI green): the seam, the four
+verbs by key, the ROUND/PACE/WISH instrument, `AWAITING_PLAYER`, the amazon
+pin, the 17th playtest script. **NEXT is M4.4c-2b** on its own branch from a
+new opening prompt (the Action does not end the turn; `end` is the fifth
+`Commit` choice were reconciled and are now built -- read the live c-2 brief). **M4.7 = the corpse machine +
 one rite verb with a game caller**, owning 22:00-04:00; D9 (pack arrival)
 first. M4.6's note is the candidate owner of the world save (no mid-run save;
 load = a new dawn).
