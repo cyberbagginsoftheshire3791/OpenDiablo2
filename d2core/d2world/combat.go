@@ -98,6 +98,24 @@ type Combat struct {
 	// other.
 	commitsByInput int
 	commitsByField int
+
+	// The pace window. It opens at the FIRST turn-open of a fight -- not at
+	// tryStart -- because a fight the player never acted in measured nothing
+	// about a person, and closes at end().
+	paceOpen       bool
+	wallSeconds    float64
+	paceHealthOpen int
+	paceCommits    int
+	// The turn's ACTION, not the verb that closed it. Measured: reporting the
+	// closing verb made every ROUND line read action=end, because the end
+	// commit overwrote the strike a moment before finishRound captured it.
+	// What the line has to answer is "what did he DO this round": strike,
+	// light and douse set it; hold sets it to hold (the Action went unspent,
+	// which IS the answer); end leaves it alone, because end is only
+	// reachable once an Action is already recorded.
+	lastActionVerb string
+	lastRound      RoundRow
+	lastPace       PaceRow
 	declines       int
 	actions        int
 
@@ -679,6 +697,20 @@ func (c *Combat) Advance(worldMinutes float64) {
 // ENTERED (tryStart counts round 1 and each close counts the next), and it is
 // incremented even when the round that just ran ended the fight.
 func (c *Combat) finishRound() {
+	// Captured BEFORE the counters move, so the row names the round that just
+	// closed rather than the one about to run.
+	if c.encounter != nil {
+		c.lastRound = RoundRow{
+			Encounter:     c.encounter.id,
+			Round:         c.encounter.round,
+			DecideSeconds: c.decisionSecondsRound,
+			Action:        c.lastActionVerb,
+			Move:          c.encounter.moveSpent,
+		}
+	}
+
+	c.lastActionVerb = ""
+
 	c.rounds++
 
 	if c.encounter != nil {
@@ -698,16 +730,89 @@ func (c *Combat) MoveSpent() bool {
 	return c.encounter != nil && c.encounter.moveSpent
 }
 
+// RoundRow is what one closed round was, captured at the close. The game
+// screen writes a ROUND line from it: the round edge is Round() changing, and
+// this is the row that goes with the edge.
+type RoundRow struct {
+	Encounter     string
+	Round         int
+	DecideSeconds float64
+	Action        string
+	Move          bool
+}
+
+// PaceRow is what one whole fight was, captured at end(). It is the row R2 §4
+// is measured against -- the night's total is the sum of WallSeconds over one
+// day -- and it is built here rather than on the game screen because every
+// number in it except the clock stamps is this package's own fact.
+//
+// WallSeconds runs from the FIRST TURN-OPEN to end(), not from tryStart: a
+// fight the player never got a turn in measured nothing about a person.
+type PaceRow struct {
+	Encounter     string
+	Rounds        int
+	WallSeconds   float64
+	DecideSeconds float64
+	HealthOpen    int
+	HealthClose   int
+	EndReason     string
+	Enemies       int
+	Kinds         []string
+	Initiator     string
+	Surprised     bool
+	Control       string
+	Commits       int
+}
+
+// LastRound and LastPace are the two records, read by the game screen at the
+// edges it already sees.
+func (c *Combat) LastRound() RoundRow { return c.lastRound }
+
+// LastPace is the closed fight's record; its Encounter is "" until one closes.
+func (c *Combat) LastPace() PaceRow { return c.lastPace }
+
 // Wait accumulates the player's thinking time. The game screen hands it the
 // frame's elapsed while a turn is open; it does nothing at any other time, so
 // a caller that forgets to check cannot poison the number.
 func (c *Combat) Wait(elapsed float64) {
-	if elapsed <= 0 || c.encounter == nil || !c.encounter.awaiting {
+	if elapsed <= 0 || c.encounter == nil {
 		return
 	}
 
-	c.decisionSeconds += elapsed
-	c.decisionSecondsRound += elapsed
+	if c.encounter.awaiting {
+		c.decisionSeconds += elapsed
+		c.decisionSecondsRound += elapsed
+
+		// The first turn-open starts the fight's wall clock and pins the
+		// health it opened on.
+		if !c.paceOpen {
+			c.paceOpen = true
+			c.paceHealthOpen = c.playerHealth()
+		}
+	}
+
+	// Wall time runs on EVERY frame once the window is open, not only the
+	// awaiting ones: it is how long the fight took a person, and the frames
+	// between rounds are part of that.
+	if c.paceOpen {
+		c.wallSeconds += elapsed
+	}
+}
+
+// playerHealth reads the quarry's body, or -1 when there is nothing to read.
+// The player's health lives on the meters and is NOT duplicated in the combat
+// provider; this is the pace row's own snapshot, taken at two instants.
+func (c *Combat) playerHealth() int {
+	if c.encounter == nil || c.encounter.target == nil || c.bodies == nil {
+		return -1
+	}
+
+	body := c.bodies.BodyOf(c.encounter.target.QuarryID())
+	if body == nil {
+		return -1
+	}
+
+	return body.CurrentHealth()
 }
 
 // DecisionSeconds is the fight's total thinking time, and DecisionSecondsRound
@@ -759,6 +864,16 @@ func (c *Combat) commit(choice, targetID string) error {
 		c.commitsRefused++
 
 		return fmt.Errorf("commit %q refused: no turn is waiting", choice)
+	}
+
+	c.paceCommits++
+
+	switch choice {
+	case CommitStrike, CommitLight, CommitDouse, CommitHold:
+		c.lastActionVerb = choice
+	case CommitEnd:
+		// end closes a turn whose Action is already spent, so the Action verb
+		// is already recorded and must not be overwritten.
 	}
 
 	switch choice {
@@ -1248,6 +1363,67 @@ func (e *encounter) endingReason() string {
 // invisible in the state and obvious in the counters -- the same argument the
 // four counters at the top of this file were added for.
 func (c *Combat) end(reason string) {
+	// The pace row is built from the encounter that is about to go, so it is
+	// captured HERE rather than by a caller reading a nil encounter a frame
+	// later. A fight that opened and closed between two frames is otherwise
+	// invisible, which is the same reason ended_reason persists.
+	if c.encounter != nil && c.paceOpen {
+		e := c.encounter
+
+		// THE ROUND THAT DIED WITH THE FIGHT still happened, and it is the one
+		// the player will want to read: the blow that ended it was his.
+		//
+		// Measured: a three-round fight wrote two ROUND lines. The last round
+		// ends inside commit(), where the killing blow nils the encounter and
+		// the commit returns before finishRound is ever reached -- so the row
+		// was never captured and act 4's "one line per round" could not hold.
+		// Captured here instead, on the only edge that sees it.
+		if c.lastActionVerb != "" {
+			c.lastRound = RoundRow{
+				Encounter:     e.id,
+				Round:         e.round,
+				DecideSeconds: c.decisionSecondsRound,
+				Action:        c.lastActionVerb,
+				Move:          e.moveSpent,
+			}
+		}
+
+		kinds := make([]string, 0, len(e.enemies))
+		seen := map[string]bool{}
+
+		for _, enemy := range e.enemies {
+			kind := c.profileOf(enemy.WatcherID()).Row
+			if kind != "" && !seen[kind] {
+				seen[kind] = true
+
+				kinds = append(kinds, kind)
+			}
+		}
+
+		c.lastPace = PaceRow{
+			Encounter:     e.id,
+			Rounds:        e.round,
+			WallSeconds:   c.wallSeconds,
+			DecideSeconds: c.decisionSeconds,
+			HealthOpen:    c.paceHealthOpen,
+			HealthClose:   c.playerHealth(),
+			EndReason:     reason,
+			Enemies:       len(e.enemies),
+			Kinds:         kinds,
+			Initiator:     e.initiator,
+			Surprised:     e.surprised,
+			Control:       c.dials.PlayerControl,
+			Commits:       c.paceCommits,
+		}
+	}
+
+	c.paceOpen = false
+	c.wallSeconds = 0
+	c.decisionSeconds = 0
+	c.decisionSecondsRound = 0
+	c.paceCommits = 0
+	c.paceHealthOpen = 0
+
 	c.encounter = nil
 	c.ended++
 	c.endedReason = reason
@@ -1382,6 +1558,35 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"commits_refused":        c.commitsRefused,
 		"commits_by_input":       c.commitsByInput,
 		"commits_by_field":       c.commitsByField,
+		"wall_seconds":           c.wallSeconds,
+
+		// The two records the instrument writes its lines from, reported so a
+		// script asserts against the SAME numbers the log carries rather than
+		// re-deriving them from a grep. Fourth provider rule: two paths to one
+		// observable is the trap, and this is the way out of it -- the log and
+		// the provider read one source.
+		"round_row": map[string]interface{}{
+			"encounter":      c.lastRound.Encounter,
+			"round":          c.lastRound.Round,
+			"decide_seconds": c.lastRound.DecideSeconds,
+			"action":         c.lastRound.Action,
+			"move":           c.lastRound.Move,
+		},
+		"pace": map[string]interface{}{
+			"encounter":      c.lastPace.Encounter,
+			"rounds":         c.lastPace.Rounds,
+			"wall_seconds":   c.lastPace.WallSeconds,
+			"decide_seconds": c.lastPace.DecideSeconds,
+			"health_open":    c.lastPace.HealthOpen,
+			"health_close":   c.lastPace.HealthClose,
+			"end_reason":     c.lastPace.EndReason,
+			"enemies":        c.lastPace.Enemies,
+			"kinds":          c.lastPace.Kinds,
+			"initiator":      c.lastPace.Initiator,
+			"surprised":      c.lastPace.Surprised,
+			"control":        c.lastPace.Control,
+			"commits":        c.lastPace.Commits,
+		},
 
 		"actions_total": c.actions,
 		"actions_round": c.actionsRound,

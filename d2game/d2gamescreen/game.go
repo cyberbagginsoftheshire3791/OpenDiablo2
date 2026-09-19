@@ -250,6 +250,23 @@ type Game struct {
 	wasFighting         bool
 	activityBeforeFight d2world.Activity
 
+	// The pace instrument (M4.4c-2a). It is written HERE and not in d2world:
+	// that package has no logger and must not grow one -- zero ebiten and zero
+	// logging is what the gate checks on it -- and the two facts the lines
+	// need that d2world cannot know, the world clock stamp and the carried
+	// torch, both live on this screen.
+	//
+	// paceRound is the round the last ROUND line was written for: the round
+	// EDGE is Combat.Round() changing, and this is what remembers where it
+	// was. paceOpen/paceOpenClock hold the fight's opening stamp until it
+	// closes; torchLitRounds counts the rounds the player spent lit, which is
+	// a light fact and so cannot come from the combat provider.
+	paceRoundKey   string
+	paceOpenClock  string
+	paceOpenDay    int
+	torchLitRounds int
+	torchWasOut    bool
+
 	// bodies is where a monster's health lives (M4.5 step 3), keyed by the
 	// entity id d2world knows it by. It is on the screen rather than on the
 	// entity for the reasons npc_body.go states. Game satisfies
@@ -439,10 +456,15 @@ func (v *Game) Advance(elapsed float64) error {
 
 	// The decision timer counts only frames on which the world stopped FOR THE
 	// COMBAT REASON: Wait() tests awaiting itself, so a frame paused under the
-	// escape menu adds nothing to the player's thinking time.
+	// escape menu adds nothing to the player's thinking time. It also drives
+	// the fight's wall clock, which runs on every frame once the first turn
+	// has opened.
 	if v.combat != nil {
 		v.combat.Wait(elapsed)
 	}
+
+	v.writeRoundLine()
+	v.writeTorchOut()
 
 	if v.gameControls != nil {
 		if err := v.gameControls.Advance(elapsed); err != nil {
@@ -596,6 +618,89 @@ func (v *Game) advanceWorld(elapsed float64) {
 // It gives Combat.Fighting and Meters.SetActivity their first game callers --
 // both had been reachable only from the harness, which is the hollow shape
 // M4.1 and M4.3b each shipped once.
+// writeRoundLine writes one ROUND line per closed round. The edge is
+// Combat.Round() changing, which is the only edge the game screen can see
+// without the combat model calling back into it.
+//
+// The format is fixed and greppable, because a friend's log is read by a grep
+// and not by a parser:
+//
+//	ROUND encounter=e:7 round=3 decide_s=8.4 action=strike move=false torch=lit
+func (v *Game) writeRoundLine() {
+	if v.combat == nil {
+		return
+	}
+
+	row := v.combat.LastRound()
+	if row.Encounter == "" {
+		return
+	}
+
+	// The edge is the ROW changing, not Combat.Round(), and the difference is
+	// one line per fight. Measured: gating on Fighting() lost the LAST round
+	// of every fight, because the blow that ends it closes the encounter
+	// before this screen looks again -- so a three-round fight wrote two ROUND
+	// lines, and act 4's "one line per round" could never hold.
+	key := fmt.Sprintf("%s#%d", row.Encounter, row.Round)
+	if key == v.paceRoundKey {
+		return
+	}
+
+	v.paceRoundKey = key
+
+	torch := "none"
+
+	if v.light != nil {
+		if carried := v.light.Carried(); carried != nil {
+			torch = "unlit"
+			if carried.Lit {
+				torch = "lit"
+
+				v.torchLitRounds++
+			}
+		}
+	}
+
+	v.Infof("ROUND encounter=%s round=%d decide_s=%.1f action=%s move=%v torch=%s",
+		row.Encounter, row.Round, row.DecideSeconds, actionOrNone(row.Action), row.Move, torch)
+}
+
+// actionOrNone keeps the field present when the policy resolved the round --
+// an absent field reads as a missing round rather than a round with no commit,
+// and the units guard in state.md is about exactly that difference.
+func actionOrNone(action string) string {
+	if action == "" {
+		return "none"
+	}
+
+	return action
+}
+
+// writeTorchOut fires once, when the carried source burns out. Criterion 3 of
+// R2 §4 asks for telemetry that light exhaustion ACTUALLY OCCURS, and a count
+// of lit rounds does not say that -- a torch can be lit all night and never
+// run out.
+func (v *Game) writeTorchOut() {
+	if v.light == nil || v.worldClock == nil {
+		return
+	}
+
+	carried := v.light.Carried()
+	out := carried != nil && carried.Burn <= 0
+
+	if out && !v.torchWasOut {
+		encounter := "-"
+		if v.combat != nil && v.combat.Fighting() {
+			encounter = v.combat.LastRound().Encounter
+		}
+
+		v.Infof("TORCH_OUT day=%d clock=%s encounter=%s",
+			v.worldClock.DayIndex(), v.worldClock.TimeOfDay(), encounter)
+	}
+
+	v.torchWasOut = out
+}
+
 func (v *Game) applyFightingActivity() {
 	if v.meters == nil {
 		return
@@ -611,6 +716,15 @@ func (v *Game) applyFightingActivity() {
 
 		v.wasFighting = true
 
+		// The fight edge the PACE line hangs on. The opening stamp is taken
+		// here because the clock has moved by the time the fight closes.
+		if v.worldClock != nil {
+			v.paceOpenDay, v.paceOpenClock = v.worldClock.DayIndex(), v.worldClock.TimeOfDay()
+		}
+
+		v.torchLitRounds = 0
+		v.paceRoundKey = ""
+
 	case !fighting && v.wasFighting:
 		// ONLY PUT BACK WHAT WE REPLACED. If anything wrote the activity
 		// while the fight ran -- a script today, a real verb after M4.4 --
@@ -620,7 +734,61 @@ func (v *Game) applyFightingActivity() {
 		}
 
 		v.wasFighting = false
+
+		v.writePaceLine()
 	}
+}
+
+// writePaceLine writes one PACE line per fight, at the close. The night's
+// total -- the number R2 §4 governs -- is the sum of wall_s over one day=, and
+// a break-away that reopens is several rows in that sum.
+//
+// A fight the player never got a turn in writes NOTHING: the pace row's
+// encounter is empty until the first turn opened, because a fight resolved by
+// the policy in 0.4 seconds measured nothing about a person. A policy-
+// controlled fight that DID open a turn writes the line with control=policy
+// and decide_s=0.0, which is the control that says the timer measures people
+// rather than fights.
+func (v *Game) writePaceLine() {
+	if v.combat == nil {
+		return
+	}
+
+	row := v.combat.LastPace()
+	if row.Encounter == "" {
+		return
+	}
+
+	perRound, decidePerRound := 0.0, 0.0
+	if row.Rounds > 0 {
+		perRound = row.WallSeconds / float64(row.Rounds)
+		decidePerRound = row.DecideSeconds / float64(row.Rounds)
+	}
+
+	// NO TORCH IS NOT A BURNT-OUT TORCH. Measured: defaulting torch_out to
+	// true reported light exhaustion on a fight fought with no torch at all --
+	// criterion 3's telemetry saying the opposite of what happened.
+	burnAfter, torchesUsed, torchOut := 0.0, 0, false
+
+	if v.light != nil {
+		if carried := v.light.Carried(); carried != nil {
+			burnAfter, torchesUsed, torchOut = carried.Burn, 1, carried.Burn <= 0
+		}
+	}
+
+	closeClock := ""
+	if v.worldClock != nil {
+		closeClock = v.worldClock.TimeOfDay()
+	}
+
+	v.Infof("PACE  encounter=%s day=%d open=%s close=%s rounds=%d wall_s=%.1f decide_s=%.1f "+
+		"s_per_round=%.2f decide_per_round=%.2f hp=%d->%d torch_lit_rounds=%d torch_out=%v "+
+		"burn_after=%.0f torches_used=%d end=%s enemies=%d kinds=%s initiator=%s surprised=%v control=%s",
+		row.Encounter, v.paceOpenDay, v.paceOpenClock, closeClock, row.Rounds,
+		row.WallSeconds, row.DecideSeconds, perRound, decidePerRound,
+		row.HealthOpen, row.HealthClose, v.torchLitRounds, torchOut,
+		burnAfter, torchesUsed, row.EndReason, row.Enemies,
+		strings.Join(row.Kinds, ","), row.Initiator, row.Surprised, row.Control)
 }
 
 // startChasesForTheAware is the line that makes M4.3b a milestone rather than
