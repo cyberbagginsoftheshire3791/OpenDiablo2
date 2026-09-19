@@ -134,7 +134,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (36; harness 0.11.0)
+## The tools (36; harness 0.12.0)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -232,7 +232,22 @@ Registered today — **`clock`**, **`light`**, **`meters`**, **`pursuit`**,
 **`spawns`**, **`combat`** and **`ui`**, all while a game screen is live.
 
 **`pursuit`** (M4.3a) reports the live chases and their dials; settable
-`arrive_within`, `release`, `repath_tiles`. **`spawns`** (M4.3b) reports the
+`arrive_within`, `release`, `repath_tiles`. **`strigoi_click` takes `hold_frames`** (c-2b, 19 Sep 2026), and the tool count
+does NOT move: it is a field on an existing verb, not a verb of its own. Default
+1 is the old behaviour, a tap that presses for one poll and releases the next.
+**2 or more holds the button DOWN for that many whole frames**, which is the only
+way a script can reach `GameControls.OnMouseButtonRepeat` — the click-and-hold
+path that walks the hero and casts the left skill. Until this, a tap made
+`repeatDue(now, now)` false *by construction* and that handler was unreachable
+from any script (BUG-7). The result's `applied` says `held N frame(s)`, so a
+script can assert it got a hold rather than a tap. Modifiers stay a one-poll tap:
+a held shift-click is a repeating cast, which is a different question and needs
+its own assertion before it gets a verb. **What this does NOT close is BUG-7's
+other half** — c-1's squad guard inside that handler is still unasserted, and
+`playtest/squads_test.go` act 8 explains why with the measurement that stopped it
+being claimed.
+
+**`spawns`** (M4.3b) reports the
 stage tables and their current weights, the deep-night `band`, `open_bodies`
 and `carrion_weight`, every group with its `morale` / `routing`, and — this
 is the part ask 6 asked for — a `notice` block per group plus `notice_list`

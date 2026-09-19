@@ -37,6 +37,7 @@ type harnessClickIn struct {
 	Y      int      `json:"y" jsonschema:"screen pixel y (0..599)"`
 	Button string   `json:"button,omitempty" jsonschema:"left (default), right, middle"`
 	Mods   []string `json:"mods,omitempty" jsonschema:"modifier keys held for the click: shift, control, alt"`
+	Hold   int      `json:"hold_frames,omitempty" jsonschema:"hold the button DOWN for this many frames before releasing (default 1, a tap). 2 or more is what reaches the click-and-hold path: GameControls.OnMouseButtonRepeat and its 0.25 s threshold, which a tap cannot reach by construction (BUG-7)"`
 }
 
 type harnessCursorIn struct {
@@ -109,6 +110,80 @@ func harnessApplyInput(what string, fn func()) (harnessInputOut, error) {
 	return out, nil
 }
 
+// harnessHoldFramesMax bounds hold_frames so a script cannot wedge the tool for
+// longer than the tool timeout allows. At 60 fps 600 frames is ten seconds,
+// which is two orders of magnitude past the 0.25 s threshold it exists to cross.
+const harnessHoldFramesMax = 600
+
+// harnessApplyHeldClick presses a mouse button, holds it down across whole
+// frames, and releases it.
+//
+// IT EXISTS BECAUSE NO PLAYTEST COULD EXERCISE A HELD BUTTON (BUG-7, filed 15
+// Sep 2026). strigoi_click pressed and released inside ONE poll, so
+// repeatDue(now, now) was false by construction and GameControls'
+// OnMouseButtonRepeat -- the click-and-hold path that walks the hero, casts the
+// left skill, and carries c-1's squad guard -- was unreachable from any script.
+// The guard was verified by READING, and the gap was named in the build note
+// rather than papered over. This is the verb that closes it.
+//
+// The modifiers stay a one-poll tap, as they are for a tap click: a held
+// shift-click is a different question (a repeating cast) and it needs its own
+// assertion before it gets a verb.
+func harnessApplyHeldClick(what string, x, y int, button d2enum.MouseButton,
+	mods []d2enum.Key, frames int) (harnessInputOut, error) {
+	out := harnessInputOut{Applied: what}
+
+	if harness.input == nil {
+		return out, harnessErr("INTERNAL", "the scripted input overlay is not installed", "")
+	}
+
+	err := harnessOnUpdate(func() {
+		for _, m := range mods {
+			harness.input.KeyTap(m)
+		}
+
+		harness.input.MoveCursor(x, y)
+		harness.input.MouseDown(button)
+
+		out.Tick = atomic.LoadInt64(&harness.tick)
+	})
+	if err != nil {
+		return out, err
+	}
+
+	// Whole frames, each one an input poll the game sees with the button still
+	// down. The controls' clock accrues per frame, which is what carries it past
+	// the 0.25 s threshold -- so the count is deterministic rather than a sleep.
+	for i := 0; i < frames; i++ {
+		if err := harnessWaitFrameAfter(atomic.LoadInt64(&harness.tick)); err != nil {
+			return out, err
+		}
+	}
+
+	err = harnessOnUpdate(func() {
+		harness.input.MouseUp(button)
+	})
+	if err != nil {
+		return out, err
+	}
+
+	if err := harnessWaitFrameAfter(atomic.LoadInt64(&harness.tick)); err != nil {
+		return out, err
+	}
+
+	err = harnessOnUpdate(func() {
+		out.CursorX, out.CursorY = harness.input.Cursor()
+		out.Scripted = harness.input.CursorScripted()
+	})
+	if err != nil {
+		return out, err
+	}
+
+	out.Mode = harnessTimeSnapshot().Mode
+
+	return out, nil
+}
+
 func (a *App) harnessAddInputTools(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_key",
@@ -150,7 +225,7 @@ func (a *App) harnessAddInputTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_click",
-		Description: "Scripted mouse click at SCREEN PIXELS x,y (800x600): the cursor moves there and the button is pressed for one poll and released the next, with optional held modifiers (shift-click casts the left skill). A click on open ground walks the player there through the normal controls. Use strigoi_get_player's screen field to aim at the player.",
+		Description: "Scripted mouse click at SCREEN PIXELS x,y (800x600): the cursor moves there and the button is pressed for one poll and released the next, with optional held modifiers (shift-click casts the left skill). A click on open ground walks the player there through the normal controls. Use strigoi_get_player's screen field to aim at the player. hold_frames 2 or more HOLDS the button down for that many frames instead, which is the only way to reach the click-and-hold path (OnMouseButtonRepeat).",
 		Annotations: harnessAnnMut(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessClickIn) (*mcp.CallToolResult, harnessInputOut, error) {
 		harnessLogCall("strigoi_click")
@@ -175,13 +250,28 @@ func (a *App) harnessAddInputTools(srv *mcp.Server) {
 			return nil, harnessInputOut{}, harnessErr("OUT_OF_BOUNDS", fmt.Sprintf("%d,%d is outside the 800x600 frame", in.X, in.Y), "")
 		}
 
-		out, err := harnessApplyInput(fmt.Sprintf("%s click at %d,%d", in.Button, in.X, in.Y), func() {
-			for _, m := range mods {
-				harness.input.KeyTap(m) // held for the same poll as the click
-			}
+		if in.Hold < 0 || in.Hold > harnessHoldFramesMax {
+			return nil, harnessInputOut{}, harnessErr("BAD_ARGUMENT",
+				fmt.Sprintf("hold_frames %d is outside 0..%d", in.Hold, harnessHoldFramesMax),
+				"1 or 0 is a tap; 2 or more holds the button that many frames")
+		}
 
-			harness.input.Click(in.X, in.Y, button)
-		})
+		var out harnessInputOut
+
+		if in.Hold > 1 {
+			out, err = harnessApplyHeldClick(
+				fmt.Sprintf("%s click at %d,%d held %d frame(s)", in.Button, in.X, in.Y, in.Hold),
+				in.X, in.Y, button, mods, in.Hold)
+		} else {
+			out, err = harnessApplyInput(fmt.Sprintf("%s click at %d,%d", in.Button, in.X, in.Y), func() {
+				for _, m := range mods {
+					harness.input.KeyTap(m) // held for the same poll as the click
+				}
+
+				harness.input.Click(in.X, in.Y, button)
+			})
+		}
+
 		if err != nil {
 			return nil, out, err
 		}

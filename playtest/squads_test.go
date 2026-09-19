@@ -5,6 +5,7 @@ package playtest
 import (
 	"image"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -33,6 +34,8 @@ import (
 //     a floor on a DAYLIGHT frame AND a deliberately dark one. Each frame
 //     asserts its OWN background luminance first, so neither can quietly
 //     become the other case;
+//  8. a script can HOLD a mouse button at all -- strigoi_click's hold_frames,
+//     which closes BUG-7's instrument half but NOT its guard assertion;
 //  7. a TABLE-SPAWNED enemy gets a bar -- the gate is keyed on the spawn row,
 //     not the stand-in monstats code the sprite comes from.
 //
@@ -509,6 +512,81 @@ func TestSquadsOnScreen(t *testing.T) {
 
 	t.Logf("act 7: %v arrived with %d member(s) and every one got a bar (enemy bars %d -> %d)",
 		rows, members, enemyBefore, enemyBefore+members)
+
+	// --- ACT 8: a script can HOLD a mouse button (BUG-7's instrument half) -----
+	//
+	// WHAT THIS ACT CLAIMS, AND WHAT IT DOES NOT. Until 19 Sep 2026 no playtest
+	// could exercise a held mouse button at all: strigoi_click pressed AND
+	// released inside one frame, so GameControls.OnMouseButtonRepeat -- reached
+	// while a button is DOWN -- was unreachable from any script by construction.
+	// That is BUG-7's instrument half, strigoi_click grew hold_frames, and this
+	// act asserts it: a held click is delivered as a hold, the controls act on
+	// it, and the button does not stay stuck down.
+	//
+	// IT DOES NOT ASSERT c-1'S SQUAD GUARD IN THAT HANDLER, and the reason is
+	// measured rather than assumed. A draft of this act held a click on a squad
+	// model and asserted no walk. It passed -- and it passed WITH THE GUARD
+	// DISABLED, twice: once against the hero's own model, where a walk order is a
+	// no-op (the same weakness the c-1 review caught in act 2), and again against
+	// a squad deployed 2.00 tiles away. So something upstream of the guard
+	// already stops that walk. The suspect is isInActiveMenusRect: the
+	// select-click opens the sheet on the same press, and a point inside an open
+	// panel's rect is excluded from the walk before the guard is consulted --
+	// which would make the guard unreachable for a PLAYER too, not just for a
+	// script. NOT ESTABLISHED: a probe found a held click on open ground at x+70
+	// walks whether the sheet was open or not, but that click closed the sheet,
+	// so it never tested the geometry that matters. The panel rects are c-2b's
+	// own territory (the strip at y 470-524).
+	//
+	// A GREEN ASSERTION WHOSE CONTROL PASSES IS WORSE THAN NO ASSERTION, so the
+	// claim is left out and docs/bugs.md BUG-7 carries what is still owed.
+	s.call("strigoi_click", map[string]any{"x": 5, "y": 5, "button": "left"}) // dismiss the sheet
+	s.call("strigoi_step", map[string]any{"frames": 10})
+
+	player = s.call("strigoi_get_player", map[string]any{})
+	holdScreenX, holdScreenY := pair(player, "screen")
+	holdX, holdY := int(holdScreenX)+90, int(holdScreenY)
+	holdFromX, holdFromY := mustNum(t, player, "x"), mustNum(t, player, "y")
+
+	out := s.call("strigoi_click", map[string]any{
+		"x": holdX, "y": holdY, "button": "left", "hold_frames": 40,
+	})
+
+	// The verb reports what it did, and the report has to say HELD -- a
+	// hold_frames that quietly fell through to the tap path would move the hero
+	// just the same, and this assertion is the whole difference.
+	if applied := mustStr(t, out, "applied"); !strings.Contains(applied, "held 40 frame(s)") {
+		t.Fatalf("act 8: strigoi_click did not report a held press: %q", applied)
+	}
+
+	s.call("strigoi_step", map[string]any{"frames": 30})
+
+	moved := s.call("strigoi_get_player", map[string]any{})
+	if math.Abs(mustNum(t, moved, "x")-holdFromX) <= squadWalkEpsilon &&
+		math.Abs(mustNum(t, moved, "y")-holdFromY) <= squadWalkEpsilon {
+		t.Fatalf("act 8: a 40-frame held click on open ground moved nothing from (%.3f,%.3f) -- "+
+			"a hold the controls never act on is not an instrument", holdFromX, holdFromY)
+	}
+
+	// AND THE BUTTON IS RELEASED AFTERWARDS. A hold that left it stuck down would
+	// pass the check above and break every later script, so the release is
+	// asserted through its effect: an ordinary tap still orders a walk.
+	restX, restY := mustNum(t, moved, "x"), mustNum(t, moved, "y")
+
+	s.call("strigoi_click", map[string]any{"x": holdX, "y": holdY - 60, "button": "left"})
+	s.call("strigoi_step", map[string]any{"frames": 30})
+
+	again := s.call("strigoi_get_player", map[string]any{})
+	if math.Abs(mustNum(t, again, "x")-restX) <= squadWalkEpsilon &&
+		math.Abs(mustNum(t, again, "y")-restY) <= squadWalkEpsilon {
+		t.Fatalf("act 8: an ordinary tap after a held click did nothing -- the hold left the " +
+			"button stuck down")
+	}
+
+	t.Logf("act 8 PASS: a 40-frame held click is delivered AS a hold, the controls act on it "+
+		"(%.2f,%.2f -> %.2f,%.2f), and a tap afterwards still works. BUG-7's instrument half is "+
+		"closed; its guard assertion is NOT, and the row says why",
+		holdFromX, holdFromY, restX, restY)
 }
 
 // enemyBars counts the overhead bars the "ui" provider marks as an enemy's.

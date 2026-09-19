@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.11.0"         // M4.4c-2a: the seam -- awaiting/commit fields, player_control/commit settable, AWAITING_PLAYER
+	harnessVersion     = "0.12.0"         // c-2b: strigoi_click{hold_frames} (BUG-7's instrument half), spawns.max_groups settable
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64
