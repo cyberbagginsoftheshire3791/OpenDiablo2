@@ -1,0 +1,12 @@
+{
+  "creatures": [
+    {
+      "id": "feral-dog",
+      "name": "Feral dog",
+      "spawn_row": "dogs",
+      "stand_in": "fallen1",
+      "idle": "/data/strigoi/creatures/feral-dog/idle.png",
+      "max_health": 72
+    }
+  ]
+}

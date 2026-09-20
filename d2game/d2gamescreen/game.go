@@ -19,6 +19,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2bestiary"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
@@ -78,6 +79,15 @@ func CreateGame(
 	l d2util.LogLevel,
 	guiManager *d2gui.GuiManager,
 ) (*Game, error) {
+	bestiaryData, err := asset.LoadFile(bestiaryCatalogPath)
+	if err != nil {
+		return nil, fmt.Errorf("load Strigoi bestiary: %w", err)
+	}
+	bestiary, err := d2bestiary.Load(bestiaryData)
+	if err != nil {
+		return nil, err
+	}
+
 	// find the local player and its initial location
 	var startX, startY float64
 
@@ -96,6 +106,7 @@ func CreateGame(
 
 	game := &Game{
 		asset:                asset,
+		bestiary:             bestiary,
 		gameClient:           gameClient,
 		gameControls:         nil,
 		localPlayer:          nil,
@@ -155,10 +166,11 @@ func CreateGame(
 		game.worldClock,
 		game.notice,
 		&gameSpawner{
-			engine:  gameClient.MapEngine,
-			asset:   asset,
-			adopt:   game.adoptNPCBody,
-			release: game.releaseNPCBody,
+			engine:   gameClient.MapEngine,
+			asset:    asset,
+			bestiary: bestiary,
+			adopt:    game.adoptNPCBody,
+			release:  game.releaseNPCBody,
 		},
 
 		// Pursuit is the Chases seam: despawning a pack releases its members'
@@ -231,6 +243,7 @@ func CreateGame(
 type Game struct {
 	*d2mapentity.MapEntityFactory
 	asset                *d2asset.AssetManager
+	bestiary             *d2bestiary.Catalog
 	gameClient           *d2client.GameClient
 	mapRenderer          *d2maprenderer.MapRenderer
 	uiManager            *d2ui.UIManager
@@ -1192,9 +1205,10 @@ func (m mapSight) Clear(fromX, fromY, toX, toY float64) bool {
 // group's members stand in a knot around one anchor. packSpots carries the
 // measurement.
 type gameSpawner struct {
-	engine  *d2mapengine.MapEngine
-	asset   *d2asset.AssetManager
-	arrival int
+	engine   *d2mapengine.MapEngine
+	asset    *d2asset.AssetManager
+	bestiary *d2bestiary.Catalog
+	arrival  int
 
 	// adopt and release hand a spawned monster its body and take it back
 	// (M4.5 step 3). They are callbacks rather than a *Game so that the
@@ -1206,9 +1220,9 @@ type gameSpawner struct {
 }
 
 const (
-	spawnBearingStep   = 2.39996 // ~137.5 degrees, so successive arrivals spread
-	spawnSearchRings   = 6       // how far out to look for walkable ground
-	feralDogIdleSprite = "/data/strigoi/creatures/feral-dog/idle.png"
+	spawnBearingStep    = 2.39996 // ~137.5 degrees, so successive arrivals spread
+	spawnSearchRings    = 6       // how far out to look for walkable ground
+	bestiaryCatalogPath = "/data/strigoi/bestiary.json"
 
 	// spawnRadialStep walks each arrival's DISTANCE across the row's band the
 	// same way spawnBearingStep walks its direction: the golden ratio's
@@ -1289,7 +1303,13 @@ func (g *gameSpawner) Spawn(kind, code string, count int, aroundX, aroundY,
 		return nil
 	}
 
-	monstat := g.asset.Records.Monster.Stats[code]
+	creatureEntry, projectCreature := g.bestiary.ForSpawnRow(kind)
+	standInCode := code
+	if projectCreature {
+		standInCode = creatureEntry.StandIn
+	}
+
+	monstat := g.asset.Records.Monster.Stats[standInCode]
 	if monstat == nil {
 		// An unknown stand-in code. The spawn system counts this as a failure
 		// and reports it; a bad [DIAL] should show up in the provider rather
@@ -1309,16 +1329,18 @@ func (g *gameSpawner) Spawn(kind, code string, count int, aroundX, aroundY,
 
 		var entity pathWalker
 
-		if strings.EqualFold(kind, "dogs") {
+		maxHealth := monstat.MaxHPNormal
+		if projectCreature {
 			creature, err := g.engine.NewCreature(
 				int(x*subTilesPerTile), int(y*subTilesPerTile),
-				"Feral dog", feralDogIdleSprite, 0, monstat,
+				creatureEntry.Name, creatureEntry.Idle, 0, monstat,
 			)
 			if err != nil {
 				continue
 			}
 			creature.SetSpeed(float64(monstat.SpeedBase))
 			entity = creature
+			maxHealth = creatureEntry.MaxHealth
 		} else {
 			npc, err := g.engine.NewNPC(int(x*subTilesPerTile), int(y*subTilesPerTile), monstat, 0)
 			if err != nil {
@@ -1339,7 +1361,7 @@ func (g *gameSpawner) Spawn(kind, code string, count int, aroundX, aroundY,
 		// drives it from advanceWorld, so a shipped build adopts bodies with
 		// no script involved.
 		if g.adopt != nil {
-			g.adopt(entity.ID(), monstat.MaxHPNormal)
+			g.adopt(entity.ID(), maxHealth)
 		}
 
 		out = append(out, chaser{entity: entity})
@@ -1868,22 +1890,22 @@ func (v *Game) commandSpawnMon(args []string) error {
 	x := int(v.localPlayer.Position.X())
 	y := int(v.localPlayer.Position.Y())
 
-	if strings.EqualFold(name, "feral-dog") {
-		monstat := v.asset.Records.Monster.Stats["fallen1"]
+	if entry, ok := v.bestiary.ByID(name); ok {
+		monstat := v.asset.Records.Monster.Stats[entry.StandIn]
 		if monstat == nil {
-			v.terminal.Errorf("no stand-in stats for feral-dog")
+			v.terminal.Errorf("no stand-in stats %q for %s", entry.StandIn, entry.ID)
 			return nil
 		}
 
-		creature, err := v.gameClient.MapEngine.NewCreature(x+10, y, "Feral dog", feralDogIdleSprite, 0, monstat)
+		creature, err := v.gameClient.MapEngine.NewCreature(x+10, y, entry.Name, entry.Idle, 0, monstat)
 		if err != nil {
-			v.terminal.Errorf("error generating feral-dog: %v", err)
+			v.terminal.Errorf("error generating %s: %v", entry.ID, err)
 			return nil
 		}
 
 		creature.SetSpeed(float64(monstat.SpeedBase))
 		v.gameClient.MapEngine.AddEntity(creature)
-		v.adoptNPCBody(creature.ID(), monstat.MaxHPNormal)
+		v.adoptNPCBody(creature.ID(), entry.MaxHealth)
 		return nil
 	}
 

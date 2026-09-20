@@ -64,6 +64,16 @@ func TestFeralDogStillInGame(t *testing.T) {
 		t.Fatalf("screenshot = %dx%d, want 800x600", bounds.Dx(), bounds.Dy())
 	}
 
-	t.Logf("feral dog %s at %.2f, %.2f screen=%v; screenshot %s",
-		str(dog, "handle"), num(dog, "x"), num(dog, "y"), dog["screen"], shotPath)
+	player := s.call("strigoi_get_player", map[string]any{})
+	s.call("strigoi_watch", map[string]any{
+		"watcher": str(dog, "handle"), "target": str(player, "handle"),
+	})
+	fightNow(t, s)
+	body := participant(t, combatState(s), str(dog, "id"))
+	if got := mustNum(t, body, "max_health"); got != 72 {
+		t.Fatalf("feral dog max_health = %.0f, want authored bestiary value 72: %v", got, body)
+	}
+
+	t.Logf("feral dog %s at %.2f, %.2f screen=%v health=%.0f; screenshot %s",
+		str(dog, "handle"), num(dog, "x"), num(dog, "y"), dog["screen"], num(body, "max_health"), shotPath)
 }

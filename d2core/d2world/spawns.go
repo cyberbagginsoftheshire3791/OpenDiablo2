@@ -94,11 +94,10 @@ type Spawner interface {
 // SpawnRow is one line of a stage table. Every number is a [DIAL].
 //
 // THE CODES ARE D2 STAND-INS AND SAYING SO MATTERS. N1 §5 signs the roster as
-// feral dogs, wolves, wild boar (bear authored-only, lynx not an enemy), but
-// this build has no art of its own and plan §5 Phase 4 says stand-ins
-// throughout. Mapping N1's roster onto real monstats ids is content work for
-// a session that has the MPQs open; it is not this milestone, and the Code
-// field is settable so that session does not have to touch this file.
+// feral dogs, wolves, wild boar (bear authored-only, lynx not an enemy). Code
+// remains the inherited fallback for rows without project art. A matching row
+// in data/strigoi/bestiary.json supplies Strigoi's art, health, and explicit
+// stats stand-in without making this world model know about files.
 type SpawnRow struct {
 	// Name is the design's name for the row and never changes with the code.
 	Name string
@@ -154,11 +153,9 @@ type SpawnRow struct {
 	// ours, so the number a wolf bites for is authored beside the number that
 	// decides when it bites.
 	//
-	// THE INCONSISTENCY THIS LEAVES IS NAMED RATHER THAN HIDDEN: hit points
-	// still come from the record (MaxHPNormal, npc_body.go), so a creature's
-	// health is Blizzard's and its bite is ours. The day the roster is
-	// authored end to end, HP moves onto this row too. Nothing in N1 gives a
-	// number for either. [DIAL]
+	// Project creatures author max health in the bestiary. Rows without a
+	// project creature still inherit MaxHPNormal from Code until they are
+	// replaced. Nothing in N1 gives a number for either health or damage. [DIAL]
 	DamageMin, DamageMax int
 }
 

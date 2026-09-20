@@ -63,8 +63,9 @@ func sym(pkg, name string) string {
 }
 
 const (
-	pkgWorld  = "d2core/d2world"
-	pkgScreen = "d2game/d2gamescreen"
+	pkgWorld    = "d2core/d2world"
+	pkgScreen   = "d2game/d2gamescreen"
+	pkgBestiary = "d2core/d2bestiary"
 	// pkgEntity joined at M4.5 step 3, when the NPC gained its first two
 	// exported members that combat cares about. Before that, nothing in
 	// d2mapentity was worth a claim: the entity was a sprite on a path.
@@ -303,6 +304,12 @@ var Register = []Entry{
 		"Maps the combat resolver's swing, hit and death acts onto Strigoi's own creature modes. Game.Animate reaches it through the same small interface NPC.StartAction satisfies.", ""},
 	{sym(pkgEntity, "Creature.HarnessState"), BucketObserve, VerdictHarnessOnly,
 		"Reports the creature name, Strigoi animation mode, direction and movement for get_entity. It is read-only and exists so the same observer can inspect inherited NPCs and project-owned creatures.", ""},
+	{sym(pkgBestiary, "Load"), BucketWire, VerdictLive,
+		"Loads and validates the shipped project-owned creature catalog when a game screen is constructed; an invalid bestiary prevents a half-authored game from starting.", ""},
+	{sym(pkgBestiary, "Catalog.ByID"), BucketWire, VerdictLive,
+		"Resolves player and art-review spawnmon commands through the same authored creature definition natural spawns use.", ""},
+	{sym(pkgBestiary, "Catalog.ForSpawnRow"), BucketWire, VerdictLive,
+		"Maps an authored spawn-table row to project art, its inherited stats stand-in and Strigoi health in a shipped game.", ""},
 	{sym(pkgWorld, "Spawns.ProfileOf"), BucketWire, VerdictLive,
 		"What one enemy fights as: its PACK (not its row -- two dog packs are two packs), its authored Speed and its bite. The resolver calls it through the Profiles interface to build D8's order and to draw damage. It is the seam that put speed and damage on the spawn row instead of reading them out of the D2 record. Since step 5 it also carries the pack's STARTING COUNT, which the rout decrement and quick-resolve's advantage are both measured against. Since M4.4c-1 it has a SECOND Go caller: Game.ShowsBar asks it what a spawned enemy IS, because the monstats code is only its sprite.", ""},
 
