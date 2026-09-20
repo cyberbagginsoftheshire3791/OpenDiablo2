@@ -108,6 +108,8 @@ func harnessEntityKind(e interface{}) string {
 		return "player"
 	case *d2mapentity.NPC:
 		return "npc"
+	case *d2mapentity.Creature:
+		return "npc"
 	case *d2mapentity.Object:
 		return "object"
 	case *d2mapentity.Item:

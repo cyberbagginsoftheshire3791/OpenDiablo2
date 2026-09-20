@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 18 playtest scripts.** That count, the harness version below and the
+**The 19 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -95,6 +95,10 @@ this doc fails until it agrees.
   were placed by their script and 21 awareness relationships were granted by
   `strigoi_watch`, so nothing asserted that the chain works unaided. **It must
   never call `strigoi_spawn_entity`, `strigoi_watch` or `strigoi_pursue`.**
+* `creature_art_test.go` — the nineteenth: the ordinary in-game command path
+  creates the first Strigoi creature from its shipped PNG, exposes its creature
+  and animation state through the harness, and captures the same rendered frame
+  used for the art readability review.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

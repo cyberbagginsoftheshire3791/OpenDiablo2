@@ -88,6 +88,30 @@ func NewAnimatedEntity(x, y int, animation d2interface.Animation) *AnimatedEntit
 	return entity
 }
 
+// NewCreature loads a project-owned PNG animation and creates a creature that
+// can move through the same map and world systems as an inherited NPC. standIn
+// preserves the world-RNG draws the replaced NPC construction used to consume;
+// changing art must not silently retune every later arrival in the night.
+func (f *MapEntityFactory) NewCreature(x, y int, name, idlePath string, direction int,
+	standIn *d2records.MonStatRecord) (*Creature, error) {
+	if standIn != nil {
+		_ = f.randInt63() // NewNPC's per-entity behaviour seed.
+
+		if standInEx := f.asset.Records.Monster.Stats2[standIn.ExtraDataKey]; standInEx != nil {
+			for _, options := range standInEx.EquipmentOptions {
+				_ = f.selectEquip(options)
+			}
+		}
+	}
+
+	idle, err := f.asset.LoadAnimation(idlePath, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return newCreature(x, y, name, idle, direction)
+}
+
 // NewPlayer creates a new player entity and returns a pointer to it.
 func (f *MapEntityFactory) NewPlayer(id, name string, x, y, direction int, heroType d2enum.Hero,
 	stats *d2hero.HeroStatsState, skills map[int]*d2hero.HeroSkill, equipment *d2inventory.CharacterEquipment,

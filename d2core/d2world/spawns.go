@@ -79,7 +79,7 @@ type Spawns struct {
 // failure rather than a panic: an unknown monstats code must be visible in the
 // provider, not fatal in the field.
 type Spawner interface {
-	Spawn(code string, count int, aroundX, aroundY, minTiles, maxTiles float64) []Watcher
+	Spawn(kind, code string, count int, aroundX, aroundY, minTiles, maxTiles float64) []Watcher
 
 	// Despawn takes the members back out of the world.
 	//
@@ -676,7 +676,7 @@ func (s *Spawns) spawn(row SpawnRow, weight float64) {
 
 	tx, ty := s.target.QuarryAt()
 
-	members := s.spawner.Spawn(row.Code, count, tx, ty, row.MinTiles, row.MaxTiles)
+	members := s.spawner.Spawn(row.Name, row.Code, count, tx, ty, row.MinTiles, row.MaxTiles)
 	if len(members) == 0 {
 		// An unknown monstats code or a map with nowhere to put them. Counted
 		// and reported rather than fatal: the provider is where a bad stand-in

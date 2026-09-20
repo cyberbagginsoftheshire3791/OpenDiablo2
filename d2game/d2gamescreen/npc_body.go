@@ -219,7 +219,9 @@ func (v *Game) Animate(id string, act d2world.CombatAct) {
 		return
 	}
 
-	npc, ok := entity.(*d2mapentity.NPC)
+	animator, ok := entity.(interface {
+		StartAction(d2enum.MonsterAnimationMode, func()) error
+	})
 	if !ok {
 		return
 	}
@@ -231,10 +233,10 @@ func (v *Game) Animate(id string, act d2world.CombatAct) {
 	// spawn tables did not place.
 	switch act {
 	case d2world.ActSwing:
-		_ = npc.StartAction(d2enum.MonsterAnimationModeAttack1, nil)
+		_ = animator.StartAction(d2enum.MonsterAnimationModeAttack1, nil)
 	case d2world.ActHit:
-		_ = npc.StartAction(d2enum.MonsterAnimationModeGetHit, nil)
+		_ = animator.StartAction(d2enum.MonsterAnimationModeGetHit, nil)
 	case d2world.ActDie:
-		_ = npc.StartAction(d2enum.MonsterAnimationModeDeath, nil)
+		_ = animator.StartAction(d2enum.MonsterAnimationModeDeath, nil)
 	}
 }

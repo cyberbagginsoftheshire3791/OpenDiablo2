@@ -24,7 +24,7 @@ func (s *fakeSpawner) Despawn(members []Watcher) {
 	s.removed += len(members)
 }
 
-func (s *fakeSpawner) Spawn(code string, count int, aroundX, aroundY, minTiles, maxTiles float64) []Watcher {
+func (s *fakeSpawner) Spawn(kind, code string, count int, aroundX, aroundY, minTiles, maxTiles float64) []Watcher {
 	s.calls++
 	s.lastCode, s.lastCount = code, count
 	s.lastMin, s.lastMax = minTiles, maxTiles

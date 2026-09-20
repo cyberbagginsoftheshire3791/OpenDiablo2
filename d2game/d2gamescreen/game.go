@@ -1206,8 +1206,9 @@ type gameSpawner struct {
 }
 
 const (
-	spawnBearingStep = 2.39996 // ~137.5 degrees, so successive arrivals spread
-	spawnSearchRings = 6       // how far out to look for walkable ground
+	spawnBearingStep   = 2.39996 // ~137.5 degrees, so successive arrivals spread
+	spawnSearchRings   = 6       // how far out to look for walkable ground
+	feralDogIdleSprite = "/data/strigoi/creatures/feral-dog/idle.png"
 
 	// spawnRadialStep walks each arrival's DISTANCE across the row's band the
 	// same way spawnBearingStep walks its direction: the golden ratio's
@@ -1282,7 +1283,7 @@ func packSpots(aroundX, aroundY, minTiles, maxTiles float64, count, arrival int)
 	return spots
 }
 
-func (g *gameSpawner) Spawn(code string, count int, aroundX, aroundY,
+func (g *gameSpawner) Spawn(kind, code string, count int, aroundX, aroundY,
 	minTiles, maxTiles float64) []d2world.Watcher {
 	if g.engine == nil || g.asset == nil || count <= 0 {
 		return nil
@@ -1306,22 +1307,42 @@ func (g *gameSpawner) Spawn(code string, count int, aroundX, aroundY,
 			continue
 		}
 
-		npc, err := g.engine.NewNPC(int(x*subTilesPerTile), int(y*subTilesPerTile), monstat, 0)
-		if err != nil {
+		var entity pathWalker
+
+		if strings.EqualFold(kind, "dogs") {
+			creature, err := g.engine.NewCreature(
+				int(x*subTilesPerTile), int(y*subTilesPerTile),
+				"Feral dog", feralDogIdleSprite, 0, monstat,
+			)
+			if err != nil {
+				continue
+			}
+			creature.SetSpeed(float64(monstat.SpeedBase))
+			entity = creature
+		} else {
+			npc, err := g.engine.NewNPC(int(x*subTilesPerTile), int(y*subTilesPerTile), monstat, 0)
+			if err != nil {
+				continue
+			}
+			entity = npc
+		}
+
+		mapEntity, ok := entity.(d2interface.MapEntity)
+		if !ok {
 			continue
 		}
 
-		g.engine.AddEntity(npc)
+		g.engine.AddEntity(mapEntity)
 
 		// The night hands the monster a body. This is the game-side caller
 		// that keeps the whole thing off the harness-only ladder: Spawns
 		// drives it from advanceWorld, so a shipped build adopts bodies with
 		// no script involved.
 		if g.adopt != nil {
-			g.adopt(npc.ID(), monstat.MaxHPNormal)
+			g.adopt(entity.ID(), monstat.MaxHPNormal)
 		}
 
-		out = append(out, chaser{entity: npc})
+		out = append(out, chaser{entity: entity})
 	}
 
 	return out
@@ -1592,15 +1613,15 @@ func (v *Game) ShowsBar(id string) bool {
 		return false
 	}
 
-	npc, ok := entity.(*d2mapentity.NPC)
-	if !ok {
-		return false
-	}
-
 	if v.spawns != nil {
 		if p, ok := v.spawns.ProfileOf(id); ok {
 			return !deadSpawnRows[strings.ToLower(p.Row)]
 		}
+	}
+
+	npc, ok := entity.(*d2mapentity.NPC)
+	if !ok {
+		return false
 	}
 
 	monstat := npc.MonStat()
@@ -1846,6 +1867,25 @@ func (v *Game) commandSpawnMon(args []string) error {
 	name := args[0]
 	x := int(v.localPlayer.Position.X())
 	y := int(v.localPlayer.Position.Y())
+
+	if strings.EqualFold(name, "feral-dog") {
+		monstat := v.asset.Records.Monster.Stats["fallen1"]
+		if monstat == nil {
+			v.terminal.Errorf("no stand-in stats for feral-dog")
+			return nil
+		}
+
+		creature, err := v.gameClient.MapEngine.NewCreature(x+10, y, "Feral dog", feralDogIdleSprite, 0, monstat)
+		if err != nil {
+			v.terminal.Errorf("error generating feral-dog: %v", err)
+			return nil
+		}
+
+		creature.SetSpeed(float64(monstat.SpeedBase))
+		v.gameClient.MapEngine.AddEntity(creature)
+		v.adoptNPCBody(creature.ID(), monstat.MaxHPNormal)
+		return nil
+	}
 
 	monstat := v.asset.Records.Monster.Stats[name]
 	if monstat == nil {

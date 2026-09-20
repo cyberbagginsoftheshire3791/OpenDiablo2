@@ -81,6 +81,16 @@ func start(t *testing.T) *session {
 			t.Fatalf("go build -tags harness failed: %v\n%s", err, out)
 		}
 
+		// The application loads loose project assets beside the executable. The
+		// harness binary lives in a temp directory, so mirror only Strigoi's own
+		// data there; without this, tests silently fall back to D2 art.
+		if err := copyTree(
+			filepath.Join(repoRoot, "data", "strigoi"),
+			filepath.Join(filepath.Dir(exe), "data", "strigoi"),
+		); err != nil {
+			t.Fatalf("copying Strigoi assets beside harness: %v", err)
+		}
+
 		// Run artifacts land beside the repo, not in it (Article V), where the
 		// device bridge can still reach them: <Projects>/strigoi-harness-runs.
 		s.RunBase = filepath.Join(filepath.Dir(repoRoot), "strigoi-harness-runs")
@@ -135,6 +145,31 @@ func start(t *testing.T) *session {
 	t.Cleanup(s.stop)
 
 	return s
+}
+
+func copyTree(source, target string) error {
+	return filepath.Walk(source, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		destination := filepath.Join(target, relative)
+
+		if info.IsDir() {
+			return os.MkdirAll(destination, 0o750)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(destination, data, info.Mode())
+	})
 }
 
 func (s *session) stop() {

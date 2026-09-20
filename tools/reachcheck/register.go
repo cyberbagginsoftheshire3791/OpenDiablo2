@@ -297,6 +297,12 @@ var Register = []Entry{
 		"Plays one animation and HOLDS it, then returns the monster to Neutral -- or, for a death, to a Dead that is held for the rest of the run. Called from Game.Animate on every swing, every blow taken and every death. Before it, nothing could make a monster's sprite survive the next tick.", ""},
 	{sym(pkgEntity, "NPC.SetAnimationMode"), BucketWire, VerdictLive,
 		"The first exported way to tell a monster to play a mode. Its only caller is NPC.StartAction, which is the honest reading: the row stays because the symbol stays, and it is wire because a real build now reaches it. tools/animcensus measured on 31 Aug that A1, GH, DT and DD all exist for the three codes the spawn tables use.", ""},
+	{sym(pkgEntity, "MapEntityFactory.NewCreature"), BucketWire, VerdictLive,
+		"Builds a project-owned PNG creature without a COF. gameSpawner calls it for the authored dogs row, so every natural dog arrival in a shipped game crosses this constructor.", ""},
+	{sym(pkgEntity, "Creature.StartAction"), BucketWire, VerdictLive,
+		"Maps the combat resolver's swing, hit and death acts onto Strigoi's own creature modes. Game.Animate reaches it through the same small interface NPC.StartAction satisfies.", ""},
+	{sym(pkgEntity, "Creature.HarnessState"), BucketObserve, VerdictHarnessOnly,
+		"Reports the creature name, Strigoi animation mode, direction and movement for get_entity. It is read-only and exists so the same observer can inspect inherited NPCs and project-owned creatures.", ""},
 	{sym(pkgWorld, "Spawns.ProfileOf"), BucketWire, VerdictLive,
 		"What one enemy fights as: its PACK (not its row -- two dog packs are two packs), its authored Speed and its bite. The resolver calls it through the Profiles interface to build D8's order and to draw damage. It is the seam that put speed and damage on the spawn row instead of reading them out of the D2 record. Since step 5 it also carries the pack's STARTING COUNT, which the rout decrement and quick-resolve's advantage are both measured against. Since M4.4c-1 it has a SECOND Go caller: Game.ShowsBar asks it what a spawned enemy IS, because the monstats code is only its sprite.", ""},
 
