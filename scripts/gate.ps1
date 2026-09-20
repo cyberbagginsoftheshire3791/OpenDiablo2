@@ -1,5 +1,6 @@
 # The green gate: gofmt, both builds, vet x3, tests, the ebiten-free check on
-# the four leaf packages, the Article V fixtures check, and mod tidy.
+# five leaf packages, the headless-safety check on every package that has tests
+# (BUG-13), the Article V fixtures check, and mod tidy.
 # Moved into the repo (scripts/) 14 Sep 2026 so the instrument is versioned; the
 # repo root is anchored via $PSScriptRoot and the log stays out of the tree.
 #   powershell -NoProfile -ExecutionPolicy Bypass -File ...\scripts\gate.ps1
@@ -35,6 +36,27 @@ $deps = & go list -deps ./d2game/d2player 2>&1
 # package whose tests must run anywhere may not reach ebiten.
 $deps = & go list -deps ./d2common/d2logfile 2>&1
 "ebiten in d2logfile deps: $(($deps | Where-Object { $_ -match 'hajimehoshi/ebiten' }).Count)" | Out-File $Log -Append
+# BUG-13's GENERAL CASE, closed 20 Sep 2026. A test file in a package that links
+# ebiten's UI panics on a headless runner ("glfw: X11: The DISPLAY environment
+# variable is missing") before it asserts anything -- and this gate runs on a
+# machine WITH a screen, so it cannot see that by testing. It can see it by
+# reading the import graph, which is what this does. The five fixed checks above
+# pin architectural intent about particular leaf packages; this one pins
+# TESTABILITY across every package, including ones that do not exist yet.
+$tested = & go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... 2>$null |
+  Where-Object { $_ }
+$unsafe = @()
+foreach ($pkg in $tested) {
+  $deps = & go list -deps -test $pkg 2>$null
+  if ($deps -contains 'github.com/hajimehoshi/ebiten/v2/internal/ui') { $unsafe += $pkg }
+}
+if ($unsafe.Count -gt 0) {
+  "headless-safe tests: RED -- has tests AND links ebiten/internal/ui: $($unsafe -join ', ')" |
+    Out-File $Log -Append
+} else {
+  "headless-safe tests: ok ($($tested.Count) tested package(s), 0 link ebiten/internal/ui)" |
+    Out-File $Log -Append
+}
 $o = & go run ./tools/strigoihook check-fixtures 2>&1; "check-fixtures exit=$LASTEXITCODE $o" | Out-File $Log -Append
 $o = & go mod tidy -diff 2>&1; "mod tidy -diff exit=$LASTEXITCODE $o" | Out-File $Log -Append
 "DONE" | Out-File $Log -Append

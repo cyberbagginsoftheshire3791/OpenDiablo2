@@ -164,22 +164,41 @@ func (am *AssetManager) LoadAnimationWithEffect(animationPath, palettePath strin
 
 	am.Debugf(fmtLoadAnimation, animationPath, palettePath, effect)
 
-	palette, err := am.LoadPalette(palettePath)
-	if err != nil {
-		return nil, err
-	}
+	var (
+		animation d2interface.Animation
+		err       error
+	)
 
-	var animation d2interface.Animation
-
+	// THE PALETTE IS FETCHED PER FORMAT, NOT UP FRONT, and that move is what
+	// made a modern sprite format loadable at all (Plan §5, M5.1). It used to be
+	// loaded here, before the switch, for every animation -- and LoadPalette
+	// hard-errors on anything that is not a `.dat`. A PNG needs no palette (it
+	// has a real alpha channel; D2 art has 8-bit indices and gets transparency
+	// from index 0), so the old shape forced a PNG caller to pass a palette path
+	// it would never use, and made "this sprite has no palette" unsayable.
 	switch types.Ext2AssetType(filepath.Ext(animationPath)) {
 	case types.AssetTypeDC6:
-		animation, err = am.loadDC6(animationPath, palette, effect)
-		if err != nil {
+		var palette d2interface.Palette
+
+		if palette, err = am.LoadPalette(palettePath); err != nil {
+			return nil, err
+		}
+
+		if animation, err = am.loadDC6(animationPath, palette, effect); err != nil {
 			return nil, err
 		}
 	case types.AssetTypeDCC:
-		animation, err = am.loadDCC(animationPath, palette, effect)
-		if err != nil {
+		var palette d2interface.Palette
+
+		if palette, err = am.LoadPalette(palettePath); err != nil {
+			return nil, err
+		}
+
+		if animation, err = am.loadDCC(animationPath, palette, effect); err != nil {
+			return nil, err
+		}
+	case types.AssetTypePNG:
+		if animation, err = am.loadPNG(animationPath, effect); err != nil {
 			return nil, err
 		}
 	default:
@@ -390,6 +409,39 @@ func (am *AssetManager) loadDC6(path string,
 }
 
 // loadDCC creates an Animation from d2dcc.DCC and d2dat.DATPalette
+// loadPNG loads a modern spritesheet and its optional sidecar manifest.
+//
+// THE MANIFEST IS OPTIONAL BY DESIGN. `wolf.png` is described by
+// `wolf.png.json`; with no sidecar the image is one direction of one frame,
+// which makes a loose PNG usable the moment it is dropped in. That matters more
+// than it sounds: it means the first replacement asset needs no tooling, no
+// atlas packer and no build step -- somebody saves a PNG and the game draws it.
+//
+// A MISSING SIDECAR IS NOT AN ERROR, BUT AN UNREADABLE ONE IS. FileExists is
+// asked first rather than swallowing the read error, so a manifest that exists
+// and is corrupt, or that the loader cannot open, fails loudly instead of
+// silently degrading a 64-frame monster to a single still frame -- which would
+// look like broken art rather than a broken file.
+func (am *AssetManager) loadPNG(path string,
+	effect d2enum.DrawEffect) (d2interface.Animation, error) {
+	imageData, err := am.LoadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var manifest []byte
+
+	sheetPath := path + pngSheetExt
+
+	if exists, existsErr := am.FileExists(sheetPath); existsErr == nil && exists {
+		if manifest, err = am.LoadFile(sheetPath); err != nil {
+			return nil, fmt.Errorf("sprite sheet manifest %s: %w", sheetPath, err)
+		}
+	}
+
+	return newPNGAnimation(imageData, manifest, effect)
+}
+
 func (am *AssetManager) loadDCC(path string,
 	palette d2interface.Palette, effect d2enum.DrawEffect) (d2interface.Animation, error) {
 	dcc, err := am.LoadDCC(path)

@@ -313,15 +313,29 @@ func (c *Composite) createMode(animationMode animationMode, weaponClass string) 
 
 func (c *Composite) loadCompositeLayer(layerKey, layerValue, animationMode, weaponClass,
 	palettePath string, drawEffect d2enum.DrawEffect) (d2interface.Animation, error) {
-	animationPaths := []string{
-		fmt.Sprintf("%s/%s/%s/%s%s%s%s%s.dcc", c.basePath, c.token, layerKey, c.token, layerKey, layerValue, animationMode, weaponClass),
-		fmt.Sprintf("%s/%s/%s/%s%s%s%s%s.dc6", c.basePath, c.token, layerKey, c.token, layerKey, layerValue, animationMode, weaponClass),
-	}
+	// PNG FIRST, AND THAT ORDER IS THE RATCHET (Plan §5: D2-asset dependency only
+	// ever shrinks). A layer with an original sprite beside it uses the original
+	// sprite; everything else still falls back to D2's art, so the replacement of
+	// one monster does not wait on the replacement of all of them.
+	stem := fmt.Sprintf("%s/%s/%s/%s%s%s%s%s",
+		c.basePath, c.token, layerKey, c.token, layerKey, layerValue, animationMode, weaponClass)
+
+	animationPaths := []string{stem + ".png", stem + ".dcc", stem + ".dc6"}
+
+	// THE LOOP USED TO `return` HERE INSTEAD OF `continue`, so the `.dc6`
+	// alternative was never reached: a layer whose `.dcc` was missing failed
+	// outright, and the second entry in this list had been dead since it was
+	// written. Found 20 Sep 2026 while adding the `.png` entry, which would have
+	// been equally dead. The error now reports every path that was tried, because
+	// "animation not found" without the list is unactionable.
+	var tried []string
 
 	for idx := range animationPaths {
+		tried = append(tried, animationPaths[idx])
+
 		exists, err := c.FileExists(animationPaths[idx])
-		if !exists || err != nil {
-			return nil, fmt.Errorf("animation path '%s' not found: %v", animationPaths[idx], err)
+		if err != nil || !exists {
+			continue
 		}
 
 		animation, err := c.LoadAnimationWithEffect(animationPaths[idx], palettePath, drawEffect)
@@ -330,7 +344,7 @@ func (c *Composite) loadCompositeLayer(layerKey, layerValue, animationMode, weap
 		}
 	}
 
-	return nil, errors.New("animation not found")
+	return nil, fmt.Errorf("no animation for layer %s: tried %v", layerKey, tried)
 }
 
 // GetSize returns the size of the composite
