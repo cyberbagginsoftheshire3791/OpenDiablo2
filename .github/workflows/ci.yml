@@ -6,9 +6,13 @@
 # and adds the Article V check: every tracked file with a Diablo II
 # extension must be in docs/fixtures-allowlist.txt. Linux needs the
 # ebitengine system headers (cgo + X11/GL/ALSA) to *compile* the ebiten
-# packages, but no display to *test*: no package that has tests imports
-# ebiten (the GlyphPrinter debug printer lives in d2core/d2render/ebiten,
-# which has no test files), so the test binaries never initialise GLFW.
+# packages, but no display to *test*. That no tested package links ebiten's UI
+# is an INVARIANT THIS FILE CHECKS, not a standing fact it may assert: it was
+# asserted here as a fact and broke anyway (BUG-13, 19 Sep 2026 -- d2app gained
+# its first test file and the Ubuntu runner panicked on DISPLAY before a single
+# assertion, while the laptop gate, which has a screen, went green). The
+# headless-safe-tests step below reads the import graph and fails; scripts\gate.ps1
+# lines 39-66 run the same check locally.
 # Windows needs nothing and is the platform the first friends build targets.
 name: gate
 
@@ -83,6 +87,34 @@ jobs:
 
       - name: go vet (harness + playtest tags)
         run: go vet -tags "harness playtest" ./...
+
+      # BUG-13, ASSERTED RATHER THAN TRIPPED OVER. A test file in a package whose
+      # import graph reaches ebiten's UI panics here on DISPLAY before it asserts
+      # anything, and the dev laptop's gate cannot see that because it has a
+      # screen. CI caught the original the only way it could -- by crashing, in a
+      # step whose name says "go test", which is a bad error message for a
+      # structural fault. This reads the graph and names the offending package.
+      # Linux only: the check is about the runner without a display.
+      - name: headless-safe tests (BUG-13 general case)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          tested=$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...)
+          if [ -z "$tested" ]; then
+            echo "RED -- go list returned no tested packages; the check did not run"
+            exit 1
+          fi
+          unsafe=""
+          for pkg in $tested; do
+            if go list -deps -test "$pkg" | grep -qx 'github.com/hajimehoshi/ebiten/v2/internal/ui'; then
+              unsafe="$unsafe $pkg"
+            fi
+          done
+          if [ -n "$unsafe" ]; then
+            echo "RED -- has tests AND links ebiten/internal/ui:$unsafe"
+            exit 1
+          fi
+          echo "ok ($(echo "$tested" | wc -l) tested package(s), 0 link ebiten/internal/ui)"
 
       - name: go test
         run: go test ./...

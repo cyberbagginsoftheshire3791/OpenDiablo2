@@ -755,12 +755,16 @@ func TestTheHandsPace(t *testing.T) {
 	paceLit := lineField(t, last, "torch_lit_rounds")
 
 	// torch_lit_rounds, TWICE -- and the presence check that stood here was
-	// hiding a real off-by-one. This act's own tally said 4 lit rounds while the
-	// instrument said 3, and the BURN is the arbiter: 60.0 -> 57.0 is three
-	// torch-minutes, so the counter is right and the tally was wrong (it
-	// credited the round the torch was lit in, whose ROUND line had already been
-	// written unlit). The tally is gone; these two stand in its place, and
-	// neither can be satisfied by a constant.
+	// hiding a real off-by-one. Two readings of this act disagreed for a day.
+	// The first (19 Sep, morning) read 4 stamped lines against a counted 3, took
+	// the BURN as the arbiter (60.0 -> 57.0, three torch-minutes) and concluded
+	// the counter was right and the tally wrong. The second (19 Sep, evening)
+	// found the ordering: writeRoundLine ran AFTER writePaceLine on the closing
+	// frame, so the row could not have seen the last round. The second reading
+	// was correct and the first was the burn's one-round slack being mistaken
+	// for agreement. Fixed 20 Sep in applyFightingActivity's close branch.
+	// The tally is gone; these two stand in its place, and neither can be
+	// satisfied by a constant.
 	//
 	// (a) LOG against PROVIDER. writeRoundLine increments the counter exactly
 	// when it stamps a line torch=lit, so the two readers of that one source
@@ -774,19 +778,21 @@ func TestTheHandsPace(t *testing.T) {
 		}
 	}
 
-	// MEASURED 19 Sep: 4 stamped lines against a counted 3, and the counter
-	// CANNOT drift from the stamp -- writeRoundLine increments and stamps in the
-	// same breath. So the last round's line is written AFTER writePaceLine has
-	// already formatted the row: the fight-close edge lives in the meters switch
-	// (!fighting && wasFighting) and the final round is captured in end(). The
-	// PACE line therefore under-reports lit rounds by one whenever the fight's
-	// last round was lit -- a real defect in shipped telemetry, filed for Josh
-	// rather than papered over here, because fixing it reorders a shipped write.
+	// EQUALITY, and it was a range until 20 Sep. MEASURED 19 Sep: 4 stamped
+	// lines against a counted 3, and the counter CANNOT drift from the stamp --
+	// writeRoundLine increments and stamps in the same breath -- so the gap was
+	// never the counter, it was the ORDER. The fight-close edge lives in the
+	// meters switch (!fighting && wasFighting) and end() captures the final
+	// RoundRow, but writeRoundLine ran later in the frame, so the row was
+	// formatted before the last round's line existed. applyFightingActivity now
+	// calls writeRoundLine immediately before writePaceLine; the later call is
+	// keyed on encounter#round and no-ops. MEASURED AFTER, 20 Sep: 4 lines,
+	// torch_lit_rounds=4, gap 0.
 	//
-	// The assertion admits exactly that one-line lag and nothing wider, so a
-	// counter that is reset, doubled or wired to a constant still reddens.
-	if lag := float64(litLines) - paceLit; lag < 0 || lag > 1 {
-		t.Fatalf("act 4: %d ROUND lines say torch=lit and the PACE line counts %.0f -- the only tolerable gap is the final round's line, written after the row\n%s",
+	// The one-line slack is GONE ON PURPOSE. It was the defect's tolerance, and
+	// leaving it would let the defect return green.
+	if float64(litLines) != paceLit {
+		t.Fatalf("act 4: %d ROUND lines say torch=lit and the PACE line counts %.0f -- these read one source and must agree exactly\n%s",
 			litLines, paceLit, last)
 	}
 
@@ -794,9 +800,19 @@ func TestTheHandsPace(t *testing.T) {
 	// torch spends one world minute per round (E6/S1:102), the game screen
 	// counts the rounds and the light model spends the burn. An off-by-one in
 	// either path breaks this while both stay green on their own.
-	if spent := burnLit - lineField(t, last, "burn_after"); math.Abs(spent-paceLit) > 1.0 {
-		t.Fatalf("act 4: %.0f lit rounds must spend about %.0f torch-minutes; burn fell %.1f (%.1f -> %.1f)\n%s",
-			paceLit, paceLit, spent, burnLit, lineField(t, last, "burn_after"), last)
+	//
+	// THE SLACK IS ONE ROUND AND IT IS DIRECTIONAL, which is stricter than the
+	// symmetric abs() that stood here. The round the torch is LIT IN is stamped
+	// torch=lit but burns only the part of the minute after the press, so the
+	// count may lead the burn by up to one. It can never LAG it: a minute cannot
+	// be spent by a round that was not stamped lit. MEASURED 20 Sep, after the
+	// ordering fix: 4 lit rounds, 3.0 torch-minutes -- lead of exactly 1, the
+	// whole of the allowance, and the symmetric form was passing on its boundary
+	// while admitting a -1 that the mechanism forbids.
+	spent := burnLit - lineField(t, last, "burn_after")
+	if lead := paceLit - spent; lead < 0 || lead > 1 {
+		t.Fatalf("act 4: %.0f lit rounds must spend %.0f or %.0f torch-minutes (the lighting round burns a part minute); burn fell %.1f (%.1f -> %.1f)\n%s",
+			paceLit, paceLit-1, paceLit, spent, burnLit, lineField(t, last, "burn_after"), last)
 	}
 
 	// decide_s: the FIGHT total must be the sum of the per-round decide_s values

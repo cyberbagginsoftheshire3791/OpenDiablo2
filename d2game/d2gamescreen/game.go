@@ -792,6 +792,17 @@ func (v *Game) applyFightingActivity() {
 
 		v.wasFighting = false
 
+		// THE FIGHT'S LAST ROUND, BEFORE THE ROW THAT COUNTS IT. writeRoundLine
+		// normally runs later in the frame (Advance, after advanceWorld), and
+		// that is one call too late on the closing frame: end() captures the
+		// final RoundRow and the pace row in the same breath, so the row was
+		// formatted from a torchLitRounds that had not yet seen the last round.
+		// Measured 19 Sep: four ROUND lines stamped torch=lit against a
+		// torch_lit_rounds of three. The call is keyed on encounter#round and
+		// returns on a repeat, so the later one is a no-op for this round rather
+		// than a second line -- which is why this is a reorder and not a move.
+		v.writeRoundLine()
+
 		v.writePaceLine()
 	}
 }

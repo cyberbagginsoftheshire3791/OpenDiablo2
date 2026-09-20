@@ -50,7 +50,14 @@ foreach ($pkg in $tested) {
   $deps = & go list -deps -test $pkg 2>$null
   if ($deps -contains 'github.com/hajimehoshi/ebiten/v2/internal/ui') { $unsafe += $pkg }
 }
-if ($unsafe.Count -gt 0) {
+if (-not $tested) {
+  # THE SILENT ZERO. Both go list calls end in 2>$null, so a broken package or a
+  # toolchain fault empties $tested and the ok branch below prints a line that is
+  # structurally identical to a pass -- "0 tested package(s), 0 link ...". An
+  # enumeration that found nothing has not checked anything.
+  "headless-safe tests: RED -- go list returned no tested packages; the check did not run" |
+    Out-File $Log -Append
+} elseif ($unsafe.Count -gt 0) {
   "headless-safe tests: RED -- has tests AND links ebiten/internal/ui: $($unsafe -join ', ')" |
     Out-File $Log -Append
 } else {
