@@ -347,6 +347,23 @@ func (c *Composite) loadCompositeLayer(layerKey, layerValue, animationMode, weap
 	return nil, fmt.Errorf("no animation for layer %s: tried %v", layerKey, tried)
 }
 
+// DirectionCount is how many facings the current mode's art actually holds.
+//
+// It exists for tools/spritescale, which measures D2's creature sprites so the
+// art spec our own creatures are drawn to quotes real numbers instead of guessed
+// ones. The count lives on the COF and the COF is unexported, so a caller
+// outside this package had no way to ask -- and "how many rows does a
+// spritesheet need" is the first question anyone drawing a replacement asks.
+//
+// Zero when no mode is set, which is the same answer GetFrameCount gives.
+func (c *Composite) DirectionCount() int {
+	if c.mode == nil || c.mode.cof == nil {
+		return 0
+	}
+
+	return c.mode.cof.NumberOfDirections
+}
+
 // GetSize returns the size of the composite
 func (c *Composite) GetSize() (w, h int) {
 	c.updateSize()
