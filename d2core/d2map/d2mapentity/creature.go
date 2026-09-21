@@ -40,18 +40,16 @@ type Creature struct {
 
 var _ d2interface.MapEntity = (*Creature)(nil)
 
-func newCreature(x, y int, name string, idle d2interface.Animation, direction int) (*Creature, error) {
-	if idle == nil {
+func newCreature(x, y int, name string, animations map[creatureMode]d2interface.Animation, direction int) (*Creature, error) {
+	if animations[creatureIdle] == nil {
 		return nil, fmt.Errorf("creature %q has no idle animation", name)
 	}
 
 	c := &Creature{
-		mapEntity: newMapEntity(x, y),
-		name:      name,
-		animations: map[creatureMode]d2interface.Animation{
-			creatureIdle: idle,
-		},
-		direction: direction,
+		mapEntity:  newMapEntity(x, y),
+		name:       name,
+		animations: animations,
+		direction:  direction,
 	}
 	c.mapEntity.directioner = c.rotate
 
@@ -128,6 +126,9 @@ func (c *Creature) Advance(elapsed float64) {
 
 	if c.held && c.animation.GetPlayedCount() >= 1 {
 		c.finishAction()
+		return
+	}
+	if c.held {
 		return
 	}
 

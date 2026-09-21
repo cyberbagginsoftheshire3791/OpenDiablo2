@@ -1333,7 +1333,7 @@ func (g *gameSpawner) Spawn(kind, code string, count int, aroundX, aroundY,
 		if projectCreature {
 			creature, err := g.engine.NewCreature(
 				int(x*subTilesPerTile), int(y*subTilesPerTile),
-				creatureEntry.Name, creatureEntry.Idle, 0, monstat,
+				creatureEntry.Name, creatureAnimationPaths(creatureEntry), 0, monstat,
 			)
 			if err != nil {
 				continue
@@ -1897,7 +1897,9 @@ func (v *Game) commandSpawnMon(args []string) error {
 			return nil
 		}
 
-		creature, err := v.gameClient.MapEngine.NewCreature(x+10, y, entry.Name, entry.Idle, 0, monstat)
+		creature, err := v.gameClient.MapEngine.NewCreature(
+			x+10, y, entry.Name, creatureAnimationPaths(entry), 0, monstat,
+		)
 		if err != nil {
 			v.terminal.Errorf("error generating %s: %v", entry.ID, err)
 			return nil
@@ -1924,4 +1926,12 @@ func (v *Game) commandSpawnMon(args []string) error {
 	v.gameClient.MapEngine.AddEntity(monster)
 
 	return nil
+}
+
+func creatureAnimationPaths(entry d2bestiary.Entry) d2mapentity.CreatureAnimationPaths {
+	return d2mapentity.CreatureAnimationPaths{
+		Idle: entry.Animations.Idle, Walk: entry.Animations.Walk,
+		Attack: entry.Animations.Attack, Hit: entry.Animations.Hit,
+		Death: entry.Animations.Death, Dead: entry.Animations.Dead,
+	}
 }

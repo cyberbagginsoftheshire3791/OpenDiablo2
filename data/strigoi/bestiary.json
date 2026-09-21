@@ -5,7 +5,14 @@
       "name": "Feral dog",
       "spawn_row": "dogs",
       "stand_in": "fallen1",
-      "idle": "/data/strigoi/creatures/feral-dog/idle.png",
+      "animations": {
+        "idle": "/data/strigoi/creatures/feral-dog/idle.png",
+        "walk": "/data/strigoi/creatures/feral-dog/walk.png",
+        "attack": "/data/strigoi/creatures/feral-dog/attack.png",
+        "hit": "/data/strigoi/creatures/feral-dog/hit.png",
+        "death": "/data/strigoi/creatures/feral-dog/death.png",
+        "dead": "/data/strigoi/creatures/feral-dog/dead.png"
+      },
       "max_health": 72
     }
   ]

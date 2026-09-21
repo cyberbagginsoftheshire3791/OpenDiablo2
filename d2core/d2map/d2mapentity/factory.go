@@ -92,7 +92,13 @@ func NewAnimatedEntity(x, y int, animation d2interface.Animation) *AnimatedEntit
 // can move through the same map and world systems as an inherited NPC. standIn
 // preserves the world-RNG draws the replaced NPC construction used to consume;
 // changing art must not silently retune every later arrival in the night.
-func (f *MapEntityFactory) NewCreature(x, y int, name, idlePath string, direction int,
+// CreatureAnimationPaths names the optional independent sheet for each mode.
+// Idle is required and is the fallback while a creature's art is incomplete.
+type CreatureAnimationPaths struct {
+	Idle, Walk, Attack, Hit, Death, Dead string
+}
+
+func (f *MapEntityFactory) NewCreature(x, y int, name string, paths CreatureAnimationPaths, direction int,
 	standIn *d2records.MonStatRecord) (*Creature, error) {
 	if standIn != nil {
 		_ = f.randInt63() // NewNPC's per-entity behaviour seed.
@@ -104,12 +110,25 @@ func (f *MapEntityFactory) NewCreature(x, y int, name, idlePath string, directio
 		}
 	}
 
-	idle, err := f.asset.LoadAnimation(idlePath, "")
-	if err != nil {
-		return nil, err
+	definitions := map[creatureMode]string{
+		creatureIdle: paths.Idle, creatureWalk: paths.Walk,
+		creatureAttack: paths.Attack, creatureHit: paths.Hit,
+		creatureDeath: paths.Death, creatureDead: paths.Dead,
+	}
+	animations := make(map[creatureMode]d2interface.Animation, len(definitions))
+	for mode, path := range definitions {
+		if path == "" {
+			continue
+		}
+		animation, err := f.asset.LoadAnimation(path, "")
+		if err != nil {
+			return nil, fmt.Errorf("load creature %q %s animation: %w", name, mode, err)
+		}
+		animation.PlayForward()
+		animations[mode] = animation
 	}
 
-	return newCreature(x, y, name, idle, direction)
+	return newCreature(x, y, name, animations, direction)
 }
 
 // NewPlayer creates a new player entity and returns a pointer to it.

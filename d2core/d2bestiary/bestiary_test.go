@@ -13,7 +13,7 @@ func TestLoadIndexesCreatureByIDAndSpawnRow(t *testing.T) {
     "name": "Feral dog",
     "spawn_row": "dogs",
     "stand_in": "fallen1",
-    "idle": "/data/strigoi/creatures/feral-dog/idle.png",
+    "animations": {"idle": "/data/strigoi/creatures/feral-dog/idle.png"},
     "max_health": 72
   }]
 }`))
@@ -34,8 +34,8 @@ func TestLoadIndexesCreatureByIDAndSpawnRow(t *testing.T) {
 func TestLoadRejectsDuplicateSpawnRows(t *testing.T) {
 	_, err := Load([]byte(`{
   "creatures": [
-    {"id":"one","name":"One","spawn_row":"dogs","stand_in":"fallen1","idle":"/one.png","max_health":1},
-    {"id":"two","name":"Two","spawn_row":"DOGS","stand_in":"fallen1","idle":"/two.png","max_health":1}
+    {"id":"one","name":"One","spawn_row":"dogs","stand_in":"fallen1","animations":{"idle":"/one.png"},"max_health":1},
+    {"id":"two","name":"Two","spawn_row":"DOGS","stand_in":"fallen1","animations":{"idle":"/two.png"},"max_health":1}
   ]
 }`))
 	if err == nil {
@@ -58,5 +58,8 @@ func TestShippedBestiary(t *testing.T) {
 	}
 	if dog.SpawnRow != "dogs" || dog.MaxHealth != 72 {
 		t.Fatalf("shipped feral-dog = %+v", dog)
+	}
+	if dog.Animations.Walk == "" || dog.Animations.Attack == "" || dog.Animations.Death == "" {
+		t.Fatalf("shipped feral-dog has an incomplete animation set: %+v", dog.Animations)
 	}
 }
