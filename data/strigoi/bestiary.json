@@ -14,6 +14,21 @@
         "dead": "/data/strigoi/creatures/feral-dog/dead.png"
       },
       "max_health": 72
+    },
+    {
+      "id": "wolf",
+      "name": "Wolf",
+      "spawn_row": "wolves",
+      "stand_in": "fallen1",
+      "animations": {
+        "idle": "/data/strigoi/creatures/wolf/idle.png",
+        "walk": "/data/strigoi/creatures/wolf/walk.png",
+        "attack": "/data/strigoi/creatures/wolf/attack.png",
+        "hit": "/data/strigoi/creatures/wolf/hit.png",
+        "death": "/data/strigoi/creatures/wolf/death.png",
+        "dead": "/data/strigoi/creatures/wolf/dead.png"
+      },
+      "max_health": 96
     }
   ]
 }

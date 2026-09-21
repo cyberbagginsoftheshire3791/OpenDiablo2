@@ -62,4 +62,15 @@ func TestShippedBestiary(t *testing.T) {
 	if dog.Animations.Walk == "" || dog.Animations.Attack == "" || dog.Animations.Death == "" {
 		t.Fatalf("shipped feral-dog has an incomplete animation set: %+v", dog.Animations)
 	}
+	wolf, ok := catalog.ByID("wolf")
+	if !ok {
+		t.Fatal("shipped bestiary has no wolf")
+	}
+	if wolf.SpawnRow != "wolves" || wolf.MaxHealth != 96 {
+		t.Fatalf("shipped wolf = %+v", wolf)
+	}
+	if wolf.Animations.Walk == "" || wolf.Animations.Attack == "" ||
+		wolf.Animations.Hit == "" || wolf.Animations.Death == "" || wolf.Animations.Dead == "" {
+		t.Fatalf("shipped wolf has an incomplete animation set: %+v", wolf.Animations)
+	}
 }
