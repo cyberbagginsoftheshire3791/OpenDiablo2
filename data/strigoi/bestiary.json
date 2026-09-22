@@ -29,6 +29,21 @@
         "dead": "/data/strigoi/creatures/wolf/dead.png"
       },
       "max_health": 96
+    },
+    {
+      "id": "wild-boar",
+      "name": "Wild boar",
+      "spawn_row": "boar",
+      "stand_in": "fallen1",
+      "animations": {
+        "idle": "/data/strigoi/creatures/wild-boar/idle.png",
+        "walk": "/data/strigoi/creatures/wild-boar/walk.png",
+        "attack": "/data/strigoi/creatures/wild-boar/attack.png",
+        "hit": "/data/strigoi/creatures/wild-boar/hit.png",
+        "death": "/data/strigoi/creatures/wild-boar/death.png",
+        "dead": "/data/strigoi/creatures/wild-boar/dead.png"
+      },
+      "max_health": 120
     }
   ]
 }
