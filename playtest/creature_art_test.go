@@ -23,6 +23,10 @@ func TestWildBoarStillInGame(t *testing.T) {
 	testCreatureStillInGame(t, "wild-boar", "Wild boar", 120, "wild-boar-v1-night")
 }
 
+func TestOpportunistStillInGame(t *testing.T) {
+	testCreatureStillInGame(t, "opportunist", "Opportunist", 84, "opportunist-v1-night")
+}
+
 func testCreatureStillInGame(t *testing.T, creatureID, creatureName string, maxHealth float64, screenshotName string) {
 	t.Helper()
 	s := start(t)

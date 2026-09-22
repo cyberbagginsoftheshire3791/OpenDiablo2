@@ -44,6 +44,21 @@
         "dead": "/data/strigoi/creatures/wild-boar/dead.png"
       },
       "max_health": 120
+    },
+    {
+      "id": "opportunist",
+      "name": "Opportunist",
+      "spawn_row": "opportunists",
+      "stand_in": "fallen1",
+      "animations": {
+        "idle": "/data/strigoi/creatures/opportunist/idle.png",
+        "walk": "/data/strigoi/creatures/opportunist/walk.png",
+        "attack": "/data/strigoi/creatures/opportunist/attack.png",
+        "hit": "/data/strigoi/creatures/opportunist/hit.png",
+        "death": "/data/strigoi/creatures/opportunist/death.png",
+        "dead": "/data/strigoi/creatures/opportunist/dead.png"
+      },
+      "max_health": 84
     }
   ]
 }
