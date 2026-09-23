@@ -21,6 +21,14 @@ func (a *App) initialize() error {
 
 	a.initLanguage()
 
+	// M5.3: before the first label, so no Diablo II font is ever loaded. A
+	// refused set is reported and Diablo II's fonts stand.
+	if a.Options.fontSet != nil && *a.Options.fontSet != "" {
+		if err := a.asset.UseFontSet(*a.Options.fontSet); err != nil {
+			a.Errorf("font set refused, drawing Diablo II's fonts: %v", err)
+		}
+	}
+
 	if err := a.initDataDictionaries(); err != nil {
 		return err
 	}

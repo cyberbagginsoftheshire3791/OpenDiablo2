@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 36 playtest scripts.** That count, the harness version below and the
+**The 37 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -239,7 +239,8 @@ this doc fails until it agrees.
   the next night at rising odds 0 (Q7a).
 * `census_test.go` — the thirty-fourth, M5.2 (23 Sep 2026): the asset census.
   One player's first day and night (the kit, talents and help panels, a talk,
-  a forage, a night as shipped), then the "assets" provider's census --
+  a forage, a night as shipped), then the "assets" provider's census (which
+  also reports `font_set`, the font set in use or "" for Diablo II's) --
   every file loaded and whether it came from a Diablo II MPQ or from Strigoi's
   own files -- written to `strigoi-harness-runs\asset-census.{md,tsv}`. It
   asserts only that both kinds were seen and that nothing under
@@ -279,6 +280,13 @@ this doc fails until it agrees.
   placeholder: reported used, the player's body "png", and the body drawing
   its walk sheet through a walk (TW) and its idle sheet at rest (TN) --
   `body_sheet`, which the composite does not have. Screenshot as evidence.
+* `fonts_test.go` — the thirty-seventh, M5.3 (23 Sep 2026): every word drawn
+  from Strigoi's font set (`-fonts data/strigoi/fonts/fonts.json`, Go fonts as
+  PLACEHOLDERS). Control first: the game as shipped reads Diablo II's fonts
+  from the MPQs and reports no font set. Then, launched with `-fonts` (the
+  launcher's `startWith`): the census reports the set, and after the menu, a
+  new game, the kit, talents and help panels, `data/local/font` has NO file
+  from an MPQ. Screenshots of both menus and both kit panels.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

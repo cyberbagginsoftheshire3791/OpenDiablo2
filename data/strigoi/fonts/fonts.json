@@ -1,0 +1,17 @@
+{
+  "default": {"face": "gofont:regular", "size": 13},
+  "fonts": {
+    "font6":          {"face": "gofont:regular",   "size": 8},
+    "font8":          {"face": "gofont:regular",   "size": 10},
+    "font16":         {"face": "gofont:regular",   "size": 14},
+    "font24":         {"face": "gofont:medium",    "size": 20},
+    "font30":         {"face": "gofont:smallcaps", "size": 26},
+    "font42":         {"face": "gofont:smallcaps", "size": 36},
+    "fontformal10":   {"face": "gofont:regular",   "size": 11},
+    "fontformal11":   {"face": "gofont:regular",   "size": 12},
+    "fontformal12":   {"face": "gofont:regular",   "size": 13},
+    "fontexocet8":    {"face": "gofont:smallcaps", "size": 10},
+    "fontexocet10":   {"face": "gofont:smallcaps", "size": 12},
+    "fontridiculous": {"face": "gofont:medium",    "size": 16}
+  }
+}

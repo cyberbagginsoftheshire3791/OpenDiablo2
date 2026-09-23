@@ -77,6 +77,10 @@ type AssetManager struct {
 	Records          *d2records.RecordManager
 	language         string
 	languageModifier int
+
+	// M5.3: Strigoi's own fonts (strigoi_fonts.go); nil is Diablo II's.
+	fontSet     *FontSet
+	fontSetPath string
 }
 
 // SetLogLevel sets the log level for the asset manager,  record manager, and file loader
@@ -231,8 +235,23 @@ func (am *AssetManager) LoadComposite(baseType d2enum.ObjectType, token, palette
 func (am *AssetManager) LoadFont(tablePath, spritePath, palettePath string) (*d2font.Font, error) {
 	cachePath := fmt.Sprintf("%s;%s;%s", tablePath, spritePath, palettePath)
 
+	if am.fontSet != nil {
+		// One font per name, whatever palette the caller would have drawn
+		// Diablo II's in.
+		cachePath = "strigoi;" + fontName(tablePath)
+	}
+
 	if cached, found := am.fonts.Retrieve(cachePath); found {
 		return cached.(*d2font.Font), nil
+	}
+
+	if am.fontSet != nil {
+		font, err := am.loadStrigoiFont(tablePath)
+		if err != nil {
+			return nil, err
+		}
+
+		return font, am.fonts.Insert(cachePath, font, defaultCacheEntryWeight)
 	}
 
 	sheet, err := am.LoadAnimation(spritePath, palettePath)

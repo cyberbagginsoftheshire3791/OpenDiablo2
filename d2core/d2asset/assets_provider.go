@@ -6,7 +6,10 @@ import (
 
 // assetsProvider is the "assets" harness system (M5.2): the census of every
 // file loaded, by source and by area. The ratchet's number is mpq_files.
-type assetsProvider struct{ loader *d2loader.Loader }
+type assetsProvider struct {
+	loader *d2loader.Loader
+	am     *AssetManager
+}
 
 func (p assetsProvider) HarnessName() string { return "assets" }
 
@@ -43,5 +46,6 @@ func (p assetsProvider) HarnessState() map[string]interface{} {
 		"native_loads": loads[d2loader.CensusNative],
 		"by_area":      byArea,
 		"files":        files,
+		"font_set":     p.am.FontSetPath(), // "" is Diablo II's fonts
 	}
 }

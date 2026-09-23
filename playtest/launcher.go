@@ -52,10 +52,23 @@ type session struct {
 func start(t *testing.T) *session {
 	t.Helper()
 
+	return startWith(t)
+}
+
+// startWith is start with extra command-line flags for the game (-fonts ...).
+// An attached session was launched by someone else, so it cannot take them:
+// the script is skipped rather than run against the wrong game.
+func startWith(t *testing.T, flags ...string) *session {
+	t.Helper()
+
 	s := &session{t: t}
 
 	addr := os.Getenv("STRIGOI_HARNESS_ADDR")
 	if addr != "" {
+		if len(flags) > 0 {
+			t.Skipf("attached to a running game; this script launches its own with %v", flags)
+		}
+
 		s.attached = true
 	} else {
 		addr = defaultAddr
@@ -95,7 +108,7 @@ func start(t *testing.T) *session {
 		// device bridge can still reach them: <Projects>/strigoi-harness-runs.
 		s.RunBase = filepath.Join(filepath.Dir(repoRoot), "strigoi-harness-runs")
 
-		s.cmd = exec.Command(exe, "-harness", "-harness-addr", addr, "-harness-out", s.RunBase, "-l", "4")
+		s.cmd = exec.Command(exe, append([]string{"-harness", "-harness-addr", addr, "-harness-out", s.RunBase, "-l", "4"}, flags...)...)
 		s.cmd.Dir = repoRoot
 
 		// Keep the game's own output: a script that dies with a transport

@@ -202,6 +202,17 @@ func newPNGAnimation(
 		return nil, err
 	}
 
+	png, err := pngAnimationFromRGBA(rgba, sheet, effect)
+	if err != nil {
+		return nil, err
+	}
+
+	return png, nil
+}
+
+// pngAnimationFromRGBA cuts an already-decoded, premultiplied sheet --
+// Strigoi's fonts are drawn in memory and never encoded as a PNG at all.
+func pngAnimationFromRGBA(rgba *image.RGBA, sheet PNGSheet, effect d2enum.DrawEffect) (*PNGAnimation, error) {
 	if err := sheet.validate(rgba.Bounds()); err != nil {
 		return nil, err
 	}

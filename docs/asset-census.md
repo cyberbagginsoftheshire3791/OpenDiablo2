@@ -34,8 +34,12 @@ One player's first day and night (`playtest/census_test.go`). **365 files from D
 | `data/global/monsters` (39) | the town's people and animals (rogues, Warriv, Gheed, cows, chickens) | our villagers and livestock as PNG creatures (M5.1's path) |
 | `data/global/objects` (29) | town objects (waypoint, torches, barrels, ...) | authored with the map (M5.4) |
 | `data/global/chars` (20) | **the hero** (the amazon) | our Janissary as PNG sheets |
-| `data/local/font` (20) | the fonts | our own fonts (any free TTF, rendered to the same interface) |
+| `data/local/font` (20) | the fonts | **done with `-fonts`** (23 Sep): a font set of TrueType/OpenType faces drawn into the same `d2font.Font` (`d2core/d2asset/strigoi_fonts.go`); 0 font files from the MPQs. Placeholder Go fonts until real faces are chosen |
 | `data/global/items` (11), `palette` (6), `sfx` (4), `music` (2), `lng` (3) | inventory art, palettes, sounds, music, the string tables | our own art, sound and a Strigoi string table |
+
+## Measured: our own map, hero and fonts together (23 Sep 2026)
+
+Launched with `-map data/strigoi/maps/village.tmj -hero data/strigoi/hero/placeholder/hero.json -fonts data/strigoi/fonts/fonts.json`, a new game, the kit/talents/help panels, a forage and two hours of world time: **190 MPQ files, 49 of ours** (a probe, not a committed script; a shorter day than the census's, so compare areas, not totals). **`tiles`, `chars` and `font` are 0.** What is left: `excel` 83, `ui` 72, `items` 11, `monsters` 8, `palette` 5, `sfx` 4, `lng` 3, `music` 2, two loose files.
 
 ## Measured: the authored village (M5.4, 23 Sep 2026)
 

@@ -61,6 +61,13 @@ func Load(data []byte) (*Font, error) {
 	return font, nil
 }
 
+// New makes a font from glyphs whose frames are drawn from a sheet given
+// later with SetBackground: a font that never came from a .tbl (Strigoi's own,
+// d2asset/strigoi_fonts.go).
+func New(glyphs map[rune]*d2fontglyph.FontGlyph) *Font {
+	return &Font{Glyphs: glyphs, color: color.White}
+}
+
 // SetBackground sets font's background
 func (f *Font) SetBackground(sheet d2interface.Animation) {
 	f.sheet = sheet
@@ -72,6 +79,9 @@ func (f *Font) SetBackground(sheet d2interface.Animation) {
 		f.Glyphs[i].SetSize(f.Glyphs[i].Width(), h)
 	}
 }
+
+// Sheet is the animation the glyphs are drawn from.
+func (f *Font) Sheet() d2interface.Animation { return f.sheet }
 
 // SetColor sets the fonts color
 func (f *Font) SetColor(c color.Color) {

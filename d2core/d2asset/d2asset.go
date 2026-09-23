@@ -41,7 +41,7 @@ func NewAssetManager(logLevel d2util.LogLevel) (*AssetManager, error) {
 	}
 
 	// M5.2: the census is the "assets" harness system for the app's life.
-	d2harness.Register(assetsProvider{loader: loader})
+	d2harness.Register(assetsProvider{loader: loader, am: manager})
 
 	return manager, err
 }
