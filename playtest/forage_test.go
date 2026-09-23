@@ -4,6 +4,7 @@ package playtest
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,11 @@ func TestForage(t *testing.T) {
 
 	if left := mustNum(t, villageState(s), "land_left"); left != 10 {
 		t.Fatalf("act 1: the land had 12 and gave 2: %.0f left", left)
+	}
+
+	// T9: and the kit panel says so.
+	if !kitSays(t, s, "Land: 10 branches left") {
+		t.Fatal("act 1: the kit panel's status line shows what the land still holds")
 	}
 
 	// --- 2: the control -- idle when it arrives ------------------------------------
@@ -144,4 +150,26 @@ func finishFight(t *testing.T, s *session) {
 	if flag(t, combatState(s), "fighting") {
 		t.Fatal("the fight never ended")
 	}
+}
+
+// kitSays opens the kit panel, reports whether any row contains text, and
+// closes it again.
+func kitSays(t *testing.T, s *session, text string) bool {
+	t.Helper()
+
+	s.call("strigoi_key", map[string]any{"key": "i"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	found := false
+
+	for _, raw := range asList(uiState(s)["kit_rows"]) {
+		if row, ok := raw.(map[string]any); ok && strings.Contains(str(row, "text"), text) {
+			found = true
+		}
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "i"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	return found
 }

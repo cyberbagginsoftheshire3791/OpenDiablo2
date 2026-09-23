@@ -34,12 +34,16 @@ type KitHolder interface {
 	// T5: what he can make or mend, and making it.
 	Recipes() []RecipeRow
 	Craft(id string) error
+
+	// T9: the status lines -- the village, the land, a promised watch.
+	Status() []string
 }
 
 // RecipeRow is one recipe as the kit panel lists it.
 type RecipeRow struct {
 	ID    string
-	Text  string
+	Text  string // the name and the minutes
+	Cost  string // what it takes, on its own line beneath
 	Ready bool
 }
 
@@ -257,6 +261,11 @@ func (h *HUD) refreshKit() {
 		rows = append(rows, r)
 	}
 
+	// T9: status first, where it cannot be pushed off by a long pack.
+	for _, line := range holder.Status() {
+		add(kitRow{text: d2ui.ColorTokenize(line, d2ui.ColorTokenGrey), pack: -1})
+	}
+
 	for _, slot := range d2items.WornSlots() {
 		name := d2ui.ColorTokenize(KitEmpty, d2ui.ColorTokenGrey)
 
@@ -279,7 +288,13 @@ func (h *HUD) refreshKit() {
 				colour = d2ui.ColorTokenWhite
 			}
 
+			// Two lines, both clickable: one row of name, cost and time ran off
+			// the panel's right edge (T9).
 			add(kitRow{text: "  " + d2ui.ColorTokenize(r.Text, colour), pack: -1, recipe: r.ID})
+
+			if r.Cost != "" {
+				add(kitRow{text: "      " + d2ui.ColorTokenize(r.Cost, d2ui.ColorTokenGrey), pack: -1, recipe: r.ID})
+			}
 		}
 	}
 

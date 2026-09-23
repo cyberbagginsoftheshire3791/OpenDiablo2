@@ -45,18 +45,17 @@ func (v *Game) Recipes() []d2player.RecipeRow {
 
 		sort.Strings(ids)
 
+		// The item ids are the short nouns (branches, feathers, arrowheads,
+		// wire); the full names ran the line off the panel (T9, seen in the kit
+		// playtest's screenshot).
 		for _, id := range ids {
-			name := id
-			if it := v.items.Item(id); it != nil {
-				name = it.Name
-			}
-
-			cost = append(cost, fmt.Sprintf("%d %s", r.Inputs[id], strings.ToLower(name)))
+			cost = append(cost, fmt.Sprintf(d2player.KitRecipeInput, id, r.Inputs[id]))
 		}
 
 		rows = append(rows, d2player.RecipeRow{
 			ID:    r.ID,
-			Text:  fmt.Sprintf(d2player.KitRecipeLine, r.Name, strings.Join(cost, ", "), r.Minutes),
+			Text:  fmt.Sprintf(d2player.KitRecipeLine, r.Name, r.Minutes),
+			Cost:  strings.Join(cost, ", "),
 			Ready: v.recipes.Check(v.kit, r.ID) == nil && !v.inFight() && v.talk == nil,
 		})
 	}

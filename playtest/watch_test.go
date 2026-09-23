@@ -64,6 +64,11 @@ func TestWatch(t *testing.T) {
 	walkNear(t, s, headman)
 	promise("act 2")
 
+	// T9: the kit panel shows the promise and its minutes.
+	if !kitSays(t, s, "Watch: 0/180 min") {
+		t.Fatal("act 2: the kit panel's status line shows the promised watch")
+	}
+
 	rep1 := mustNum(t, villageState(s), "rep")
 	sawWatch, stood := throughTheNight(t, s)
 

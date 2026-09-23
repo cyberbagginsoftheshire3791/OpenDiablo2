@@ -180,12 +180,20 @@ const (
 
 // T5, making and mending (23 Sep 2026).
 const (
-	KitMakeHeader = "MAKE -- click to make"
-	KitRecipeLine = "%s: %s  (%.0f min)"
+	KitMakeHeader  = "MAKE -- click to make"
+	KitRecipeLine  = "%s  (%.0f min)"
+	KitRecipeInput = "%s x%d"
 )
 
 // T7, forage (23 Sep 2026).
 const (
 	ForageGathered = "Gathered %d branches  (%d left near here)"
 	ForageRefused  = "Forage: %v"
+)
+
+// T9, the status lines on the kit panel (23 Sep 2026).
+const (
+	StatusVillage = "Village: %s (%d)"
+	StatusLand    = "Land: %d branches left"
+	StatusWatch   = "   Watch: %.0f/%.0f min"
 )

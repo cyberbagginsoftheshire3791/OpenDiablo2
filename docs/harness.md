@@ -168,8 +168,10 @@ this doc fails until it agrees.
   nothing gathered -- and when that fight is over he is idle again and the
   NEXT beast finds him un-caught; six forages empty the land, a seventh is
   refused and takes no time, and the land stays bare across a reload. The
-  "village" provider reports `land_left`. Negative controls ran red for the
-  forage stance, the land's limit and the stance restore after a fight.
+  "village" provider reports `land_left`, and (T9) the kit panel's status
+  line says "Land: 10 branches left" -- the watch test checks its "Watch:
+  0/180 min" the same way. Negative controls ran red for the forage stance,
+  the land's limit, the stance restore after a fight, and the status lines.
 * `watch_test.go` — the twenty-eighth, T8 (23 Sep 2026): the watch is STOOD,
   not survived. He promises the headman the watch by day; spends the night
   17 tiles away (the post is 15; the camp's walls allow about 20) and is
