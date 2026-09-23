@@ -176,6 +176,17 @@ func (v *Game) Answer(i int) error {
 		return nil
 	}
 
+	// T5: an answer the kit cannot honour is refused before the standing
+	// moves or the minutes are spent (the smith has nothing to mend).
+	peek, err := v.talk.Peek(i)
+	if err != nil {
+		return err
+	}
+
+	if err := v.canBarter(peek.Effects.Mend); err != nil {
+		return err
+	}
+
 	effects, err := v.talk.Choose(i)
 	if err != nil {
 		return err
@@ -210,6 +221,9 @@ func (v *Game) applyTalk(e d2dialogue.Effects) {
 			}
 		}
 	}
+
+	// T5: what he is handed, or mended, for the work.
+	v.barter(e.Give, e.Mend)
 
 	// Labour takes the time it takes: the world moves by exactly those
 	// minutes (clock, meters, light, spawns), paid the way a paced round is.

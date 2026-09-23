@@ -30,6 +30,17 @@ type KitHolder interface {
 	ChooseLoadout(name string) error
 	EquipFromPack(i int) error
 	UnequipSlot(slot d2items.Slot) error
+
+	// T5: what he can make or mend, and making it.
+	Recipes() []RecipeRow
+	Craft(id string) error
+}
+
+// RecipeRow is one recipe as the kit panel lists it.
+type RecipeRow struct {
+	ID    string
+	Text  string
+	Ready bool
 }
 
 const (
@@ -53,10 +64,11 @@ const (
 
 // kitRow is one clickable line on the panel.
 type kitRow struct {
-	text string
-	slot d2items.Slot // a worn row
-	pack int          // a pack row, or -1
-	y    int
+	text   string
+	slot   d2items.Slot // a worn row
+	pack   int          // a pack row, or -1
+	recipe string       // a make row (T5)
+	y      int
 }
 
 // kitOverlay is the HUD's cache for both panels.
@@ -187,6 +199,8 @@ func (g *GameControls) kitClick(mx, my int) bool {
 		var err error
 
 		switch {
+		case r.recipe != "":
+			err = g.kitHolder.Craft(r.recipe)
 		case r.pack >= 0:
 			err = g.kitHolder.EquipFromPack(r.pack)
 		case r.slot != "":
@@ -251,6 +265,22 @@ func (h *HUD) refreshKit() {
 		}
 
 		add(kitRow{text: fmt.Sprintf("%-6s %s", kitSlotName(slot), name), slot: slot, pack: -1})
+	}
+
+	// T5: the make rows -- white when he has what it takes, grey when not --
+	// ABOVE the pack, which can grow past the panel's rows and would push them
+	// off it (review finding).
+	if recipes := holder.Recipes(); len(recipes) > 0 {
+		add(kitRow{text: d2ui.ColorTokenize(KitMakeHeader, d2ui.ColorTokenGold), pack: -1})
+
+		for _, r := range recipes {
+			colour := d2ui.ColorTokenGrey
+			if r.Ready {
+				colour = d2ui.ColorTokenWhite
+			}
+
+			add(kitRow{text: "  " + d2ui.ColorTokenize(r.Text, colour), pack: -1, recipe: r.ID})
+		}
 	}
 
 	add(kitRow{text: d2ui.ColorTokenize(fmt.Sprintf(KitPackHeader, kit.LoadKg()), d2ui.ColorTokenGold), pack: -1})

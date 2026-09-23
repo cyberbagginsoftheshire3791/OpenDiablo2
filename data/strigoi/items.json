@@ -34,7 +34,11 @@
     {"id": "spade", "name": "Spade", "kind": "tool", "slot": "pack", "weight_kg": 2.0,
      "tool": {"verb": "dig"}},
     {"id": "peksimet", "name": "Peksimet (hardtack)", "kind": "tool", "slot": "pack", "weight_kg": 0.25, "stack": 20,
-     "tool": {"verb": "eat"}}
+     "tool": {"verb": "eat"}},
+    {"id": "branches", "name": "Branches", "kind": "material", "slot": "pack", "weight_kg": 0.4, "stack": 10},
+    {"id": "feathers", "name": "Goose feathers", "kind": "material", "slot": "pack", "weight_kg": 0.01, "stack": 40},
+    {"id": "arrowheads", "name": "Iron arrowheads", "kind": "material", "slot": "pack", "weight_kg": 0.02, "stack": 30},
+    {"id": "wire", "name": "Iron wire", "kind": "material", "slot": "pack", "weight_kg": 0.1, "stack": 10}
   ],
   "loadouts": {
     "sword-and-board": {

@@ -20,6 +20,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2bestiary"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2craft"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2dialogue"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
@@ -133,6 +134,31 @@ func CreateGame(
 		return nil, err
 	}
 
+	// T5: nothing a villager hands over or mends may be missing from the item
+	// table -- a talk would otherwise give him a thing that does not exist.
+	for _, id := range dialogue.ItemsNamed() {
+		if !items.Has(id) {
+			return nil, fmt.Errorf("dialogue gives %q, which is not in the item table", id)
+		}
+	}
+
+	for _, slot := range dialogue.SlotsNamed() {
+		if !d2items.IsArmourSlot(d2items.Slot(slot)) {
+			return nil, fmt.Errorf("dialogue mends %q, which is not a slot armour is worn in", slot)
+		}
+	}
+
+	// T5: the recipes, checked against the same table.
+	recipeData, err := asset.LoadFile(recipesPath)
+	if err != nil {
+		return nil, fmt.Errorf("load Strigoi recipes: %w", err)
+	}
+
+	recipes, err := d2craft.Load(recipeData, items)
+	if err != nil {
+		return nil, err
+	}
+
 	// find the local player and its initial location
 	var startX, startY float64
 
@@ -155,6 +181,7 @@ func CreateGame(
 		items:                items,
 		talents:              talents,
 		dialogue:             dialogue,
+		recipes:              recipes,
 		gameClient:           gameClient,
 		navigator:            navigator,
 		gameControls:         nil,
@@ -332,6 +359,7 @@ type Game struct {
 	// T4: the dialogue table, what the village thinks of him, and the talk in
 	// progress (nil when none).
 	dialogue  *d2dialogue.Book
+	recipes   *d2craft.Book
 	standing  *d2dialogue.Standing
 	talk      *d2dialogue.Talk
 	progress  *d2progress.Progress

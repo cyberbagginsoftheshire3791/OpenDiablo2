@@ -176,3 +176,9 @@ const (
 	TalkLeave        = "Leave."
 	TalkWatchKept    = "The village counts your watch  (+%d)"
 )
+
+// T5, making and mending (23 Sep 2026).
+const (
+	KitMakeHeader = "MAKE -- click to make"
+	KitRecipeLine = "%s: %s  (%.0f min)"
+)

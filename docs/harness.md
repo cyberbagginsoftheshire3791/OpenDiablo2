@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 24 playtest scripts.** That count, the harness version below and the
+**The 25 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -141,6 +141,15 @@ this doc fails until it agrees.
   "village" provider reports rep, rung, flags and the node, and its `rep` is
   its one arranging verb. Negative controls ran red for the reach check, the
   hold and the meter fill.
+* `craft_test.go` — the twenty-fifth, T5 (23 Sep 2026): making and mending,
+  fed by the village. Before he has materials the fletch row is refused and
+  nothing is spent (the control); labour pays in goods -- branches from the
+  headman's ditch, feathers at the well, arrowheads and wire at the forge;
+  one fletching makes exactly three war arrows in exactly 45 world minutes;
+  the smith's mend is refused on sound mail before a minute passes; after a
+  fight has worn the mail, the field kit closes up to 4 points and never past
+  three quarters of new. Negative controls ran red for the time charge and
+  the smith's refusal.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

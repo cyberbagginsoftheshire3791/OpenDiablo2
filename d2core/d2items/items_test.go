@@ -401,3 +401,74 @@ func TestSidecarCarriesProgress(t *testing.T) {
 		t.Fatalf("a kit-only file loads with no progress: %q %v", prog, err)
 	}
 }
+
+func TestGiveStacksAndTakeIsAllOrNothing(t *testing.T) {
+	c := shipped(t)
+	k := kitFor(t, "torch-and-blade")
+
+	if err := k.Give("feathers", 50); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stack 40: one full stack and one of ten.
+	rows := 0
+	for _, inst := range k.Pack {
+		if inst.Item == "feathers" {
+			rows++
+		}
+	}
+
+	if k.Count("feathers") != 50 || rows != 2 {
+		t.Fatalf("50 feathers in stacks of 40: count %d in %d rows", k.Count("feathers"), rows)
+	}
+
+	if err := k.Take("feathers", 51); !errors.Is(err, ErrNotEnough) || k.Count("feathers") != 50 {
+		t.Fatalf("a take the pack cannot cover takes nothing: %v, %d", err, k.Count("feathers"))
+	}
+
+	if err := k.Take("feathers", 45); err != nil || k.Count("feathers") != 5 {
+		t.Fatalf("45 of 50: %v, %d", err, k.Count("feathers"))
+	}
+
+	if err := k.Give("moonstone", 1); !errors.Is(err, ErrUnknownItem) {
+		t.Fatalf("an item the catalogue does not know cannot be given: %v", err)
+	}
+
+	// Into a PART-full stack: 5 + 38 at 40 fills that row and starts another.
+	if err := k.Give("feathers", 38); err != nil || k.Count("feathers") != 43 {
+		t.Fatalf("5 + 38: %v, %d", err, k.Count("feathers"))
+	}
+
+	// Non-stacking items arrive one to a row.
+	stakes := k.Count("stake")
+	if err := k.Give("stake", 3); err != nil || k.Count("stake") != stakes+3 {
+		t.Fatalf("three stakes: %v, %d", err, k.Count("stake"))
+	}
+
+	// A kit read back without Bind refuses rather than panicking.
+	loose := &Kit{}
+	if err := loose.Give("feathers", 1); !errors.Is(err, ErrUnboundKit) {
+		t.Fatalf("an unbound kit refuses a give: %v", err)
+	}
+
+	_ = c
+}
+
+func TestMaterialsSurviveASave(t *testing.T) {
+	c := shipped(t)
+	k := kitFor(t, "torch-and-blade")
+	path := SidecarPath(filepath.Join(t.TempDir(), "6.od2"))
+
+	if err := k.Give("arrowheads", 7); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SaveHero(path, k, Extras{}); err != nil {
+		t.Fatal(err)
+	}
+
+	back, _, err := LoadHero(path, c)
+	if err != nil || back.Count("arrowheads") != 7 {
+		t.Fatalf("seven arrowheads on disk and back: %v, %d", err, back.Count("arrowheads"))
+	}
+}

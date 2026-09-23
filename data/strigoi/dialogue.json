@@ -77,12 +77,12 @@
       "choices": [
         {"text": "Dig out the ditch and reset the stakes. (an hour)",
          "next": "headman_thanks", "requires": {"not_flag": "ditch_mended"},
-         "effects": {"rep": 8, "minutes": 60, "set": ["ditch_mended"]}},
+         "effects": {"rep": 8, "minutes": 60, "set": ["ditch_mended"], "give": {"branches": 3}}},
         {"text": "Not now."}
       ]
     },
     "headman_thanks": {
-      "text": "When you straighten your back he is still there. 'You dig like a man who has dug graves.' It is not quite thanks. It is not nothing.",
+      "text": "When you straighten your back he is still there. 'You dig like a man who has dug graves.' It is not quite thanks. It is not nothing. He kicks the broken stakes toward you: 'Burn them or cut them. They are no use to me.'",
       "choices": []
     },
     "headman_watch": {
@@ -112,6 +112,8 @@
         {"text": "Draw water for her before you take any.",
          "requires": {"not_flag": "drew_water"},
          "effects": {"rep": 4, "water": 100, "minutes": 20, "set": ["drew_water"]}},
+        {"text": "Help her pluck the geese, for the feathers. (half an hour)",
+         "effects": {"minutes": 30, "give": {"feathers": 6}}},
         {"text": "Leave."}
       ]
     },
@@ -128,6 +130,12 @@
         {"text": "Show him how the army forges an edge.",
          "requires": {"not_flag": "showed_smith"},
          "effects": {"rep": 5, "minutes": 40, "set": ["showed_smith"]}},
+        {"text": "Work the bellows for an hour, for arrowheads.",
+         "effects": {"minutes": 60, "give": {"arrowheads": 6}}},
+        {"text": "Work the bellows for an hour, for iron wire.",
+         "effects": {"minutes": 60, "give": {"wire": 2}}},
+        {"text": "Work a morning at his anvil, and he mends your mail. (three hours)",
+         "effects": {"minutes": 180, "mend": "body"}},
         {"text": "Leave."}
       ]
     },

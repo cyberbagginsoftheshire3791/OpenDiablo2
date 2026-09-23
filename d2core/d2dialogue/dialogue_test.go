@@ -337,3 +337,33 @@ func TestChooseRefuses(t *testing.T) {
 		t.Fatalf("nobody: %v", err)
 	}
 }
+
+func TestBarterNamesItsGoods(t *testing.T) {
+	b := shipped(t)
+
+	if got := strings.Join(b.ItemsNamed(), ","); got != "arrowheads,branches,feathers,wire" {
+		t.Fatalf("the village hands over branches, feathers, arrowheads and wire: %s", got)
+	}
+
+	if got := strings.Join(b.SlotsNamed(), ","); got != "body" {
+		t.Fatalf("the smith mends mail: %s", got)
+	}
+
+	st := b.NewStanding()
+	b.Move(st, 30) // trade
+
+	talk := mustOpen(t, b, st, "smith", false)
+
+	c, err := talk.Peek(2)
+	if err != nil || c.Effects.Give["arrowheads"] != 6 {
+		t.Fatalf("peek shows the arrowheads without taking them: %+v %v", c, err)
+	}
+
+	if talk.NodeID != "smith" {
+		t.Fatal("a peek moves nothing")
+	}
+
+	if _, err := talk.Peek(9); err != ErrNoChoice {
+		t.Fatalf("peek past the answers: %v", err)
+	}
+}

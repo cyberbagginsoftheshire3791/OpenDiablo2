@@ -1,0 +1,19 @@
+{
+  "recipes": [
+    {"id": "fletch-arrows", "name": "Fletch arrows",
+     "inputs": {"branches": 1, "feathers": 3, "arrowheads": 3},
+     "tools": ["knife"],
+     "outputs": {"arrows": 3},
+     "minutes": 45},
+    {"id": "whittle-stake", "name": "Whittle a stake",
+     "inputs": {"branches": 1},
+     "tools": ["knife"],
+     "outputs": {"stake": 1},
+     "minutes": 20},
+    {"id": "field-mend-mail", "name": "Close broken rings in the mail",
+     "inputs": {"wire": 1},
+     "tools": ["knife"],
+     "mend": {"slot": "body", "points": 4, "cap": 0.75},
+     "minutes": 60}
+  ]
+}

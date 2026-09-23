@@ -65,6 +65,12 @@ type Effects struct {
 	Food    float64  `json:"food,omitempty"`
 	Water   float64  `json:"water,omitempty"`
 	Minutes float64  `json:"minutes,omitempty"`
+
+	// T5: barter in goods (S1 §8.3 -- no coin). Give puts items in his pack;
+	// Mend has the smith restore the armour worn in a slot to new. The game
+	// checks both against the item catalogue at load.
+	Give map[string]int `json:"give,omitempty"`
+	Mend string         `json:"mend,omitempty"`
 }
 
 // Choice is one thing he can say.
@@ -223,6 +229,12 @@ func Load(data []byte) (*Book, error) {
 				return nil, fmt.Errorf("%s: food, water and minutes cannot be negative", where)
 			}
 
+			for item, n := range c.Effects.Give {
+				if item == "" || n <= 0 {
+					return nil, fmt.Errorf("%s: gives %q x%d -- counts are positive", where, item, n)
+				}
+			}
+
 			if err := checkFlags(where, c.Requires); err != nil {
 				return nil, err
 			}
@@ -279,6 +291,51 @@ func Load(data []byte) (*Book, error) {
 	}
 
 	return &b, nil
+}
+
+// ItemsNamed is every item a choice gives, for the game to check against its
+// catalogue: a villager must not hand over something that does not exist.
+func (b *Book) ItemsNamed() []string {
+	seen := map[string]bool{}
+
+	for _, n := range b.Nodes {
+		for _, c := range n.Choices {
+			for item := range c.Effects.Give {
+				seen[item] = true
+			}
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for item := range seen {
+		out = append(out, item)
+	}
+
+	sort.Strings(out)
+
+	return out
+}
+
+// SlotsNamed is every armour slot a choice mends, for the same check.
+func (b *Book) SlotsNamed() []string {
+	seen := map[string]bool{}
+
+	for _, n := range b.Nodes {
+		for _, c := range n.Choices {
+			if c.Effects.Mend != "" {
+				seen[c.Effects.Mend] = true
+			}
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for slot := range seen {
+		out = append(out, slot)
+	}
+
+	sort.Strings(out)
+
+	return out
 }
 
 // SpeakerFor is the villager a stand-in sprite plays, or nil.
@@ -454,6 +511,21 @@ func (t *Talk) Answers() []Choice {
 	}
 
 	return out
+}
+
+// Peek is answer i without taking it, so the game can refuse one it cannot
+// honour (a mend with nothing to mend) before the standing moves.
+func (t *Talk) Peek(i int) (Choice, error) {
+	if t.Done() {
+		return Choice{}, ErrOver
+	}
+
+	answers := t.Answers()
+	if i < 0 || i >= len(answers) {
+		return Choice{}, ErrNoChoice
+	}
+
+	return answers[i], nil
 }
 
 // Choose takes answer i (0-based, of Answers), applies what it does to the

@@ -543,3 +543,157 @@ func (k *Kit) LoadKg() float64 {
 func clamp01(v float64) float64 {
 	return math.Max(0, math.Min(1, v))
 }
+
+// ---- T5: what crafting and barter do to a kit ------------------------------
+
+// ErrNotEnough is a take the pack cannot cover.
+var ErrNotEnough = errors.New("not enough in the pack")
+
+// countOf is how many one pack row holds: a stack's count, or one.
+func countOf(inst *Instance) int {
+	if inst.Count > 0 {
+		return inst.Count
+	}
+
+	return 1
+}
+
+// Count is how many of an item are in the pack.
+func (k *Kit) Count(id string) int {
+	n := 0
+
+	for i := range k.Pack {
+		if k.Pack[i].Item == id {
+			n += countOf(&k.Pack[i])
+		}
+	}
+
+	return n
+}
+
+// Carries reports an item worn or in the pack -- what a recipe's TOOLS need.
+func (k *Kit) Carries(id string) bool {
+	for _, inst := range k.Worn {
+		if inst != nil && inst.Item == id {
+			return true
+		}
+	}
+
+	return k.Count(id) > 0
+}
+
+// Take removes n of an item from the pack, all or nothing.
+func (k *Kit) Take(id string, n int) error {
+	if n <= 0 {
+		return nil
+	}
+
+	if k.Count(id) < n {
+		return fmt.Errorf("%w: %s", ErrNotEnough, id)
+	}
+
+	kept := k.Pack[:0]
+
+	for _, inst := range k.Pack {
+		if n > 0 && inst.Item == id {
+			have := countOf(&inst)
+			if have <= n {
+				n -= have
+				continue
+			}
+
+			inst.Count = have - n
+			n = 0
+		}
+
+		kept = append(kept, inst)
+	}
+
+	k.Pack = kept
+
+	return nil
+}
+
+// ErrUnknownItem is an item the catalogue does not know.
+var ErrUnknownItem = errors.New("unknown item")
+
+// Bound reports a kit attached to its catalogue (NewKit, or Bind after a load).
+func (k *Kit) Bound() bool { return k != nil && k.cat != nil }
+
+// Give puts n of an item in the pack: onto a stack of it while the stack has
+// room, then in new rows. Items that do not stack arrive one to a row, new
+// and sound.
+func (k *Kit) Give(id string, n int) error {
+	if !k.Bound() {
+		return ErrUnboundKit
+	}
+
+	it, ok := k.cat.byID[id]
+	if !ok {
+		return fmt.Errorf("%w %q", ErrUnknownItem, id)
+	}
+
+	for n > 0 {
+		if it.Stack > 0 {
+			for i := range k.Pack {
+				if room := it.Stack - countOf(&k.Pack[i]); k.Pack[i].Item == id && room > 0 {
+					add := min(room, n)
+					k.Pack[i].Count = countOf(&k.Pack[i]) + add
+					n -= add
+				}
+			}
+
+			if n <= 0 {
+				break
+			}
+
+			add := min(it.Stack, n)
+			k.Pack = append(k.Pack, k.cat.fresh(id, add))
+			k.Pack[len(k.Pack)-1].Count = add
+			n -= add
+
+			continue
+		}
+
+		k.Pack = append(k.Pack, k.cat.fresh(id, 1))
+		n--
+	}
+
+	return nil
+}
+
+// ErrNothingToMend is a repair of a piece already as good as this repair
+// makes it.
+var ErrNothingToMend = errors.New("nothing to mend")
+
+// Mend restores up to points to the armour worn in a slot, but never past
+// capFraction of its full points: a field repair is "slower, worse" than the
+// smith's (S1 §8.3), so it stops short of new. It returns what it restored.
+func (k *Kit) Mend(slot Slot, points int, capFraction float64) (int, error) {
+	room, err := k.CanMend(slot, capFraction)
+	if err != nil {
+		return 0, err
+	}
+
+	_, inst, _ := k.ItemIn(slot)
+	restored := min(points, room)
+	inst.Points += restored
+	inst.Condition = armourCondition(inst, k.maxPoints(slot))
+
+	return restored, nil
+}
+
+// CanMend reports how far a mend up to capFraction could go, without doing it.
+func (k *Kit) CanMend(slot Slot, capFraction float64) (int, error) {
+	it, inst, ok := k.ItemIn(slot)
+	if !ok || it.Armour == nil || it.Armour.Points <= 0 {
+		return 0, fmt.Errorf("%w: no armour worn there", ErrNothingToMend)
+	}
+
+	limit := int(math.Floor(float64(k.maxPoints(slot)) * clamp01(capFraction)))
+	if inst.Points >= limit {
+		return 0, ErrNothingToMend
+	}
+
+	return limit - inst.Points, nil
+}

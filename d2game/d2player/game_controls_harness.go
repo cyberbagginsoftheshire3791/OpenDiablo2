@@ -162,7 +162,7 @@ func (g *GameControls) kitRowsReport() []map[string]interface{} {
 
 	for _, r := range g.hud.kit.rows {
 		out = append(out, map[string]interface{}{
-			"text": r.text, "slot": string(r.slot), "pack": r.pack,
+			"text": r.text, "slot": string(r.slot), "pack": r.pack, "recipe": r.recipe,
 			"x": kitPanelX + kitPadX + 4, "y": r.y + kitRowHeight/2,
 		})
 	}

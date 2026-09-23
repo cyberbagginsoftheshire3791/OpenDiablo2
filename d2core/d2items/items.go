@@ -27,6 +27,10 @@ const (
 	KindLight  Kind = "light"
 	KindTool   Kind = "tool"
 	KindStory  Kind = "story"
+
+	// KindMaterial is what crafting eats (T5): branches, feathers, arrowheads,
+	// wire. It rides in the pack and does nothing on its own.
+	KindMaterial Kind = "material"
 )
 
 // DamageClass is how a weapon hurts, and what armour is rated against.
@@ -246,6 +250,10 @@ func validate(it *Item) error {
 			return fmt.Errorf("a tool needs a verb")
 		}
 	case KindStory:
+	case KindMaterial:
+		if it.Fits != "pack" {
+			return fmt.Errorf("a material rides in the pack")
+		}
 	default:
 		return fmt.Errorf("kind %q", it.Kind)
 	}
@@ -283,6 +291,27 @@ func (c *Catalog) checkLoadout(l Loadout) error {
 
 	return nil
 }
+
+// IsWornSlot reports a slot something can be worn in.
+func IsWornSlot(s Slot) bool {
+	for _, w := range WornSlots() {
+		if w == s {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsArmourSlot reports a slot armour is worn in: the body, the head, and the
+// off-hand's shield. A mend names one of these.
+func IsArmourSlot(s Slot) bool { return s == SlotBody || s == SlotHead || s == SlotOff }
+
+// Has reports an item the catalogue knows.
+func (c *Catalog) Has(id string) bool { _, ok := c.byID[id]; return ok }
+
+// Item is a catalogue entry, or nil.
+func (c *Catalog) Item(id string) *Item { return c.byID[id] }
 
 // DefaultLoadout is the loadout an old save or an unset choice gets.
 func (c *Catalog) DefaultLoadout() string { return c.defaultL }
