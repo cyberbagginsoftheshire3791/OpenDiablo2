@@ -203,3 +203,9 @@ const (
 	StakeDone    = "The stake is in. This one will not rise."
 	StakeRefused = "Stake: %v"
 )
+
+// M4.7 step 2, the hasty grave (23 Sep 2026).
+const (
+	DigDone    = "A hasty grave. Shallow -- it may not hold him."
+	DigRefused = "Dig: %v"
+)

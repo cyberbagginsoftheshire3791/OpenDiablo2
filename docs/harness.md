@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 29 playtest scripts.** That count, the harness version below and the
+**The 30 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -190,6 +190,16 @@ this doc fails until it agrees.
   lower the count; a dog he kills falls as carrion (Q1a) -- the count rises
   and X will not stake a carcass. A screenshot shows the placeholder marks.
   The "corpses" provider reports every body and counts by state and class.
+* `rising_test.go` — the thirtieth, M4.7 step 2 (23 Sep 2026): the open dead
+  rise in the deep night. One of Night 1's dead is staked (X), one laid in a
+  hasty grave (D, 30 world minutes), and D over the staked body is refused
+  (the control); at rising odds 0 a whole night passes and nothing rises
+  (the roll's control) while soul pressure moves -0.01 for the rite and +0.02
+  for each man open at dawn; at odds 1 (grave weight 0) a grave begun a
+  quarter-hour before true dark is refused because the body rose under the
+  spade, and by morning both left open are gone while the grave and the stake
+  held. The "rising" provider reports p, hasty_weight, pressure (never shown
+  in game), band, rolls and risen; p, hasty_weight and pressure are settable.
   Negative controls ran red for the stake not closing and a carcass staked.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,

@@ -439,6 +439,13 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 		return true
 	}
 
+	// M4.7 step 2: D digs a hasty grave for the body at his feet.
+	if event.Key() == digKey && g.corpseHolder != nil && !g.dead() {
+		_ = g.corpseHolder.Dig()
+
+		return true
+	}
+
 	// T7: K forages (the game refuses it in a fight, a talk, or the choice).
 	if event.Key() == forageKey && g.forageHolder != nil && !g.dead() {
 		_ = g.forageHolder.Forage()

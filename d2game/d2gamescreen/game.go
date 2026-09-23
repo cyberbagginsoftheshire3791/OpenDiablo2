@@ -306,6 +306,12 @@ func CreateGame(
 	game.combat.SetCorpses(game.corpses)
 	d2harness.Register(game.corpses)
 
+	// M4.7 step 2: the open dead roll to rise once per deep-night band, on a
+	// stream of the run's seed of their own.
+	game.rising = d2world.NewRising(game.corpses, game.spawns.Band, game.worldClock.Stage,
+		gameClient.Seed+risingSeedOffset, d2world.DefaultRisingDials())
+	d2harness.Register(game.rising)
+
 	// T1: the screen walks a body on its turn -- d2world cannot import the
 	// map, so it asks through the Stepper interface (Animator's precedent).
 	game.combat.SetStepper(game)
@@ -382,6 +388,7 @@ type Game struct {
 
 	// M4.7: where the dead lie.
 	corpses   *d2world.Corpses
+	rising    *d2world.Rising
 	standing  *d2dialogue.Standing
 	talk      *d2dialogue.Talk
 	progress  *d2progress.Progress
@@ -516,6 +523,7 @@ func (v *Game) OnUnload() error {
 	d2harness.Unregister(progressProvider{v})
 	d2harness.Unregister(villageProvider{v})
 	d2harness.Unregister(v.corpses)
+	d2harness.Unregister(v.rising)
 
 	// The world's systems die with it too (M4.1).
 	if v.worldClock != nil {
@@ -836,6 +844,11 @@ func (v *Game) advanceWorld(elapsed float64) {
 		}
 
 		v.spawns.Advance(worldMinutes)
+	}
+
+	// After the tables, which own the deep-night bands the rising reads.
+	if v.rising != nil {
+		v.rising.Advance()
 	}
 
 	v.startChasesForTheAware()

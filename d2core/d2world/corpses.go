@@ -8,22 +8,30 @@ import (
 
 // M4.7 step 1 (23 Sep 2026): the slain are open bodies, and the stake closes
 // one. S1 §6.2 gives every dead body a state -- Fresh (open) / Hasty grave /
-// Closed / Risen / Downed; this step builds the first and the third, the
-// registry that holds them, and the count the carrion weighting has read
-// through a harness stand-in since M4.3b ("open_bodies ... the corpse machine
-// drives it when it lands", ask 3). The rising roll is step 2.
+// Closed / Risen / Downed; step 1 built the first and the third, the registry
+// that holds them, and the count the carrion weighting has read through a
+// harness stand-in since M4.3b ("open_bodies ... the corpse machine drives it
+// when it lands", ask 3). Step 2 adds the hasty grave and the rising (see
+// rising.go); Downed is step 3's.
 //
 // ONE RULING TAKEN ON THE RECOMMENDED OPTION (M4.7 note, Q1a): a dead BEAST
 // is carrion -- it counts toward the carrion weight and never rises. Only the
 // bodies of men are doors. So a corpse has a class, from its spawn row.
 
-// CorpseState is a body's place in S1 §6.2's machine (step 1: two of five).
+// CorpseState is a body's place in S1 §6.2's machine.
 type CorpseState string
 
-// The states step 1 builds.
+// The states built so far (Downed is step 3's).
 const (
-	CorpseFresh  CorpseState = "fresh"
+	// CorpseFresh is an open body: carrion to beasts, a door to the dead.
+	CorpseFresh CorpseState = "fresh"
+	// CorpseHasty is a hasty grave: no longer open, but a man's still rolls
+	// to rise at a reduced weight (S1 §6.2).
+	CorpseHasty CorpseState = "hasty"
+	// CorpseClosed is staked (or rited): it never rises.
 	CorpseClosed CorpseState = "closed"
+	// CorpseRisen has left where it lay. Step 3 stands it up to fight.
+	CorpseRisen CorpseState = "risen"
 )
 
 // CorpseClass is whose body it is.
@@ -42,6 +50,11 @@ type Corpse struct {
 	Class CorpseClass
 	State CorpseState
 	X, Y  float64
+}
+
+// Door reports a body that can still rise: a man's, open or in a hasty grave.
+func (b *Corpse) Door() bool {
+	return b.Class == CorpseHuman && (b.State == CorpseFresh || b.State == CorpseHasty)
 }
 
 // Corpses is the registry. It is world state for one session: M4.6 owns the
@@ -86,15 +99,29 @@ func (c *Corpses) fall(id, row string, x, y float64, human bool) *Corpse {
 	c.byID[id] = b
 	c.order = append(c.order, id)
 
-	if c.changed != nil {
-		c.changed(1)
-	}
+	c.open(1)
 
 	return b
 }
 
+func (c *Corpses) open(delta int) {
+	if c.changed != nil {
+		c.changed(delta)
+	}
+}
+
 // Has reports a registered body.
 func (c *Corpses) Has(id string) bool { _, ok := c.byID[id]; return ok }
+
+// Get is one body as it is now (a copy).
+func (c *Corpses) Get(id string) (Corpse, bool) {
+	b, ok := c.byID[id]
+	if !ok {
+		return Corpse{}, false
+	}
+
+	return *b, true
+}
 
 // Open is how many bodies lie open -- beasts included: a carcass is carrion.
 func (c *Corpses) Open() int {
@@ -131,17 +158,51 @@ func (c *Corpses) Nearest(x, y, r float64, keep func(*Corpse) bool) *Corpse {
 	return best
 }
 
-// Close closes an open body (the stake, step 1). It reports whether it did.
+// Close closes a body: the stake through an open body or a hasty grave (R1
+// §2, the stake pins the corpse in the grave). It reports whether it did.
 func (c *Corpses) Close(id string) bool {
+	b, ok := c.byID[id]
+	if !ok || (b.State != CorpseFresh && b.State != CorpseHasty) {
+		return false
+	}
+
+	wasOpen := b.State == CorpseFresh
+	b.State = CorpseClosed
+
+	if wasOpen {
+		c.open(-1)
+	}
+
+	return true
+}
+
+// Bury puts an open body in a hasty grave (step 2). A carcass may be buried
+// too: it stops being carrion, and it never rose anyway.
+func (c *Corpses) Bury(id string) bool {
 	b, ok := c.byID[id]
 	if !ok || b.State != CorpseFresh {
 		return false
 	}
 
-	b.State = CorpseClosed
+	b.State = CorpseHasty
+	c.open(-1)
 
-	if c.changed != nil {
-		c.changed(-1)
+	return true
+}
+
+// Rise marks a door risen (step 2's roll). Closed bodies and carcasses never
+// rise; it reports whether this one did.
+func (c *Corpses) Rise(id string) bool {
+	b, ok := c.byID[id]
+	if !ok || !b.Door() {
+		return false
+	}
+
+	wasOpen := b.State == CorpseFresh
+	b.State = CorpseRisen
+
+	if wasOpen {
+		c.open(-1)
 	}
 
 	return true
