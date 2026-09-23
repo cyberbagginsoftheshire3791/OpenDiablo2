@@ -1,11 +1,17 @@
 package d2loader
 
 import (
-	"path/filepath"
+	slashpath "path"
 	"sort"
 	"strings"
 	"sync"
 )
+
+// slashes turns a Windows-style path into a slash path on EVERY platform.
+// filepath.ToSlash only does so on Windows, so on Linux (CI) a game path
+// like `\data\global\...` and its `/data/global/...` twin were two files,
+// and an MPQ at `C:\Diablo II\d2data.mpq` had that whole string as its name.
+func slashes(p string) string { return strings.ReplaceAll(p, `\`, "/") }
 
 // M5.2 (23 Sep 2026): the asset census. Every file the game loads, and which
 // kind of source it came from -- a Blizzard MPQ, or Strigoi's own files. The
@@ -44,11 +50,11 @@ func (c *Census) Record(path, sourcePath string) {
 	}
 
 	kind := CensusNative
-	if strings.EqualFold(filepath.Ext(sourcePath), ".mpq") {
+	if strings.EqualFold(slashpath.Ext(slashes(sourcePath)), ".mpq") {
 		kind = CensusMPQ
 	}
 
-	key := strings.ToLower(filepath.ToSlash(path))
+	key := strings.ToLower(slashes(path))
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -58,7 +64,7 @@ func (c *Census) Record(path, sourcePath string) {
 		return
 	}
 
-	c.byPath[key] = &CensusEntry{Path: key, Source: kind, From: filepath.Base(sourcePath), Loads: 1}
+	c.byPath[key] = &CensusEntry{Path: key, Source: kind, From: slashpath.Base(slashes(sourcePath)), Loads: 1}
 }
 
 // Entries is every file loaded so far, sorted by path (copies).
@@ -86,7 +92,7 @@ func (c *Census) Entries() []CensusEntry {
 // (data/strigoi/creatures). A file in a shallower folder groups by what
 // folders it has.
 func Area(path string) string {
-	parts := strings.Split(strings.Trim(filepath.ToSlash(strings.ToLower(path)), "/"), "/")
+	parts := strings.Split(strings.Trim(slashes(strings.ToLower(path)), "/"), "/")
 	dirs := parts[:len(parts)-1]
 
 	if len(dirs) > 3 {
