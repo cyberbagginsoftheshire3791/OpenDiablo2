@@ -52,7 +52,16 @@ type Requires struct {
 	Below   string `json:"below,omitempty"`    // this rung NOT reached
 	Flag    string `json:"flag,omitempty"`     // this flag set
 	NotFlag string `json:"not_flag,omitempty"` // this flag not set
-	Time    string `json:"time,omitempty"`     // "day" or "night"
+
+	// NotFlags is every flag that must NOT be set, when one is not enough
+	// (T6: no second sleep in a night, and none on a promised watch).
+	NotFlags []string `json:"not_flags,omitempty"`
+	Time     string   `json:"time,omitempty"` // "day" or "night"
+}
+
+// none reports a requirement that always holds.
+func (q Requires) none() bool {
+	return q.Rung == "" && q.Below == "" && q.Flag == "" && q.NotFlag == "" && len(q.NotFlags) == 0 && q.Time == ""
 }
 
 // Effects is what a choice does. Rep, Set, Clear and ToFloor act on the
@@ -71,6 +80,12 @@ type Effects struct {
 	// checks both against the item catalogue at load.
 	Give map[string]int `json:"give,omitempty"`
 	Mend string         `json:"mend,omitempty"`
+
+	// Rest takes fatigue off (the meters' "rest"), and Shelter says the
+	// answer's minutes pass inside the palisade: no pack arrives, nothing new
+	// notices him. Together they are what the shelter rung MEANS.
+	Rest    float64 `json:"rest,omitempty"`
+	Shelter bool    `json:"shelter,omitempty"`
 }
 
 // Choice is one thing he can say.
@@ -179,7 +194,7 @@ func Load(data []byte) (*Book, error) {
 
 	// Every flag a requirement reads must be one some choice sets (or the one
 	// the code sets): a misspelt flag is a door that never opens.
-	setBy := map[string]bool{FlagWatch: true}
+	setBy := map[string]bool{FlagWatch: true, FlagSleptInside: true}
 
 	for _, n := range b.Nodes {
 		if n == nil {
@@ -194,7 +209,7 @@ func Load(data []byte) (*Book, error) {
 	}
 
 	checkFlags := func(where string, q Requires) error {
-		for _, f := range []string{q.Flag, q.NotFlag} {
+		for _, f := range append([]string{q.Flag, q.NotFlag}, q.NotFlags...) {
 			if f != "" && !setBy[f] {
 				return fmt.Errorf("%s: no choice ever sets the flag %q", where, f)
 			}
@@ -225,8 +240,12 @@ func Load(data []byte) (*Book, error) {
 				return nil, fmt.Errorf("%s has no text", where)
 			}
 
-			if e := c.Effects; e.Food < 0 || e.Water < 0 || e.Minutes < 0 {
-				return nil, fmt.Errorf("%s: food, water and minutes cannot be negative", where)
+			if e := c.Effects; e.Food < 0 || e.Water < 0 || e.Minutes < 0 || e.Rest < 0 {
+				return nil, fmt.Errorf("%s: food, water, rest and minutes cannot be negative", where)
+			}
+
+			if e := c.Effects; (e.Shelter || e.Rest > 0) && e.Minutes <= 0 {
+				return nil, fmt.Errorf("%s: shelter or rest take time; minutes must be > 0", where)
 			}
 
 			for item, n := range c.Effects.Give {
@@ -282,7 +301,7 @@ func Load(data []byte) (*Book, error) {
 		}
 
 		// The last opening must always hold, or a talk could find no way in.
-		if last := s.Openings[len(s.Openings)-1].Requires; last != (Requires{}) {
+		if last := s.Openings[len(s.Openings)-1].Requires; !last.none() {
 			return nil, fmt.Errorf("speaker %s: the last opening must have no requirements", s.ID)
 		}
 
@@ -440,6 +459,8 @@ func (b *Book) Meets(s *Standing, q Requires, night bool) bool {
 		return false
 	case q.NotFlag != "" && s.Has(q.NotFlag):
 		return false
+	case anyHeld(s, q.NotFlags):
+		return false
 	case q.Time == "day" && night, q.Time == "night" && !night:
 		return false
 	}
@@ -566,12 +587,30 @@ func (t *Talk) Choose(i int) (Effects, error) {
 func (t *Talk) Leave() { t.NodeID = "" }
 
 // FlagWatch is set by a talk in which he promises the night's watch; the game
-// reads it at dawn (DawnWatch). It is the one flag the code knows by name.
+// reads it at dawn (DawnWatch).
 const FlagWatch = "watch_promised"
 
-// DawnWatch settles a promised watch at dawn: if he promised and lived, the
-// village counts it. It returns what the number moved by.
+// FlagSleptInside is set by a night's sleep in the byre and cleared at dawn:
+// one sleep a night, so shelter shortens a night and never skips it (T6
+// review finding -- asked again and again, it skipped the whole night).
+const FlagSleptInside = "slept_inside"
+
+func anyHeld(s *Standing, flags []string) bool {
+	for _, f := range flags {
+		if s.Has(f) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// DawnWatch settles the night at dawn: the byre is his to ask for again, and
+// if he promised the watch and lived, the village counts it. It returns what
+// the number moved by.
 func (b *Book) DawnWatch(s *Standing) int {
+	s.clear(FlagSleptInside)
+
 	if !s.Has(FlagWatch) {
 		return 0
 	}

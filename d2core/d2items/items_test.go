@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // shipped loads the real data/strigoi/items.json the game ships.
@@ -370,7 +371,7 @@ func TestSidecarCarriesProgress(t *testing.T) {
 	path := SidecarPath(filepath.Join(t.TempDir(), "5.od2"))
 	k := kitFor(t, "torch-and-blade")
 
-	if err := SaveHero(path, k, Extras{Progress: []byte(`{"xp":120}`), Village: []byte(`{"rep":21}`)}); err != nil {
+	if err := SaveHero(path, k, Extras{Progress: []byte(`{"xp":120}`), Village: []byte(`{"rep":21}`), Land: []byte(`{"gathered":4}`)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -384,6 +385,11 @@ func TestSidecarCarriesProgress(t *testing.T) {
 	var village struct{ Rep int }
 	if err := json.Unmarshal(x.Village, &village); err != nil || village.Rep != 21 {
 		t.Fatalf("the village rides beside the kit too: %q %v", x.Village, err)
+	}
+
+	var land struct{ Gathered int }
+	if err := json.Unmarshal(x.Land, &land); err != nil || land.Gathered != 4 {
+		t.Fatalf("and the land: %q %v", x.Land, err)
 	}
 
 	var back struct{ XP int }
@@ -470,5 +476,88 @@ func TestMaterialsSurviveASave(t *testing.T) {
 	back, _, err := LoadHero(path, c)
 	if err != nil || back.Count("arrowheads") != 7 {
 		t.Fatalf("seven arrowheads on disk and back: %v, %d", err, back.Count("arrowheads"))
+	}
+}
+
+func TestEatFromThePack(t *testing.T) {
+	k := kitFor(t, "torch-and-blade")
+
+	row := -1
+	for i, inst := range k.Pack {
+		if inst.Item == "peksimet" {
+			row = i
+		}
+	}
+
+	if row < 0 || k.Count("peksimet") != 6 {
+		t.Fatalf("the loadout carries six peksimet: %d", k.Count("peksimet"))
+	}
+
+	food, err := k.Eat(row)
+	if err != nil || food != 20 || k.Count("peksimet") != 5 {
+		t.Fatalf("one piece, 20 food: %v %v %d", food, err, k.Count("peksimet"))
+	}
+
+	// THE CONTROL: a row that is not food is refused and untouched.
+	for i, inst := range k.Pack {
+		if inst.Item == "arrows" {
+			if _, err := k.Eat(i); !errors.Is(err, ErrNotFood) || k.Count("arrows") != 12 {
+				t.Fatalf("arrows are not eaten: %v, %d", err, k.Count("arrows"))
+			}
+		}
+	}
+
+	// The last piece takes the row with it.
+	for k.Count("peksimet") > 0 {
+		for i, inst := range k.Pack {
+			if inst.Item == "peksimet" {
+				if _, err := k.Eat(i); err != nil {
+					t.Fatal(err)
+				}
+
+				break
+			}
+		}
+	}
+
+	for _, inst := range k.Pack {
+		if inst.Item == "peksimet" {
+			t.Fatal("an eaten-out stack leaves no empty row")
+		}
+	}
+}
+
+// A save while something else holds the file open must still land. On Linux
+// the rename simply succeeds; on Windows (the gate's machine) an open reader
+// refuses the rename, which is the lost save measured on 23 Sep 2026 -- this
+// is the test that fails there without the retry.
+func TestWriteFileAtomicWhileTheFileIsOpen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "held.json")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		time.Sleep(60 * time.Millisecond)
+		f.Close()
+	}()
+
+	if err := WriteFileAtomic(path, []byte("new")); err != nil {
+		t.Fatalf("a save beside an open reader must land: %v", err)
+	}
+
+	<-done
+
+	if got, _ := os.ReadFile(path); string(got) != "new" {
+		t.Fatalf("the file holds %q", got)
 	}
 }

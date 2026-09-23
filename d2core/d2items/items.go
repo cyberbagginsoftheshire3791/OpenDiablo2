@@ -134,7 +134,15 @@ type LightSpec struct {
 // Tool is the verb an item enables.
 type Tool struct {
 	Verb string `json:"verb"`
+
+	// Food is what one piece of an "eat" tool puts back in the food meter
+	// [DIAL]. Eating from his own pack is the Phase 6 verb the 28 Aug ruling
+	// deferred to "inventory" -- which T2 built.
+	Food float64 `json:"food,omitempty"`
 }
+
+// VerbEat is a tool eaten from the pack.
+const VerbEat = "eat"
 
 // Catalog is the validated item table.
 type Catalog struct {
@@ -248,6 +256,14 @@ func validate(it *Item) error {
 	case KindTool:
 		if it.Tool == nil || it.Tool.Verb == "" {
 			return fmt.Errorf("a tool needs a verb")
+		}
+
+		if it.Tool.Verb == VerbEat && it.Tool.Food <= 0 {
+			return fmt.Errorf("%s is eaten but feeds nothing: food must be > 0", it.ID)
+		}
+
+		if it.Tool.Verb != VerbEat && it.Tool.Food != 0 {
+			return fmt.Errorf("%s feeds %v but is not eaten", it.ID, it.Tool.Food)
 		}
 	case KindStory:
 	case KindMaterial:

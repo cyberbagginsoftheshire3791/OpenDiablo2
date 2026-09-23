@@ -366,3 +366,30 @@ func loseSightAndForget(n *Notice) {
 	n.Advance(d.ReEvaluateMinutes) // an evaluation runs; sees goes false
 	n.Advance(d.MemoryMinutes)     // now the memory window can elapse
 }
+
+// T6: asleep inside the palisade he is hidden -- nothing new notices him, and
+// what already knew him forgets him on the usual clock. THE CONTROL is the
+// same watch unhidden, which notices at once.
+func TestNoticeHiddenIsNotSeenAndIsForgotten(t *testing.T) {
+	n, _, _ := newTestNotice(true, 0)
+	n.SetHidden(true)
+
+	n.Watch(&fakeWatcher{id: "n:1", x: 0, y: 0}, &fakeQuarry{id: "p:1", x: 5, y: 0})
+
+	noticed, _ := n.Noticed("n:1")
+	assert.False(t, noticed, "hidden: a clear line at 5 tiles notices nothing")
+
+	n.SetHidden(false)
+	n.Advance(DefaultNoticeDials().ReEvaluateMinutes)
+
+	noticed, _ = n.Noticed("n:1")
+	assert.True(t, noticed, "the control: unhidden, the same watch notices")
+
+	// Already noticed, then hidden: memory runs out and he is forgotten.
+	n.SetHidden(true)
+	n.Advance(DefaultNoticeDials().ReEvaluateMinutes)
+	n.Advance(DefaultNoticeDials().MemoryMinutes)
+
+	noticed, _ = n.Noticed("n:1")
+	assert.False(t, noticed, "hidden past MemoryMinutes, the watcher forgets him")
+}

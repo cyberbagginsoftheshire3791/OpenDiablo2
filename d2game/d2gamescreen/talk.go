@@ -225,16 +225,52 @@ func (v *Game) applyTalk(e d2dialogue.Effects) {
 	// T5: what he is handed, or mended, for the work.
 	v.barter(e.Give, e.Mend)
 
-	// Labour takes the time it takes: the world moves by exactly those
-	// minutes (clock, meters, light, spawns), paid the way a paced round is.
-	if e.Minutes > 0 && v.worldClock != nil {
-		if rate := v.worldClock.Rate(); rate > 0 {
-			v.advanceWorld(e.Minutes / rate)
+	// T6: hours inside the palisade -- no pack arrives, nothing new sees him.
+	if e.Shelter {
+		if v.spawns != nil {
+			v.spawns.SetSheltered(true)
+			defer v.spawns.SetSheltered(false)
+		}
+
+		if v.notice != nil {
+			v.notice.SetHidden(true)
+			defer v.notice.SetHidden(false)
 		}
 	}
 
+	// Labour takes the time it takes: the world moves by exactly those
+	// minutes (clock, meters, light, spawns), paid the way a paced round is.
+	v.spendMinutes(e.Minutes, e.Rest)
+
 	if e.Rep != 0 || e.ToFloor {
 		v.Infof("village: standing %d (%s)", v.standing.Rep, v.dialogue.Rung(v.standing).ID)
+	}
+}
+
+// spendMinutes moves the world by minutes, an hour at a time, taking rest off
+// fatigue as the hours pass rather than all at the end -- so a tired man is not
+// Shaken or hurt by neglect while he sleeps (T6 review finding) -- and
+// stopping if he dies partway.
+func (v *Game) spendMinutes(minutes, rest float64) {
+	if minutes <= 0 || v.worldClock == nil {
+		return
+	}
+
+	rate := v.worldClock.Rate()
+	if rate <= 0 {
+		return
+	}
+
+	for left := minutes; left > 0 && v.alive(); {
+		step := math.Min(60, left)
+		v.advanceWorld(step / rate)
+		left -= step
+
+		if rest > 0 && v.meters != nil && v.alive() {
+			if err := v.meters.Consume("rest", rest*step/minutes); err != nil {
+				v.Errorf("talk: %v", err)
+			}
+		}
 	}
 }
 

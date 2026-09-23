@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
@@ -63,13 +64,8 @@ func (v *Game) restoreHero() {
 		return
 	}
 
-	tmp := v.kitPath + ".tmp"
-	if err := os.WriteFile(tmp, v.heroAtEntry.data, 0o600); err != nil {
-		v.Errorf("death: %v", err)
-		return
-	}
-
-	if err := os.Rename(tmp, v.kitPath); err != nil {
+	// The same locked-file-safe write the saves use (d2items.WriteFileAtomic).
+	if err := d2items.WriteFileAtomic(v.kitPath, v.heroAtEntry.data); err != nil {
 		v.Errorf("death: %v", err)
 	}
 }

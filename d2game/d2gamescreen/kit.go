@@ -106,6 +106,11 @@ func (v *Game) EquipFromPack(i int) error {
 		return nil
 	}
 
+	// T6: a row he eats is eaten, not worn.
+	if it, _, ok := v.kit.PackItem(i); ok && it.Tool != nil && it.Tool.Verb == d2items.VerbEat {
+		return v.eatFromPack(i)
+	}
+
 	_, torch, hadTorch := v.kit.OffHandTorch()
 	var displaced d2items.Instance
 
@@ -237,3 +242,49 @@ func (v *Game) saveKit() {
 		torch.BurnLeft = 0
 	}
 }
+
+// Refusals of the eat verb (T6).
+var (
+	errEatInFight = errors.New("not in a fight")
+	errNotHungry  = errors.New("not hungry")
+)
+
+// eatFromPack eats one piece of pack row i: the first verb that feeds him from
+// his own kit. The 28 Aug ruling deferred eating to Phase 6's inventory, which
+// T2 built; the peksimet has carried the verb since.
+func (v *Game) eatFromPack(i int) error {
+	it, _, ok := v.kit.PackItem(i)
+	if !ok || it.Tool == nil {
+		return d2items.ErrNotFood
+	}
+
+	switch {
+	case v.meters == nil:
+		return errNotHungry
+	case v.died || !v.alive():
+		return errCraftDead
+	case v.talk != nil || v.choosingLoadout:
+		return errCraftBusy
+	case v.inFight():
+		return errEatInFight
+	case v.meters.Food()+it.Tool.Food > 100+eatSlack:
+		// A piece is not wasted on a stomach it would mostly overflow.
+		return errNotHungry
+	}
+
+	food, err := v.kit.Eat(i)
+	if err != nil {
+		return err
+	}
+
+	if err := v.meters.Consume("food", food); err != nil {
+		return err
+	}
+
+	v.saveKit()
+
+	return nil
+}
+
+// eatSlack is how much of a piece may overflow the food meter [DIAL].
+const eatSlack = 5.0

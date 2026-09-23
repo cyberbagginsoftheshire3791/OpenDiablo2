@@ -71,10 +71,13 @@ func TestLoadRefuses(t *testing.T) {
 	}
 
 	bad := map[string]string{
-		"a choice to a missing node":  strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","next":"nowhere"}`, 1),
-		"an unknown rung":             strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","requires":{"rung":"z"}}`, 1),
-		"a rung above the ceiling":    strings.Replace(good, `"at":10`, `"at":30`, 1),
-		"a gated last opening":        strings.Replace(good, `{"node":"n"}`, `{"requires":{"flag":"f"},"node":"n"}`, 1),
+		"a choice to a missing node":   strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","next":"nowhere"}`, 1),
+		"an unknown rung":              strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","requires":{"rung":"z"}}`, 1),
+		"a rung above the ceiling":     strings.Replace(good, `"at":10`, `"at":30`, 1),
+		"a gated last opening":         strings.Replace(good, `{"node":"n"}`, `{"requires":{"flag":"f"},"node":"n"}`, 1),
+		"a last opening gated by time": strings.Replace(good, `{"node":"n"}`, `{"requires":{"time":"day"},"node":"n"}`, 1),
+		"a last opening gated by not_flags": strings.Replace(good, `{"node":"n"}`,
+			`{"requires":{"not_flags":["watch_promised"]},"node":"n"}`, 1),
 		"an unknown field":            strings.Replace(good, `"text":"hi"`, `"text":"hi","mood":"sad"`, 1),
 		"a bad time":                  strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","requires":{"time":"dusk"}}`, 1),
 		"an opening to no node":       strings.Replace(good, `{"node":"n"}`, `{"node":"m"}`, 1),
@@ -365,5 +368,79 @@ func TestBarterNamesItsGoods(t *testing.T) {
 
 	if _, err := talk.Peek(9); err != ErrNoChoice {
 		t.Fatalf("peek past the answers: %v", err)
+	}
+}
+
+func TestShelterIsANightThingAtTheShelterRung(t *testing.T) {
+	b := shipped(t)
+	st := b.NewStanding()
+
+	talk := mustOpen(t, b, st, "headman", false)
+	mustChoose(t, talk, 2) // met
+
+	offered := func(night bool) bool {
+		talk := mustOpen(t, b, st, "headman", night)
+		for _, c := range talk.Answers() {
+			if strings.Contains(c.Text, "sleep inside") {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	b.Move(st, 100)
+
+	if !offered(true) {
+		t.Fatal("at shelter, by night, he may ask to sleep inside")
+	}
+
+	if offered(false) {
+		t.Fatal("by day there is nothing to shelter from")
+	}
+
+	// Below the rung the door is barred at night anyway, so the CHOICE's own
+	// rung requirement is tested directly (review finding: the old check could
+	// not fail).
+	var ask Choice
+	for _, c := range b.Nodes["headman"].Choices {
+		if strings.Contains(c.Text, "sleep inside") {
+			ask = c
+		}
+	}
+
+	below := &Standing{Rep: 30, Flags: []string{}}
+	if b.Meets(below, ask.Requires, true) {
+		t.Fatal("below the shelter rung the choice itself refuses")
+	}
+
+	promised := &Standing{Rep: 60, Flags: []string{FlagWatch}}
+	if b.Meets(promised, ask.Requires, true) {
+		t.Fatal("a promised watch is not slept through")
+	}
+
+	b.Move(st, 100)
+	talk = mustOpen(t, b, st, "headman", true)
+
+	for i, c := range talk.Answers() {
+		if strings.Contains(c.Text, "sleep inside") {
+			mustChoose(t, talk, i)
+		}
+	}
+
+	e := mustChoose(t, talk, 0)
+	if e.Rest != 60 || e.Minutes != 240 || !e.Shelter {
+		t.Fatalf("four hours' sleep inside: %+v", e)
+	}
+
+	// Once a night: not offered again until dawn clears it.
+	if offered(true) {
+		t.Fatal("one sleep a night")
+	}
+
+	b.DawnWatch(st)
+
+	if !offered(true) {
+		t.Fatal("dawn gives the byre back")
 	}
 }

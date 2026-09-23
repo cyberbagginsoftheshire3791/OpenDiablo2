@@ -326,6 +326,9 @@ func openTalkWith(t *testing.T, s *session, handle string) {
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	if !flag(t, uiState(s), "talk_open") {
-		t.Fatalf("a click on %s in reach opens a talk: %v", handle, villageState(s))
+		ui := uiState(s)
+		t.Fatalf("a click on %s in reach opens a talk: %v (clicked %d,%d; %.1f tiles; hover %q; fighting %v; paced %v)",
+			handle, villageState(s), x, y, distTo(t, s, handle), str(ui, "hover_label"),
+			flag(t, combatState(s), "fighting"), combatState(s)["encounter"])
 	}
 }

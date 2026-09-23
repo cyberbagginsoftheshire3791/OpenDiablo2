@@ -697,3 +697,29 @@ func (k *Kit) CanMend(slot Slot, capFraction float64) (int, error) {
 
 	return limit - inst.Points, nil
 }
+
+// ErrNotFood is an eat of something that is not eaten.
+var ErrNotFood = errors.New("that is not food")
+
+// Eat takes one piece of an "eat" tool from pack row i and returns what it
+// feeds. The caller puts that in the food meter.
+func (k *Kit) Eat(i int) (float64, error) {
+	it, inst, ok := k.PackItem(i)
+	if !ok {
+		return 0, ErrUnboundKit
+	}
+
+	if it.Tool == nil || it.Tool.Verb != VerbEat {
+		return 0, ErrNotFood
+	}
+
+	food := it.Tool.Food
+
+	if n := countOf(inst); n > 1 {
+		inst.Count = n - 1
+	} else {
+		k.Pack = append(k.Pack[:i], k.Pack[i+1:]...)
+	}
+
+	return food, nil
+}

@@ -68,6 +68,9 @@
         {"text": "Is there work?", "next": "headman_work"},
         {"text": "I will stand the watch on the ditch tonight.",
          "next": "headman_watch", "requires": {"not_flag": "watch_promised", "time": "day"}},
+        {"text": "Ask to sleep inside the palisade tonight.",
+         "next": "headman_shelter",
+         "requires": {"rung": "shelter", "time": "night", "not_flags": ["slept_inside", "watch_promised"]}},
         {"text": "Your bread. Hand it over.", "next": "headman_threat"},
         {"text": "Nothing. Leave him be."}
       ]
@@ -84,6 +87,14 @@
     "headman_thanks": {
       "text": "When you straighten your back he is still there. 'You dig like a man who has dug graves.' It is not quite thanks. It is not nothing. He kicks the broken stakes toward you: 'Burn them or cut them. They are no use to me.'",
       "choices": []
+    },
+    "headman_shelter": {
+      "text": "He looks at the dark beyond the ditch, then at you. 'The byre by the church wall. Sleep with your boots on.'",
+      "choices": [
+        {"text": "Sleep until the small hours. (four hours)",
+         "effects": {"rest": 60, "minutes": 240, "shelter": true, "set": ["slept_inside"]}},
+        {"text": "Not yet."}
+      ]
     },
     "headman_watch": {
       "text": "He weighs it. 'Stand at the ditch until the cock crows, and be alive when it does. Then we will talk about you.'",

@@ -33,6 +33,9 @@ import (
 // interfaces so d2world keeps importing no map engine and no ebiten. That is
 // also what makes it testable: the tests run on fakes with no MPQs.
 type Notice struct {
+	// hidden: he is out of sight of everything (T6, asleep inside).
+	hidden bool
+
 	dials NoticeDials
 	sight Sight
 	illum Illumination
@@ -321,6 +324,12 @@ func (n *Notice) evaluate(w *watch) {
 
 	w.distance = distance(wx, wy, tx, ty)
 
+	if n.hidden {
+		w.sees = false
+
+		return
+	}
+
 	if !n.Wired() {
 		w.sees = false
 		w.lightAtTarget = 0
@@ -407,6 +416,13 @@ func (n *Notice) Dials() NoticeDials { return n.dials }
 
 // SetRadius moves the base notice radius. Returns false for a value that is
 // not a positive number of world tiles.
+// SetHidden says he cannot be seen (T6: asleep inside the palisade). A watch
+// that already noticed him keeps its memory and FORGETS him on the usual
+// clock; nothing new notices him. The review of T6's first version found the
+// notice model frozen outright, so a pack that saw him at dusk still knew him
+// four hours later.
+func (n *Notice) SetHidden(hidden bool) { n.hidden = hidden }
+
 func (n *Notice) SetRadius(tiles float64) bool {
 	if tiles <= 0 {
 		return false

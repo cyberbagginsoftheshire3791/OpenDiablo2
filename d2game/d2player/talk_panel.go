@@ -158,8 +158,8 @@ func (g *GameControls) talkClick(mx, my int) bool {
 		return false
 	}
 
-	e := g.hud.hoveredEntity(mx, my)
-	if e == nil || g.talkHolder.RoleFor(e.Label()) == "" {
+	e := g.hud.hoveredVillager(mx, my)
+	if e == nil {
 		return false
 	}
 
@@ -280,4 +280,28 @@ func wrapText(text string, width, max int) []string {
 	}
 
 	return lines
+}
+
+// hoveredVillager is the villager under a screen point, or nil.
+func (h *HUD) hoveredVillager(mx, my int) d2interface.MapEntity {
+	if h.gameControls == nil || h.gameControls.talkHolder == nil {
+		return nil
+	}
+
+	holder := h.gameControls.talkHolder
+
+	return h.hoveredEntityWhere(mx, my, func(e d2interface.MapEntity) bool {
+		return holder.RoleFor(e.Label()) != ""
+	})
+}
+
+// hoverTarget is what the hover label names and a left click acts on: a
+// villager under the cursor first, then anything selectable -- so the label
+// and the talk click never disagree (T6 review finding).
+func (h *HUD) hoverTarget(mx, my int) d2interface.MapEntity {
+	if v := h.hoveredVillager(mx, my); v != nil {
+		return v
+	}
+
+	return h.hoveredEntity(mx, my)
 }

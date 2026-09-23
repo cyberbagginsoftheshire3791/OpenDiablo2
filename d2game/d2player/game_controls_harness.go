@@ -231,7 +231,7 @@ func (g *GameControls) hoverLabelReport() string {
 		return ""
 	}
 
-	e := g.hud.hoveredEntity(g.hud.lastMouseX, g.hud.lastMouseY)
+	e := g.hud.hoverTarget(g.hud.lastMouseX, g.hud.lastMouseY)
 	if e == nil {
 		return ""
 	}

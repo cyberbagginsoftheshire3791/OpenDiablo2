@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // THE KIT IS SAVED BESIDE THE HERO, NOT INSIDE HIM. A hero's .od2 save belongs
@@ -31,6 +32,10 @@ type sidecar struct {
 	// Village is what the village thinks of him (T4), raw for the same
 	// reason. Optional: without it he is a stranger at the gate.
 	Village json.RawMessage `json:"village,omitempty"`
+
+	// Land is what the country around still holds for him to gather (T7):
+	// S1 §8.3's finite local resources, which do not regenerate in the run.
+	Land json.RawMessage `json:"land,omitempty"`
 }
 
 // Extras is what rides in the file beside the kit, raw, so this package
@@ -38,6 +43,7 @@ type sidecar struct {
 type Extras struct {
 	Progress json.RawMessage
 	Village  json.RawMessage
+	Land     json.RawMessage
 }
 
 // SidecarPath is the kit file for a hero save.
@@ -78,7 +84,7 @@ func LoadHero(path string, c *Catalog) (*Kit, Extras, error) {
 
 	sc.Kit.Bind(c)
 
-	return sc.Kit, Extras{Progress: sc.Progress, Village: sc.Village}, nil
+	return sc.Kit, Extras{Progress: sc.Progress, Village: sc.Village, Land: sc.Land}, nil
 }
 
 // SaveHero writes a hero's kit and what rides beside it,
@@ -88,7 +94,7 @@ func SaveHero(path string, k *Kit, x Extras) error {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: x.Progress, Village: x.Village}, "", "  ")
+	data, err := json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: x.Progress, Village: x.Village, Land: x.Land}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -97,10 +103,45 @@ func SaveHero(path string, k *Kit, x Extras) error {
 		return err
 	}
 
+	return WriteFileAtomic(path, data)
+}
+
+// Rename retries: how many, and how long between.
+const (
+	renameTries = 20
+	renamePause = 25 * time.Millisecond
+)
+
+// WriteFileAtomic writes data to path through a temporary file and a rename,
+// so a crash mid-write never leaves half a file.
+//
+// ON WINDOWS THE RENAME CAN BE REFUSED ("Access is denied") while anything else
+// has the target open -- measured 23 Sep 2026: the kit playtest's polling
+// reader, and in the field an antivirus scan, the search indexer or Explorer's
+// preview would do the same. The save was simply lost. So the rename is
+// retried for half a second, and if the target stays locked the data is
+// written in place: a save that is not atomic beats a save that is not made.
+func WriteFileAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 
-	return os.Rename(tmp, path)
+	var err error
+
+	for i := 0; i < renameTries; i++ {
+		if err = os.Rename(tmp, path); err == nil {
+			return nil
+		}
+
+		time.Sleep(renamePause)
+	}
+
+	if werr := os.WriteFile(path, data, 0o600); werr != nil {
+		return fmt.Errorf("save %s: rename: %v; direct write: %w", path, err, werr)
+	}
+
+	_ = os.Remove(tmp)
+
+	return nil
 }

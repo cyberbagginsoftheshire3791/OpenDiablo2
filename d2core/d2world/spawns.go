@@ -35,6 +35,9 @@ import (
 //
 // Not safe for concurrent use; it lives on the game goroutine.
 type Spawns struct {
+	// sheltered holds arrivals and noticing while he sleeps inside (T6).
+	sheltered bool
+
 	dials  SpawnDials
 	clock  *Clock
 	notice *Notice
@@ -488,6 +491,12 @@ func (s *Spawns) Weight(row SpawnRow) float64 {
 // Advance runs the tables on the world minutes that just passed, then steps
 // the notice model, so a group spawned this tick is evaluated this tick rather
 // than standing blind until the next one.
+// SetSheltered says the minutes that follow pass with him inside the
+// palisade (T6, the shelter rung): no pack arrives. Nothing new noticing him
+// is the notice model's half (Notice.SetHidden); packs already out there stay
+// where they are, and forget him on their own clock.
+func (s *Spawns) SetSheltered(sheltered bool) { s.sheltered = sheltered }
+
 func (s *Spawns) Advance(worldMinutes float64) {
 	if worldMinutes <= 0 {
 		return
@@ -498,7 +507,9 @@ func (s *Spawns) Advance(worldMinutes float64) {
 	if s.sinceCk >= s.dials.CheckMinutes {
 		s.sinceCk = 0
 
-		s.check()
+		if !s.sheltered {
+			s.check()
+		}
 	}
 
 	if s.notice != nil {

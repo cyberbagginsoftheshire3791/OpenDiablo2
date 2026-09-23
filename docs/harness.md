@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 25 playtest scripts.** That count, the harness version below and the
+**The 26 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -150,6 +150,16 @@ this doc fails until it agrees.
   fight has worn the mail, the field kit closes up to 4 points and never past
   three quarters of new. Negative controls ran red for the time charge and
   the smith's refusal.
+* `survive_test.go` — the twenty-sixth, T6 (23 Sep 2026): the survival loop's
+  two missing verbs. A click on the peksimet row eats one piece for exactly 20
+  food, and on a full stomach is refused with nothing spent (the control); at
+  the shelter rung, by night, the headman lets him sleep in the byre -- four
+  hours pass, 60 fatigue comes off, and no pack arrives at a spawn chance that
+  brings one in an hour outdoors (the control) -- and once slept, the byre is
+  not offered again until dawn. The "meters"/"spawns"
+  providers arrange it; the control's packs are sent home (`despawn` takes a
+  group id from `group_list[].group`). Negative controls ran red for the
+  shelter and the food.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

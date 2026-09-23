@@ -730,9 +730,17 @@ func (h *HUD) setExperienceTooltipText() {
 // lifted it out of the hover-label renderer so the talk click finds exactly
 // the entity whose label the player is looking at.
 func (h *HUD) hoveredEntity(mx, my int) d2interface.MapEntity {
+	return h.hoveredEntityWhere(mx, my, nil)
+}
+
+// hoveredEntityWhere is the first selectable entity under a screen point that
+// keep accepts (nil keeps any). The talk click asks for a VILLAGER, so a dog
+// standing in front of the headman does not swallow the click meant for him
+// (found by the T6 playtest: a pack's dog stood over his sprite).
+func (h *HUD) hoveredEntityWhere(mx, my int, keep func(d2interface.MapEntity) bool) d2interface.MapEntity {
 	for entityIdx := range h.mapEngine.Entities() {
 		entity := (h.mapEngine.Entities())[entityIdx]
-		if !entity.Selectable() {
+		if !entity.Selectable() || (keep != nil && !keep(entity)) {
 			continue
 		}
 
@@ -753,7 +761,7 @@ func (h *HUD) hoveredEntity(mx, my int) d2interface.MapEntity {
 }
 
 func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
-	entity := h.hoveredEntity(h.lastMouseX, h.lastMouseY)
+	entity := h.hoverTarget(h.lastMouseX, h.lastMouseY)
 	if entity == nil {
 		return
 	}
