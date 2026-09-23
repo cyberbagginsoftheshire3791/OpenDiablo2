@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 30 playtest scripts.** That count, the harness version below and the
+**The 31 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -200,6 +200,19 @@ this doc fails until it agrees.
   spade, and by morning both left open are gone while the grave and the stake
   held. The "rising" provider reports p, hasty_weight, pressure (never shown
   in game), band, rolls and risen; p, hasty_weight and pressure are settable.
+  Step 3 amends act 3: the two that rose lie down again, open, at first light.
+* `dead_walk_test.go` — the thirty-first, M4.7 step 3 (23 Sep 2026): the risen
+  stand up in the world, come for him, and break off at first light. At odds
+  1 with him eight tiles off and the notice radius taken down, the first
+  deep-night band stands Night 1's four dead up where they lay as four groups
+  of the `risen` row, and no fight opens (the control); they are still
+  standing at 02:15; the radius restored, they find him and a fight opens in
+  which every enemy is the risen row at speed 0 and he is not surprised; holding, with rounds at 5 world minutes, the clock passes 02:45
+  and the fight ends `dawn` (`ended_dawn` 1), each risen lying down open where
+  he stood and no risen group left on the map.
+  Scripts about other things that cross a deep night (`combat_rout_test.go`,
+  `hands_test.go`'s `handsStart`, `night_render_test.go`) set `rising.p` to 0
+  so Night 1's dead stay down.
   Negative controls ran red for the stake not closing and a carcass staked.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,

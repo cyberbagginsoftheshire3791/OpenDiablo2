@@ -19,9 +19,10 @@ import (
 //  3. With the odds certain (and the grave's weight 0) he starts a grave for a
 //     third body a quarter-hour before true dark: the band turns while he
 //     digs, the body rises under his spade, and the dig is refused (the M4.7
-//     step-2 review: work spends world time). By morning the two left open
-//     are gone; the grave and the staked body are where they were, and the
-//     carrion count has fallen with them.
+//     step-2 review: work spends world time). The two left open are up and
+//     gone, the grave and the staked body are where they were, and the
+//     carrion count has fallen with them; at first light the two lie down
+//     again where they stand (step 3), open.
 func TestRising(t *testing.T) {
 	s := start(t)
 	s.call("strigoi_pause", map[string]any{})
@@ -30,6 +31,10 @@ func TestRising(t *testing.T) {
 		"hero_name": "Sexton", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
 	})
 	setField(s, "spawns", "chance", 0)
+
+	// Step 3 stands the risen up to come for him; this script is about the
+	// roll, so nothing notices him (the dead's walk is dead_walk_test.go's).
+	setField(s, "spawns", "notice_radius", 0.5)
 
 	c := corpsesState(s)
 	if mustNum(t, c, "fresh_human") != 4 {
@@ -126,11 +131,8 @@ func TestRising(t *testing.T) {
 		t.Fatalf("act 3: the band turned during the dig and the body rose -- no second grave: %v %v", c, risingState(s))
 	}
 
-	throughTheNight(t, s)
-
-	c = corpsesState(s)
-	if mustNum(t, c, "risen_human") != 2 || mustNum(t, c, "hasty_human") != 1 || mustNum(t, c, "closed_human") != 1 {
-		t.Fatalf("act 3: the two left open are gone; the grave and the stake held: %v", c)
+	if mustNum(t, c, "risen_human") != 2 || mustNum(t, c, "closed_human") != 1 {
+		t.Fatalf("act 3: the two left open are up; the grave and the stake held: %v", c)
 	}
 
 	if _, ok := c["fresh_human"]; ok {
@@ -141,11 +143,22 @@ func TestRising(t *testing.T) {
 		t.Fatalf("act 3: the carrion count falls with them: %.0f", got)
 	}
 
-	if r := risingState(s); mustNum(t, r, "rolls") != 6 || math.Abs(mustNum(t, r, "pressure")-0.03) > 1e-6 {
-		t.Fatalf("act 3: three more rolls, and no man open at this dawn to move the pressure: %v", r)
+	throughTheNight(t, s)
+
+	c = corpsesState(s)
+	if mustNum(t, c, "fresh_human") != 2 || mustNum(t, c, "hasty_human") != 1 || mustNum(t, c, "closed_human") != 1 {
+		t.Fatalf("act 3: at first light the two lie down, open again: %v", c)
 	}
 
-	t.Logf("one staked, one buried, two left open: nothing at odds 0 (pressure 0.03), both gone at odds 1, one of them under his spade")
+	if r := risenGroups(s); r != 0 {
+		t.Fatalf("act 3: none left standing after first light: %d", r)
+	}
+
+	if r := risingState(s); mustNum(t, r, "rolls") != 6 || math.Abs(mustNum(t, r, "pressure")-0.03) > 1e-6 {
+		t.Fatalf("act 3: three more rolls, and no man open at the dawn count to move the pressure: %v", r)
+	}
+
+	t.Logf("one staked, one buried, two left open: nothing at odds 0 (pressure 0.03), both up at odds 1 (one under his spade) and down again at first light")
 }
 
 func risingState(s *session) map[string]any {

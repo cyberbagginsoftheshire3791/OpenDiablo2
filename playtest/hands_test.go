@@ -47,6 +47,10 @@ func handsStart(t *testing.T) (s *session, playerID, playerHandle string, px, py
 	})
 	s.call("strigoi_set_system_field", map[string]any{"system": "spawns", "field": "chance", "value": 0})
 
+	// M4.7 step 3: Night 1's dead stay down -- these scripts are the player's
+	// verbs against one placed enemy, and a risen man would join the fight.
+	setField(s, "rising", "p", 0.0)
+
 	p := s.call("strigoi_get_player", map[string]any{})
 
 	return s, str(p, "id"), str(p, "handle"), num(p, "x"), num(p, "y")

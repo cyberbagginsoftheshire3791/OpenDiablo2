@@ -14,6 +14,7 @@ type fakeSpawner struct {
 	calls            int
 	fail             bool
 	lastCode         string
+	lastKind         string
 	lastCount        int
 	lastMin, lastMax float64
 	made             int
@@ -27,6 +28,7 @@ func (s *fakeSpawner) Despawn(members []Watcher) {
 func (s *fakeSpawner) Spawn(kind, code string, count int, aroundX, aroundY, minTiles, maxTiles float64) []Watcher {
 	s.calls++
 	s.lastCode, s.lastCount = code, count
+	s.lastKind = kind
 	s.lastMin, s.lastMax = minTiles, maxTiles
 
 	if s.fail {

@@ -282,3 +282,35 @@ func (v *Game) canSeeBody(x, y float64) bool {
 func markVisible(level, dist float64) bool {
 	return level >= markLight || dist <= markNear
 }
+
+// raiseTheDead stands a risen body up where it lay (M4.7 step 3; Q5a: as
+// himself -- a man's body and a man's art, so he looks alive until he acts).
+// It names the member he walks as, or "" if he could not stand.
+func (v *Game) raiseTheDead(b d2world.Corpse) string {
+	if v.spawns == nil {
+		return ""
+	}
+
+	return v.spawns.Raise(b.X, b.Y)
+}
+
+// firstLight is R2 §2A: the dead break off. A fight they are in loses them
+// (and ends "dawn" if nothing else is in it), and each risen man lies down
+// where he stands, open again -- a door that rolls again tomorrow night.
+// (Q7 PLACEHOLDER: the note recommends he stand CERTAINLY in the next deep
+// night; until Downed exists, step 3 leaves him a door at P.)
+func (v *Game) firstLight() {
+	if v.spawns == nil {
+		return
+	}
+
+	if v.combat != nil {
+		v.combat.BreakOff(func(id string) bool {
+			p, ok := v.spawns.ProfileOf(id)
+
+			return ok && p.Dead
+		})
+	}
+
+	v.spawns.LayDownDead()
+}

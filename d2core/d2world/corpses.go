@@ -63,6 +63,8 @@ func (b *Corpse) Door() bool {
 type Corpses struct {
 	byID    map[string]*Corpse
 	order   []string
+	risenAs map[string]string // every member a body has walked as -> the body
+	walker  map[string]string // a risen body -> the member it walks as NOW
 	isHuman func(row string) bool
 	changed func(openDelta int)
 }
@@ -71,7 +73,7 @@ type Corpses struct {
 // changed hears every change to the count of open bodies (the carrion
 // weighting's input). Either may be nil.
 func NewCorpses(isHuman func(row string) bool, changed func(openDelta int)) *Corpses {
-	return &Corpses{byID: map[string]*Corpse{}, isHuman: isHuman, changed: changed}
+	return &Corpses{byID: map[string]*Corpse{}, risenAs: map[string]string{}, walker: map[string]string{}, isHuman: isHuman, changed: changed}
 }
 
 // Fall records a body where it fell. A second fall of the same id is ignored.
@@ -87,6 +89,20 @@ func (c *Corpses) FallHuman(id string, x, y float64) *Corpse {
 
 func (c *Corpses) fall(id, row string, x, y float64, human bool) *Corpse {
 	if b, ok := c.byID[id]; ok {
+		return b
+	}
+
+	// A risen man who falls -- cut down, or laid down at first light -- is
+	// the SAME body lying open again where he stands (M4.7 step 3), not a new
+	// one. Only once: a second fall of the same member finds him lying.
+	if cid, ok := c.risenAs[id]; ok {
+		b := c.byID[cid]
+		if b != nil && b.State == CorpseRisen && c.walker[cid] == id {
+			b.State, b.X, b.Y = CorpseFresh, x, y
+			delete(c.walker, cid)
+			c.open(1)
+		}
+
 		return b
 	}
 
@@ -206,6 +222,15 @@ func (c *Corpses) Rise(id string) bool {
 	}
 
 	return true
+}
+
+// Raised records which standing member a risen body walks as (step 3), so
+// its fall comes back to the same body.
+func (c *Corpses) Raised(bodyID, memberID string) {
+	if b, ok := c.byID[bodyID]; ok && b.State == CorpseRisen && memberID != "" {
+		c.risenAs[memberID] = bodyID
+		c.walker[bodyID] = memberID
+	}
 }
 
 // All is every body, in the order they fell (copies).

@@ -50,7 +50,20 @@ type Rising struct {
 	lastStage Stage
 	rolls     int
 	risen     int
+
+	// raise stands a body up in the world (step 3) and names the member it
+	// walks as; nil in step 2's tests, where a risen body simply leaves. An
+	// empty answer keeps it lying.
+	raise func(Corpse) string
+	// firstLight hears the night end (step 3): the dead break off.
+	firstLight func()
 }
+
+// SetRaise attaches what stands a body up in the world.
+func (r *Rising) SetRaise(raise func(Corpse) string) { r.raise = raise }
+
+// SetFirstLight attaches what hears the night end.
+func (r *Rising) SetFirstLight(fn func()) { r.firstLight = fn }
 
 // NewRising builds the roll. band is the deep-night band (0..bands-1, -1 out
 // of the night) and stage the clock's stage; both are sampled NOW, so the
@@ -93,6 +106,12 @@ func (r *Rising) Advance() {
 
 	if r.lastStage == StageNight && stage != StageNight {
 		r.dawn()
+
+		// First light after the count: a risen man laid down now is not a
+		// body "left open at dawn" by him (M4.7 note step 3 -> Q7).
+		if r.firstLight != nil {
+			r.firstLight()
+		}
 	}
 
 	r.lastBand, r.lastStage = band, stage
@@ -118,8 +137,22 @@ func (r *Rising) roll() {
 			odds *= r.dials.HastyWeight
 		}
 
-		if r.rng.Float64() < odds && r.corpses.Rise(b.ID) {
+		if r.rng.Float64() >= odds {
+			continue
+		}
+
+		// Stood up in the world first: a body with nowhere to stand (no
+		// walkable tile, no stand-in) stays where it lies.
+		member := ""
+		if r.raise != nil {
+			if member = r.raise(b); member == "" {
+				continue
+			}
+		}
+
+		if r.corpses.Rise(b.ID) {
 			r.risen++
+			r.corpses.Raised(b.ID, member)
 		}
 	}
 }

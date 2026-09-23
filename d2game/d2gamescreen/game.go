@@ -312,6 +312,14 @@ func CreateGame(
 		gameClient.Seed+risingSeedOffset, d2world.DefaultRisingDials())
 	d2harness.Register(game.rising)
 
+	// M4.7 step 3: a body that rises stands up in the world, and at first
+	// light the dead break off and lie down.
+	game.rising.SetRaise(game.raiseTheDead)
+	game.rising.SetFirstLight(game.firstLight)
+	game.spawns.SetLayDead(func(member string, x, y float64) {
+		game.corpses.Fall(member, d2world.RisenRow, x, y)
+	})
+
 	// T1: the screen walks a body on its turn -- d2world cannot import the
 	// map, so it asks through the Stepper interface (Animator's precedent).
 	game.combat.SetStepper(game)
@@ -1828,8 +1836,9 @@ func (d squadDeployer) Recall(id string) bool {
 // bestiary (ruled ask 4/7). N1 §5's four rows are beasts and men (dogs, wolves,
 // boar, opportunists), so this gate is EMPTY and never fires in friends build
 // #1; it is written NOW, keyed on the row, so M4.7 inherits a gate rather than
-// retrofitting one into shipped UI, and M4.7 fills in its risen-corpse rows.
-var deadSpawnRows = map[string]bool{}
+// retrofitting one into shipped UI, and M4.7 fills in its risen-corpse rows --
+// which step 3 did (23 Sep 2026): the risen row.
+var deadSpawnRows = map[string]bool{d2world.RisenRow: true}
 
 // deadMonsterGroups is the FALLBACK gate, for an NPC the spawn tables did not
 // place (a map-native monster, or a harness placement): for a real D2 monster

@@ -61,6 +61,8 @@ type Spawns struct {
 
 	openBodies int
 
+	layDead func(memberID string, x, y float64) // M4.7 step 3: a risen lies down
+
 	checks    int
 	rolls     int
 	spawned   int
@@ -111,6 +113,16 @@ type SpawnRow struct {
 	// Human says the row's dead are men's bodies -- doors the dead can come
 	// through (M4.7). A beast's carcass is carrion and never rises (Q1a).
 	Human bool
+
+	// Dead says the row IS the dead (M4.7 step 3): never rolled by the tables,
+	// raised where a body lay; no morale test and never routs (R2 §3); last
+	// in every round (Speed 0, D8 §9); never quick-resolved (R2 §2B); no bar
+	// until the hearth (R2 §1); gone at first light (R2 §2A).
+	Dead bool
+
+	// Looks is the row whose art the spawner draws it with ("" for its own).
+	// A risen man stands up as himself (M4.7 Q5a): the men's body and art.
+	Looks string
 
 	// StageWeight is the row's weight in each stage, indexed by Stage. Zero
 	// means the row never fires then. An ARRAY rather than a map on purpose:
@@ -333,9 +345,25 @@ func DefaultSpawnDials() SpawnDials {
 				Morale:     40,
 				Speed:      2, DamageMin: 4, DamageMax: 9,
 			},
+			{
+				// M4.7 step 3: the risen dead. NEVER TABLED -- every weight is
+				// zero, so check() passes the row without a draw and the
+				// tables' RNG stream is what it was; Spawns.Raise stands one up
+				// where a body lay. Morale 0 is R2 §3's "none, ever", which is
+				// also what keeps quick-resolve off it (Combat.mundane). The
+				// bite is a [DIAL] guessed a little above the men's.
+				Name: RisenRow, Code: "fallen1", DamageClass: "blunt", Human: true,
+				Dead: true, Looks: "opportunists",
+				MinCount: 1, MaxCount: 1,
+				Morale: 0,
+				Speed:  0, DamageMin: 5, DamageMax: 10,
+			},
 		},
 	}
 }
+
+// RisenRow is the dead's row (M4.7 step 3).
+const RisenRow = "risen"
 
 // stageWeights builds the per-stage array in the order the Stage constants
 // declare (night, dawn, day, dusk), so a row reads in the order a day happens
@@ -634,20 +662,50 @@ func (s *Spawns) spent(g *group) bool {
 //
 // Measured 19 Sep 2026 (TestCombatRout, sight-final run): two groups, both
 // `morale:0 routing:true notice:[]`, 40 five-minute steps, not one new arrival.
+//
+// THE DEAD DO NOT COUNT (M4.7 step 3). The cap is on what the TABLES send; a
+// body that rises was not sent, and at MaxGroups 1 a single risen man would
+// otherwise close the night to every beast.
 func (s *Spawns) liveGroups() int {
-	if s.notice == nil {
-		return len(s.groups)
-	}
-
 	n := 0
 
 	for _, g := range s.groups {
-		if !s.spent(g) {
+		if s.deadRow(g.row) {
+			continue
+		}
+
+		if s.notice == nil || !s.spent(g) {
 			n++
 		}
 	}
 
 	return n
+}
+
+// spentGroups counts the tables' groups that can do nothing more (the dead
+// are neither live nor spent: they are not the tables').
+func (s *Spawns) spentGroups() int {
+	n := 0
+
+	for _, g := range s.groups {
+		if !s.deadRow(g.row) && s.notice != nil && s.spent(g) {
+			n++
+		}
+	}
+
+	return n
+}
+
+// routingOf is Routing for a group in hand.
+func (s *Spawns) routingOf(g *group) bool {
+	return !s.deadRow(g.row) && g.morale <= s.dials.RoutAt
+}
+
+// deadRow reports the dead's row.
+func (s *Spawns) deadRow(name string) bool {
+	r, ok := s.rowNamed(name)
+
+	return ok && r.Dead
 }
 
 // check consults every row once, in declaration order.
@@ -705,6 +763,60 @@ func (s *Spawns) spawn(row SpawnRow, weight float64) {
 		return
 	}
 
+	s.adopt(row, members, weight)
+}
+
+// Raise stands one of the dead up where a body lay (M4.7 step 3): a member of
+// the risen row at (x, y), watching the target like any arrival. It is not a
+// table roll -- nothing is drawn from the tables' stream -- and the cap does
+// not count it. It returns the member's id, or "" when nothing could stand.
+func (s *Spawns) Raise(x, y float64) string {
+	row, ok := s.rowNamed(RisenRow)
+	if !ok || s.spawner == nil || s.target == nil {
+		return ""
+	}
+
+	kind := row.Name
+	if row.Looks != "" {
+		kind = row.Looks
+	}
+
+	members := s.spawner.Spawn(kind, row.Code, 1, x, y, 0, 0)
+	if len(members) == 0 {
+		s.failures++
+
+		return ""
+	}
+
+	s.adopt(row, members, 0)
+
+	return members[0].WatcherID()
+}
+
+// SetLayDead attaches what hears a risen member lie down where it stands.
+// Every despawn of a risen group goes through it -- first light, daybreak's
+// clear, a harness despawn -- so no body is ever lost standing (the step-3
+// review: a despawned risen left its body Risen for good).
+func (s *Spawns) SetLayDead(lay func(memberID string, x, y float64)) { s.layDead = lay }
+
+// LayDownDead is first light for the dead (M4.7 step 3; R2 §2A; S1 §6.2):
+// every risen group goes, and each member lies down where it stands (the
+// SetLayDead hook, through Despawn). Aware or not: daylight is not a reason
+// for the dead to keep coming. It reports how many groups went.
+func (s *Spawns) LayDownDead() int {
+	n := 0
+
+	for _, id := range s.groupIDs() {
+		if g := s.groups[id]; g != nil && s.deadRow(g.row) && s.Despawn(id) {
+			n++
+		}
+	}
+
+	return n
+}
+
+// adopt makes a group of spawned members and starts them watching.
+func (s *Spawns) adopt(row SpawnRow, members []Watcher, weight float64) {
 	g := &group{
 		id:      fmt.Sprintf("g:%d", s.nextID),
 		row:     row.Name,
@@ -738,6 +850,16 @@ func (s *Spawns) Despawn(groupID string) bool {
 	g, ok := s.groups[groupID]
 	if !ok {
 		return false
+	}
+
+	// A risen man lies down where he stands before he is taken off the map.
+	if s.layDead != nil && s.deadRow(g.row) {
+		for _, m := range g.members {
+			if m != nil {
+				x, y := m.WatcherAt()
+				s.layDead(m.WatcherID(), x, y)
+			}
+		}
 	}
 
 	// The world first, then the bookkeeping. Before 29 Aug this method did
@@ -848,7 +970,9 @@ func (s *Spawns) Routing(groupID string) (routing, known bool) {
 		return false, false
 	}
 
-	return g.morale <= s.dials.RoutAt, true
+	// The dead take no morale test (R2 §3): their morale is 0 by design, and
+	// 0 must not read as broken.
+	return s.routingOf(g), true
 }
 
 // ProfileOf answers what one enemy fights as, and it is the seam M4.5 step 4
@@ -897,6 +1021,7 @@ func (s *Spawns) ProfileOf(memberID string) (Profile, bool) {
 				DamageMin: row.DamageMin,
 				DamageMax: row.DamageMax,
 				Count:     g.spawned,
+				Dead:      row.Dead,
 
 				DamageClass: row.DamageClass,
 			}, true
@@ -1023,7 +1148,7 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 			"members":    len(g.members),
 			"spawned":    g.spawned,
 			"morale":     g.morale,
-			"routing":    g.morale <= s.dials.RoutAt,
+			"routing":    s.routingOf(g),
 			"born_at":    g.bornAt,
 			"born_stage": g.stage.String(),
 			"born_band":  g.band,
@@ -1060,7 +1185,7 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 	out := map[string]interface{}{
 		"groups":         len(s.groups),
 		"live_groups":    s.liveGroups(),
-		"spent_groups":   len(s.groups) - s.liveGroups(),
+		"spent_groups":   s.spentGroups(),
 		"group_list":     groups,
 		"rows":           rows,
 		"stage":          stage,

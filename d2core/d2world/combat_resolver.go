@@ -104,6 +104,10 @@ type Profile struct {
 	// armour is rated against (T2). "" reads as cut.
 	DamageClass string
 
+	// Dead is the dead's row (M4.7 step 3): neither surprise branch, never
+	// quick-resolved, and gone at first light.
+	Dead bool
+
 	// Count is how many the PACK started with, and step 5 needs it twice: the
 	// rout decrement scales with it (a loss out of two is half the pack; a
 	// loss out of six is not), and quick-resolve's advantage is measured
@@ -377,7 +381,9 @@ func (c *Combat) tryQuickResolve() bool {
 	starting := 0
 
 	for _, enemy := range e.enemies {
-		if enemy == nil {
+		// The dead that left at first light were never beaten: they are not
+		// part of an advantage over what is left (the step-3 review).
+		if enemy == nil || e.broke[enemy.WatcherID()] {
 			continue
 		}
 
@@ -452,7 +458,7 @@ func (c *Combat) tryQuickResolve() bool {
 // the dead's morale as "none, ever", which makes the second clause the
 // prohibition stated in the only terms this engine has.
 func (c *Combat) mundane(id string) bool {
-	if c.morale == nil {
+	if c.morale == nil || c.profileOf(id).Dead {
 		return false
 	}
 

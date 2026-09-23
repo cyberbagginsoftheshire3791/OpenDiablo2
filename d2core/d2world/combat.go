@@ -158,6 +158,7 @@ type Combat struct {
 	// what make it countable rather than merely last-seen.
 	endedReason      string
 	endedEnemiesDead int
+	endedDawn        int // M4.7 step 3: fights the dead left at first light
 	endedPlayerDead  int
 	endedDisengaged  int
 	endedRouted      int
@@ -572,6 +573,9 @@ type encounter struct {
 	// half-built here. A wolf that stands still reads as a bug in a
 	// screenshot; a wolf that evaporates is a worse lie.
 	routed map[string]bool
+
+	// broke is who left at first light (M4.7 step 3): the dead.
+	broke map[string]bool
 
 	// initiator, surprised and surpriseWhy are D8 §9's initiation facts, read
 	// ONCE at tryStart and then fixed for the fight. initiator is always
@@ -1312,12 +1316,19 @@ func (c *Combat) tryStart() {
 		// Vigilant. D8 §9 names both as the un-surprised stances.
 	}
 
+	// M4.7 step 3 (D8 §9; M4.4c-2 ask 2a): the dead take neither surprise
+	// branch. A fight with nothing but the dead in it is never a caught one.
+	if c.onlyTheDead(enemies) {
+		surprised, why = false, ""
+	}
+
 	c.encounter = &encounter{
 		id:      fmt.Sprintf("e:%d", c.nextID),
 		target:  target,
 		enemies: enemies,
 		dead:    map[string]bool{},
 		routed:  map[string]bool{},
+		broke:   map[string]bool{},
 		round:   1,
 
 		// v0 has exactly one initiator. See encounter.initiator for why the
@@ -1405,6 +1416,13 @@ func (c *Combat) pruneOrEnd() {
 	kept := e.enemies[:0]
 
 	for _, enemy := range e.enemies {
+		// The dead that broke off at first light have LEFT, and they leave
+		// the rows too: LayDownDead has taken them off the map, so a row
+		// kept for one would be drawn standing where nothing stands.
+		if e.broke[enemy.WatcherID()] {
+			continue
+		}
+
 		if e.gone(enemy.WatcherID()) || within(enemy, e.target, c.disengageTiles()) {
 			kept = append(kept, enemy)
 		}
@@ -1454,7 +1472,60 @@ func (c *Combat) pruneOrEnd() {
 // used to ask e.dead about PARTICIPATION asks this instead, and the places
 // that ask about DEATH -- the riposte's "nothing to answer if it is already
 // dead", the participant row's dead:true -- deliberately still ask e.dead.
-func (e *encounter) gone(id string) bool { return e.dead[id] || e.routed[id] }
+func (e *encounter) gone(id string) bool { return e.dead[id] || e.routed[id] || e.broke[id] }
+
+// onlyTheDead reports a side made wholly of the dead's row.
+func (c *Combat) onlyTheDead(enemies []Combatant) bool {
+	if len(enemies) == 0 {
+		return false
+	}
+
+	for _, en := range enemies {
+		if en == nil || !c.profileOf(en.WatcherID()).Dead {
+			return false
+		}
+	}
+
+	return true
+}
+
+// BreakOff is first light (M4.7 step 3; R2 §2A, "the dead break off at first
+// light"): every enemy leave accepts takes no further part, and a fight left
+// with nothing in it ends "dawn". A beast in the same fight fights on. It
+// reports how many broke off.
+func (c *Combat) BreakOff(leave func(id string) bool) int {
+	e := c.encounter
+	if e == nil || leave == nil {
+		return 0
+	}
+
+	n := 0
+
+	for _, en := range e.enemies {
+		if en == nil || e.gone(en.WatcherID()) || !leave(en.WatcherID()) {
+			continue
+		}
+
+		e.broke[en.WatcherID()] = true
+		n++
+	}
+
+	if n == 0 {
+		return 0
+	}
+
+	for _, en := range e.enemies {
+		if en != nil && !e.gone(en.WatcherID()) {
+			return n
+		}
+	}
+
+	// "dawn" is BreakOff's own ending: a fight it emptied. A mixed fight the
+	// beasts go on to lose ends however it ends (the review of step 3).
+	c.end("dawn")
+
+	return n
+}
 
 // endingReason names an ending in which nothing is left to fight.
 //
@@ -1471,10 +1542,6 @@ func (e *encounter) endingReason() string {
 	return "enemies_dead"
 }
 
-// end closes the encounter and records WHY, both as the last reason and as a
-// counter. An encounter that starts and ends between two harness reads is
-// invisible in the state and obvious in the counters -- the same argument the
-// four counters at the top of this file were added for.
 // SetCorpses attaches the corpse registry (M4.7): every enemy death the
 // resolver leaves on the map becomes an open body there.
 func (c *Combat) SetCorpses(k *Corpses) { c.corpses = k }
@@ -1499,6 +1566,10 @@ func (c *Combat) fallCorpse(id string) {
 // screen reads it to say a fight killed him.
 func (c *Combat) EndedReason() string { return c.endedReason }
 
+// end closes the encounter and records WHY, both as the last reason and as a
+// counter. An encounter that starts and ends between two harness reads is
+// invisible in the state and obvious in the counters -- the same argument the
+// four counters at the top of this file were added for.
 func (c *Combat) end(reason string) {
 	c.payOpenRound()
 
@@ -1576,6 +1647,8 @@ func (c *Combat) end(reason string) {
 		c.endedDisengaged++
 	case "enemies_routed":
 		c.endedRouted++
+	case "dawn":
+		c.endedDawn++
 	}
 }
 
@@ -1710,6 +1783,7 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"ended_player_dead":  c.endedPlayerDead,
 		"ended_disengaged":   c.endedDisengaged,
 		"ended_routed":       c.endedRouted,
+		"ended_dawn":         c.endedDawn,
 
 		// Step 5's three facts about what the fight DID, all reported whether
 		// or not one is running. joined is the only evidence a reinforcement
