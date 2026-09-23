@@ -111,8 +111,14 @@ func (v *Game) corpseNotice(done, refused string, err error) {
 // Refused in a fight, dead, talking, without a stake, and for a beast's
 // carcass (Q1a).
 func (v *Game) Stake() error {
-	err := v.stake()
-	v.corpseNotice(d2player.StakeDone, d2player.StakeRefused, err)
+	seen, err := v.stake()
+
+	done := d2player.StakeDone
+	if seen && v.dialogue != nil {
+		done = fmt.Sprintf(d2player.StakeSeen, v.dialogue.Village.SeenCost)
+	}
+
+	v.corpseNotice(done, d2player.StakeRefused, err)
 
 	return err
 }
@@ -160,9 +166,9 @@ func (v *Game) work(minutes float64) error {
 	return nil
 }
 
-func (v *Game) stake() error {
+func (v *Game) stake() (seen bool, err error) {
 	if err := v.fieldWorkRefused(); err != nil {
-		return err
+		return false, err
 	}
 
 	px, py := v.localPlayer.GetPositionF()
@@ -170,43 +176,44 @@ func (v *Game) stake() error {
 	body := v.corpses.Nearest(px, py, stakeReach, func(b *d2world.Corpse) bool { return b.Door() })
 	if body == nil {
 		if v.corpses.Nearest(px, py, stakeReach, func(b *d2world.Corpse) bool { return b.State == d2world.CorpseFresh }) != nil {
-			return errStakeCarcass
+			return false, errStakeCarcass
 		}
 
-		return errStakeNoBody
+		return false, errStakeNoBody
 	}
 
 	if !v.kit.Carries(stakeItem) {
-		return errStakeNone
+		return false, errStakeNone
 	}
 
 	if err := v.work(stakeMinutes); err != nil {
-		return err
+		return false, err
 	}
 
 	// The world ran while he worked: a band can turn in those minutes, and
 	// the body he knelt at can rise under his hands. Then there is nothing
 	// to stake, and the stake stays in the pack.
 	if now, ok := v.corpses.Get(body.ID); !ok || !now.Door() {
-		return errBodyGone
+		return false, errBodyGone
 	}
 
 	// The stake is spent first: a body is never closed for nothing.
 	if !v.kit.Use(stakeItem) {
-		return errStakeNone
+		return false, errStakeNone
 	}
 
 	if !v.corpses.Close(body.ID) {
-		return errBodyGone
+		return false, errBodyGone
 	}
 
 	if v.rising != nil {
 		v.rising.Rite()
 	}
 
+	seen = v.seenStaking()
 	v.saveKit()
 
-	return nil
+	return seen, nil
 }
 
 func (v *Game) dig() error {
@@ -300,6 +307,10 @@ func (v *Game) raiseTheDead(b d2world.Corpse) string {
 // (Q7 PLACEHOLDER: the note recommends he stand CERTAINLY in the next deep
 // night; until Downed exists, step 3 leaves him a door at P.)
 func (v *Game) firstLight() {
+	// Q4a: the priest's rite, before the dead lie down -- a grave is closed
+	// at first light whatever else the dawn brings.
+	v.riteAtDawn()
+
 	if v.spawns == nil {
 		return
 	}

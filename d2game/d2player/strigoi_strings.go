@@ -202,6 +202,10 @@ const (
 const (
 	StakeDone    = "The stake is in. This one will not rise."
 	StakeRefused = "Stake: %v"
+	// StakeSeen is a staking the village saw (M4.7 step 4).
+	StakeSeen = "The stake is in. Someone saw it done. (standing -%d)"
+	// RiteAtDawn is the priest keeping his promise at first light.
+	RiteAtDawn = "At first light the priest closed %d grave(s) the old way."
 )
 
 // M4.7 step 2, the hasty grave (23 Sep 2026).

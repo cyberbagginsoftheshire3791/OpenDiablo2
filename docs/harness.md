@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 31 playtest scripts.** That count, the harness version below and the
+**The 32 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -213,6 +213,16 @@ this doc fails until it agrees.
   Scripts about other things that cross a deep night (`combat_rout_test.go`,
   `hands_test.go`'s `handsStart`, `night_render_test.go`) set `rising.p` to 0
   so Night 1's dead stay down.
+* `hearth_test.go` — the thirty-second, M4.7 step 4 (23 Sep 2026): the priest's
+  rite, the hearth unlock, and a staking seen. By day with the village
+  "watching" (`village.seen_radius` wide) a stake costs standing 5 and marks
+  `seen_staking`; a second costs nothing more. The controls: a hasty grave
+  dug before the rite is granted is still hasty after first light, and a
+  risen man before the priest's tale carries no bar and the hover does not
+  call him the dead. At the hearth the priest tells the tale and grants the
+  rite; the next night the risen man carries a bar and the hover names him
+  "the dead", and at first light the priest closes the grave. `village` now
+  takes `rite_radius` and `seen_radius` as settable fields.
   Negative controls ran red for the stake not closing and a carcass staked.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,

@@ -236,11 +236,5 @@ func (g *GameControls) hoverLabelReport() string {
 		return ""
 	}
 
-	if g.talkHolder != nil {
-		if role := g.talkHolder.RoleFor(e.Label()); role != "" {
-			return role
-		}
-	}
-
-	return e.Label()
+	return g.hoverLabel(e)
 }

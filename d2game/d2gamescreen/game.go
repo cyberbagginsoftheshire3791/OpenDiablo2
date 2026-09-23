@@ -1871,7 +1871,9 @@ func (v *Game) ShowsBar(id string) bool {
 
 	if v.spawns != nil {
 		if p, ok := v.spawns.ProfileOf(id); ok {
-			return !deadSpawnRows[strings.ToLower(p.Row)]
+			// M4.7 step 4, Q6a: the priest's tale is the hearth unlock --
+			// after it the dead carry a bar like anything else.
+			return !deadSpawnRows[strings.ToLower(p.Row)] || v.knowsTheDead()
 		}
 	}
 

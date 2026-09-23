@@ -347,12 +347,32 @@ func (p villageProvider) HarnessState() map[string]interface{} {
 	return state
 }
 
-func (p villageProvider) HarnessSettableFields() []string { return []string{"rep"} }
+func (p villageProvider) HarnessSettableFields() []string {
+	return []string{"rep", "rite_radius", "seen_radius"}
+}
 
 // HarnessSet stands the village at a number, the same test-setup shape as
 // grant_xp: a script reaches a rung without playing the days to it.
 func (p villageProvider) HarnessSet(field string, value interface{}) error {
 	v := p.v
+
+	// M4.7 step 4's radii, so a script can stand the church and the watching
+	// village where the map put the bodies.
+	if field == "rite_radius" || field == "seen_radius" {
+		f, ok := value.(float64)
+		if !ok || f <= 0 || v.dialogue == nil {
+			return fmt.Errorf("%s wants a positive number, got %v", field, value)
+		}
+
+		if field == "rite_radius" {
+			v.dialogue.Village.RiteRadius = f
+		} else {
+			v.dialogue.Village.SeenRadius = f
+		}
+
+		return nil
+	}
+
 	if field != "rep" {
 		return fmt.Errorf("village has no settable field %q", field)
 	}

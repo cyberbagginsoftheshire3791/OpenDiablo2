@@ -774,12 +774,11 @@ func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
 	_, entityHeight := entity.GetSize()
 	xOff, yOff := int(entOffset.X()), int(entOffset.Y())
 
-	// T4: a villager's label is his ROLE, not the D2 stand-in's name.
+	// T4: a villager's label is his ROLE, not the D2 stand-in's name; M4.7:
+	// one of the dead is named once he knows them.
 	label := entity.Label()
-	if h.gameControls != nil && h.gameControls.talkHolder != nil {
-		if role := h.gameControls.talkHolder.RoleFor(label); role != "" {
-			label = role
-		}
+	if h.gameControls != nil {
+		label = h.gameControls.hoverLabel(entity)
 	}
 
 	h.nameLabel.SetText(label)

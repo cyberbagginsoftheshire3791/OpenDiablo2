@@ -7,6 +7,9 @@
     "watch_minutes": 180,
     "watch_radius": 15,
     "broken_watch": 3,
+    "rite_radius": 12,
+    "seen_radius": 8,
+    "seen_cost": 5,
     "ladder": [
       {"id": "water",   "name": "Water at the well",      "at": 15},
       {"id": "trade",   "name": "Trade at the gate",      "at": 25},
@@ -174,7 +177,7 @@
       ]
     },
     "priest_rite": {
-      "text": "'If one of yours dies, bring him to me before dark. I will close the grave the old way, and he will stay in it.' He does not ask what god you pray to.",
+      "text": "'Any man you put in the ground within sight of this church, I will close the old way at first light, and he will stay in it.' He does not ask what god you pray to.",
       "choices": [
         {"text": "Thank him.", "effects": {"set": ["rite_granted"]}}
       ]

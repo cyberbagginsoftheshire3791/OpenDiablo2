@@ -62,7 +62,7 @@ func TestFloorAndCeiling(t *testing.T) {
 }
 
 func TestLoadRefuses(t *testing.T) {
-	good := `{"village":{"start":5,"floor":0,"ceiling":20,"watch":1,"watch_minutes":60,"watch_radius":10,"ladder":[{"id":"a","name":"A","at":10}]},
+	good := `{"village":{"start":5,"floor":0,"ceiling":20,"watch":1,"watch_minutes":60,"watch_radius":10,"rite_radius":12,"seen_radius":8,"seen_cost":5,"ladder":[{"id":"a","name":"A","at":10}]},
 	"speakers":[{"id":"s","role":"S","stand_in":"X","openings":[{"node":"n"}]}],
 	"nodes":{"n":{"text":"hi","choices":[{"text":"bye"}]}}}`
 
@@ -92,11 +92,14 @@ func TestLoadRefuses(t *testing.T) {
 		"an empty node id": strings.Replace(good, `"nodes":{`, `"nodes":{"":{"text":"x","choices":[]},`, 1),
 		"too many answers": strings.Replace(good, `[{"text":"bye"}]`,
 			`[{"text":"1"},{"text":"2"},{"text":"3"},{"text":"4"},{"text":"5"},{"text":"6"},{"text":"7"}]`, 1),
-		"a negative effect":   strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","effects":{"water":-5}}`, 1),
-		"a negative watch":    strings.Replace(good, `"watch":1`, `"watch":-1`, 1),
-		"no watch minutes":    strings.Replace(good, `"watch_minutes":60,`, ``, 1),
-		"no watch radius":     strings.Replace(good, `"watch_radius":10,`, ``, 1),
-		"a flag nothing sets": strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","requires":{"flag":"typo"}}`, 1),
+		"a negative effect":    strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","effects":{"water":-5}}`, 1),
+		"a negative watch":     strings.Replace(good, `"watch":1`, `"watch":-1`, 1),
+		"no watch minutes":     strings.Replace(good, `"watch_minutes":60,`, ``, 1),
+		"no watch radius":      strings.Replace(good, `"watch_radius":10,`, ``, 1),
+		"no rite radius":       strings.Replace(good, `"rite_radius":12,`, ``, 1),
+		"no seen radius":       strings.Replace(good, `"seen_radius":8,`, ``, 1),
+		"a negative seen cost": strings.Replace(good, `"seen_cost":5`, `"seen_cost":-1`, 1),
+		"a flag nothing sets":  strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","requires":{"flag":"typo"}}`, 1),
 	}
 
 	// And a flag some choice DOES set is fine -- the mirror of the typo case.
@@ -454,5 +457,18 @@ func TestShelterIsANightThingAtTheShelterRung(t *testing.T) {
 
 	if !offered(true) {
 		t.Fatal("dawn gives the byre back")
+	}
+}
+
+// M4.7 step 4: a flag the game raises itself (a staking the village saw) is
+// set once and read like any other.
+func TestMarkRaisesAFlag(t *testing.T) {
+	st := shipped(t).NewStanding()
+
+	st.Mark("seen_staking")
+	st.Mark("seen_staking")
+
+	if !st.Has("seen_staking") || len(st.Flags) != 1 {
+		t.Fatalf("marked once, read back: %v", st.Flags)
 	}
 }

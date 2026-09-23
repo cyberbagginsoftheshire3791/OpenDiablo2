@@ -26,6 +26,27 @@ type CorpseHolder interface {
 	CorpseMarks() []CorpseMark
 	Stake() error
 	Dig() error
+	// DeadName is what the hover calls one of the dead, or "" (M4.7 Q6a).
+	DeadName(id string) string
+}
+
+// hoverLabel is what the hover calls an entity: a villager's ROLE (T4), one
+// of the dead's name once he knows them (M4.7 Q6a), or its own label. The HUD
+// and the harness both read it, so what a script asserts is what is drawn.
+func (g *GameControls) hoverLabel(e d2interface.MapEntity) string {
+	if g.talkHolder != nil {
+		if role := g.talkHolder.RoleFor(e.Label()); role != "" {
+			return role
+		}
+	}
+
+	if g.corpseHolder != nil {
+		if name := g.corpseHolder.DeadName(e.ID()); name != "" {
+			return name
+		}
+	}
+
+	return e.Label()
 }
 
 const (

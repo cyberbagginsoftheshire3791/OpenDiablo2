@@ -51,6 +51,14 @@ type Village struct {
 	WatchMinutes float64 `json:"watch_minutes"`
 	WatchRadius  float64 `json:"watch_radius"`
 	BrokenWatch  int     `json:"broken_watch"`
+
+	// M4.7 step 4. RiteRadius is how near the church (the priest's sprite
+	// until there is one) a hasty grave must lie for the granted rite to
+	// close it at first light (Q4a); a staking by day within SeenRadius of
+	// any villager costs SeenCost standing, the first time (S1 §8.2). [DIAL]s.
+	RiteRadius float64 `json:"rite_radius"`
+	SeenRadius float64 `json:"seen_radius"`
+	SeenCost   int     `json:"seen_cost"`
 }
 
 // Requires gates an opening or a choice. Every field set must hold.
@@ -165,6 +173,12 @@ func Load(data []byte) (*Book, error) {
 	// (T4's old rule) while a zero radius keeps none (review finding).
 	if v.WatchMinutes <= 0 || v.WatchRadius <= 0 {
 		return nil, fmt.Errorf("watch_minutes and watch_radius must be > 0")
+	}
+
+	// Missing, these load as 0: a rite that closes nothing and a staking no
+	// one ever sees -- both silent, so both refused.
+	if v.RiteRadius <= 0 || v.SeenRadius <= 0 || v.SeenCost < 0 {
+		return nil, fmt.Errorf("rite_radius and seen_radius must be > 0 and seen_cost >= 0")
 	}
 
 	b.rungs = map[string]int{}
@@ -412,6 +426,10 @@ func (s *Standing) Has(flag string) bool {
 	i := sort.SearchStrings(s.Flags, flag)
 	return i < len(s.Flags) && s.Flags[i] == flag
 }
+
+// Mark sets a flag the game raises itself rather than a choice -- a staking
+// the village saw (M4.7 step 4).
+func (s *Standing) Mark(flag string) { s.set(flag) }
 
 func (s *Standing) set(flag string) {
 	if s.Has(flag) {
