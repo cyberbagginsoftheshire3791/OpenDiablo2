@@ -296,6 +296,16 @@ func CreateGame(
 		shippedCombatDials(),
 	)
 
+	// M4.7: the dead lie where they fall. The count of open bodies feeds the
+	// carrion weighting by DELTA, so a script's open_bodies stays additive.
+	game.corpses = d2world.NewCorpses(game.spawns.RowIsHuman, func(delta int) {
+		// Clamped: a count that would go negative is a bookkeeping slip, not a
+		// reason to stop counting.
+		game.spawns.SetOpenBodies(max(0, game.spawns.OpenBodies()+delta))
+	})
+	game.combat.SetCorpses(game.corpses)
+	d2harness.Register(game.corpses)
+
 	// T1: the screen walks a body on its turn -- d2world cannot import the
 	// map, so it asks through the Stepper interface (Animator's precedent).
 	game.combat.SetStepper(game)
@@ -369,10 +379,13 @@ type Game struct {
 	watchStood    float64
 	watchClock    float64
 	watchClockSet bool
-	standing      *d2dialogue.Standing
-	talk          *d2dialogue.Talk
-	progress      *d2progress.Progress
-	lastStage     d2world.Stage
+
+	// M4.7: where the dead lie.
+	corpses   *d2world.Corpses
+	standing  *d2dialogue.Standing
+	talk      *d2dialogue.Talk
+	progress  *d2progress.Progress
+	lastStage d2world.Stage
 
 	// dawnPaidDay is the day whose dawn has paid its night's experience, and
 	// noticeDelta is the Quiet Step radius change already applied (T3).
@@ -502,6 +515,7 @@ func (v *Game) OnUnload() error {
 	d2harness.Unregister(v.gameControls) // the "ui" provider dies with the screen
 	d2harness.Unregister(progressProvider{v})
 	d2harness.Unregister(villageProvider{v})
+	d2harness.Unregister(v.corpses)
 
 	// The world's systems die with it too (M4.1).
 	if v.worldClock != nil {
@@ -1969,6 +1983,10 @@ func (v *Game) bindGameControls() error {
 		v.gameControls.SetDeathHolder(v)
 		v.gameControls.SetTalkHolder(v)
 		v.gameControls.SetForageHolder(v)
+		v.gameControls.SetCorpseHolder(v)
+
+		// M4.7 Q2a: Night 1's dead, around where he enters.
+		v.placeTheDead()
 
 		if err := v.inputManager.BindHandler(v.gameControls); err != nil {
 			v.Error(bindControlsErrStr + player.ID())

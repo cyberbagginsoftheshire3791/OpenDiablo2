@@ -549,3 +549,15 @@ func TestSpawnsWithoutATargetDoesNothing(t *testing.T) {
 	assert.Zero(t, spawner.calls, "no target, nothing to spawn around")
 	assert.False(t, s.HarnessState()["has_target"].(bool))
 }
+
+// M4.7: only the opportunists' dead are men's bodies; every beast row falls as
+// carrion, and a row that does not exist is not human.
+func TestRowIsHuman(t *testing.T) {
+	s, _, _, _, _ := newTestSpawns(t)
+
+	assert.True(t, s.RowIsHuman("opportunists"))
+
+	for _, row := range []string{"dogs", "wolves", "boar", "no-such-row"} {
+		assert.False(t, s.RowIsHuman(row), row)
+	}
+}

@@ -340,6 +340,9 @@ type GameControls struct {
 	// forageHolder gathers from the land (T7).
 	forageHolder ForageHolder
 
+	// corpseHolder owns the dead (M4.7).
+	corpseHolder CorpseHolder
+
 	// squads is the owner the player commands (M4.4c-1): the click handler and
 	// the cycle key select through it, and the selection hit test reads its
 	// model entities. It is the same instance the game screen registered as the
@@ -426,6 +429,13 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 
 	// T4: a conversation takes every key -- numbers answer, Escape leaves.
 	if g.talkKey(event) {
+		return true
+	}
+
+	// M4.7: X drives a stake through the body at his feet.
+	if event.Key() == stakeKey && g.corpseHolder != nil && !g.dead() {
+		_ = g.corpseHolder.Stake()
+
 		return true
 	}
 

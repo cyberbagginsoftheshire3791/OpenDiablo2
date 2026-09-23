@@ -108,6 +108,10 @@ type SpawnRow struct {
 	// Code is the monstats.txt Id actually spawned -- a stand-in [DIAL].
 	Code string
 
+	// Human says the row's dead are men's bodies -- doors the dead can come
+	// through (M4.7). A beast's carcass is carrion and never rises (Q1a).
+	Human bool
+
 	// StageWeight is the row's weight in each stage, indexed by Stage. Zero
 	// means the row never fires then. An ARRAY rather than a map on purpose:
 	// ranging a map is randomised in Go and these weights decide entity
@@ -320,7 +324,7 @@ func DefaultSpawnDials() SpawnDials {
 				// S1 §6.4's human row: dusk and pre-dawn, "when men move",
 				// weighted by the player's light. The kit waits on E3; the
 				// mechanism is here now.
-				Name: "opportunists", Code: "fallen1", DamageClass: "cut",
+				Name: "opportunists", Code: "fallen1", DamageClass: "cut", Human: true,
 				StageWeight: stageWeights(0.4, 0.6, 0, 0.8),
 				BandWeight:  [3]float64{0.8, 0.6, 0.4},
 				MinCount:    2, MaxCount: 3,
@@ -915,6 +919,13 @@ func (s *Spawns) rowNamed(name string) (SpawnRow, bool) {
 
 // Groups is how many groups are live.
 func (s *Spawns) Groups() int { return len(s.groups) }
+
+// RowIsHuman reports a row whose dead are men's bodies (M4.7).
+func (s *Spawns) RowIsHuman(name string) bool {
+	r, ok := s.rowNamed(name)
+
+	return ok && r.Human
+}
 
 // OpenBodies is the count the carrion weighting reads.
 func (s *Spawns) OpenBodies() int { return s.openBodies }

@@ -793,6 +793,9 @@ func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
 
 // Render draws the HUD to the screen
 func (h *HUD) Render(target d2interface.Surface) error {
+	// M4.7: where the dead lie -- drawn first, so the HUD's own panels cover them.
+	h.renderCorpses(target)
+
 	h.renderForSelectableEntitiesHovered(target)
 
 	if h.isZoneTextShown {

@@ -269,6 +269,11 @@ func TestSpawns(t *testing.T) {
 		s.call("strigoi_step_world", map[string]any{"world_minutes": 60})
 	}
 
+	// M4.7: Night 1's dead lie open from the first dawn, so the carrion
+	// multiplier is already lifted when this act begins. Zero it, so the
+	// band's lift is measured alone and act 5b's four bodies lift from none.
+	setField(s, "spawns", "open_bodies", 0)
+
 	night := spawnsState(s)
 	if str(night, "stage") != "night" {
 		t.Fatalf("act 5: never reached the deep night, stage=%q", str(night, "stage"))

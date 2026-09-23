@@ -723,3 +723,26 @@ func (k *Kit) Eat(i int) (float64, error) {
 
 	return food, nil
 }
+
+// Use spends one of an item he carries -- from the pack first, then from
+// wherever he wears it (a stake rides in the belt) -- and reports whether he
+// had one (M4.7: the stake is spent in the body).
+func (k *Kit) Use(id string) bool {
+	if k.Count(id) > 0 {
+		return k.Take(id, 1) == nil
+	}
+
+	for _, slot := range WornSlots() {
+		if inst := k.Worn[slot]; inst != nil && inst.Item == id {
+			if n := countOf(inst); n > 1 {
+				inst.Count = n - 1
+			} else {
+				delete(k.Worn, slot)
+			}
+
+			return true
+		}
+	}
+
+	return false
+}

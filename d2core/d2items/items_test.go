@@ -561,3 +561,29 @@ func TestWriteFileAtomicWhileTheFileIsOpen(t *testing.T) {
 		t.Fatalf("the file holds %q", got)
 	}
 }
+
+func TestUseSpendsFromThePackThenTheBelt(t *testing.T) {
+	k := kitFor(t, "torch-and-blade")
+
+	if k.Use("stake") {
+		t.Fatal("THE CONTROL: no stake, nothing spent")
+	}
+
+	if err := k.Give("stake", 1); err != nil {
+		t.Fatal(err)
+	}
+
+	k.Worn[SlotBelt2] = &Instance{Item: "stake", Make: MakeIssue, Condition: Sound}
+
+	if !k.Use("stake") || k.Count("stake") != 0 || k.Worn[SlotBelt2] == nil {
+		t.Fatal("the pack's stake goes first")
+	}
+
+	if !k.Use("stake") || k.Worn[SlotBelt2] != nil {
+		t.Fatal("then the one in the belt")
+	}
+
+	if k.Use("stake") {
+		t.Fatal("and then there are none")
+	}
+}

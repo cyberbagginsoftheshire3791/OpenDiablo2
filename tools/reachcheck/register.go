@@ -293,6 +293,12 @@ var Register = []Entry{
 		"T7: K gathers branches for half an hour from a stock the land does not renew -- and sets the forage stance for those minutes, so D8 section 9's caught-head-down branch is reachable in a shipped build at last.", ""},
 	{sym(pkgScreen, "Game.keepWatch"), BucketWire, VerdictLive,
 		"T8: once a frame from earnExperience -- a promised watch counts the night minutes stood at the headman's post and sets the WATCH stance there.", ""},
+	{sym(pkgWorld, "Corpses.Fall"), BucketWire, VerdictLive,
+		"M4.7 step 1: every enemy death the resolver leaves on the map (reachedZero, quick-resolve) becomes an open body where it fell.", ""},
+	{sym(pkgWorld, "Corpses.Close"), BucketWire, VerdictLive,
+		"M4.7 step 1: the stake (X) closes the open body of a man at his feet -- Game.Stake.", ""},
+	{sym(pkgScreen, "Game.placeTheDead"), BucketWire, VerdictLive,
+		"M4.7 Q2a PLACEHOLDER: Night 1's dead laid near where he enters, when the controls bind.", ""},
 	{sym(pkgItems, "LoadHero"), BucketWire, VerdictLive,
 		"T2/T3: reads the hero's kit and progress from beside his save when the controls bind; its absence opens the loadout choice. Replaces T2's LoadSidecar (retired at T3: reach measured it dead once the game moved here).", ""},
 	{sym(pkgItems, "SaveHero"), BucketWire, VerdictLive,
@@ -531,8 +537,10 @@ var Register = []Entry{
 	// clause back to Josh.
 	{sym(pkgWorld, "Spawns.Groups"), BucketDefer, VerdictDead,
 		"The live group COUNT. Nothing in the game wants it: the resolver reaches a pack through Spawns.ProfileOf, which answers per member and now carries the pack's starting size, and rout is measured against that. It is reported by the provider, so a script can see it; no Go caller needs it.", "unclaimed -- see the note above; M4.5 section 3.9's all-seven clause needs amending or a real caller"},
-	{sym(pkgWorld, "Spawns.OpenBodies"), BucketDefer, VerdictDead,
-		"The carrion count. Settable as a stand-in because the corpse machine that will drive it is not built.", "M4.7 (the corpse machine)"},
+	// MOVED to wire at M4.7 step 1 (23 Sep 2026), recorded before this row was
+	// edited: the deferral named this milestone, and it landed.
+	{sym(pkgWorld, "Spawns.OpenBodies"), BucketWire, VerdictLive,
+		"The carrion count. M4.7: the corpse registry's change hook reads it to move it by one per body fallen or staked.", ""},
 
 	// M4.5 STEP 3 -- THE NPC BODY. Three rows, and every verdict below was
 	// measured on 31 Aug 2026 at 11:47 PM CT against HEAD 502e4cef plus this
@@ -639,8 +647,11 @@ var Register = []Entry{
 		"Writes the lit-level dial.", ""},
 	{sym(pkgWorld, "Spawns.SetMorale"), BucketObserve, VerdictHarnessOnly,
 		"Writes a group's morale so a script can drive it to the rout threshold. STILL HARNESS-ONLY AFTER STEP 5, and deliberately: the game hurts a pack through Spawns.Hurt, which subtracts and floors and writes the field itself. Routing this through here would have been the DRY refactor and would have flipped this row live transitively, which is the shape three earlier rows were caught by.", ""},
-	{sym(pkgWorld, "Spawns.SetOpenBodies"), BucketObserve, VerdictHarnessOnly,
-		"Writes the carrion stand-in. Spawns.OpenBodies carries the deferral to the corpse machine.", ""},
+	// MOVED to wire at M4.7 step 1 (23 Sep 2026), recorded before this row was
+	// edited: the corpse registry drives the count by delta on every fall and
+	// every stake -- "the corpse machine drives it when it lands" (M4.3b ask 3).
+	{sym(pkgWorld, "Spawns.SetOpenBodies"), BucketWire, VerdictLive,
+		"M4.7: the corpse registry's change hook (game.go) moves the carrion count by one on every body that falls and every body staked.", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in

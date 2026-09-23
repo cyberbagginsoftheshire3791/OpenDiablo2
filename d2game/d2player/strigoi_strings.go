@@ -197,3 +197,9 @@ const (
 	StatusLand    = "Land: %d branches left"
 	StatusWatch   = "   Watch: %.0f/%.0f min"
 )
+
+// M4.7 step 1, the stake (23 Sep 2026).
+const (
+	StakeDone    = "The stake is in. This one will not rise."
+	StakeRefused = "Stake: %v"
+)

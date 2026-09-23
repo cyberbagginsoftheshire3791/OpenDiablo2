@@ -48,6 +48,9 @@ type Combat struct {
 	// edges are his talents as numbers (T3). Nil is legal: no talents.
 	edges Edges
 
+	// corpses is where the dead lie (M4.7).
+	corpses *Corpses
+
 	// xpEvents is what fights did that earns experience, until the game
 	// screen takes it (T3).
 	xpEvents []XPEvent
@@ -1472,6 +1475,26 @@ func (e *encounter) endingReason() string {
 // counter. An encounter that starts and ends between two harness reads is
 // invisible in the state and obvious in the counters -- the same argument the
 // four counters at the top of this file were added for.
+// SetCorpses attaches the corpse registry (M4.7): every enemy death the
+// resolver leaves on the map becomes an open body there.
+func (c *Combat) SetCorpses(k *Corpses) { c.corpses = k }
+
+// fallCorpse records an enemy's body where it fell.
+func (c *Combat) fallCorpse(id string) {
+	if c.corpses == nil || c.encounter == nil {
+		return
+	}
+
+	for _, en := range c.encounter.enemies {
+		if en != nil && en.WatcherID() == id {
+			x, y := en.WatcherAt()
+			c.corpses.Fall(id, c.profileOf(id).Row, x, y)
+
+			return
+		}
+	}
+}
+
 // EndedReason is why the last encounter ended ("" before any). The death
 // screen reads it to say a fight killed him.
 func (c *Combat) EndedReason() string { return c.endedReason }

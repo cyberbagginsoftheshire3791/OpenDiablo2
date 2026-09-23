@@ -416,6 +416,7 @@ func (c *Combat) tryQuickResolve() bool {
 
 		e.dead[id] = true
 		c.earn("slain", id)
+		c.fallCorpse(id)
 
 		c.animate(id, ActDie)
 
@@ -900,6 +901,7 @@ func (c *Combat) reachedZero(id string) {
 
 	e.dead[id] = true
 	c.earn("slain", id)
+	c.fallCorpse(id)
 
 	c.animate(id, ActDie)
 

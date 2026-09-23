@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 28 playtest scripts.** That count, the harness version below and the
+**The 29 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -181,6 +181,16 @@ this doc fails until it agrees.
   pays +8 and spends them. About 75 s: it steps two
   nights. Negative controls ran red for paying regardless and for a post
   that never counts.
+* `corpse_test.go` — the twenty-ninth, M4.7 step 1 (23 Sep 2026): the slain
+  are open bodies, and the stake closes one. Night 1's dead (Q2a PLACEHOLDER)
+  lie as four open bodies of men near where he enters and the carrion count
+  (`spawns.open_bodies`) reads them; at a body without a stake X is refused
+  and nothing moves (the control); a foraged branch whittled into a stake and
+  X at the body take 5 world minutes, spend the stake, close the body and
+  lower the count; a dog he kills falls as carrion (Q1a) -- the count rises
+  and X will not stake a carcass. A screenshot shows the placeholder marks.
+  The "corpses" provider reports every body and counts by state and class.
+  Negative controls ran red for the stake not closing and a carcass staked.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.
