@@ -281,8 +281,8 @@ this doc fails until it agrees.
   its walk sheet through a walk (TW) and its idle sheet at rest (TN) --
   `body_sheet`, which the composite does not have. Screenshot as evidence.
 * `fonts_test.go` — the thirty-seventh, M5.3 (23 Sep 2026): every word drawn
-  from Strigoi's font set (`-fonts data/strigoi/fonts/fonts.json`, Go fonts as
-  PLACEHOLDERS). Control first: the game as shipped reads Diablo II's fonts
+  from Strigoi's font set (`-fonts data/strigoi/fonts/fonts.json`: IM Fell
+  English, IM Fell English SC and Uncial Antiqua, all SIL OFL). Control first: the game as shipped reads Diablo II's fonts
   from the MPQs and reports no font set. Then, launched with `-fonts` (the
   launcher's `startWith`): the census reports the set, and after the menu, a
   new game, the kit, talents and help panels, `data/local/font` has NO file

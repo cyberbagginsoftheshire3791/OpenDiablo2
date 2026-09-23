@@ -160,20 +160,32 @@ func TestTheShippedFontSet(t *testing.T) {
 
 // No glyph is clipped by its cell: each cell holds exactly the ink the face
 // draws for that character on an open canvas. The smallcaps faces are the
-// test, reporting an ascent well below their accented capitals.
+// hard case, reporting an ascent well below their accented capitals; the
+// shipped faces are the ones that matter.
 func TestNoGlyphIsClipped(t *testing.T) {
+	root := filepath.Join("..", "..")
+
 	for _, spec := range []FontSpec{
 		{Face: "gofont:smallcaps", Size: 36, Color: "#ffffff"},
 		{Face: "gofont:smallcaps", Size: 12, Color: "#ffffff"},
 		{Face: "gofont:regular", Size: 13, Color: "#ffffff"},
+		{Face: "/data/strigoi/fonts/IMFeENrm28P.ttf", Size: 15, Color: "#ffffff"},
+		{Face: "/data/strigoi/fonts/IMFeENsc28P.ttf", Size: 13, Color: "#ffffff"},
+		{Face: "/data/strigoi/fonts/UncialAntiqua-Regular.ttf", Size: 34, Color: "#ffffff"},
 	} {
-		am := fontAssets(t, t.TempDir())
+		am := fontAssets(t, root)
 		am.fontSet = &FontSet{Default: spec}
 
 		f, err := am.loadStrigoiFont("x.tbl")
 		require.NoError(t, err)
 
-		parsed, err := opentype.Parse(goFaces[strings.TrimPrefix(spec.Face, goFacePrefix)])
+		data := goFaces[strings.TrimPrefix(spec.Face, goFacePrefix)]
+		if data == nil {
+			data, err = os.ReadFile(filepath.Join(root, filepath.FromSlash(spec.Face)))
+			require.NoError(t, err)
+		}
+
+		parsed, err := opentype.Parse(data)
 		require.NoError(t, err)
 
 		face, err := opentype.NewFace(parsed, &opentype.FaceOptions{Size: spec.Size, DPI: 72, Hinting: font.HintingFull})

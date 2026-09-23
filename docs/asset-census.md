@@ -34,7 +34,7 @@ One player's first day and night (`playtest/census_test.go`). **365 files from D
 | `data/global/monsters` (39) | the town's people and animals (rogues, Warriv, Gheed, cows, chickens) | our villagers and livestock as PNG creatures (M5.1's path) |
 | `data/global/objects` (29) | town objects (waypoint, torches, barrels, ...) | authored with the map (M5.4) |
 | `data/global/chars` (20) | **the hero** (the amazon) | our Janissary as PNG sheets |
-| `data/local/font` (20) | the fonts | **done with `-fonts`** (23 Sep): a font set of TrueType/OpenType faces drawn into the same `d2font.Font` (`d2core/d2asset/strigoi_fonts.go`); 0 font files from the MPQs. Placeholder Go fonts until real faces are chosen |
+| `data/local/font` (20) | the fonts | **done with `-fonts`** (23 Sep): a font set of TrueType/OpenType faces drawn into the same `d2font.Font` (`d2core/d2asset/strigoi_fonts.go`); 0 font files from the MPQs. Faces: IM Fell English (+ SC) and Uncial Antiqua, SIL OFL |
 | `data/global/items` (11), `palette` (6), `sfx` (4), `music` (2), `lng` (3) | inventory art, palettes, sounds, music, the string tables | our own art, sound and a Strigoi string table |
 
 ## Measured: our own map, hero and fonts together (23 Sep 2026)

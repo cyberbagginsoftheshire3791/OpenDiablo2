@@ -6,7 +6,7 @@
     OpenDiablo2.exe -fonts data/strigoi/fonts/fonts.json
 
     {"default": {"face": "gofont:regular", "size": 13},
-     "fonts": {"fontexocet10": {"face": "gofont:smallcaps", "size": 12}, ...}}
+     "fonts": {"fontexocet10": {"face": "IMFeENsc28P.ttf", "size": 13}, ...}}
 
 - **Keys** are the fonts Diablo II's UI asks for: `font6`, `font8`, `font16`,
   `font24`, `font30`, `font42`, `fontformal10/11/12`, `fontexocet8/10`,
@@ -27,9 +27,20 @@
   different screens (a "static" and a "units" colouring); a set has one ink
   per font, and labels' own tints carry the rest.
 - **Licence**: the Go fonts are Bigelow & Holmes's under the Go BSD licence,
-  reproduced in `LICENSE-go-fonts.txt` (it must ship with any build). A face
-  added here brings its own licence file beside it.
+  reproduced in `LICENSE-go-fonts.txt`; the OFL faces' licences are the
+  `OFL-*.txt` files. All of them must ship with any build. A face added here
+  brings its own licence file beside it.
 
-**These choices are PLACEHOLDERS** -- the Go fonts are clean and legible and
-look nothing like 1462. The real faces are Josh's call; a free (SIL OFL)
-face with the licence file beside it drops in by naming it here.
+**The faces (Josh's pick, 23 Sep 2026)**, all SIL Open Font License 1.1,
+each licence beside it:
+
+- **IM Fell English** (`IMFeENrm28P.ttf`, Igino Marini's revival of the Fell
+  types) -- body text; it has Romanian's ă â î ș ț.
+- **IM Fell English SC** (`IMFeENsc28P.ttf`) -- small capitals, where Diablo
+  II used its Exocet caps (buttons, titles).
+- **Uncial Antiqua** (`UncialAntiqua-Regular.ttf`, Astigmatic) -- the big
+  headings (font30, font42). It has no ș/ț; headings that need them must
+  use IM Fell. "Uncial Antiqua" is a Reserved Font Name: the file ships
+  unmodified.
+
+The Go fonts stay compiled in (`gofont:...`) as a fallback anyone can name.

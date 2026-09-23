@@ -1,17 +1,17 @@
 {
-  "default": {"face": "gofont:regular", "size": 13},
+  "default": {"face": "IMFeENrm28P.ttf", "size": 14},
   "fonts": {
-    "font6":          {"face": "gofont:regular",   "size": 8},
-    "font8":          {"face": "gofont:regular",   "size": 10},
-    "font16":         {"face": "gofont:regular",   "size": 14},
-    "font24":         {"face": "gofont:medium",    "size": 20},
-    "font30":         {"face": "gofont:smallcaps", "size": 26},
-    "font42":         {"face": "gofont:smallcaps", "size": 36},
-    "fontformal10":   {"face": "gofont:regular",   "size": 11},
-    "fontformal11":   {"face": "gofont:regular",   "size": 12},
-    "fontformal12":   {"face": "gofont:regular",   "size": 13},
-    "fontexocet8":    {"face": "gofont:smallcaps", "size": 10},
-    "fontexocet10":   {"face": "gofont:smallcaps", "size": 12},
-    "fontridiculous": {"face": "gofont:medium",    "size": 16}
+    "font6":          {"face": "IMFeENrm28P.ttf",           "size": 9},
+    "font8":          {"face": "IMFeENrm28P.ttf",           "size": 11},
+    "font16":         {"face": "IMFeENrm28P.ttf",           "size": 15},
+    "font24":         {"face": "IMFeENrm28P.ttf",           "size": 20},
+    "font30":         {"face": "UncialAntiqua-Regular.ttf", "size": 24},
+    "font42":         {"face": "UncialAntiqua-Regular.ttf", "size": 34},
+    "fontformal10":   {"face": "IMFeENrm28P.ttf",           "size": 12},
+    "fontformal11":   {"face": "IMFeENrm28P.ttf",           "size": 13},
+    "fontformal12":   {"face": "IMFeENrm28P.ttf",           "size": 14},
+    "fontexocet8":    {"face": "IMFeENsc28P.ttf",           "size": 11},
+    "fontexocet10":   {"face": "IMFeENsc28P.ttf",           "size": 13},
+    "fontridiculous": {"face": "UncialAntiqua-Regular.ttf", "size": 16}
   }
 }
