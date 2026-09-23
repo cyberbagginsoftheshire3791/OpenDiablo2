@@ -311,7 +311,7 @@ func (h *HelpOverlay) setupOverlayFrame() {
 
 func (h *HelpOverlay) setupTitleAndButton() {
 	// Title
-	text := h.asset.TranslateString("Strhelp1") // "Diablo II Help"
+	text := strigoiHelpTitle // T10: was "Strhelp1", "Diablo II Help"
 	newLabel := h.uiManager.NewLabel(d2resource.Font16, d2resource.PaletteSky)
 	newLabel.SetText(text)
 
@@ -378,8 +378,14 @@ func (h *HelpOverlay) updateBulletText() {
 		)},
 	}
 
-	for i := 0; i < bullets; i++ {
-		h.bullets[i].SetText(callouts[i].text)
+	// T10: Strigoi's verbs, not D2's. The D2 lines above are kept for the
+	// day a key map rebinding wants them back, and not shown.
+	_ = callouts
+
+	for i, line := range strigoiHelp() {
+		if i < bullets {
+			h.bullets[i].SetText(line)
+		}
 	}
 }
 
