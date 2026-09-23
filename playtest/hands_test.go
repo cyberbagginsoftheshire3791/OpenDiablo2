@@ -50,6 +50,7 @@ func handsStart(t *testing.T) (s *session, playerID, playerHandle string, px, py
 	// M4.7 step 3: Night 1's dead stay down -- these scripts are the player's
 	// verbs against one placed enemy, and a risen man would join the fight.
 	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0)
 
 	p := s.call("strigoi_get_player", map[string]any{})
 

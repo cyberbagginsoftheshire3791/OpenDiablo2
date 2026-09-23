@@ -355,6 +355,10 @@ func DefaultSpawnDials() SpawnDials {
 				Name: RisenRow, Code: "fallen1", DamageClass: "blunt", Human: true,
 				Dead: true, Looks: "opportunists",
 				MinCount: 1, MaxCount: 1,
+				// The ring a WANDERER stands up in (the edge floor, step 5):
+				// where the men's row arrives. A body's risen stands where
+				// it lay and ignores these.
+				MinTiles: 12, MaxTiles: 20,
 				Morale: 0,
 				Speed:  0, DamageMin: 5, DamageMax: 10,
 			},
@@ -771,9 +775,40 @@ func (s *Spawns) spawn(row SpawnRow, weight float64) {
 // table roll -- nothing is drawn from the tables' stream -- and the cap does
 // not count it. It returns the member's id, or "" when nothing could stand.
 func (s *Spawns) Raise(x, y float64) string {
+	if m := s.raiseAt(x, y, 0, 0); m != nil {
+		return m.WatcherID()
+	}
+
+	return ""
+}
+
+// RaiseWanderer stands one of the nameless dead up at the edge of the night
+// (S1 §6.3-6.4, the edge-arrival floor; M4.7 step 5): a member of the risen
+// row in the row's ring around the target. It returns his id and where he
+// stands, or "" when nothing could.
+func (s *Spawns) RaiseWanderer() (string, float64, float64) {
+	row, ok := s.rowNamed(RisenRow)
+	if !ok || s.target == nil {
+		return "", 0, 0
+	}
+
+	tx, ty := s.target.QuarryAt()
+
+	m := s.raiseAt(tx, ty, row.MinTiles, row.MaxTiles)
+	if m == nil {
+		return "", 0, 0
+	}
+
+	x, y := m.WatcherAt()
+
+	return m.WatcherID(), x, y
+}
+
+// raiseAt spawns one of the risen row around a point and adopts him.
+func (s *Spawns) raiseAt(x, y, minTiles, maxTiles float64) Watcher {
 	row, ok := s.rowNamed(RisenRow)
 	if !ok || s.spawner == nil || s.target == nil {
-		return ""
+		return nil
 	}
 
 	kind := row.Name
@@ -781,16 +816,16 @@ func (s *Spawns) Raise(x, y float64) string {
 		kind = row.Looks
 	}
 
-	members := s.spawner.Spawn(kind, row.Code, 1, x, y, 0, 0)
+	members := s.spawner.Spawn(kind, row.Code, 1, x, y, minTiles, maxTiles)
 	if len(members) == 0 {
 		s.failures++
 
-		return ""
+		return nil
 	}
 
 	s.adopt(row, members, 0)
 
-	return members[0].WatcherID()
+	return members[0]
 }
 
 // SetLayDead attaches what hears a risen member lie down where it stands.

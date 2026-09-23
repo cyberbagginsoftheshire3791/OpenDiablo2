@@ -72,6 +72,7 @@ func TestSquadsOnScreen(t *testing.T) {
 	// M4.7 step 3: Night 1's dead stay down -- this script's subject is the squads on screen,
 	// and a risen man coming for him would be a different script.
 	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0)
 
 	// Step frames so advanceWorld's metersBodied latch flips: it binds s:1 to
 	// the player's body AND its model's entity id (Game.advanceWorld). Without a

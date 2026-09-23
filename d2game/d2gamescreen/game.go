@@ -315,6 +315,7 @@ func CreateGame(
 	// M4.7 step 3: a body that rises stands up in the world, and at first
 	// light the dead break off and lie down.
 	game.rising.SetRaise(game.raiseTheDead)
+	game.rising.SetWander(game.spawns.RaiseWanderer)
 	game.rising.SetClock(game.worldClock.WorldMinutes)
 	game.corpses.SetClock(game.worldClock.WorldMinutes)
 	game.rising.SetFirstLight(game.firstLight)

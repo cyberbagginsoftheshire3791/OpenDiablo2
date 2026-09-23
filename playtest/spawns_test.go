@@ -44,6 +44,7 @@ func TestSpawns(t *testing.T) {
 	// their groups' morale -- and a risen man is none of those (the newest
 	// group act 6 inspects was one of the dead). The dead stay down.
 	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0)
 
 	p := s.call("strigoi_get_player", map[string]any{})
 	px, py := num(p, "x"), num(p, "y")

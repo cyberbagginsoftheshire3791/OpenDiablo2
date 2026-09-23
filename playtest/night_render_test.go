@@ -49,6 +49,7 @@ func TestNightIsVisiblyDark(t *testing.T) {
 	// M4.7 step 3: the risen would stand in the frame and break its evenness;
 	// this script measures the unlit night, so the dead stay down.
 	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0)
 	t.Logf("spawned at %v", game["spawn_tile"])
 
 	player := s.call("strigoi_get_player", map[string]any{})

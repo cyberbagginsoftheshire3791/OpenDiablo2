@@ -34,11 +34,17 @@ type RisingDials struct {
 	// the combat dials' 1 world minute a round. Staked inside it he stays
 	// down; not, and he stands again, "possibly while the fight still runs".
 	DownedMinutes float64
+	// EdgeFloor is how many nameless dead stand up at the edge of the night
+	// in band EdgeBand, whatever lies open or closed (S1 §6.3: "plus an
+	// edge-arrival floor of wandering dead even when every body is Closed").
+	EdgeFloor int
+	EdgeBand  int
 }
 
 // DefaultRisingDials are the M4.7 note's step-2 numbers.
 func DefaultRisingDials() RisingDials {
-	return RisingDials{P: 0.3, HastyWeight: 0.25, Pressure: 0, PerOpenAtDawn: 0.02, PerRite: 0.01, DownedMinutes: 3}
+	return RisingDials{P: 0.3, HastyWeight: 0.25, Pressure: 0, PerOpenAtDawn: 0.02, PerRite: 0.01, DownedMinutes: 3,
+		EdgeFloor: 1, EdgeBand: 2}
 }
 
 // Rising rolls the doors once per band.
@@ -64,7 +70,15 @@ type Rising struct {
 	// now is world minutes, for a Downed man's window (step 3b).
 	now        func() float64
 	stoodAgain int
+
+	// wander stands a nameless dead man up at the edge (step 5) and says who
+	// and where; nil in tests that do not want him.
+	wander   func() (string, float64, float64)
+	wandered int
 }
+
+// SetWander attaches what stands the edge floor's wanderers up.
+func (r *Rising) SetWander(fn func() (string, float64, float64)) { r.wander = fn }
 
 // SetClock attaches the world minutes a Downed man's window is measured on.
 func (r *Rising) SetClock(now func() float64) { r.now = now }
@@ -106,13 +120,13 @@ func (r *Rising) Advance() {
 	switch {
 	case band >= 0:
 		for b := r.lastBand + 1; b <= band; b++ {
-			r.roll()
+			r.roll(b)
 		}
 
 		r.standTheDowned()
 	case r.lastBand >= 0:
 		for b := r.lastBand + 1; b < risingBands; b++ {
-			r.roll()
+			r.roll(b)
 		}
 	}
 
@@ -134,8 +148,12 @@ func (r *Rising) Chance() float64 { return clamp01(r.dials.P + r.pressure) }
 
 // roll is one band. Every door draws, in the order the bodies fell, whether
 // or not an earlier one rose, so a run at one seed is the same every time.
-func (r *Rising) roll() {
+func (r *Rising) roll(band int) {
 	r.rolls++
+
+	if band == r.dials.EdgeBand {
+		defer r.wanderers()
+	}
 
 	p := r.Chance()
 
@@ -176,6 +194,28 @@ func (r *Rising) roll() {
 		if r.corpses.Rise(b.ID) {
 			r.risen++
 			r.corpses.Raised(b.ID, member)
+		}
+	}
+}
+
+// wanderers is the edge floor: EdgeFloor nameless dead stand up at the edge
+// of the night. Each is given a body where he stood up, so everything the
+// machine does with the dead -- Downed, laid down at first light, staked --
+// it does with him. After the band's roll, so the roll never sees him.
+func (r *Rising) wanderers() {
+	for i := 0; i < r.dials.EdgeFloor && r.wander != nil; i++ {
+		member, x, y := r.wander()
+		if member == "" {
+			continue
+		}
+
+		r.wandered++
+		id := fmt.Sprintf("wanderer:%d", r.wandered)
+
+		r.corpses.FallHuman(id, x, y)
+
+		if r.corpses.Rise(id) {
+			r.corpses.Raised(id, member)
 		}
 	}
 }
@@ -235,13 +275,14 @@ func (r *Rising) HarnessState() map[string]interface{} {
 		"p": r.dials.P, "hasty_weight": r.dials.HastyWeight, "pressure": r.pressure,
 		"chance": r.Chance(), "band": r.lastBand, "rolls": r.rolls, "risen": r.risen,
 		"stood_again": r.stoodAgain, "downed_minutes": r.dials.DownedMinutes,
+		"edge_floor": r.dials.EdgeFloor, "wandered": r.wandered,
 	}
 }
 
 // HarnessSettableFields are the odds, so a script can make the night certain
 // or empty.
 func (r *Rising) HarnessSettableFields() []string {
-	return []string{"hasty_weight", "p", "pressure"}
+	return []string{"edge_floor", "hasty_weight", "p", "pressure"}
 }
 
 // HarnessSet writes one of them.
@@ -264,6 +305,12 @@ func (r *Rising) HarnessSet(field string, value interface{}) error {
 		}
 	case "pressure":
 		r.pressure = f
+	case "edge_floor":
+		if f < 0 {
+			return fmt.Errorf("edge_floor cannot be negative, got %v", f)
+		}
+
+		r.dials.EdgeFloor = int(f)
 	default:
 		return fmt.Errorf("rising has no settable field %q", field)
 	}

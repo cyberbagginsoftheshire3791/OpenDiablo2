@@ -213,7 +213,10 @@ this doc fails until it agrees.
   Scripts about other things that cross a deep night (`combat_rout_test.go`,
   `hands_test.go`'s `handsStart`, `night_render_test.go`, and since step 3b
   `spawns_test.go`, `squads_test.go`, `survive_test.go`, `watch_test.go`) set
-  `rising.p` to 0 so Night 1's dead stay down.
+  `rising.p` to 0 so Night 1's dead stay down, and since step 5 `rising.edge_floor`
+  to 0 so the edge floor's wanderer stays away too. `dead_walk_test.go` act 6
+  (step 5): at odds 0, in the third deep-night band a fifth, nameless dead man
+  stands up at the edge of the night, with a body.
 * `hearth_test.go` — the thirty-second, M4.7 step 4 (23 Sep 2026): the priest's
   rite, the hearth unlock, and a staking seen. By day with the village
   "watching" (`village.seen_radius` wide) a stake costs standing 5 and marks

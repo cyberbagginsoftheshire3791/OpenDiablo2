@@ -46,6 +46,7 @@ func TestCombatRout(t *testing.T) {
 	// M4.7 step 3: Night 1's dead would rise and join a fight about beasts'
 	// nerve; this script is about the pack, so the dead stay down.
 	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0)
 
 	p := s.call("strigoi_get_player", map[string]any{})
 	playerHandle := str(p, "handle")

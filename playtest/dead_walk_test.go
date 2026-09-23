@@ -32,6 +32,7 @@ func TestTheDeadWalk(t *testing.T) {
 	})
 	setField(s, "spawns", "chance", 0)
 	setField(s, "rising", "p", 1.0)
+	setField(s, "rising", "edge_floor", 0) // until act 6: the four are the subject
 
 	health := mustNum(t, metersState(s), "health")
 	keepAlive := func() {
@@ -184,7 +185,21 @@ func TestTheDeadWalk(t *testing.T) {
 		t.Fatalf("act 5: at odds 0 the four Downed stand in the next deep night: %d groups %v", got, corpsesState(s))
 	}
 
-	t.Logf("four rose, came for him at 02:15, lay down Downed at first light (%d in the fight), and stood again the next night at odds 0", enemies)
+	// --- 6: the edge floor -----------------------------------------------------------------------
+	// Still at odds 0: in the third band one nameless dead man stands up at
+	// the edge of the night anyway (S1 §6.3), and he has a body.
+	setField(s, "rising", "edge_floor", 1)
+
+	for i := 0; i < 400 && mustNum(t, risingState(s), "wandered") < 1; i++ {
+		s.call("strigoi_step_world", map[string]any{"world_minutes": 10.0})
+		keepAlive()
+	}
+
+	if got := risenGroups(s); got != 5 || mustNum(t, corpsesState(s), "total") != 5 {
+		t.Fatalf("act 6: a fifth, nameless, at the edge of the third band: %d groups %v", got, corpsesState(s))
+	}
+
+	t.Logf("four rose, came for him at 02:15, lay down Downed at first light (%d in the fight), stood again the next night at odds 0, and a fifth came from the edge", enemies)
 }
 
 // risenGroups counts the risen row's groups on the map.

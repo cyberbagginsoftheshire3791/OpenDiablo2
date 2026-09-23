@@ -319,6 +319,8 @@ var Register = []Entry{
 		"M4.7 step 4 (Q6a): the hover names the dead after the priest's tale -- GameControls.hoverLabel.", ""},
 	{sym(pkgScreen, "Game.stakeInFight"), BucketWire, VerdictLive,
 		"M4.7 step 3b: X in a fight, on his turn -- a stake through a Downed man at his feet as the Action.", ""},
+	{sym(pkgWorld, "Spawns.RaiseWanderer"), BucketWire, VerdictLive,
+		"M4.7 step 5: the edge floor -- a nameless dead man stands up at the edge of the night in band 3, whatever is closed (S1 6.3) -- Rising.wanderers.", ""},
 	{sym(pkgWorld, "Combat.Rejoin"), BucketWire, VerdictLive,
 		"M4.7 step 3b: a Downed man who stands again is back in the fight he fell in -- Game.raiseTheDead.", ""},
 	{sym(pkgWorld, "Spawns.Member"), BucketWire, VerdictLive,

@@ -35,6 +35,7 @@ func TestRising(t *testing.T) {
 	// Step 3 stands the risen up to come for him; this script is about the
 	// roll, so nothing notices him (the dead's walk is dead_walk_test.go's).
 	setField(s, "spawns", "notice_radius", 0.5)
+	setField(s, "rising", "edge_floor", 0) // the roll alone: no wanderer at the edge
 
 	c := corpsesState(s)
 	if mustNum(t, c, "fresh_human") != 4 {
