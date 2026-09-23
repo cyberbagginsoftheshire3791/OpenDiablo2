@@ -45,6 +45,17 @@ type Combat struct {
 	// kits is what each combatant carries (T2). Nil is legal: no gear.
 	kits Kits
 
+	// edges are his talents as numbers (T3). Nil is legal: no talents.
+	edges Edges
+
+	// xpEvents is what fights did that earns experience, until the game
+	// screen takes it (T3).
+	xpEvents []XPEvent
+
+	// killerIsPlayer is whether the blow being resolved is his, so a death
+	// can charge the pack his What Breaks Them nerve (T3).
+	killerIsPlayer bool
+
 	// stepper moves a body on its turn in a paced fight (T1). Nil is legal:
 	// nothing steps, and an enemy out of reach waits where it stands.
 	stepper Stepper
@@ -577,6 +588,11 @@ type encounter struct {
 	// blockUsedInRound is the round his shield last turned a blow (T2): one a
 	// round, like the Reaction.
 	blockUsedInRound int
+
+	// T3: how many Reactions and blocks the round has spent -- a talent can
+	// raise both caps above one.
+	reactionsInRound int
+	blocksInRound    int
 
 	round     int
 	sinceTurn float64

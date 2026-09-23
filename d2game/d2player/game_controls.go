@@ -328,6 +328,9 @@ type GameControls struct {
 	// kitHolder is the game screen's owner of the hero's gear (T2).
 	kitHolder KitHolder
 
+	// progressHolder is the owner of his experience and talents (T3).
+	progressHolder ProgressHolder
+
 	// squads is the owner the player commands (M4.4c-1): the click handler and
 	// the cycle key select through it, and the selection hit test reads its
 	// model entities. It is the same instance the game screen registered as the
@@ -409,6 +412,12 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 			return true
 		}
 
+		// T3: and the talent panel.
+		if g.hud != nil && g.hud.talents != nil && g.hud.talents.open {
+			g.hud.talents.open = false
+			return true
+		}
+
 		g.onEscKey()
 
 		return true
@@ -437,7 +446,12 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 			g.togglePartyPanel()
 		}
 	case d2enum.ToggleSkillTreePanel:
-		g.toggleSkilltreePanel()
+		// T3: the Strigoi talent tree replaces D2's skill tree.
+		if g.progressHolder != nil {
+			g.toggleTalentPanel()
+		} else {
+			g.toggleSkilltreePanel()
+		}
 	case d2enum.ToggleCharacterPanel:
 		g.toggleHeroStatsPanel()
 	case d2enum.ToggleQuestLog:
@@ -524,6 +538,10 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 	// T2: nothing walks or casts while he is choosing his loadout, and a held
 	// button over the kit panel is a click on the panel (review finding).
 	if g.kitHolder != nil && (g.kitHolder.ChoosingLoadout() || g.overKitPanel(event.X(), event.Y())) {
+		return true
+	}
+
+	if g.overTalentPanel(event.X(), event.Y()) {
 		return true
 	}
 
@@ -625,6 +643,16 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 
 	// T2: the loadout choice is modal, and a click on the kit panel is a
 	// click on the kit.
+	// T3: the talent panel takes its own clicks, and nothing walks through it.
+	// Tested BEFORE the kit, which it overlaps (review finding).
+	if g.overTalentPanel(mx, my) {
+		if event.Button() == d2enum.MouseButtonLeft {
+			g.talentClick(mx, my)
+		}
+
+		return true
+	}
+
 	if event.Button() == d2enum.MouseButtonLeft && g.kitClick(mx, my) {
 		return true
 	}
@@ -1080,7 +1108,7 @@ func (g *GameControls) isInActiveMenusRect(px, py int) bool {
 		return true
 	}
 
-	if g.overKitPanel(px, py) {
+	if g.overKitPanel(px, py) || g.overTalentPanel(px, py) {
 		return true
 	}
 

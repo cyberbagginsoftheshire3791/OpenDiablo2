@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 21 playtest scripts.** That count, the harness version below and the
+**The 22 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -116,6 +116,13 @@ this doc fails until it agrees.
   Its control, `TestKitTorchAndBladeControl`, lights the torch and never blocks.
   **`start_game` takes `loadout`** (sword-and-board, torch-and-blade -- the
   default -- or `ask`); every other script gets the default kit written for it.
+* `progress_test.go` — the twenty-second, T3 (23 Sep 2026): experience, a
+  level and a talent. A kill earns exactly what `data/strigoi/talents.json`
+  says; T opens the talent panel; one click selects and only a second takes (no
+  respec); a rank whose rank above is untaken is refused; Hard Flesh raises his
+  maximum health by exactly 30 against the Long Marches control; experience and
+  talents are on disk when he leaves. The "progress" provider's `grant_xp` is
+  its one arranging verb, used only after the kill has proved the earning path.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

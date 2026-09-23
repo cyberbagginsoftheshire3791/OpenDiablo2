@@ -113,6 +113,11 @@ func (g *GameControls) toggleKitPanel() {
 
 	if !g.hud.kit.open {
 		g.clearRightScreenSide()
+
+		// One panel at a time: the talent panel spans the kit's area.
+		if g.hud.talents != nil {
+			g.hud.talents.open = false
+		}
 	}
 
 	g.hud.kit.open = !g.hud.kit.open

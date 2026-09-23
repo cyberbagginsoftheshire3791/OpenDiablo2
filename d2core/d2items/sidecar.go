@@ -22,6 +22,11 @@ const sidecarVersion = 1
 type sidecar struct {
 	Version int  `json:"version"`
 	Kit     *Kit `json:"kit"`
+
+	// Progress is the hero's standing (T3), carried here as raw JSON so this
+	// package does not import the progression package. Optional: a T2 file
+	// without it loads as a hero with no experience.
+	Progress json.RawMessage `json:"progress,omitempty"`
 }
 
 // SidecarPath is the kit file for a hero save.
@@ -36,43 +41,43 @@ func SidecarPath(savePath string) string {
 // ErrNoSidecar means the hero has never chosen a loadout.
 var ErrNoSidecar = errors.New("no kit saved for this hero")
 
-// LoadSidecar reads a hero's kit and binds it to the catalogue.
-func LoadSidecar(path string, c *Catalog) (*Kit, error) {
+// LoadHero reads a hero's kit and his progress (raw; nil when none).
+func LoadHero(path string, c *Catalog) (*Kit, json.RawMessage, error) {
 	if path == "" {
-		return nil, ErrNoSidecar
+		return nil, nil, ErrNoSidecar
 	}
 
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, ErrNoSidecar
+		return nil, nil, ErrNoSidecar
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var sc sidecar
 	if err := json.Unmarshal(data, &sc); err != nil {
-		return nil, fmt.Errorf("kit file %s: %w", path, err)
+		return nil, nil, fmt.Errorf("kit file %s: %w", path, err)
 	}
 
 	if sc.Version != sidecarVersion || sc.Kit == nil {
-		return nil, fmt.Errorf("kit file %s: version %d, want %d", path, sc.Version, sidecarVersion)
+		return nil, nil, fmt.Errorf("kit file %s: version %d, want %d", path, sc.Version, sidecarVersion)
 	}
 
 	sc.Kit.Bind(c)
 
-	return sc.Kit, nil
+	return sc.Kit, sc.Progress, nil
 }
 
-// SaveSidecar writes a hero's kit, atomically: a half-written kit file would
-// cost him his gear.
-func SaveSidecar(path string, k *Kit) error {
+// SaveHero writes a hero's kit and his progress (raw JSON; nil for none),
+// atomically: a half-written file would cost him his gear and his levels.
+func SaveHero(path string, k *Kit, progress json.RawMessage) error {
 	if path == "" || k == nil {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k}, "", "  ")
+	data, err := json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: progress}, "", "  ")
 	if err != nil {
 		return err
 	}

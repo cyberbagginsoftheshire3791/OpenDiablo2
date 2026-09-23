@@ -131,6 +131,9 @@ type Body interface {
 //
 // Not safe for concurrent use; it lives on the game goroutine.
 type Meters struct {
+	// cond is his talents applied to this body (T3); zero is neutral.
+	cond Conditioning
+
 	dials MeterDials
 	clock *Clock
 	body  Body
@@ -188,9 +191,9 @@ func (m *Meters) Advance(worldMinutes float64) {
 
 	hours := worldMinutes / minutesPerHour
 
-	food := m.dials.FoodDrain * hours
-	water := m.dials.WaterDrain * hours
-	fatigue := m.dials.FatigueDrain * hours
+	food := m.dials.FoodDrain * hours * orOne(m.cond.FoodWaterRate)
+	water := m.dials.WaterDrain * hours * orOne(m.cond.FoodWaterRate)
+	fatigue := m.dials.FatigueDrain * hours * orOne(m.cond.FatigueRate)
 
 	switch m.activity {
 	case ActivityLabour:
@@ -307,15 +310,30 @@ func (m *Meters) Dead() bool { return m.body != nil && m.body.CurrentHealth() <=
 // it (S1 §5).
 func (m *Meters) ShakenThreshold() float64 {
 	if m.Thirsty() {
-		return m.dials.ThirstyShakenFatigue
+		return m.dials.ThirstyShakenFatigue + m.cond.ShakenFatigue
 	}
 
-	return m.dials.ShakenFatigue
+	return m.dials.ShakenFatigue + m.cond.ShakenFatigue
 }
 
 // ReactionAvailable is R2 §1's fatigue rule stated as a fact about the body
 // rather than a decision by the resolver: M4.5 reads it, M4.2 owns it.
-func (m *Meters) ReactionAvailable() bool { return m.fatigue < m.dials.NoReactionFatigue }
+func (m *Meters) ReactionAvailable() bool {
+	return m.fatigue < m.dials.NoReactionFatigue+m.cond.NoReactionFatigue
+}
+
+// Conditioning is what his talents change about his body (T3): how fast he
+// tires and spends food and water, and how much fatigue he carries before
+// Shaken and before the Reaction goes. The zero value is neutral.
+type Conditioning struct {
+	FatigueRate       float64 // x (0 = 1)
+	FoodWaterRate     float64 // x (0 = 1)
+	ShakenFatigue     float64 // +
+	NoReactionFatigue float64 // +
+}
+
+// SetConditioning applies his talents to this body.
+func (m *Meters) SetConditioning(c Conditioning) { m.cond = c }
 
 // Shaken is R2 §3's condition, entered on exhaustion and lowered by thirst.
 func (m *Meters) Shaken() bool { return m.fatigue >= m.ShakenThreshold() }

@@ -1,0 +1,70 @@
+{
+  "xp": {
+    "slain": {"dogs": 10, "wolves": 15, "boar": 20, "opportunists": 12, "": 5},
+    "routed_factor": 0.5,
+    "night": 50
+  },
+  "levels": [0, 50, 120, 210, 320, 450, 600, 770, 960, 1170],
+  "branches": [
+    {
+      "id": "endurance", "name": "Endurance",
+      "nodes": [
+        {"id": "long-marches", "name": "Long Marches",
+         "text": "Fatigue rises 15% slower.",
+         "effects": {"fatigue_rate": 0.85}},
+        {"id": "hard-flesh", "name": "Hard Flesh",
+         "text": "+30 maximum health.",
+         "effects": {"max_health": 30}},
+        {"id": "iron-nerve", "name": "Iron Nerve",
+         "text": "Shaken sets in 10 fatigue later.",
+         "effects": {"shaken_fatigue": 10}},
+        {"id": "lean-months", "name": "Lean Months",
+         "text": "Food and water last 15% longer.",
+         "effects": {"food_water_rate": 0.85}},
+        {"id": "unbroken", "name": "Unbroken",
+         "text": "+40 maximum health; the Reaction holds 10 fatigue longer.",
+         "effects": {"max_health": 40, "no_reaction_fatigue": 10}}
+      ]
+    },
+    {
+      "id": "drill", "name": "Drill",
+      "nodes": [
+        {"id": "riposte-drill", "name": "Riposte Drill",
+         "text": "A riposte strikes for half again as much.",
+         "effects": {"riposte_damage": 1.5}},
+        {"id": "shield-wall", "name": "Shield Wall",
+         "text": "The shield turns two blows a round.",
+         "effects": {"blocks_per_round": 1}},
+        {"id": "quick-feet", "name": "Quick Feet",
+         "text": "+1 tile to the Move.",
+         "effects": {"move_tiles": 1}},
+        {"id": "killing-stroke", "name": "Killing Stroke",
+         "text": "His blows crit 10% more often.",
+         "effects": {"crit_band": 10}},
+        {"id": "second-answer", "name": "Second Answer",
+         "text": "Two Reactions a round.",
+         "effects": {"reactions": 1}}
+      ]
+    },
+    {
+      "id": "lore", "name": "Lore",
+      "nodes": [
+        {"id": "night-eyes", "name": "Night Eyes",
+         "text": "Striking out of the dark into light is worth 10 more.",
+         "effects": {"advantage_bonus": 10}},
+        {"id": "tallow-and-pitch", "name": "Tallow and Pitch",
+         "text": "His torch burns a quarter slower.",
+         "effects": {"torch_burn_rate": 0.75}},
+        {"id": "what-breaks-them", "name": "What Breaks Them",
+         "text": "A kill costs the pack half again as much nerve.",
+         "effects": {"kill_nerve": 1.5}},
+        {"id": "quiet-step", "name": "Quiet Step",
+         "text": "Beasts notice him two tiles closer.",
+         "effects": {"notice_radius": -2}},
+        {"id": "fire-and-iron", "name": "Fire and Iron",
+         "text": "While his torch burns, every hit shakes a beast's pack.",
+         "effects": {"lit_nerve": 10}}
+      ]
+    }
+  ]
+}

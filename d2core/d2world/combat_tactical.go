@@ -562,9 +562,12 @@ func (c *Combat) Tactical() TacticalView {
 	if e.target != nil {
 		v.PlayerID = e.target.QuarryID()
 
+		// T3: Quick Feet.
+		v.MoveTiles += c.edgeOf(v.PlayerID).ExtraMove
+
 		if f := c.fitnessOf(v.PlayerID); f != nil {
 			v.ReactionAvailable = f.ReactionAvailable() && !f.Shaken() &&
-				e.reactionUsedInRound != e.round && !(e.round == 1 && e.surprised)
+				c.reactionsLeft() && !(e.round == 1 && e.surprised)
 		}
 
 		// T2: and a blade that ripostes -- the pip must not offer what the

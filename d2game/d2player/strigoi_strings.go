@@ -144,3 +144,14 @@ const (
 	kitKeyOne = d2enum.Key1
 	kitKeyTwo = d2enum.Key2
 )
+
+// T3, progression's words (23 Sep 2026).
+const (
+	ProgressHeader       = "Level %d     %d / %s experience     %d talent(s) to choose"
+	ProgressTop          = "-"
+	ProgressHint         = "Click a talent to read it; click it again to take it. There is no taking it back."
+	ProgressClickAgain   = "(click again to take it)"
+	ProgressAlreadyTaken = "(taken)"
+	ProgressTaken        = "%s is his."
+	ProgressLevelUp      = "Level %d  -  a talent to choose (T)"
+)

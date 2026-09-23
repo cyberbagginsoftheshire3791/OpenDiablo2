@@ -2,6 +2,7 @@ package d2gamescreen
 
 import (
 	"errors"
+	"os"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 )
@@ -29,7 +30,10 @@ func (v *Game) bindKit() {
 
 	v.kitPath = d2items.SidecarPath(v.gameClient.SaveFilePath)
 
-	kit, err := d2items.LoadSidecar(v.kitPath, v.items)
+	kit, progress, err := d2items.LoadHero(v.kitPath, v.items)
+
+	// T3: his progress rides in the same file; none yet is a fresh hero.
+	defer v.bindProgress(progress)
 
 	switch {
 	case err == nil:
@@ -37,9 +41,15 @@ func (v *Game) bindKit() {
 	case errors.Is(err, d2items.ErrNoSidecar):
 		v.choosingLoadout = true
 	default:
-		// A kit file that cannot be read is not a reason to lose the run:
-		// say so and let him choose again.
-		v.Errorf("kit: %v -- choosing a loadout again", err)
+		// A kit file that cannot be read is not a reason to lose the run: say
+		// so, SET THE FILE ASIDE rather than overwrite it -- it holds his
+		// progress too, and the next save would erase it for good (review
+		// finding) -- and let him choose again.
+		v.Errorf("kit: %v -- set aside as .corrupt; choosing a loadout again", err)
+
+		if rerr := os.Rename(v.kitPath, v.kitPath+".corrupt"); rerr != nil {
+			v.Errorf("kit: %v", rerr)
+		}
 
 		v.choosingLoadout = true
 	}
@@ -211,7 +221,7 @@ func (v *Game) saveKit() {
 		}
 	}
 
-	if err := d2items.SaveSidecar(v.kitPath, v.kit); err != nil {
+	if err := d2items.SaveHero(v.kitPath, v.kit, v.progressJSON()); err != nil {
 		v.Errorf("kit: %v", err)
 	}
 

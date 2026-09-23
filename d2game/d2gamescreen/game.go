@@ -25,6 +25,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2progress"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
@@ -109,6 +110,17 @@ func CreateGame(
 		return nil, err
 	}
 
+	// T3: the talent table, beside the item table and for the same reason.
+	talentData, err := asset.LoadFile(talentsPath)
+	if err != nil {
+		return nil, fmt.Errorf("load Strigoi talents: %w", err)
+	}
+
+	talents, err := d2progress.Load(talentData)
+	if err != nil {
+		return nil, err
+	}
+
 	// find the local player and its initial location
 	var startX, startY float64
 
@@ -129,6 +141,7 @@ func CreateGame(
 		asset:                asset,
 		bestiary:             bestiary,
 		items:                items,
+		talents:              talents,
 		gameClient:           gameClient,
 		gameControls:         nil,
 		localPlayer:          nil,
@@ -250,6 +263,9 @@ func CreateGame(
 	// screen, which owns the kit.
 	game.combat.SetKits(game)
 
+	// T3: and his talents, as numbers.
+	game.combat.SetEdges(game)
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -290,10 +306,21 @@ type Game struct {
 
 	// T2, the kit: the item table, the local hero's gear, where it is saved,
 	// and whether the first-entry loadout choice is holding the world.
-	items                *d2items.Catalog
-	kit                  *d2items.Kit
-	kitPath              string
-	choosingLoadout      bool
+	items           *d2items.Catalog
+	kit             *d2items.Kit
+	kitPath         string
+	choosingLoadout bool
+
+	// T3, progression: the talent table, his standing, and the clock stage
+	// last seen (dawn after night is worth experience).
+	talents   *d2progress.Tree
+	progress  *d2progress.Progress
+	lastStage d2world.Stage
+
+	// dawnPaidDay is the day whose dawn has paid its night's experience, and
+	// noticeDelta is the Quiet Step radius change already applied (T3).
+	dawnPaidDay          int
+	noticeDelta          float64
 	gameClient           *d2client.GameClient
 	mapRenderer          *d2maprenderer.MapRenderer
 	uiManager            *d2ui.UIManager
@@ -409,6 +436,7 @@ func (v *Game) OnLoad(_ d2screen.LoadingState) {
 // OnUnload releases the resources of Gameplay screen
 func (v *Game) OnUnload() error {
 	d2harness.Unregister(v.gameControls) // the "ui" provider dies with the screen
+	d2harness.Unregister(progressProvider{v})
 
 	// The world's systems die with it too (M4.1).
 	if v.worldClock != nil {
@@ -550,6 +578,9 @@ func (v *Game) Advance(elapsed float64) error {
 	// is live -- not under the escape menu, which pauses everything.
 	if v.screenLive() {
 		v.tacticalAdvance(elapsed)
+
+		// T3: what the fights did, and dawn.
+		v.earnExperience()
 	}
 
 	// The map keeps its ORIGINAL condition: the escape menu still freezes the
@@ -1852,6 +1883,7 @@ func (v *Game) bindGameControls() error {
 		// T2: his kit, or the choice that makes it.
 		v.bindKit()
 		v.gameControls.SetKitHolder(v)
+		v.gameControls.SetProgressHolder(v)
 
 		if err := v.inputManager.BindHandler(v.gameControls); err != nil {
 			v.Error(bindControlsErrStr + player.ID())

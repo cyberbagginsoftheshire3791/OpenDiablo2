@@ -415,6 +415,7 @@ func (c *Combat) tryQuickResolve() bool {
 		}
 
 		e.dead[id] = true
+		c.earn("slain", id)
 
 		c.animate(id, ActDie)
 
@@ -637,7 +638,7 @@ func (c *Combat) enemyActivation(id string) {
 	// Reported on BOTH rows: on the enemy's blow, as the thing that triggered
 	// the answer, and on the player's, as what it was.
 	c.lastActions[idx].reaction = "riposte"
-	c.encounter.reactionUsedInRound = c.encounter.round
+	c.spendReaction()
 
 	c.resolveBlow(c.encounter.round, e.target.QuarryID(), id, true, "riposte")
 }
@@ -689,7 +690,7 @@ func (c *Combat) riposteAllowed(idx int, attackerID string) bool {
 	// One per round (R2 §3 bullet 6's own cap), and none at all in a
 	// surprised round one (D8 §9: the caught-head-down player's Reaction is
 	// unavailable that round).
-	if e.reactionUsedInRound == e.round || (e.round == 1 && e.surprised) {
+	if !c.reactionsLeft() || (e.round == 1 && e.surprised) {
 		return false
 	}
 
@@ -743,6 +744,17 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 
 	mod, why := c.advantage(attackerID, targetID)
 
+	// T3: his edges. Zero is neutral, so a hero with no talents -- and every
+	// resolver test, which binds none -- rolls exactly as before.
+	edge := Edge{}
+	if attackerIsPlayer {
+		edge = c.edgeOf(attackerID)
+
+		if mod > 0 {
+			mod += edge.AdvantageBonus
+		}
+	}
+
 	// Shaken costs the PLAYER accuracy. An enemy is never Shaken in v0 -- the
 	// condition is a fact about the player's body and nothing computes one
 	// for a beast.
@@ -753,7 +765,7 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 
 	score := clampScore(roll + mod)
 
-	band := c.bandFor(score)
+	band := c.bandForCrit(score, c.dials.CritBand+edge.CritBand)
 	if c.dials.ForcedBand != "" {
 		band = c.dials.ForcedBand
 	}
@@ -767,7 +779,7 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 	blocked := false
 
 	if targetKit != nil && !attackerIsPlayer && (band == BandHit || band == BandCrit) &&
-		targetKit.CanBlock() && c.encounter.blockUsedInRound != round {
+		targetKit.CanBlock() && c.blocksLeft(round, targetID) {
 		if band == BandCrit {
 			band = BandHit
 		} else {
@@ -775,13 +787,18 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 		}
 
 		targetKit.SpendBlock()
-		c.encounter.blockUsedInRound = round
+		c.spendBlock(round)
 		blocked = true
 	}
 
 	// The floor of 1 is what makes "bounded" true at the bottom: a graze is a
 	// small wound, never nothing.
 	damage := int(float64(base) * c.factorFor(band))
+
+	// T3: Riposte Drill -- his answer lands harder.
+	if attackerIsPlayer && reaction == "riposte" {
+		damage = int(float64(damage) * orOne(edge.RiposteDamage))
+	}
 
 	// T2: his mail takes its share off a blow of its class, and wears for it.
 	absorbed := 0
@@ -828,12 +845,25 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 
 	idx := len(c.lastActions) - 1
 
+	c.killerIsPlayer = attackerIsPlayer
+
 	switch {
 	case a.targetHasBody && a.targetHealthAfter <= 0:
 		c.reachedZero(targetID)
 	case a.targetHasBody:
 		c.animate(targetID, ActHit)
+
+		// T3: Fire and Iron -- while his torch burns, a hit that lands
+		// shakes a beast's pack. Never the dead: mundane() is the fence.
+		if attackerIsPlayer && edge.LitNerve > 0 && band != BandGraze && c.morale != nil && c.mundane(targetID) {
+			if group := c.profileOf(targetID).Group; group != "" {
+				c.morale.Hurt(group, edge.LitNerve)
+				c.routeIfBroken(group)
+			}
+		}
 	}
+
+	c.killerIsPlayer = false
 
 	return idx, true
 }
@@ -869,6 +899,7 @@ func (c *Combat) reachedZero(id string) {
 	}
 
 	e.dead[id] = true
+	c.earn("slain", id)
 
 	c.animate(id, ActDie)
 
@@ -959,7 +990,13 @@ func (c *Combat) loseNerve(id string) {
 		return
 	}
 
-	c.morale.Hurt(profile.Group, c.dials.LossWeight*100/float64(count))
+	// T3: What Breaks Them -- a death HE dealt costs the pack more.
+	weight := c.dials.LossWeight
+	if c.killerIsPlayer && c.encounter != nil && c.encounter.target != nil {
+		weight *= orOne(c.edgeOf(c.encounter.target.QuarryID()).KillNerve)
+	}
+
+	c.morale.Hurt(profile.Group, weight*100/float64(count))
 
 	c.routeIfBroken(profile.Group)
 }
@@ -1000,6 +1037,7 @@ func (c *Combat) routeIfBroken(groupID string) {
 		}
 
 		e.routed[id] = true
+		c.earn("routed", id)
 
 		c.withdraw(id)
 	}
@@ -1115,6 +1153,24 @@ func (c *Combat) bandFor(score int) string {
 	default:
 		return BandHit
 	}
+}
+
+// bandForCrit is bandFor with the crit band given -- his Killing Stroke widens
+// it for his own blows. The graze band is untouched, so a wider crit comes out
+// of the hit band.
+func (c *Combat) bandForCrit(score, crit int) string {
+	if crit == c.dials.CritBand {
+		return c.bandFor(score)
+	}
+
+	switch {
+	case score <= c.dials.GrazeBand:
+		return BandGraze
+	case score > 100-crit:
+		return BandCrit
+	}
+
+	return BandHit
 }
 
 // factorFor is what the band multiplies the damage draw by.

@@ -86,10 +86,15 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"tactical_notice": g.tacticalNoticeText(),
 
 		// T2: the kit panel and the loadout choice.
-		"kit_open":          g.hud != nil && g.hud.kit != nil && g.hud.kit.open,
-		"choosing_loadout":  g.kitHolder != nil && g.kitHolder.ChoosingLoadout(),
-		"kit_notice":        g.kitNoticeText(),
-		"kit_rows":          g.kitRowsReport(),
+		"kit_open":         g.hud != nil && g.hud.kit != nil && g.hud.kit.open,
+		"choosing_loadout": g.kitHolder != nil && g.kitHolder.ChoosingLoadout(),
+		"kit_notice":       g.kitNoticeText(),
+		"kit_rows":         g.kitRowsReport(),
+
+		// T3: the talent panel and its cells, clickable where drawn.
+		"talent_open":       g.hud != nil && g.hud.talents != nil && g.hud.talents.open,
+		"talent_cells":      g.talentCellsReport(),
+		"talent_note":       g.talentNoteText(),
 		"help_open":         g.HelpOverlay.IsOpen(),
 		"escape_menu_open":  g.escapeMenu.IsOpen(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
@@ -154,4 +159,31 @@ func (g *GameControls) kitRowsReport() []map[string]interface{} {
 	}
 
 	return out
+}
+
+// talentCellsReport is every talent cell with its state and a click point.
+func (g *GameControls) talentCellsReport() []map[string]interface{} {
+	out := []map[string]interface{}{}
+
+	if g.hud == nil || g.hud.talents == nil {
+		return out
+	}
+
+	for _, c := range g.hud.talents.cells {
+		out = append(out, map[string]interface{}{
+			"id": c.id, "taken": c.taken, "open": c.open,
+			"x": c.x + 20, "y": c.y + 8,
+		})
+	}
+
+	return out
+}
+
+// talentNoteText is the panel's last notice.
+func (g *GameControls) talentNoteText() string {
+	if g.hud == nil || g.hud.talents == nil {
+		return ""
+	}
+
+	return g.hud.talents.notice
 }

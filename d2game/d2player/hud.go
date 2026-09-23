@@ -160,6 +160,10 @@ type HUD struct {
 	kit       *kitOverlay
 	kitWidget *d2ui.CustomWidget
 
+	// T3: the talent panel.
+	talents       *talentOverlay
+	talentsWidget *d2ui.CustomWidget
+
 	// The selected-squad sheet (M4.4c-1, ruled ask 2/6): a panel of cards drawn
 	// by sheetWidget when sheetOpen, its Font16 lines painted through the
 	// invisible sheetLabel. It opens on selection and closes on deselect.
@@ -234,6 +238,7 @@ func NewHUD(
 		sheetLabel:        sheetLabel,
 		tactical:          newTacticalOverlay(ui),
 		kit:               newKitOverlay(ui),
+		talents:           newTalentOverlay(ui),
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -366,6 +371,12 @@ func (h *HUD) loadCustomWidgets() {
 	h.kitWidget.SetPosition(0, 0)
 	h.kitWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
 	h.panelGroup.AddWidget(h.kitWidget)
+
+	// T3: the talent panel.
+	h.talentsWidget = h.uiManager.NewCustomWidget(h.renderTalents, screenWidth, screenHeight)
+	h.talentsWidget.SetPosition(0, 0)
+	h.talentsWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.talentsWidget)
 }
 
 func (h *HUD) loadSkillResources() {
@@ -828,6 +839,7 @@ func (h *HUD) Advance(elapsed float64) {
 	h.refreshOverheadBars()
 	h.refreshTactical(elapsed)
 	h.refreshKit()
+	h.refreshTalents()
 	h.setStaminaTooltipText()
 	h.setExperienceTooltipText()
 

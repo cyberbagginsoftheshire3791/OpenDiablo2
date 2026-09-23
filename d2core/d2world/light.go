@@ -103,6 +103,9 @@ func (s *Source) burns() bool { return s.Burn >= 0 }
 //
 // Not safe for concurrent use; it lives on the game goroutine.
 type Light struct {
+	// carriedBurnRate scales a carried source's burn (T3); 0 = 1.
+	carriedBurnRate float64
+
 	dials   LightDials
 	clock   *Clock
 	sources []*Source
@@ -139,13 +142,23 @@ func (l *Light) Advance(worldMinutes float64) {
 			continue
 		}
 
-		s.Burn -= worldMinutes
+		// T3: Tallow and Pitch -- his carried torch burns slower.
+		burn := worldMinutes
+		if s.Carried && l.carriedBurnRate > 0 {
+			burn *= l.carriedBurnRate
+		}
+
+		s.Burn -= burn
 		if s.Burn <= 0 {
 			s.Burn = 0
 			s.Lit = false
 		}
 	}
 }
+
+// SetCarriedBurnRate scales how fast a CARRIED source burns (T3). 0 or 1 is
+// the signed rate.
+func (l *Light) SetCarriedBurnRate(rate float64) { l.carriedBurnRate = rate }
 
 // Add puts a source in the world and returns it.
 func (l *Light) Add(kind SourceKind, carried bool, x, y float64) *Source {

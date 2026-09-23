@@ -1,6 +1,7 @@
 package d2items
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -291,18 +292,18 @@ func TestSidecarRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	save := filepath.Join(dir, "3.od2")
 
-	if _, err := LoadSidecar(SidecarPath(save), c); !errors.Is(err, ErrNoSidecar) {
+	if _, _, err := LoadHero(SidecarPath(save), c); !errors.Is(err, ErrNoSidecar) {
 		t.Fatalf("a hero who never chose has no kit: %v", err)
 	}
 
 	k := kitFor(t, "sword-and-board")
 	k.Worn[SlotBody].Points = 5
 
-	if err := SaveSidecar(SidecarPath(save), k); err != nil {
+	if err := SaveHero(SidecarPath(save), k, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	back, err := LoadSidecar(SidecarPath(save), c)
+	back, _, err := LoadHero(SidecarPath(save), c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +313,7 @@ func TestSidecarRoundTrip(t *testing.T) {
 	}
 
 	// Beside THIS save and no other: a second hero has no kit.
-	if _, err := LoadSidecar(SidecarPath(filepath.Join(dir, "4.od2")), c); !errors.Is(err, ErrNoSidecar) {
+	if _, _, err := LoadHero(SidecarPath(filepath.Join(dir, "4.od2")), c); !errors.Is(err, ErrNoSidecar) {
 		t.Fatalf("another hero's save shares nothing: %v", err)
 	}
 }
@@ -360,5 +361,35 @@ func TestBindDropsAMisfitToThePack(t *testing.T) {
 
 	if _, ok := k.Worn["foo"]; ok {
 		t.Fatal("an unknown slot must not survive Bind")
+	}
+}
+
+// Progress rides beside the kit, and a file without it still loads.
+func TestSidecarCarriesProgress(t *testing.T) {
+	c := shipped(t)
+	path := SidecarPath(filepath.Join(t.TempDir(), "5.od2"))
+	k := kitFor(t, "torch-and-blade")
+
+	if err := SaveHero(path, k, []byte(`{"xp":120}`)); err != nil {
+		t.Fatal(err)
+	}
+
+	_, prog, err := LoadHero(path, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var back struct{ XP int }
+	if err := json.Unmarshal(prog, &back); err != nil || back.XP != 120 {
+		t.Fatalf("progress round trip: %q %v", prog, err)
+	}
+
+	// A T2 file -- kit only -- has no progress and is not an error.
+	if err := SaveHero(path, k, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, prog, err := LoadHero(path, c); err != nil || prog != nil {
+		t.Fatalf("a kit-only file loads with no progress: %q %v", prog, err)
 	}
 }
