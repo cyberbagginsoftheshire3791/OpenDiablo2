@@ -182,3 +182,33 @@ func TestTheFightHoldsForTheDowned(t *testing.T) {
 
 	assert.False(t, g.c.Fighting())
 }
+
+// A man with no stake can walk away: a Downed man holds the fight only while
+// the player stands within the disengage distance of him (the first-night
+// probe: an unstaked risen stood again eight times and killed him).
+func TestWalkAwayFromTheDowned(t *testing.T) {
+	corpses := NewCorpses(nil, nil)
+	corpses.FallHuman("body", 41, 40)
+	require.True(t, corpses.Rise("body"))
+	corpses.Raised("body", "d:1")
+
+	f := newResolverFight(t, 1)
+	f.c.SetCorpses(corpses)
+	f.add(t, "d:1", 1, deadProfile("g:1"))
+	f.open(t)
+
+	for i := 0; i < 20 && !f.c.encounter.dead["d:1"]; i++ {
+		f.round()
+	}
+
+	require.True(t, f.c.Fighting(), "near him, the fight holds")
+
+	f.target.x = 40 + float64(f.c.disengageTiles()) + 5
+	f.round()
+
+	assert.False(t, f.c.Fighting())
+	assert.Equal(t, "disengaged", f.c.EndedReason())
+
+	b, _ := corpses.Get("body")
+	assert.Equal(t, CorpseDowned, b.State, "he still lies Downed, to stand later")
+}

@@ -1436,7 +1436,15 @@ func (c *Combat) pruneOrEnd() {
 	living := false
 
 	for _, enemy := range e.enemies {
-		if c.stillIn(e, enemy.WatcherID()) {
+		id := enemy.WatcherID()
+
+		// A Downed man holds the fight only while the player stands near
+		// him: walk away and it is over -- he will stand and come later.
+		// Without this a man with no stake could never leave a fight with
+		// one of the dead (measured: stood again eight times, and killed
+		// him). Kept rows of the gone are kept at any distance, so the
+		// distance is asked here.
+		if c.stillIn(e, id) && (!e.gone(id) || within(enemy, e.target, c.disengageTiles())) {
 			living = true
 
 			break
