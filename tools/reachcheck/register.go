@@ -289,6 +289,8 @@ var Register = []Entry{
 		"T6: a click on a pack row he eats (peksimet) in the kit panel -- Game.eatFromPack.", ""},
 	{sym(pkgWorld, "Notice.SetHidden"), BucketWire, VerdictLive,
 		"T6: asleep inside the palisade, nothing new sees him while memory fades on its own clock -- Game.applyTalk.", ""},
+	{sym(pkgScreen, "Game.Forage"), BucketWire, VerdictLive,
+		"T7: K gathers branches for half an hour from a stock the land does not renew -- and sets the forage stance for those minutes, so D8 section 9's caught-head-down branch is reachable in a shipped build at last.", ""},
 	{sym(pkgItems, "LoadHero"), BucketWire, VerdictLive,
 		"T2/T3: reads the hero's kit and progress from beside his save when the controls bind; its absence opens the loadout choice. Replaces T2's LoadSidecar (retired at T3: reach measured it dead once the game moved here).", ""},
 	{sym(pkgItems, "SaveHero"), BucketWire, VerdictLive,

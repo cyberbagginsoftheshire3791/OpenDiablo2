@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
 )
 
@@ -81,12 +82,9 @@ func (v *Game) Craft(id string) error {
 		return err
 	}
 
-	// The work takes the time it takes; the world moves by exactly that.
-	if v.worldClock != nil {
-		if rate := v.worldClock.Rate(); rate > 0 {
-			v.advanceWorld(r.Minutes / rate)
-		}
-	}
+	// The work takes the time it takes; the world moves by exactly that, and
+	// he is labouring while it does (T7: caught at the bench is caught).
+	v.spendMinutes(r.Minutes, 0, d2world.ActivityLabour)
 
 	v.saveKit()
 

@@ -239,19 +239,28 @@ func (v *Game) applyTalk(e d2dialogue.Effects) {
 	}
 
 	// Labour takes the time it takes: the world moves by exactly those
-	// minutes (clock, meters, light, spawns), paid the way a paced round is.
-	v.spendMinutes(e.Minutes, e.Rest)
+	// minutes (clock, meters, light, spawns), paid the way a paced round is --
+	// and he is LABOURING while it does (T7), so a pack that arrives mid-dig
+	// catches him head-down (D8 §9). Asleep in the byre he is not at work.
+	stance := d2world.ActivityLabour
+	if e.Shelter {
+		stance = ""
+	}
+
+	v.spendMinutes(e.Minutes, e.Rest, stance)
 
 	if e.Rep != 0 || e.ToFloor {
 		v.Infof("village: standing %d (%s)", v.standing.Rep, v.dialogue.Rung(v.standing).ID)
 	}
 }
 
-// spendMinutes moves the world by minutes, an hour at a time, taking rest off
-// fatigue as the hours pass rather than all at the end -- so a tired man is not
+// spendMinutes moves the world by minutes, ten at a time, taking rest off
+// fatigue as they pass rather than all at the end -- so a tired man is not
 // Shaken or hurt by neglect while he sleeps (T6 review finding) -- and
-// stopping if he dies partway.
-func (v *Game) spendMinutes(minutes, rest float64) {
+// stopping if he dies or a fight opens partway (T7: a fight is not waited
+// out). stance, when set, is what he is doing for those minutes; it is put
+// back afterwards unless the fight has since set its own.
+func (v *Game) spendMinutes(minutes, rest float64, stance d2world.Activity) {
 	if minutes <= 0 || v.worldClock == nil {
 		return
 	}
@@ -261,8 +270,34 @@ func (v *Game) spendMinutes(minutes, rest float64) {
 		return
 	}
 
-	for left := minutes; left > 0 && v.alive(); {
-		step := math.Min(60, left)
+	if stance != "" && v.meters != nil {
+		before := v.meters.Activity()
+		v.meters.SetActivity(stance)
+
+		defer func() {
+			// A FIGHT THAT OPENED PARTWAY OWNS THE STANCE NOW. It remembered
+			// ours (activityBeforeFight) and will put THAT back when it ends --
+			// so hand it what he was doing before the work instead, and leave the
+			// fight's own labour alone. The review of T7's first version traced
+			// both failures of the naive restore: after one caught forage every
+			// later fight opened "caught-foraging", and a fight that opened
+			// mid-dig was reset to idle cost while it ran.
+			if v.inFight() {
+				if v.activityBeforeFight == stance {
+					v.activityBeforeFight = before
+				}
+
+				return
+			}
+
+			if v.meters.Activity() == stance {
+				v.meters.SetActivity(before)
+			}
+		}()
+	}
+
+	for left := minutes; left > 0 && v.alive() && !v.inFight(); {
+		step := math.Min(spendStepMinutes, left)
 		v.advanceWorld(step / rate)
 		left -= step
 
@@ -318,6 +353,8 @@ func (p villageProvider) HarnessState() map[string]interface{} {
 	state["rung"] = v.dialogue.Rung(v.standing).ID
 	state["flags"] = append([]string{}, v.standing.Flags...)
 	state["talking"] = v.talk != nil
+	state["land_gathered"] = v.land.Gathered
+	state["land_left"] = v.LandLeft()
 
 	if v.talk != nil {
 		state["speaker"] = v.talk.Speaker.ID
@@ -347,3 +384,7 @@ func (p villageProvider) HarnessSet(field string, value interface{}) error {
 
 	return nil
 }
+
+// spendStepMinutes is how finely spent minutes are paid out: fine enough that a
+// fight opening partway stops the rest of them.
+const spendStepMinutes = 10.0

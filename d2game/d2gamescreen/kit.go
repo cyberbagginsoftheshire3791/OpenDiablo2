@@ -42,6 +42,7 @@ func (v *Game) bindKit() {
 	// in hand (review finding: a save then would drop the village block).
 	defer v.bindProgress(extras.Progress)
 	defer v.bindStanding(extras.Village)
+	defer v.bindLand(extras.Land)
 
 	switch {
 	case err == nil:
@@ -234,7 +235,7 @@ func (v *Game) saveKit() {
 		}
 	}
 
-	if err := d2items.SaveHero(v.kitPath, v.kit, d2items.Extras{Progress: v.progressJSON(), Village: v.standingJSON()}); err != nil {
+	if err := d2items.SaveHero(v.kitPath, v.kit, d2items.Extras{Progress: v.progressJSON(), Village: v.standingJSON(), Land: v.landJSON()}); err != nil {
 		v.Errorf("kit: %v", err)
 	}
 

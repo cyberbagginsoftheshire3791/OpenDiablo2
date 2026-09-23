@@ -182,3 +182,9 @@ const (
 	KitMakeHeader = "MAKE -- click to make"
 	KitRecipeLine = "%s: %s  (%.0f min)"
 )
+
+// T7, forage (23 Sep 2026).
+const (
+	ForageGathered = "Gathered %d branches  (%d left near here)"
+	ForageRefused  = "Forage: %v"
+)

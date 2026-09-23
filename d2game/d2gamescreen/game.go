@@ -358,8 +358,11 @@ type Game struct {
 
 	// T4: the dialogue table, what the village thinks of him, and the talk in
 	// progress (nil when none).
-	dialogue  *d2dialogue.Book
-	recipes   *d2craft.Book
+	dialogue *d2dialogue.Book
+	recipes  *d2craft.Book
+
+	// T7: what the land has given him.
+	land      land
 	standing  *d2dialogue.Standing
 	talk      *d2dialogue.Talk
 	progress  *d2progress.Progress
@@ -1959,6 +1962,7 @@ func (v *Game) bindGameControls() error {
 		v.gameControls.SetProgressHolder(v)
 		v.gameControls.SetDeathHolder(v)
 		v.gameControls.SetTalkHolder(v)
+		v.gameControls.SetForageHolder(v)
 
 		if err := v.inputManager.BindHandler(v.gameControls); err != nil {
 			v.Error(bindControlsErrStr + player.ID())

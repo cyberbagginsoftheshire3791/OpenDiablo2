@@ -181,7 +181,10 @@ deferral written only in a commit message is a deferral that has been lost.
   ever sets `forage`**, so in a shipped build the branch is reachable only
   through the harness. There is no symbol whose verdict would say so: the
   reading side is genuinely live. It closes when a forage or watch VERB exists
-  (M4.4's turn UI).
+  (M4.4's turn UI). **CLOSED 23 Sep 2026 (T7):** K forages, and a talk's
+  labour (digging the ditch, the bellows) runs as `labour` -- both set the
+  stance for exactly the minutes they take, and `playtest/forage_test.go`
+  opens a fight on a man bent over the brush and reads `caught-foraging`.
 
 * **The player's Action is a policy, not a person.** `CombatDials.PlayerAction`
   makes the player's side strike the first adjacent enemy, because the engine

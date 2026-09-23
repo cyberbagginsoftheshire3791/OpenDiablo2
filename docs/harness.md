@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 26 playtest scripts.** That count, the harness version below and the
+**The 27 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -160,6 +160,16 @@ this doc fails until it agrees.
   providers arrange it; the control's packs are sent home (`despawn` takes a
   group id from `group_list[].group`). Negative controls ran red for the
   shelter and the food.
+* `forage_test.go` — the twenty-seventh, T7 (23 Sep 2026): the gathering
+  verb, and the rule it makes live. K is exactly 30 world minutes and 2
+  branches from a land that holds 12; a beast that reaches him IDLE opens an
+  ordinary fight (the control), and the same beast reaching him mid-forage
+  opens it with him caught (`surprise_why` = `caught-foraging`, D8 §9) and
+  nothing gathered -- and when that fight is over he is idle again and the
+  NEXT beast finds him un-caught; six forages empty the land, a seventh is
+  refused and takes no time, and the land stays bare across a reload. The
+  "village" provider reports `land_left`. Negative controls ran red for the
+  forage stance, the land's limit and the stance restore after a fight.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.
