@@ -412,6 +412,12 @@ func main() {
 			X: tx * tileH, Y: ty * tileH, Visible: true, Point: true, Properties: props})
 	}
 	add("start", "player_start", 23.5, 28.5)
+
+	// The village within its fence, the ring included: the night does not
+	// arrive on it (arrivals are placed outside and come in by the gate).
+	objects = append(objects, object{ID: len(objects) + 1, Name: "the village", Type: "inside",
+		X: float64(lo) * tileH, Y: float64(lo) * tileH,
+		Width: float64(hi-lo+1) * tileH, Height: float64(hi-lo+1) * tileH, Visible: true})
 	npc := func(name, monstat string, tx, ty float64) {
 		add(name, "npc", tx, ty, prop{Name: "monstat", Type: "string", Value: monstat})
 	}

@@ -35,6 +35,8 @@ import (
 //  4. its people: the four speakers' stand-ins stand where the map put them,
 //     under the labels the dialogue binds them by;
 //  5. the player walks out of the gate on the authored collision;
+//     5b. the night arrives outside -- every group that spawns while he stands
+//     on the green is placed outside the map's inside area (the fence);
 //  6. control -- a map that does not exist is refused whole: the generated
 //     Act 1 world is built instead, the refusal is reported, nothing of the
 //     reserved tile style is in the renderer's cache, and the census now DOES
@@ -225,6 +227,73 @@ func TestAuthoredMap(t *testing.T) {
 	s.call("strigoi_step_world", map[string]any{"world_minutes": 8 * 60})
 	noon := s.call("strigoi_screenshot", map[string]any{"name": "authored-village-gate-day"})
 	t.Logf("the gate by day: %s", str(noon, "path"))
+
+	// --- act 5b: the night arrives outside --------------------------------------
+	// Back in on the green, with the dead quieted (not the subject here), the
+	// hero fed, and the spawner's roll made certain. Every group that arrives
+	// must stand OUTSIDE the village's inside area when it arrives: what comes
+	// from the dark comes in by the gate (d2gamescreen/spawn_outside.go).
+	s.call("strigoi_move_player_to", map[string]any{"x": 22.5, "y": 26.5, "wait": true, "max_ticks": 3000})
+	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0.0)
+	setField(s, "spawns", "chance", 1.0)
+
+	health := mustNum(t, metersState(s), "health")
+	seen := map[string]bool{}
+	arrivals := 0
+
+	for i := 0; i < 96 && arrivals < 2; i++ { // up to eight world hours
+		s.call("strigoi_step_world", map[string]any{"world_minutes": 5.0})
+		setField(s, "meters", "food", 80.0)
+		setField(s, "meters", "water", 80.0)
+		setField(s, "meters", "fatigue", 10.0)
+		setField(s, "meters", "health", health)
+
+		st := sub(s.call("strigoi_get_system_state", map[string]any{"system": "spawns"}), "state")
+
+		for _, raw := range asList(st["group_list"]) {
+			grp := raw.(map[string]any)
+			if id := str(grp, "group"); seen[id] || str(grp, "row") == "risen" {
+				continue
+			} else {
+				seen[id] = true
+			}
+
+			// Every member's birthplace must be on record, or the checks below
+			// would pass by checking nothing.
+			born := asList(grp["born_where"])
+			if len(born) == 0 || len(born) != int(num(grp, "spawned")) {
+				t.Fatalf("group %s (%s): %d birthplaces recorded for %v spawned", str(grp, "group"), str(grp, "row"), len(born), grp["spawned"])
+			}
+
+			tiles := map[[2]int]bool{}
+
+			for _, w := range born {
+				at := w.([]any)
+				x, y := at[0].(float64), at[1].(float64)
+
+				if m.IsInside(int(x), int(y)) {
+					t.Fatalf("group %s (%s) arrived INSIDE the village at %.1f,%.1f", str(grp, "group"), str(grp, "row"), x, y)
+				}
+
+				// One member to a tile: a pack carried out to the fence must
+				// not all settle on the one nearest open tile.
+				key := [2]int{int(x), int(y)}
+				if tiles[key] {
+					t.Fatalf("group %s (%s) put two members on tile %d,%d: %v", str(grp, "group"), str(grp, "row"), key[0], key[1], grp["born_where"])
+				}
+
+				tiles[key] = true
+			}
+
+			t.Logf("group %s (%s) arrived outside at %v", str(grp, "group"), str(grp, "row"), grp["born_where"])
+			arrivals++
+		}
+	}
+
+	if arrivals == 0 {
+		t.Fatal("no group arrived in eight world hours with the spawn roll made certain")
+	}
 
 	// --- act 6: the control -------------------------------------------------
 	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})

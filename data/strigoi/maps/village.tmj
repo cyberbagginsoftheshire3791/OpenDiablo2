@@ -4656,6 +4656,18 @@
     },
     {
      "id": 2,
+     "name": "the village",
+     "type": "inside",
+     "x": 960,
+     "y": 960,
+     "width": 1920,
+     "height": 1920,
+     "rotation": 0,
+     "visible": true,
+     "point": false
+    },
+    {
+     "id": 3,
      "name": "headman (Warriv)",
      "type": "npc",
      "x": 2280,
@@ -4674,7 +4686,7 @@
      ]
     },
     {
-     "id": 3,
+     "id": 4,
      "name": "woman at the well (Kashya)",
      "type": "npc",
      "x": 2040,
@@ -4693,7 +4705,7 @@
      ]
     },
     {
-     "id": 4,
+     "id": 5,
      "name": "smith (Charsi)",
      "type": "npc",
      "x": 2040,
@@ -4712,7 +4724,7 @@
      ]
     },
     {
-     "id": 5,
+     "id": 6,
      "name": "priest (Akara)",
      "type": "npc",
      "x": 1560,
@@ -4739,7 +4751,7 @@
   }
  ],
  "nextlayerid": 4,
- "nextobjectid": 6,
+ "nextobjectid": 7,
  "orientation": "isometric",
  "properties": [
   {

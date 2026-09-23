@@ -1,6 +1,7 @@
 package d2maptiled
 
 import (
+	"image"
 	"os"
 	"path"
 	"path/filepath"
@@ -54,6 +55,16 @@ func TestShippedVillageLoads(t *testing.T) {
 
 	if !m.Blocked(12, 20) || m.BlocksSight(12, 20) {
 		t.Errorf("the fence: blocked %v, blocks sight %v; want true, false", m.Blocked(12, 20), m.BlocksSight(12, 20))
+	}
+
+	// The inside area is the enclosure, fence ring included: the player
+	// starts in it and the road beyond the gate is not in it.
+	if len(m.Inside) != 1 || m.Inside[0] != image.Rect(12, 12, 36, 36) {
+		t.Errorf("inside %v, want the fence ring 12..35", m.Inside)
+	}
+
+	if !m.IsInside(int(m.StartX), int(m.StartY)) || m.IsInside(23, 40) {
+		t.Errorf("inside: start %v, road %v; want true, false", m.IsInside(int(m.StartX), int(m.StartY)), m.IsInside(23, 40))
 	}
 
 	// The enclosure is closed except where it is meant to be open. Walk the

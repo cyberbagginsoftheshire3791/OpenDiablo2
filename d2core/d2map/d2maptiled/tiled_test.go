@@ -442,6 +442,26 @@ func TestParseRefuses(t *testing.T) {
 			tl["imagewidth"], tl["imageheight"], tl["width"], tl["height"] = 160, 80, 80, 80
 		}, "part of its image"},
 		{"tile object", func(t *testing.T, f *fixture) { f.objects()[1].(map[string]any)["gid"] = 1 }, "tile object"},
+		{"inside without area", func(t *testing.T, f *fixture) {
+			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 8, "type": "inside", "x": 80.0, "y": 80.0, "point": true})
+		}, "no area"},
+		{"inside off the map", func(t *testing.T, f *fixture) {
+			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 8, "type": "inside", "x": 80.0, "y": 80.0, "width": 800.0, "height": 80.0})
+		}, "reaches off"},
+		{"inside rotated", func(t *testing.T, f *fixture) {
+			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 8, "type": "inside", "x": 0.0, "y": 0.0, "width": 80.0, "height": 80.0, "rotation": 45.0})
+		}, "rotated"},
+		{"inside ellipse", func(t *testing.T, f *fixture) {
+			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 8, "type": "inside", "x": 0.0, "y": 0.0, "width": 80.0, "height": 80.0, "ellipse": true})
+		}, "ellipse"},
+		{"inside polygon", func(t *testing.T, f *fixture) {
+			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 8, "type": "inside", "x": 0.0, "y": 0.0,
+				"polygon": []any{map[string]any{"x": 0, "y": 0}, map[string]any{"x": 80, "y": 0}, map[string]any{"x": 0, "y": 80}}})
+		}, "polygon"},
+		{"inside with a property", func(t *testing.T, f *fixture) {
+			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 8, "type": "inside", "x": 0.0, "y": 0.0, "width": 80.0, "height": 80.0,
+				"properties": []any{map[string]any{"name": "safe", "type": "bool", "value": true}}})
+		}, "takes no properties"},
 	}
 
 	for _, c := range cases {
@@ -459,6 +479,44 @@ func TestParseRefuses(t *testing.T) {
 				t.Fatalf("error %q does not say %q", err, c.want)
 			}
 		})
+	}
+}
+
+// An inside rectangle is read as every tile it touches.
+func TestInsideAreas(t *testing.T) {
+	f := newFixture(t)
+	f.layer(2)["objects"] = append(f.objects(), map[string]any{
+		"id": 7, "type": "inside", "x": 80.0, "y": 0.0, "width": 80.0 * 2.5, "height": 80.0,
+	})
+
+	m, err := f.parse(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(m.Inside) != 1 || m.Inside[0].Min.X != 1 || m.Inside[0].Min.Y != 0 || m.Inside[0].Max.X != 4 || m.Inside[0].Max.Y != 1 {
+		t.Fatalf("inside %v, want [(1,0)-(4,1)]", m.Inside)
+	}
+
+	for _, c := range []struct {
+		x, y int
+		want bool
+	}{{1, 0, true}, {3, 0, true}, {0, 0, false}, {1, 1, false}} {
+		if got := m.IsInside(c.x, c.y); got != c.want {
+			t.Errorf("IsInside(%d,%d) = %v, want %v", c.x, c.y, got, c.want)
+		}
+	}
+
+	// And a map without one has none.
+	g := newFixture(t)
+
+	plain, err := g.parse(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(plain.Inside) != 0 || plain.IsInside(1, 0) {
+		t.Fatal("a map with no inside object reports inside ground")
 	}
 }
 

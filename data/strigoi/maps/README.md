@@ -42,6 +42,10 @@ names say `placeholder-` so nobody mistakes them.
 - Objects are **points**: one `player_start`, and `npc` objects with a string
   property `monstat` (the D2 stand-in: `warriv1`, `kashya`, `charsi`, `akara`
   are the four speakers).
+- **`inside` rectangles** mark ground the night does not arrive on: whatever
+  comes from the dark is placed outside every inside area and has to come in
+  by the gate. The village's covers the fence ring (tiles 12-35). Draw it
+  with the rectangle tool; every tile it touches is inside.
 - Refused because the game would silently ignore them: hidden, translucent,
   offset, parallax or tinted layers; tile offsets; collision shapes drawn in
   the Tile Collision Editor (use `blocked`); animated tiles; flipped or rotated

@@ -43,6 +43,7 @@ type MapEngine struct {
 	// generated map. ResetMap clears both.
 	authoredImages map[AuthoredKey]*image.RGBA
 	authoredStart  *[2]float64
+	authoredInside []image.Rectangle
 
 	// Which authored bits line of sight obeys. Set explicitly in
 	// CreateMapEngine rather than left to the zero value, because the zero
@@ -120,6 +121,7 @@ func (m *MapEngine) resetState(levelType d2enum.RegionIdType, width, height int)
 	m.dt1Files = make([]string, 0)
 	m.authoredImages = nil
 	m.authoredStart = nil
+	m.authoredInside = nil
 }
 
 func (m *MapEngine) addDT1(fileName string) {

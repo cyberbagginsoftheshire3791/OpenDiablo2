@@ -147,6 +147,7 @@ func (g *MapGenerator) generateAuthored(p string) error {
 	// that -- 105.5 becomes 106.0), a tile the map never checked. The floor of
 	// the start puts him inside the tile the map put its start in.
 	g.engine.SetAuthored(authoredImages(m), math.Floor(m.StartX), math.Floor(m.StartY))
+	g.engine.SetInside(m.Inside)
 	g.Infof("authored map %s: %dx%d tiles, %d tile kinds, %d npc(s)", p, m.Width, m.Height, len(m.Kinds), len(m.NPCs))
 
 	return nil

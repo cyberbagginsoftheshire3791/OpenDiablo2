@@ -63,10 +63,13 @@ type Spawns struct {
 
 	layDead func(memberID string, x, y float64) // M4.7 step 3: a risen lies down
 
-	checks    int
-	rolls     int
-	spawned   int
-	failures  int
+	checks   int
+	rolls    int
+	spawned  int
+	failures int
+	// dropped counts pack members the spawner could not place (a group
+	// that arrived short): on an authored map a fence can shed some.
+	dropped   int
 	despawned int // members taken back out of the world
 	cleared   int // groups sent home at daybreak
 	released  int // chases released on despawn
@@ -395,6 +398,9 @@ type group struct {
 	stage   Stage
 	weight  float64
 	spawned int
+	// where each member stood when the group arrived, for the harness (M5.4:
+	// the village's arrivals must stand outside its fence).
+	bornWhere [][2]float64
 }
 
 // NewSpawns builds the tables and registers the "spawns" harness provider.
@@ -758,6 +764,10 @@ func (s *Spawns) spawn(row SpawnRow, weight float64) {
 	tx, ty := s.target.QuarryAt()
 
 	members := s.spawner.Spawn(row.Name, row.Code, count, tx, ty, row.MinTiles, row.MaxTiles)
+	if short := count - len(members); short > 0 {
+		s.dropped += short
+	}
+
 	if len(members) == 0 {
 		// An unknown monstats code or a map with nowhere to put them. Counted
 		// and reported rather than fatal: the provider is where a bad stand-in
@@ -861,6 +871,15 @@ func (s *Spawns) adopt(row SpawnRow, members []Watcher, weight float64) {
 		band:    s.Band(),
 		weight:  weight,
 		spawned: len(members),
+	}
+
+	g.bornWhere = make([][2]float64, 0, len(members))
+
+	for _, m := range members {
+		if m != nil {
+			x, y := m.WatcherAt()
+			g.bornWhere = append(g.bornWhere, [2]float64{x, y})
+		}
 	}
 
 	if s.clock != nil {
@@ -1200,6 +1219,7 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 			"born_at":    g.bornAt,
 			"born_stage": g.stage.String(),
 			"born_band":  g.band,
+			"born_where": g.bornWhere,
 			"weight":     g.weight,
 			"aware":      aware,
 			"notice":     seen,
@@ -1231,30 +1251,31 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 	}
 
 	out := map[string]interface{}{
-		"groups":         len(s.groups),
-		"live_groups":    s.liveGroups(),
-		"spent_groups":   s.spentGroups(),
-		"group_list":     groups,
-		"rows":           rows,
-		"stage":          stage,
-		"band":           s.Band(),
-		"open_bodies":    s.openBodies,
-		"carrion_weight": s.CarrionWeight(),
-		"light_weight":   s.LightWeight(),
-		"checks":         s.checks,
-		"rolls":          s.rolls,
-		"spawned":        s.spawned,
-		"spawn_failures": s.failures,
-		"despawned":      s.despawned,
-		"cleared":        s.cleared,
-		"chase_releases": s.released,
-		"has_chases":     s.chases != nil,
-		"check_minutes":  s.dials.CheckMinutes,
-		"chance":         s.dials.Chance,
-		"rout_at":        s.dials.RoutAt,
-		"max_groups":     s.dials.MaxGroups,
-		"has_target":     s.target != nil,
-		"has_spawner":    s.spawner != nil,
+		"groups":          len(s.groups),
+		"live_groups":     s.liveGroups(),
+		"spent_groups":    s.spentGroups(),
+		"group_list":      groups,
+		"rows":            rows,
+		"stage":           stage,
+		"band":            s.Band(),
+		"open_bodies":     s.openBodies,
+		"carrion_weight":  s.CarrionWeight(),
+		"light_weight":    s.LightWeight(),
+		"checks":          s.checks,
+		"rolls":           s.rolls,
+		"spawned":         s.spawned,
+		"spawn_failures":  s.failures,
+		"members_dropped": s.dropped,
+		"despawned":       s.despawned,
+		"cleared":         s.cleared,
+		"chase_releases":  s.released,
+		"has_chases":      s.chases != nil,
+		"check_minutes":   s.dials.CheckMinutes,
+		"chance":          s.dials.Chance,
+		"rout_at":         s.dials.RoutAt,
+		"max_groups":      s.dials.MaxGroups,
+		"has_target":      s.target != nil,
+		"has_spawner":     s.spawner != nil,
 	}
 
 	// The notice dials and counters ride along here because the notice model

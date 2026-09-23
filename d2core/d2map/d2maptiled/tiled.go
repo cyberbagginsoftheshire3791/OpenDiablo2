@@ -20,9 +20,12 @@
 //   - Tile layers named "floor" (required) and "walls" (optional), stored as
 //     plain JSON arrays -- Tiled's CSV layer format. Base64 and compression
 //     are refused, as are group and image layers.
-//   - One object layer named "objects" holding exactly one "player_start"
-//     and any number of "npc" objects, each npc with a string property
-//     "monstat" naming the monstats record it stands in for.
+//   - One object layer named "objects" holding exactly one "player_start",
+//     any number of "npc" objects, each npc with a string property "monstat"
+//     naming the monstats record it stands in for, and any number of
+//     "inside" RECTANGLES marking ground the night does not arrive on (the
+//     village within its fence: what comes from the dark is placed outside
+//     every inside area and has to come in by the gate).
 //   - Tilesets EMBEDDED in the map (Tiled: "Embed tileset"). Either kind
 //     works: a single sprite sheet, or a collection of images.
 //   - Floor art exactly 160x80. Wall art 160 wide and at least 80 tall, drawn
@@ -68,6 +71,7 @@ import (
 	"image"
 	"image/draw"
 	_ "image/png" // tile art is PNG; registered for image.Decode
+	"math"
 	"path"
 	"sort"
 	"strings"
@@ -144,6 +148,20 @@ type Map struct {
 	Cells          []Cell // row-major, Width*Height
 	StartX, StartY float64
 	NPCs           []NPC
+	// Inside is the "inside" areas in whole tiles, Max exclusive.
+	Inside []image.Rectangle
+}
+
+// IsInside reports whether tile x, y lies in any inside area.
+func (m *Map) IsInside(x, y int) bool {
+	p := image.Pt(x, y)
+	for _, r := range m.Inside {
+		if p.In(r) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // At returns the cell at x, y. The caller keeps x, y on the map.
@@ -241,14 +259,20 @@ type tmjLayer struct {
 }
 
 type tmjObject struct {
-	ID         int           `json:"id"`
-	Name       string        `json:"name"`
-	Type       string        `json:"type"`
-	Class      string        `json:"class"`
-	GID        uint32        `json:"gid"`
-	X          float64       `json:"x"`
-	Y          float64       `json:"y"`
-	Properties []tmjProperty `json:"properties"`
+	ID         int             `json:"id"`
+	Name       string          `json:"name"`
+	Type       string          `json:"type"`
+	Class      string          `json:"class"`
+	GID        uint32          `json:"gid"`
+	X          float64         `json:"x"`
+	Y          float64         `json:"y"`
+	Width      float64         `json:"width"`
+	Height     float64         `json:"height"`
+	Rotation   float64         `json:"rotation"`
+	Ellipse    bool            `json:"ellipse"`
+	Polygon    json.RawMessage `json:"polygon"`
+	Polyline   json.RawMessage `json:"polyline"`
+	Properties []tmjProperty   `json:"properties"`
 }
 
 type tmjProperty struct {
@@ -759,10 +783,17 @@ func (p *parser) objectLayer(l *tmjLayer) error {
 			}
 
 			p.out.NPCs = append(p.out.NPCs, NPC{Monstat: monstat, X: x, Y: y})
+		case "inside":
+			r, err := p.insideArea(o)
+			if err != nil {
+				return err
+			}
+
+			p.out.Inside = append(p.out.Inside, r)
 		case "":
-			return fmt.Errorf("object %d (%q) has no class; set it to player_start or npc", o.ID, o.Name)
+			return fmt.Errorf("object %d (%q) has no class; set it to player_start, npc or inside", o.ID, o.Name)
 		default:
-			return fmt.Errorf("object %d has class %q; the game reads player_start and npc", o.ID, kind)
+			return fmt.Errorf("object %d has class %q; the game reads player_start, npc and inside", o.ID, kind)
 		}
 	}
 
@@ -771,6 +802,41 @@ func (p *parser) objectLayer(l *tmjLayer) error {
 	}
 
 	return nil
+}
+
+// insideArea reads an "inside" rectangle as whole tiles: every tile the
+// rectangle touches is inside. It must have an area, take no properties and
+// lie on the map.
+func (p *parser) insideArea(o *tmjObject) (image.Rectangle, error) {
+	if len(o.Properties) > 0 {
+		return image.Rectangle{}, fmt.Errorf("inside (object %d) takes no properties", o.ID)
+	}
+
+	// Shapes the game would read as their bounding box, silently.
+	switch {
+	case o.Rotation != 0:
+		return image.Rectangle{}, fmt.Errorf("inside (object %d) is rotated; the game reads it unrotated -- draw it square to the tiles", o.ID)
+	case o.Ellipse:
+		return image.Rectangle{}, fmt.Errorf("inside (object %d) is an ellipse; the game reads rectangles only", o.ID)
+	case len(o.Polygon) > 0 && string(o.Polygon) != "null", len(o.Polyline) > 0 && string(o.Polyline) != "null":
+		return image.Rectangle{}, fmt.Errorf("inside (object %d) is a polygon; the game reads rectangles only", o.ID)
+	}
+
+	if o.Width <= 0 || o.Height <= 0 {
+		return image.Rectangle{}, fmt.Errorf("inside (object %d) has no area; draw it as a rectangle", o.ID)
+	}
+
+	th := float64(p.raw.TileHeight)
+	r := image.Rect(
+		int(math.Floor(o.X/th)), int(math.Floor(o.Y/th)),
+		int(math.Ceil((o.X+o.Width)/th)), int(math.Ceil((o.Y+o.Height)/th)),
+	)
+
+	if !r.In(image.Rect(0, 0, p.out.Width, p.out.Height)) {
+		return image.Rectangle{}, fmt.Errorf("inside (object %d) reaches off the %dx%d map", o.ID, p.out.Width, p.out.Height)
+	}
+
+	return r, nil
 }
 
 func npcMonstat(o *tmjObject) (string, error) {

@@ -261,7 +261,11 @@ this doc fails until it agrees.
   surfaces equal to the repo's PNGs pixel for pixel (opaque and transparent),
   the four speakers' stand-ins where the map put them under the labels the
   dialogue binds, a walk out of the gate, and a daylight screenshot of the gate
-  as evidence only. Then the control: a missing map is refused whole, the
+  as evidence only. Then the night arrives OUTSIDE: back on the green with the
+  spawn roll made certain, every group that arrives is placed outside the
+  map's `inside` area (the fence ring), one member of a group to a tile (controls ran
+  red: the push-out disabled put dogs inside at 23,16; the one-to-a-tile rule
+  disabled stacked a pack of three on one tile). Then the control: a missing map is refused whole, the
   generated Act 1 world is built instead, no authored tile is in the renderer's
   cache, and the census now DOES list tile files -- so the village's zero was a
   measurement.

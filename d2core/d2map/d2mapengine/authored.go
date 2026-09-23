@@ -46,6 +46,26 @@ func (m *MapEngine) SetAuthored(images map[AuthoredKey]*image.RGBA, startX, star
 	m.authoredStart = &[2]float64{startX, startY}
 }
 
+// SetInside records an authored map's "inside" areas, in whole tiles (Max
+// exclusive): the ground the night does not arrive on (d2maptiled; the
+// spawner places arrivals outside them). ResetMap clears them.
+func (m *MapEngine) SetInside(areas []image.Rectangle) {
+	m.authoredInside = append([]image.Rectangle(nil), areas...)
+}
+
+// Inside reports whether tile x, y lies in an authored inside area. Always
+// false on a generated map, which has none.
+func (m *MapEngine) Inside(x, y int) bool {
+	p := image.Pt(x, y)
+	for _, r := range m.authoredInside {
+		if p.In(r) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // AuthoredImages returns the authored tile art, nil on a generated map.
 func (m *MapEngine) AuthoredImages() map[AuthoredKey]*image.RGBA {
 	return m.authoredImages

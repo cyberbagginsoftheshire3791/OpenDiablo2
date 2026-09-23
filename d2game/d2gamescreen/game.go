@@ -1557,8 +1557,25 @@ func (g *gameSpawner) Spawn(kind, code string, count int, aroundX, aroundY,
 
 	out := make([]d2world.Watcher, 0, count)
 
+	// An ARRIVAL -- a ring spawn, maxTiles > 0 -- comes from outside: on an
+	// authored map with an inside area (the village within its fence) its
+	// spot is carried out past the area along the line from the quarry, and
+	// ground inside is refused. A man rising where he lay (Raise, a ring of
+	// zero) stands where he is, inside or out.
+	arrival := maxTiles > 0
+
+	// One member of a group to a tile: carried out to the same stretch of
+	// fence, a pack's spots would otherwise all settle on the one nearest open
+	// tile. (Only within this call -- another group, or the player, may still
+	// share a tile, as before.)
+	taken := map[[2]int]bool{}
+
 	for _, spot := range packSpots(aroundX, aroundY, minTiles, maxTiles, count, g.arrival) {
-		x, y, ok := g.walkableNear(spot[0], spot[1])
+		if arrival {
+			spot[0], spot[1] = outsideAlong(aroundX, aroundY, spot[0], spot[1], g.engine.Inside)
+		}
+
+		x, y, ok := g.walkableNear(spot[0], spot[1], arrival, taken)
 		if !ok {
 			continue
 		}
@@ -1645,7 +1662,7 @@ func (g *gameSpawner) Despawn(members []d2world.Watcher) {
 // tiles. A ring position can easily land in a wall or off the map; giving up
 // silently would make a spawn table look broken when the geometry was simply
 // unlucky, so this tries the neighbourhood before returning false.
-func (g *gameSpawner) walkableNear(wantX, wantY float64) (x, y float64, ok bool) {
+func (g *gameSpawner) walkableNear(wantX, wantY float64, refuseInside bool, taken map[[2]int]bool) (x, y float64, ok bool) {
 	for ring := 0; ring <= spawnSearchRings; ring++ {
 		for dy := -ring; dy <= ring; dy++ {
 			for dx := -ring; dx <= ring; dx++ {
@@ -1657,7 +1674,14 @@ func (g *gameSpawner) walkableNear(wantX, wantY float64) (x, y float64, ok bool)
 				tx := math.Floor(wantX) + float64(dx)
 				ty := math.Floor(wantY) + float64(dy)
 
-				if g.walkable(tx, ty) {
+				key := [2]int{int(tx), int(ty)}
+				if taken[key] {
+					continue
+				}
+
+				if g.walkable(tx, ty) && !(refuseInside && g.engine.Inside(int(tx), int(ty))) {
+					taken[key] = true
+
 					return tx + 0.5, ty + 0.5, true
 				}
 			}
