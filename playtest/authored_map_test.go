@@ -26,8 +26,10 @@ import (
 //     player_start tile, the world its size and no bigger, and not one
 //     Diablo II tile file read to build it;
 //  2. its collision: the fence is solid on every sub-tile and the road is
-//     open, a route out through the fence has to go round by the gate, and
-//     a church tile cannot be reached at all;
+//     open, a route out through the fence has to go round by the gate, a goal
+//     outside the WEST fence is reached the long way round (out of the south
+//     gate and up the outside -- the corridor), and a church tile cannot be
+//     reached at all;
 //  3. its art: the renderer's cached floor surface is the PNG in the repo,
 //     pixel for pixel;
 //  4. its people: the four speakers' stand-ins stand where the map put them,
@@ -108,6 +110,42 @@ func TestAuthoredMap(t *testing.T) {
 		if x, y := int(num(w, "x")), int(num(w, "y")); m.Blocked(x, y) {
 			t.Fatalf("the route steps on blocked tile %d,%d", x, y)
 		}
+	}
+
+	// The long way round (d2mapengine/corridor.go): a goal just outside the
+	// WEST fence, from the spawn, is a walk out of the south gate and back up
+	// the outside -- far past one bounded search's budget, and unreachable
+	// before the corridor.
+	wx, wy := westOfTheFence(t, m, int(m.StartY))
+
+	west := s.call("strigoi_find_path", map[string]any{"to_x": wx, "to_y": wy})
+	if !flag(t, west, "reachable") {
+		t.Fatalf("%.1f,%.1f outside the west fence is unreachable from the spawn: the long way round by the gate was not found", wx, wy)
+	}
+
+	// Every segment between corners is clear, and the route passes the gate
+	// (fence ring y=35, x=23..24): it really went the long way round.
+	px, py, viaGate := num(west, "from_x"), num(west, "from_y"), false
+
+	for _, raw := range west["waypoints"].([]any) {
+		w := raw.(map[string]any)
+		x, y := num(w, "x"), num(w, "y")
+
+		if crossesBlocked(m, px, py, x, y) {
+			t.Fatalf("the long route's segment %.1f,%.1f -> %.1f,%.1f crosses a blocked tile", px, py, x, y)
+		}
+
+		if crossesRow(py, y, 35.5) {
+			if cx := px + (x-px)*(35.5-py)/(y-py); cx >= 23 && cx < 25 {
+				viaGate = true
+			}
+		}
+
+		px, py = x, y
+	}
+
+	if !viaGate {
+		t.Fatal("the long route to the west never crossed the gate row between x 23 and 25")
 	}
 
 	if church := s.call("strigoi_find_path", map[string]any{"to_x": 16.5, "to_y": 14.5}); flag(t, church, "reachable") {
@@ -330,4 +368,24 @@ func tileFilesLoaded(t *testing.T, s *session) []string {
 	}
 
 	return out
+}
+
+// crossesRow reports whether a segment from y0 to y1 crosses row y.
+func crossesRow(y0, y1, y float64) bool {
+	return (y0 < y && y1 >= y) || (y1 < y && y0 >= y)
+}
+
+// westOfTheFence finds an open tile outside the west fence on row y.
+func westOfTheFence(t *testing.T, m *d2maptiled.Map, y int) (float64, float64) {
+	t.Helper()
+
+	for x := 9; x >= 2; x-- {
+		if !m.Blocked(x, y) {
+			return float64(x) + 0.5, float64(y) + 0.5
+		}
+	}
+
+	t.Fatalf("no open tile west of the fence on row %d", y)
+
+	return 0, 0
 }

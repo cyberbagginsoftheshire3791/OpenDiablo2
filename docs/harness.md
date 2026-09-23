@@ -253,7 +253,11 @@ this doc fails until it agrees.
   Diablo II tile file (`.dt1`/`.ds1`) in the asset census, the player in its
   start tile, no tile past its 48x48 edge, the fence solid on all 25 sub-tiles
   and the road open, a route out through the fence that steps on no blocked
-  tile (so it went by the gate), a church tile unreachable, the cached floor
+  tile (so it went by the gate), a goal outside the WEST fence reached the
+  long way round -- out of the south gate and up the outside, every segment
+  clear and the gate row crossed between x 23 and 25 (the pathfinder's
+  corridor, `d2mapengine/corridor.go`; unreachable before it) -- a church tile
+  unreachable, the cached floor
   surfaces equal to the repo's PNGs pixel for pixel (opaque and transparent),
   the four speakers' stand-ins where the map put them under the labels the
   dialogue binds, a walk out of the gate, and a daylight screenshot of the gate

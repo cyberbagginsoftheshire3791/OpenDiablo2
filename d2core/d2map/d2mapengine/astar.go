@@ -156,6 +156,11 @@ type searchResult struct {
 	// whole budget -- the cost mapRouter.Route's blocked-neighbour skip avoids
 	// (audit B3, 12 Sep 2026).
 	expanded int
+	// exhausted is true when the search stopped because it hit the budget
+	// with nodes still open -- the route may exist, it was too far to find.
+	// False when the open set ran dry: the goal is walled off, and the
+	// corridor (corridor.go) has nothing to add.
+	exhausted bool
 }
 
 // search runs the bounded A* and returns the route it found, or the closest
@@ -237,7 +242,7 @@ func (m *MapEngine) search(start, goal subTile) searchResult {
 
 	// Either the budget ran out or the goal is walled off. Head for the
 	// closest approach instead of refusing to move.
-	return searchResult{cameFrom: cameFrom, reached: closest, exact: false, expanded: expanded}
+	return searchResult{cameFrom: cameFrom, reached: closest, exact: false, expanded: expanded, exhausted: open.Len() > 0}
 }
 
 // route walks the came-from chain back from the reached node and returns the

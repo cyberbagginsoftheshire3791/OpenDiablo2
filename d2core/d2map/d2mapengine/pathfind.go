@@ -35,11 +35,23 @@ func (m *MapEngine) PathFind(start, dest d2vector.Position) []d2vector.Position 
 	result := m.search(from, goal)
 
 	steps := result.route(from)
+	exact := result.exact
+
+	// The long way round (corridor.go): tried only when the ordinary search
+	// ran out of BUDGET -- not when it proved the goal walled off -- and used
+	// only if the whole corridor arrives. Every route the search above finds
+	// is returned exactly as before.
+	if !exact && result.exhausted {
+		if long, ok := m.corridorRoute(from, goal); ok {
+			steps, exact = long, true
+		}
+	}
+
 	if len(steps) == 0 {
 		return []d2vector.Position{}
 	}
 
-	return waypoints(from, steps, dest, result.exact)
+	return waypoints(from, steps, dest, exact)
 }
 
 // waypoints turns a subtile-by-subtile route into the corners of that route.
