@@ -42,6 +42,7 @@ func NewLoader(l d2util.LogLevel) (*Loader, error) {
 	loader.LoaderProviders[types.AssetSourceFileSystem] = filesystem.OnAddSource
 
 	loader.Cache = d2cache.CreateCache(defaultCacheBudget)
+	loader.Census = NewCensus()
 	loader.Logger = d2util.NewLogger()
 
 	loader.Logger.SetPrefix(logPrefix)
@@ -59,6 +60,9 @@ type Loader struct {
 	*d2util.Logger
 	LoaderProviders map[types.SourceType]func(path string) (asset.Source, error)
 	Sources         []asset.Source
+
+	// Census is every file loaded and where from (M5.2).
+	Census *Census
 }
 
 // SetLanguage sets the language for loader
@@ -97,6 +101,7 @@ func (l *Loader) Load(subPath string) (io.ReadSeeker, error) {
 
 		srcBase, _ := filepath.Abs(source.Path())
 		l.Info(fmt.Sprintf("Loaded %s -> %s", srcBase, subPath))
+		l.Census.Record(subPath, srcBase)
 
 		return loadedAsset, nil
 	}

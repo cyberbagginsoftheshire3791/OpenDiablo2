@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 33 playtest scripts.** That count, the harness version below and the
+**The 34 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -237,6 +237,14 @@ this doc fails until it agrees.
   him as the Action: the body Closed, one stake spent, the fight won.
   `dead_walk_test.go` gains act 5: the four laid Downed at first light stand
   the next night at rising odds 0 (Q7a).
+* `census_test.go` — the thirty-fourth, M5.2 (23 Sep 2026): the asset census.
+  One player's first day and night (the kit, talents and help panels, a talk,
+  a forage, a night as shipped), then the "assets" provider's census --
+  every file loaded and whether it came from a Diablo II MPQ or from Strigoi's
+  own files -- written to `strigoi-harness-runssset-census.{md,tsv}`. It
+  asserts only that both kinds were seen and that nothing under
+  `data/strigoi/` came from an MPQ; the MPQ count is reported, not pinned,
+  because it is meant to fall. Baseline in `docs/asset-census.md`.
   Negative controls ran red for the stake not closing and a carcass staked.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,

@@ -5,6 +5,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2tbl"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2loader"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
 )
 
@@ -38,6 +39,9 @@ func NewAssetManager(logLevel d2util.LogLevel) (*AssetManager, error) {
 		dccs:       d2cache.CreateCache(dccBudget),
 		Records:    records,
 	}
+
+	// M5.2: the census is the "assets" harness system for the app's life.
+	d2harness.Register(assetsProvider{loader: loader})
 
 	return manager, err
 }
