@@ -175,6 +175,7 @@ const (
 	TalkKeys         = "1-9 or click: answer      Esc: walk away"
 	TalkLeave        = "Leave."
 	TalkWatchKept    = "The village counts your watch  (+%d)"
+	TalkWatchBroken  = "You were not at the ditch. The village noticed  (-%d)"
 )
 
 // T5, making and mending (23 Sep 2026).

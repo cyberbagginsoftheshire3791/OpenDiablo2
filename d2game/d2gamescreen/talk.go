@@ -318,24 +318,6 @@ func (v *Game) EndTalk() {
 	v.talk = nil
 }
 
-// dawnWatch settles a promised watch; called on the night-to-dawn edge he
-// lived through.
-func (v *Game) dawnWatch() {
-	if v.dialogue == nil || v.standing == nil {
-		return
-	}
-
-	if gained := v.dialogue.DawnWatch(v.standing); gained != 0 {
-		if v.gameControls != nil {
-			v.gameControls.SetZoneChangeText(fmt.Sprintf(d2player.TalkWatchKept, gained))
-			v.gameControls.ShowZoneChangeText()
-			v.gameControls.HideZoneChangeTextAfter(levelNoticeSeconds)
-		}
-
-		v.saveKit()
-	}
-}
-
 // villageProvider is the "village" harness system.
 type villageProvider struct{ v *Game }
 
@@ -353,6 +335,7 @@ func (p villageProvider) HarnessState() map[string]interface{} {
 	state["rung"] = v.dialogue.Rung(v.standing).ID
 	state["flags"] = append([]string{}, v.standing.Flags...)
 	state["talking"] = v.talk != nil
+	state["watch_stood"] = v.watchStood
 	state["land_gathered"] = v.land.Gathered
 	state["land_left"] = v.LandLeft()
 

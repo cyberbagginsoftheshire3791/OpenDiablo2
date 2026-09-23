@@ -4,6 +4,9 @@
     "floor": 0,
     "ceiling": 60,
     "watch": 8,
+    "watch_minutes": 180,
+    "watch_radius": 15,
+    "broken_watch": 3,
     "ladder": [
       {"id": "water",   "name": "Water at the well",      "at": 15},
       {"id": "trade",   "name": "Trade at the gate",      "at": 25},

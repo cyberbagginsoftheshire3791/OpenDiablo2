@@ -362,11 +362,17 @@ type Game struct {
 	recipes  *d2craft.Book
 
 	// T7: what the land has given him.
-	land      land
-	standing  *d2dialogue.Standing
-	talk      *d2dialogue.Talk
-	progress  *d2progress.Progress
-	lastStage d2world.Stage
+	land land
+
+	// T8: the watch -- minutes stood at the headman's post tonight, the world
+	// clock last frame, and the post itself (the headman's sprite, cached).
+	watchStood    float64
+	watchClock    float64
+	watchClockSet bool
+	standing      *d2dialogue.Standing
+	talk          *d2dialogue.Talk
+	progress      *d2progress.Progress
+	lastStage     d2world.Stage
 
 	// dawnPaidDay is the day whose dawn has paid its night's experience, and
 	// noticeDelta is the Quiet Step radius change already applied (T3).

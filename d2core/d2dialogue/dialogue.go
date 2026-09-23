@@ -41,9 +41,16 @@ type Village struct {
 	Ceiling int    `json:"ceiling"`
 	Ladder  []Rung `json:"ladder"`
 
-	// Watch is what a watch promised by day and lived through to dawn is
-	// worth (S1 §8.2: "standing the palisade watch").
+	// Watch is what a watch promised by day and STOOD is worth (S1 §8.2:
+	// "standing the palisade watch").
 	Watch int `json:"watch"`
+
+	// T8: a watch is stood, not survived. WatchMinutes is how much of the
+	// night he must spend within WatchRadius tiles of the headman; a promise
+	// broken costs BrokenWatch. All [DIAL]s.
+	WatchMinutes float64 `json:"watch_minutes"`
+	WatchRadius  float64 `json:"watch_radius"`
+	BrokenWatch  int     `json:"broken_watch"`
 }
 
 // Requires gates an opening or a choice. Every field set must hold.
@@ -150,8 +157,14 @@ func Load(data []byte) (*Book, error) {
 		return nil, fmt.Errorf("the village needs floor <= start <= ceiling; got %d, %d, %d", v.Floor, v.Start, v.Ceiling)
 	}
 
-	if v.Watch < 0 {
-		return nil, fmt.Errorf("a kept watch cannot cost standing: watch %d", v.Watch)
+	if v.Watch < 0 || v.BrokenWatch < 0 {
+		return nil, fmt.Errorf("watch and broken_watch cannot be negative")
+	}
+
+	// Missing, these load as 0 -- and a zero watch_minutes pays every promise
+	// (T4's old rule) while a zero radius keeps none (review finding).
+	if v.WatchMinutes <= 0 || v.WatchRadius <= 0 {
+		return nil, fmt.Errorf("watch_minutes and watch_radius must be > 0")
 	}
 
 	b.rungs = map[string]int{}
@@ -606,9 +619,11 @@ func anyHeld(s *Standing, flags []string) bool {
 }
 
 // DawnWatch settles the night at dawn: the byre is his to ask for again, and
-// if he promised the watch and lived, the village counts it. It returns what
-// the number moved by.
-func (b *Book) DawnWatch(s *Standing) int {
+// a promised watch is judged by the minutes he STOOD at the ditch -- kept, the
+// village counts it; broken, it counts that too (T8: before, being alive at
+// dawn was enough, wherever he had spent the night). It returns what the
+// number moved by.
+func (b *Book) DawnWatch(s *Standing, stood float64) int {
 	s.clear(FlagSleptInside)
 
 	if !s.Has(FlagWatch) {
@@ -618,7 +633,12 @@ func (b *Book) DawnWatch(s *Standing) int {
 	s.clear(FlagWatch)
 
 	before := s.Rep
-	b.Move(s, b.Village.Watch)
+
+	if stood >= b.Village.WatchMinutes {
+		b.Move(s, b.Village.Watch)
+	} else {
+		b.Move(s, -b.Village.BrokenWatch)
+	}
 
 	return s.Rep - before
 }

@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 27 playtest scripts.** That count, the harness version below and the
+**The 28 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -170,6 +170,15 @@ this doc fails until it agrees.
   refused and takes no time, and the land stays bare across a reload. The
   "village" provider reports `land_left`. Negative controls ran red for the
   forage stance, the land's limit and the stance restore after a fight.
+* `watch_test.go` — the twenty-eighth, T8 (23 Sep 2026): the watch is STOOD,
+  not survived. He promises the headman the watch by day; spends the night
+  17 tiles away (the post is 15; the camp's walls allow about 20) and is
+  alive at dawn -- the promise is broken, -3 (the control: under T4 it paid);
+  promises again and spends the night at the post -- he stands in the WATCH
+  stance, at least the 180 minutes needed are counted (none were, away), dawn
+  pays +8 and spends them. About 75 s: it steps two
+  nights. Negative controls ran red for paying regardless and for a post
+  that never counts.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

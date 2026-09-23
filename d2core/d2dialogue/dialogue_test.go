@@ -62,7 +62,7 @@ func TestFloorAndCeiling(t *testing.T) {
 }
 
 func TestLoadRefuses(t *testing.T) {
-	good := `{"village":{"start":5,"floor":0,"ceiling":20,"watch":1,"ladder":[{"id":"a","name":"A","at":10}]},
+	good := `{"village":{"start":5,"floor":0,"ceiling":20,"watch":1,"watch_minutes":60,"watch_radius":10,"ladder":[{"id":"a","name":"A","at":10}]},
 	"speakers":[{"id":"s","role":"S","stand_in":"X","openings":[{"node":"n"}]}],
 	"nodes":{"n":{"text":"hi","choices":[{"text":"bye"}]}}}`
 
@@ -94,6 +94,8 @@ func TestLoadRefuses(t *testing.T) {
 			`[{"text":"1"},{"text":"2"},{"text":"3"},{"text":"4"},{"text":"5"},{"text":"6"},{"text":"7"}]`, 1),
 		"a negative effect":   strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","effects":{"water":-5}}`, 1),
 		"a negative watch":    strings.Replace(good, `"watch":1`, `"watch":-1`, 1),
+		"no watch minutes":    strings.Replace(good, `"watch_minutes":60,`, ``, 1),
+		"no watch radius":     strings.Replace(good, `"watch_radius":10,`, ``, 1),
 		"a flag nothing sets": strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","requires":{"flag":"typo"}}`, 1),
 	}
 
@@ -206,7 +208,7 @@ func TestTheWatchIsPaidAtDawnOnce(t *testing.T) {
 	b := shipped(t)
 	st := b.NewStanding()
 
-	if b.DawnWatch(st) != 0 {
+	if b.DawnWatch(st, 1000) != 0 {
 		t.Fatal("THE CONTROL: no promise, nothing paid")
 	}
 
@@ -221,12 +223,22 @@ func TestTheWatchIsPaidAtDawnOnce(t *testing.T) {
 	}
 
 	before := st.Rep
-	if got := b.DawnWatch(st); got != b.Village.Watch || st.Rep != before+got {
-		t.Fatalf("the watch pays %d at dawn; paid %d", b.Village.Watch, got)
+	if got := b.DawnWatch(st, b.Village.WatchMinutes); got != b.Village.Watch || st.Rep != before+got {
+		t.Fatalf("the watch STOOD pays %d at dawn; paid %d", b.Village.Watch, got)
 	}
 
-	if b.DawnWatch(st) != 0 {
+	if b.DawnWatch(st, 1000) != 0 {
 		t.Fatal("once per promise")
+	}
+
+	// A promise NOT stood -- alive at dawn, but elsewhere -- costs standing.
+	talk = mustOpen(t, b, st, "headman", false)
+	mustChoose(t, talk, 1) // the watch
+	mustChoose(t, talk, 0) // promise
+
+	before = st.Rep
+	if got := b.DawnWatch(st, b.Village.WatchMinutes-1); got != -b.Village.BrokenWatch || st.Has(FlagWatch) {
+		t.Fatalf("a broken watch costs %d and ends the promise; moved %d", b.Village.BrokenWatch, got)
 	}
 
 	// And a promise cannot be made at night -- with shelter reached, so the
@@ -438,7 +450,7 @@ func TestShelterIsANightThingAtTheShelterRung(t *testing.T) {
 		t.Fatal("one sleep a night")
 	}
 
-	b.DawnWatch(st)
+	b.DawnWatch(st, 0)
 
 	if !offered(true) {
 		t.Fatal("dawn gives the byre back")

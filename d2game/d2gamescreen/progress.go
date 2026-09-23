@@ -173,6 +173,9 @@ func (v *Game) earnExperience() {
 		v.lastStage = stage
 	}
 
+	// T8: a promised watch counts the minutes stood at the post.
+	v.keepWatch()
+
 	v.gainXP(xp)
 }
 
