@@ -53,14 +53,20 @@ func CreateStream(mpq *MPQ, block *Block, fileName string) (*Stream, error) {
 }
 
 func (v *Stream) loadBlockOffsets() error {
-	if _, err := v.MPQ.file.Seek(int64(v.Block.FilePosition), io.SeekStart); err != nil {
-		return err
-	}
-
 	blockPositionCount := ((v.Block.UncompressedFileSize + v.Size - 1) / v.Size) + 1
 	v.Positions = make([]uint32, blockPositionCount)
 
-	if err := binary.Read(v.MPQ.file, binary.LittleEndian, &v.Positions); err != nil {
+	// BUG-5 (23 Sep 2026): every read of the archive is POSITIONAL (ReadAt,
+	// through a SectionReader here). The MPQ's one *os.File is shared by
+	// every stream, and the game loads assets from more than one goroutine
+	// (a screen's OnLoad runs on its own); Seek-then-Read on a shared handle
+	// lets another goroutine move the offset between the two, so a stream
+	// read someone else's bytes -- a truncated table ("fontridiculous.tbl:
+	// EOF") or a DC6 frame whose run lengths overran its buffer ("index out
+	// of range" in DecodeFrame), both logged as BUG-5.
+	section := io.NewSectionReader(v.MPQ.file, int64(v.Block.FilePosition), int64(blockPositionCount)*4) //nolint:gomnd // uint32
+
+	if err := binary.Read(section, binary.LittleEndian, &v.Positions); err != nil {
 		return err
 	}
 
@@ -155,13 +161,10 @@ func (v *Stream) bufferData() (err error) {
 }
 
 func (v *Stream) loadSingleUnit() (err error) {
-	if _, err = v.MPQ.file.Seek(int64(v.MPQ.header.HeaderSize), io.SeekStart); err != nil {
-		return err
-	}
-
 	fileData := make([]byte, v.Size)
 
-	if _, err = v.MPQ.file.Read(fileData); err != nil {
+	// Positional, for BUG-5 (see loadBlockOffsets).
+	if err = readAt(v.MPQ.file, fileData, int64(v.MPQ.header.HeaderSize)); err != nil {
 		return err
 	}
 
@@ -192,11 +195,8 @@ func (v *Stream) loadBlock(blockIndex, expectedLength uint32) ([]byte, error) {
 	offset += v.Block.FilePosition
 	data := make([]byte, toRead)
 
-	if _, err := v.MPQ.file.Seek(int64(offset), io.SeekStart); err != nil {
-		return []byte{}, err
-	}
-
-	if _, err := v.MPQ.file.Read(data); err != nil {
+	// Positional, for BUG-5 (see loadBlockOffsets).
+	if err := readAt(v.MPQ.file, data, int64(offset)); err != nil {
 		return []byte{}, err
 	}
 
@@ -326,4 +326,17 @@ func pkDecompress(data []byte) ([]byte, error) {
 	}
 
 	return buffer.Bytes(), nil
+}
+
+// readAt fills buf from the archive at off without touching the shared file
+// offset (BUG-5). A read that reaches the end of the archive short is what the
+// old Seek-then-Read returned without complaint, so it is kept: only a read
+// that got nothing at all is an error.
+func readAt(r io.ReaderAt, buf []byte, off int64) error {
+	n, err := r.ReadAt(buf, off)
+	if err == io.EOF && n > 0 {
+		return nil
+	}
+
+	return err
 }
