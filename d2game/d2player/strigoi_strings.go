@@ -167,3 +167,12 @@ const (
 	DeathWhatIsLost = "All since he last left the world is lost."
 	DeathKeys       = "Enter: load last save      Esc: quit to the menu"
 )
+
+// T4, talk (23 Sep 2026).
+const (
+	TalkHeader       = "%s    -    the village: %s"
+	TalkStandingNone = "a stranger"
+	TalkKeys         = "1-9 or click: answer      Esc: walk away"
+	TalkLeave        = "Leave."
+	TalkWatchKept    = "The village counts your watch  (+%d)"
+)

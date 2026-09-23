@@ -982,7 +982,7 @@ func harnessWriteKit(a *App, savePath, loadout string) error {
 		return harnessErr("BAD_ARGUMENT", err.Error(), "loadout is sword-and-board, torch-and-blade or ask")
 	}
 
-	if err := d2items.SaveHero(d2items.SidecarPath(savePath), kit, nil); err != nil {
+	if err := d2items.SaveHero(d2items.SidecarPath(savePath), kit, d2items.Extras{}); err != nil {
 		return harnessErr("INTERNAL", fmt.Sprintf("kit: %v", err), "")
 	}
 

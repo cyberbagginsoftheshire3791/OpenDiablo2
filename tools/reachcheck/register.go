@@ -275,6 +275,10 @@ var Register = []Entry{
 		"T2: an unruined shield in the off-hand; resolveBlow steps one blow a round down a band when it answers true.", ""},
 	{sym(pkgWorld, "Combat.EndedReason"), BucketWire, VerdictLive,
 		"Death screen v0 (23 Sep 2026): Game.deathCause reads it on the frame he dies, to say a fight killed him.", ""},
+	{sym(pkgScreen, "Game.TalkTo"), BucketWire, VerdictLive,
+		"T4: the talk verb -- a left click on a villager in reach (GameControls.talkClick) opens a conversation.", ""},
+	{sym(pkgScreen, "Game.dawnWatch"), BucketWire, VerdictLive,
+		"T4: a watch promised to the headman is counted on the night-to-dawn edge he lived through (earnExperience).", ""},
 	{sym(pkgItems, "LoadHero"), BucketWire, VerdictLive,
 		"T2/T3: reads the hero's kit and progress from beside his save when the controls bind; its absence opens the loadout choice. Replaces T2's LoadSidecar (retired at T3: reach measured it dead once the game moved here).", ""},
 	{sym(pkgItems, "SaveHero"), BucketWire, VerdictLive,
@@ -453,8 +457,13 @@ var Register = []Entry{
 	// correct as signed -- M4.2's DoD put inventory in Phase 6 -- and it is
 	// recorded here so the gate reports it as a deliberate exclusion rather
 	// than finding it again every burst.
-	{sym(pkgWorld, "Meters.Consume"), BucketDefer, VerdictHarnessOnly,
-		"The only way to refill food or water or to rest off fatigue. No eat, drink or sleep verb exists in the game, so the meters are a one-way ratchet in every playable build.", "Phase 6 inventory"},
+	// MOVED to wire at T4 (23 Sep 2026). Recorded before this row was edited:
+	// the village's talk is the first game verb that fills a meter -- water
+	// at the well (S1 §8.2's first rung) and bread for labour at the forge.
+	// There is still no eat or drink verb from his own pack (Phase 6's
+	// inventory); the peksimet in his kit is not eaten by anything.
+	{sym(pkgWorld, "Meters.Consume"), BucketWire, VerdictLive,
+		"T4: Game.applyTalk gives the meters what a villager's answer gives -- water at the trough, bread for an hour at the bellows.", ""},
 	// Light.Add and Light.Remove MOVED to wire at M4.4c-2a (see the wire block
 	// above). The torch key is the verb that lights a fire, and a torch at 0
 	// minutes is removed -- the two call sites this block said did not exist.

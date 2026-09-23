@@ -1,0 +1,161 @@
+{
+  "village": {
+    "start": 10,
+    "floor": 0,
+    "ceiling": 60,
+    "watch": 8,
+    "ladder": [
+      {"id": "water",   "name": "Water at the well",      "at": 15},
+      {"id": "trade",   "name": "Trade at the gate",      "at": 25},
+      {"id": "shelter", "name": "Shelter by night",       "at": 38},
+      {"id": "hearth",  "name": "A place at the hearth",  "at": 50},
+      {"id": "rite",    "name": "The priest's rite",      "at": 60}
+    ]
+  },
+  "speakers": [
+    {"id": "headman", "role": "The headman", "stand_in": "Warriv",
+     "openings": [
+       {"requires": {"flag": "gate_closed"}, "node": "closed"},
+       {"requires": {"time": "night", "below": "shelter"}, "node": "night_barred"},
+       {"requires": {"not_flag": "met_headman"}, "node": "headman_first"},
+       {"node": "headman"}
+     ]},
+    {"id": "well_woman", "role": "The woman at the well", "stand_in": "Kashya",
+     "openings": [
+       {"requires": {"flag": "gate_closed"}, "node": "closed"},
+       {"requires": {"time": "night", "below": "shelter"}, "node": "night_barred"},
+       {"requires": {"below": "water"}, "node": "well_wary"},
+       {"node": "well"}
+     ]},
+    {"id": "smith", "role": "The smith", "stand_in": "Charsi",
+     "openings": [
+       {"requires": {"flag": "gate_closed"}, "node": "closed"},
+       {"requires": {"time": "night", "below": "shelter"}, "node": "night_barred"},
+       {"requires": {"below": "trade"}, "node": "smith_wary"},
+       {"node": "smith"}
+     ]},
+    {"id": "priest", "role": "The priest", "stand_in": "Akara",
+     "openings": [
+       {"requires": {"flag": "gate_closed"}, "node": "closed"},
+       {"requires": {"time": "night", "below": "shelter"}, "node": "night_barred"},
+       {"requires": {"below": "hearth"}, "node": "priest_wary"},
+       {"node": "priest"}
+     ]}
+  ],
+  "nodes": {
+    "closed": {
+      "text": "The gate stays shut. Someone spits from behind it. After what you took, no one here will speak to you again.",
+      "choices": []
+    },
+    "night_barred": {
+      "text": "A voice through the boards: 'Not after dark. Nothing good knocks after dark.' The bar does not move.",
+      "choices": []
+    },
+
+    "headman_first": {
+      "text": "An old man stands in the gap in the ditch-work with a hayfork he does not raise. 'The Sultan's army passed three days ago and took what it could carry. Now one of his soldiers comes back on foot. What do you want here, janissary?'",
+      "choices": [
+        {"text": "Only to live through the nights. I will work for what I need.",
+         "next": "headman_work", "effects": {"rep": 3, "set": ["met_headman"]}},
+        {"text": "Your bread. Hand it over.",
+         "next": "headman_threat", "effects": {"set": ["met_headman"]}},
+        {"text": "Say nothing, and go.", "effects": {"set": ["met_headman"]}}
+      ]
+    },
+    "headman": {
+      "text": "The headman watches your hands, not your face. 'Well?'",
+      "choices": [
+        {"text": "Is there work?", "next": "headman_work"},
+        {"text": "I will stand the watch on the ditch tonight.",
+         "next": "headman_watch", "requires": {"not_flag": "watch_promised", "time": "day"}},
+        {"text": "Your bread. Hand it over.", "next": "headman_threat"},
+        {"text": "Nothing. Leave him be."}
+      ]
+    },
+    "headman_work": {
+      "text": "'The ditch-work fell in where the carts went over it. Dig it out and set the stakes again, and the village will know you did.'",
+      "choices": [
+        {"text": "Dig out the ditch and reset the stakes. (an hour)",
+         "next": "headman_thanks", "requires": {"not_flag": "ditch_mended"},
+         "effects": {"rep": 8, "minutes": 60, "set": ["ditch_mended"]}},
+        {"text": "Not now."}
+      ]
+    },
+    "headman_thanks": {
+      "text": "When you straighten your back he is still there. 'You dig like a man who has dug graves.' It is not quite thanks. It is not nothing.",
+      "choices": []
+    },
+    "headman_watch": {
+      "text": "He weighs it. 'Stand at the ditch until the cock crows, and be alive when it does. Then we will talk about you.'",
+      "choices": [
+        {"text": "Promise it.", "effects": {"set": ["watch_promised"]}},
+        {"text": "Think better of it."}
+      ]
+    },
+    "headman_threat": {
+      "text": "He does not move. Behind him a woman pulls a child indoors. 'Take it, then. Take it and never come back through this gap.'",
+      "choices": [
+        {"text": "Take the bread at sword-point.",
+         "effects": {"to_floor": true, "food": 50, "set": ["gate_closed"]}},
+        {"text": "Lower the blade. Walk away.", "effects": {"rep": -3}}
+      ]
+    },
+
+    "well_wary": {
+      "text": "A woman at the well sees your cap and puts herself between you and the rope. She does not speak. Her eyes go to the headman's house.",
+      "choices": []
+    },
+    "well": {
+      "text": "The woman at the well lets you come as far as the trough, no further. 'Drink, then. From the trough, not the bucket.'",
+      "choices": [
+        {"text": "Fill your waterskin from the trough.", "effects": {"water": 100}},
+        {"text": "Draw water for her before you take any.",
+         "requires": {"not_flag": "drew_water"},
+         "effects": {"rep": 4, "water": 100, "minutes": 20, "set": ["drew_water"]}},
+        {"text": "Leave."}
+      ]
+    },
+
+    "smith_wary": {
+      "text": "The smith's hammer stops. He looks at the curve of your blade the way a man looks at a snake. 'I have nothing for you.'",
+      "choices": []
+    },
+    "smith": {
+      "text": "The smith keeps working while he talks. 'Your army took my good iron and left me their broken. There is always a bellows to pump, if you want bread.'",
+      "choices": [
+        {"text": "Work the bellows for an hour, for bread.",
+         "effects": {"food": 35, "minutes": 60}},
+        {"text": "Show him how the army forges an edge.",
+         "requires": {"not_flag": "showed_smith"},
+         "effects": {"rep": 5, "minutes": 40, "set": ["showed_smith"]}},
+        {"text": "Leave."}
+      ]
+    },
+
+    "priest_wary": {
+      "text": "The priest makes the sign of the cross, slowly, not at you but because of you. 'When the village trusts you, come to the hearth. Not before.'",
+      "choices": []
+    },
+    "priest": {
+      "text": "The priest has a place kept at the hearth. 'You have lived through nights out there that would have killed my people. Then you should know what walks in them.'",
+      "choices": [
+        {"text": "Listen.", "next": "priest_tale", "effects": {"set": ["heard_tale"]}},
+        {"text": "Ask about the rite for the dead.", "next": "priest_rite",
+         "requires": {"rung": "rite"}},
+        {"text": "Leave."}
+      ]
+    },
+    "priest_tale": {
+      "text": "'The ones who die wrong do not stay down. You will know them by the red in their faces. They go home first. They rest in the grave only on Saturday, and the stake must go through the heart while they rest.'",
+      "choices": [
+        {"text": "Thank him."}
+      ]
+    },
+    "priest_rite": {
+      "text": "'If one of yours dies, bring him to me before dark. I will close the grave the old way, and he will stay in it.' He does not ask what god you pray to.",
+      "choices": [
+        {"text": "Thank him.", "effects": {"set": ["rite_granted"]}}
+      ]
+    }
+  }
+}

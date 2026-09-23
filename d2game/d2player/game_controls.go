@@ -334,6 +334,9 @@ type GameControls struct {
 	// deathHolder is the owner of his death (death screen v0).
 	deathHolder DeathHolder
 
+	// talkHolder is the owner of the village's talk (T4).
+	talkHolder TalkHolder
+
 	// squads is the owner the player commands (M4.4c-1): the click handler and
 	// the cycle key select through it, and the selection hit test reads its
 	// model entities. It is the same instance the game screen registered as the
@@ -368,7 +371,7 @@ type SkillResource struct {
 
 // OnKeyRepeat is called to handle repeated key presses
 func (g *GameControls) OnKeyRepeat(event d2interface.KeyEvent) bool {
-	if g.dead() {
+	if g.dead() || g.talking() {
 		return true
 	}
 
@@ -415,6 +418,11 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 	// Death screen v0: a dead man has two keys, Enter and Escape, and nothing
 	// else reaches the game -- not a panel, not a verb.
 	if g.deathKey(event) {
+		return true
+	}
+
+	// T4: a conversation takes every key -- numbers answer, Escape leaves.
+	if g.talkKey(event) {
 		return true
 	}
 
@@ -530,7 +538,7 @@ func truncateFloat64(n float64) float64 {
 
 // OnMouseButtonRepeat handles repeated mouse clicks
 func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
-	if g.dead() {
+	if g.dead() || g.talking() {
 		return true
 	}
 
@@ -659,6 +667,20 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	mx, my := event.X(), event.Y()
 
 	if g.dead() {
+		return true
+	}
+
+	// T4: a talk is modal -- a click answers or does nothing -- and a left
+	// click on a villager in reach opens one.
+	if g.talking() {
+		if event.Button() == d2enum.MouseButtonLeft {
+			g.talkClick(mx, my)
+		}
+
+		return true
+	}
+
+	if event.Button() == d2enum.MouseButtonLeft && g.talkClick(mx, my) {
 		return true
 	}
 

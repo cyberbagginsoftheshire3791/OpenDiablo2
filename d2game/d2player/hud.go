@@ -164,6 +164,10 @@ type HUD struct {
 	talents       *talentOverlay
 	talentsWidget *d2ui.CustomWidget
 
+	// T4: the talk panel.
+	talk       *talkOverlay
+	talkWidget *d2ui.CustomWidget
+
 	// Death screen v0: over everything.
 	death       *deathOverlay
 	deathWidget *d2ui.CustomWidget
@@ -244,6 +248,7 @@ func NewHUD(
 		kit:               newKitOverlay(ui),
 		talents:           newTalentOverlay(ui),
 		death:             newDeathOverlay(ui),
+		talk:              newTalkOverlay(ui),
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -382,6 +387,12 @@ func (h *HUD) loadCustomWidgets() {
 	h.talentsWidget.SetPosition(0, 0)
 	h.talentsWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
 	h.panelGroup.AddWidget(h.talentsWidget)
+
+	// T4: the talk panel, under the death screen.
+	h.talkWidget = h.uiManager.NewCustomWidget(h.renderTalk, screenWidth, screenHeight)
+	h.talkWidget.SetPosition(0, 0)
+	h.talkWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.talkWidget)
 
 	// Death screen v0, added last so it draws over every other panel.
 	h.deathWidget = h.uiManager.NewCustomWidget(h.renderDeath, screenWidth, screenHeight)
@@ -715,17 +726,16 @@ func (h *HUD) setExperienceTooltipText() {
 	h.experienceTooltip.SetText(strPanelExp)
 }
 
-func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
-	mx, my := h.lastMouseX, h.lastMouseY
-
+// hoveredEntity is the selectable entity under a screen point, or nil. T4
+// lifted it out of the hover-label renderer so the talk click finds exactly
+// the entity whose label the player is looking at.
+func (h *HUD) hoveredEntity(mx, my int) d2interface.MapEntity {
 	for entityIdx := range h.mapEngine.Entities() {
 		entity := (h.mapEngine.Entities())[entityIdx]
 		if !entity.Selectable() {
 			continue
 		}
 
-		entPos := entity.GetPosition()
-		entOffset := entPos.RenderOffset()
 		entScreenXf, entScreenYf := h.mapRenderer.WorldToScreenF(entity.GetPositionF())
 		entScreenX := int(math.Floor(entScreenXf))
 		entScreenY := int(math.Floor(entScreenYf))
@@ -733,24 +743,44 @@ func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
 		halfWidth, halfHeight := entityWidth>>1, entityHeight>>1
 		l, r := entScreenX-halfWidth-hoverLabelOuterPad, entScreenX+halfWidth+hoverLabelOuterPad
 		t, b := entScreenY-halfHeight-hoverLabelOuterPad, entScreenY+halfHeight-hoverLabelOuterPad
-		xWithin := (l <= mx) && (r >= mx)
-		yWithin := (t <= my) && (b >= my)
-		within := xWithin && yWithin
 
-		if within {
-			xOff, yOff := int(entOffset.X()), int(entOffset.Y())
-
-			h.nameLabel.SetText(entity.Label())
-
-			xLabel, yLabel := entScreenX-xOff, entScreenY-yOff-entityHeight-hoverLabelOuterPad
-			h.nameLabel.SetPosition(xLabel, yLabel)
-
-			h.nameLabel.Render(target)
-			entity.Highlight()
-
-			break
+		if l <= mx && r >= mx && t <= my && b >= my {
+			return entity
 		}
 	}
+
+	return nil
+}
+
+func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
+	entity := h.hoveredEntity(h.lastMouseX, h.lastMouseY)
+	if entity == nil {
+		return
+	}
+
+	entPos := entity.GetPosition()
+	entOffset := entPos.RenderOffset()
+	entScreenXf, entScreenYf := h.mapRenderer.WorldToScreenF(entity.GetPositionF())
+	entScreenX := int(math.Floor(entScreenXf))
+	entScreenY := int(math.Floor(entScreenYf))
+	_, entityHeight := entity.GetSize()
+	xOff, yOff := int(entOffset.X()), int(entOffset.Y())
+
+	// T4: a villager's label is his ROLE, not the D2 stand-in's name.
+	label := entity.Label()
+	if h.gameControls != nil && h.gameControls.talkHolder != nil {
+		if role := h.gameControls.talkHolder.RoleFor(label); role != "" {
+			label = role
+		}
+	}
+
+	h.nameLabel.SetText(label)
+
+	xLabel, yLabel := entScreenX-xOff, entScreenY-yOff-entityHeight-hoverLabelOuterPad
+	h.nameLabel.SetPosition(xLabel, yLabel)
+
+	h.nameLabel.Render(target)
+	entity.Highlight()
 }
 
 // Render draws the HUD to the screen
@@ -851,6 +881,7 @@ func (h *HUD) Advance(elapsed float64) {
 	h.refreshTactical(elapsed)
 	h.refreshKit()
 	h.refreshTalents()
+	h.refreshTalk()
 	h.refreshDeath()
 	h.setStaminaTooltipText()
 	h.setExperienceTooltipText()

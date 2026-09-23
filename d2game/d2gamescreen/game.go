@@ -20,6 +20,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2bestiary"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2dialogue"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
@@ -121,6 +122,17 @@ func CreateGame(
 		return nil, err
 	}
 
+	// T4: the village's talk, beside the other tables and for the same reason.
+	dialogueData, err := asset.LoadFile(dialoguePath)
+	if err != nil {
+		return nil, fmt.Errorf("load Strigoi dialogue: %w", err)
+	}
+
+	dialogue, err := d2dialogue.Load(dialogueData)
+	if err != nil {
+		return nil, err
+	}
+
 	// find the local player and its initial location
 	var startX, startY float64
 
@@ -142,6 +154,7 @@ func CreateGame(
 		bestiary:             bestiary,
 		items:                items,
 		talents:              talents,
+		dialogue:             dialogue,
 		gameClient:           gameClient,
 		navigator:            navigator,
 		gameControls:         nil,
@@ -314,7 +327,13 @@ type Game struct {
 
 	// T3, progression: the talent table, his standing, and the clock stage
 	// last seen (dawn after night is worth experience).
-	talents   *d2progress.Tree
+	talents *d2progress.Tree
+
+	// T4: the dialogue table, what the village thinks of him, and the talk in
+	// progress (nil when none).
+	dialogue  *d2dialogue.Book
+	standing  *d2dialogue.Standing
+	talk      *d2dialogue.Talk
 	progress  *d2progress.Progress
 	lastStage d2world.Stage
 
@@ -445,6 +464,7 @@ func (v *Game) OnLoad(_ d2screen.LoadingState) {
 func (v *Game) OnUnload() error {
 	d2harness.Unregister(v.gameControls) // the "ui" provider dies with the screen
 	d2harness.Unregister(progressProvider{v})
+	d2harness.Unregister(villageProvider{v})
 
 	// The world's systems die with it too (M4.1).
 	if v.worldClock != nil {
@@ -689,6 +709,12 @@ func (v *Game) worldRunning() bool {
 
 	// T2: nothing moves while he chooses how he carries himself.
 	if v.choosingLoadout {
+		return false
+	}
+
+	// T4: nor while he talks. Time a talk costs (labour) is paid by the
+	// answer that costs it, not by the minutes he spends reading.
+	if v.talk != nil && !v.talk.Done() {
 		return false
 	}
 
@@ -1904,6 +1930,7 @@ func (v *Game) bindGameControls() error {
 		v.gameControls.SetKitHolder(v)
 		v.gameControls.SetProgressHolder(v)
 		v.gameControls.SetDeathHolder(v)
+		v.gameControls.SetTalkHolder(v)
 
 		if err := v.inputManager.BindHandler(v.gameControls); err != nil {
 			v.Error(bindControlsErrStr + player.ID())

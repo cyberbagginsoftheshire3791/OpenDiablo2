@@ -96,6 +96,11 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"talent_cells": g.talentCellsReport(),
 		"talent_note":  g.talentNoteText(),
 
+		// T4: the talk panel, as drawn.
+		"talk_open":   g.talking(),
+		"talk_view":   g.talkViewReport(),
+		"hover_label": g.hoverLabelReport(),
+
 		// Death screen v0.
 		"death_open":        g.dead(),
 		"death_lines":       g.deathLinesReport(),
@@ -199,4 +204,43 @@ func (g *GameControls) deathLinesReport() []string {
 	}
 
 	return append([]string(nil), g.hud.death.lines...)
+}
+
+// talkViewReport is the talk panel's content and where its answers are drawn.
+func (g *GameControls) talkViewReport() map[string]interface{} {
+	if !g.talking() {
+		return map[string]interface{}{}
+	}
+
+	t := g.hud.talk
+
+	return map[string]interface{}{
+		"role":     t.view.Role,
+		"text":     t.view.Text,
+		"answers":  append([]string(nil), t.view.Answers...),
+		"answer_y": append([]int(nil), t.answerY...),
+		"rep":      t.view.Rep,
+		"rung":     t.view.Rung,
+		"notice":   t.notice,
+	}
+}
+
+// hoverLabelReport is the label the hover shows under the cursor now.
+func (g *GameControls) hoverLabelReport() string {
+	if g.hud == nil {
+		return ""
+	}
+
+	e := g.hud.hoveredEntity(g.hud.lastMouseX, g.hud.lastMouseY)
+	if e == nil {
+		return ""
+	}
+
+	if g.talkHolder != nil {
+		if role := g.talkHolder.RoleFor(e.Label()); role != "" {
+			return role
+		}
+	}
+
+	return e.Label()
 }

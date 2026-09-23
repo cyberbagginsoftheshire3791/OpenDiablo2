@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 23 playtest scripts.** That count, the harness version below and the
+**The 24 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -131,6 +131,16 @@ this doc fails until it agrees.
   back to the bytes it held when he entered; Enter reloads the save and he
   stands up alive at level 1. Negative controls run red for the rollback and
   the key gate.
+* `talk_test.go` — the twenty-fourth, T4 (23 Sep 2026): the village's talk.
+  A villager's hover label is his ROLE (the D2 stand-in's name never shows);
+  a click from out of reach opens nothing (the control); in reach a click opens
+  the talk and the world is held; the civil answer is worth 3, an hour's
+  digging exactly 60 world minutes and 8, and 21 reaches the first rung; at
+  the well a click on the trough answer fills his water, and below the rung
+  she will not let him near; the standing is on disk beside his save. The
+  "village" provider reports rep, rung, flags and the node, and its `rep` is
+  its one arranging verb. Negative controls ran red for the reach check, the
+  hold and the meter fill.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

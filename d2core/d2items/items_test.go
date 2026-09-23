@@ -299,7 +299,7 @@ func TestSidecarRoundTrip(t *testing.T) {
 	k := kitFor(t, "sword-and-board")
 	k.Worn[SlotBody].Points = 5
 
-	if err := SaveHero(SidecarPath(save), k, nil); err != nil {
+	if err := SaveHero(SidecarPath(save), k, Extras{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -370,13 +370,20 @@ func TestSidecarCarriesProgress(t *testing.T) {
 	path := SidecarPath(filepath.Join(t.TempDir(), "5.od2"))
 	k := kitFor(t, "torch-and-blade")
 
-	if err := SaveHero(path, k, []byte(`{"xp":120}`)); err != nil {
+	if err := SaveHero(path, k, Extras{Progress: []byte(`{"xp":120}`), Village: []byte(`{"rep":21}`)}); err != nil {
 		t.Fatal(err)
 	}
 
-	_, prog, err := LoadHero(path, c)
+	_, x, err := LoadHero(path, c)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	prog := x.Progress
+
+	var village struct{ Rep int }
+	if err := json.Unmarshal(x.Village, &village); err != nil || village.Rep != 21 {
+		t.Fatalf("the village rides beside the kit too: %q %v", x.Village, err)
 	}
 
 	var back struct{ XP int }
@@ -385,11 +392,12 @@ func TestSidecarCarriesProgress(t *testing.T) {
 	}
 
 	// A T2 file -- kit only -- has no progress and is not an error.
-	if err := SaveHero(path, k, nil); err != nil {
+	if err := SaveHero(path, k, Extras{}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, prog, err := LoadHero(path, c); err != nil || prog != nil {
+	if _, x, err := LoadHero(path, c); err != nil || x.Progress != nil || x.Village != nil {
+		prog := x.Progress
 		t.Fatalf("a kit-only file loads with no progress: %q %v", prog, err)
 	}
 }

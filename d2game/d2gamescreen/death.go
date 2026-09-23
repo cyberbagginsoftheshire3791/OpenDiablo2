@@ -88,6 +88,9 @@ func (v *Game) noticeDeath() {
 	}
 
 	v.died = true
+
+	// A talk does not outlive him.
+	v.EndTalk()
 	v.death = d2player.Death{Cause: v.deathCause()}
 
 	if v.worldClock != nil {

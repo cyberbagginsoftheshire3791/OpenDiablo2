@@ -27,6 +27,17 @@ type sidecar struct {
 	// package does not import the progression package. Optional: a T2 file
 	// without it loads as a hero with no experience.
 	Progress json.RawMessage `json:"progress,omitempty"`
+
+	// Village is what the village thinks of him (T4), raw for the same
+	// reason. Optional: without it he is a stranger at the gate.
+	Village json.RawMessage `json:"village,omitempty"`
+}
+
+// Extras is what rides in the file beside the kit, raw, so this package
+// imports neither the progression nor the dialogue package.
+type Extras struct {
+	Progress json.RawMessage
+	Village  json.RawMessage
 }
 
 // SidecarPath is the kit file for a hero save.
@@ -41,43 +52,43 @@ func SidecarPath(savePath string) string {
 // ErrNoSidecar means the hero has never chosen a loadout.
 var ErrNoSidecar = errors.New("no kit saved for this hero")
 
-// LoadHero reads a hero's kit and his progress (raw; nil when none).
-func LoadHero(path string, c *Catalog) (*Kit, json.RawMessage, error) {
+// LoadHero reads a hero's kit and what rides beside it (raw; nil when none).
+func LoadHero(path string, c *Catalog) (*Kit, Extras, error) {
 	if path == "" {
-		return nil, nil, ErrNoSidecar
+		return nil, Extras{}, ErrNoSidecar
 	}
 
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil, ErrNoSidecar
+		return nil, Extras{}, ErrNoSidecar
 	}
 
 	if err != nil {
-		return nil, nil, err
+		return nil, Extras{}, err
 	}
 
 	var sc sidecar
 	if err := json.Unmarshal(data, &sc); err != nil {
-		return nil, nil, fmt.Errorf("kit file %s: %w", path, err)
+		return nil, Extras{}, fmt.Errorf("kit file %s: %w", path, err)
 	}
 
 	if sc.Version != sidecarVersion || sc.Kit == nil {
-		return nil, nil, fmt.Errorf("kit file %s: version %d, want %d", path, sc.Version, sidecarVersion)
+		return nil, Extras{}, fmt.Errorf("kit file %s: version %d, want %d", path, sc.Version, sidecarVersion)
 	}
 
 	sc.Kit.Bind(c)
 
-	return sc.Kit, sc.Progress, nil
+	return sc.Kit, Extras{Progress: sc.Progress, Village: sc.Village}, nil
 }
 
-// SaveHero writes a hero's kit and his progress (raw JSON; nil for none),
+// SaveHero writes a hero's kit and what rides beside it,
 // atomically: a half-written file would cost him his gear and his levels.
-func SaveHero(path string, k *Kit, progress json.RawMessage) error {
+func SaveHero(path string, k *Kit, x Extras) error {
 	if path == "" || k == nil {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: progress}, "", "  ")
+	data, err := json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: x.Progress, Village: x.Village}, "", "  ")
 	if err != nil {
 		return err
 	}

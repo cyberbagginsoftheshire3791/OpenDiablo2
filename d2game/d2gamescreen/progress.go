@@ -165,6 +165,9 @@ func (v *Game) earnExperience() {
 		if nightSurvived(v.lastStage, stage, day, v.dawnPaidDay, v.alive()) {
 			xp += v.talents.XP.Night
 			v.dawnPaidDay = day
+
+			// T4: a watch he promised the village, kept.
+			v.dawnWatch()
 		}
 
 		v.lastStage = stage

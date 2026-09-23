@@ -33,10 +33,15 @@ func (v *Game) bindKit() {
 	// Death screen v0: the file as he enters, before anything here writes it.
 	v.snapshotHero()
 
-	kit, progress, err := d2items.LoadHero(v.kitPath, v.items)
+	kit, extras, err := d2items.LoadHero(v.kitPath, v.items)
 
 	// T3: his progress rides in the same file; none yet is a fresh hero.
-	defer v.bindProgress(progress)
+	// T4: and what the village thinks of him; none yet is a stranger.
+	// Deferred calls run last-first, so the STANDING binds first and progress
+	// after it: nothing progress does can save the file before the standing is
+	// in hand (review finding: a save then would drop the village block).
+	defer v.bindProgress(extras.Progress)
+	defer v.bindStanding(extras.Village)
 
 	switch {
 	case err == nil:
@@ -224,7 +229,7 @@ func (v *Game) saveKit() {
 		}
 	}
 
-	if err := d2items.SaveHero(v.kitPath, v.kit, v.progressJSON()); err != nil {
+	if err := d2items.SaveHero(v.kitPath, v.kit, d2items.Extras{Progress: v.progressJSON(), Village: v.standingJSON()}); err != nil {
 		v.Errorf("kit: %v", err)
 	}
 
