@@ -29,7 +29,7 @@ func authoredFixture() *d2maptiled.Map {
 func TestAuthoredTileBuildsTheEngineTile(t *testing.T) {
 	m := authoredFixture()
 
-	open := authoredTile(m, 0, 0)
+	open := authoredTile(m, 0, 0, nil)
 	if len(open.Components.Floors) != 1 || len(open.Components.Walls) != 0 {
 		t.Fatalf("open tile components %+v", open.Components)
 	}
@@ -53,7 +53,7 @@ func TestAuthoredTileBuildsTheEngineTile(t *testing.T) {
 		}
 	}
 
-	house := authoredTile(m, 1, 0)
+	house := authoredTile(m, 1, 0, nil)
 	if len(house.Components.Walls) != 1 {
 		t.Fatalf("house tile has %d walls", len(house.Components.Walls))
 	}
@@ -74,7 +74,7 @@ func TestAuthoredTileBuildsTheEngineTile(t *testing.T) {
 		}
 	}
 
-	hole := authoredTile(m, 2, 0)
+	hole := authoredTile(m, 2, 0, nil)
 	if len(hole.Components.Floors) != 0 || !hole.SubTiles[12].BlockWalk {
 		t.Fatalf("hole: floors %d, centre %+v; want no floor and blocked", len(hole.Components.Floors), hole.SubTiles[12])
 	}
@@ -161,5 +161,100 @@ func TestSetAuthoredMapNormalisesAndForgets(t *testing.T) {
 
 	if asked, built, err = AuthoredMapReport(); asked != "" || built != "" || err != nil {
 		t.Fatalf("clearing left %q %q %v", asked, built, err)
+	}
+}
+
+// A 2x2 structure is cut into four 80-pixel strips along its two front
+// faces, each on its own tile, each drawn from the right height, and each
+// carrying the right columns of the art; a fully transparent strip is left
+// out.
+func TestAStructureIsCutIntoStrips(t *testing.T) {
+	art := image.NewRGBA(image.Rect(0, 0, 320, 200))
+	for x := 0; x < 320; x++ {
+		for y := 100; y < 200; y++ { // the top half stays transparent
+			art.Pix[(y*320+x)*4], art.Pix[(y*320+x)*4+3] = byte(x/80+1), 255
+		}
+	}
+
+	m := &d2maptiled.Map{
+		Width: 4, Height: 4,
+		Kinds:      []d2maptiled.Kind{{Name: "barn", Layer: d2maptiled.LayerStructure, Blocked: true, Footprint: image.Pt(2, 2), Pixels: art}},
+		Structures: []d2maptiled.Structure{{Kind: 0, Footprint: image.Rect(1, 1, 3, 3)}},
+	}
+
+	walls, images := structureStrips(m)
+
+	// Front tile 2,2. Left face: strip 0 on 1,2 (one step back, 40 px
+	// higher), strip 1 on 2,2. Right face: strip 2 on 2,2, strip 3 on 2,1.
+	want := []struct {
+		at      image.Point
+		typ     d2enum.TileType
+		index   byte
+		yAdjust int
+	}{
+		{image.Pt(1, 2), d2mapengine.AuthoredStripLeft, 0, 80 + 40 - 200},
+		{image.Pt(2, 2), d2mapengine.AuthoredStripLeft, 1, 80 - 200},
+		{image.Pt(2, 2), d2mapengine.AuthoredStripRight, 2, 80 - 200},
+		{image.Pt(2, 1), d2mapengine.AuthoredStripRight, 3, 80 + 40 - 200},
+	}
+
+	count := 0
+	for _, w := range walls {
+		count += len(w)
+	}
+
+	if count != len(want) || len(images) != len(want) {
+		t.Fatalf("%d strip walls and %d images, want %d each", count, len(images), len(want))
+	}
+
+	for _, c := range want {
+		found := false
+
+		for _, tile := range walls[c.at] {
+			if tile.Type == c.typ && tile.RandomIndex == c.index {
+				found = true
+
+				if tile.YAdjust != c.yAdjust || tile.Style != d2mapengine.AuthoredStyle || tile.Sequence != 0 {
+					t.Errorf("strip %d on %v: YAdjust %d style %d seq %d; want %d, authored, 0", c.index, c.at, tile.YAdjust, tile.Style, tile.Sequence, c.yAdjust)
+				}
+			}
+		}
+
+		if !found {
+			t.Errorf("no strip %d (%v) on tile %v", c.index, c.typ, c.at)
+			continue
+		}
+
+		img := images[d2mapengine.AuthoredKey{Sequence: 0, Type: c.typ, Index: c.index}]
+		if img == nil || img.Bounds().Dx() != 80 || img.Bounds().Dy() != 200 {
+			t.Fatalf("strip %d image %v", c.index, img)
+		}
+
+		// The strip holds art columns 80j..80j+79: their marker is j+1.
+		if got := img.Pix[(150*80+40)*4]; got != c.index+1 {
+			t.Errorf("strip %d carries column marker %d, want %d", c.index, got, c.index+1)
+		}
+	}
+
+	// A transparent strip is not drawn at all.
+	clear := image.NewRGBA(image.Rect(0, 0, 320, 200))
+	m.Kinds[0].Pixels = clear
+
+	if walls, images := structureStrips(m); len(walls) != 0 || len(images) != 0 {
+		t.Fatalf("a transparent structure produced %d walls, %d images", len(walls), len(images))
+	}
+}
+
+// A structure's whole art is never registered under its own key: it is drawn
+// only as strips.
+func TestAStructureKindIsNotAWholeImage(t *testing.T) {
+	m := &d2maptiled.Map{Kinds: []d2maptiled.Kind{
+		{Layer: d2maptiled.LayerStructure, Footprint: image.Pt(2, 2), Pixels: image.NewRGBA(image.Rect(0, 0, 320, 200))},
+		{Layer: d2maptiled.LayerWall, Pixels: image.NewRGBA(image.Rect(0, 0, 160, 120))},
+	}}
+
+	images := authoredImages(m)
+	if len(images) != 1 || images[d2mapengine.AuthoredKey{Sequence: 1, Type: d2mapengine.AuthoredWallType}] == nil {
+		t.Fatalf("images %v; want only the wall", images)
 	}
 }

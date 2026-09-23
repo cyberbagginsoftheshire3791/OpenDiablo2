@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -21,8 +22,12 @@ func TestShippedVillageLoads(t *testing.T) {
 		t.Fatalf("reading the shipped village: %v", err)
 	}
 
-	m, err := Parse(data, "/maps", func(p string) ([]byte, error) {
-		return os.ReadFile(filepath.Join(root, filepath.FromSlash(path.Clean(p)[len("/maps"):])))
+	// The map's own folder is /data/strigoi/maps, as the game loads it, so
+	// art beside it (../structures) resolves as it does in the game.
+	strigoi := filepath.Dir(root)
+
+	m, err := Parse(data, "/data/strigoi/maps", func(p string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(strigoi, filepath.FromSlash(strings.TrimPrefix(path.Clean(p), "/data/strigoi"))))
 	})
 	if err != nil {
 		t.Fatalf("the shipped village is refused: %v", err)
@@ -65,6 +70,18 @@ func TestShippedVillageLoads(t *testing.T) {
 
 	if !m.IsInside(int(m.StartX), int(m.StartY)) || m.IsInside(23, 40) {
 		t.Errorf("inside: start %v, road %v; want true, false", m.IsInside(int(m.StartX), int(m.StartY)), m.IsInside(23, 40))
+	}
+
+	// The strigoi-art houses stand on the map as structures: seven 3x3
+	// footprints, every one inside the fence.
+	if len(m.Structures) != 7 {
+		t.Errorf("%d structures, want 7 houses", len(m.Structures))
+	}
+
+	for _, st := range m.Structures {
+		if st.Footprint.Dx() != 3 || st.Footprint.Dy() != 3 || !st.Footprint.In(m.Inside[0]) {
+			t.Errorf("structure %s (%s) is not a 3x3 inside the fence", st.Footprint, m.Kinds[st.Kind].Name)
+		}
 	}
 
 	// The enclosure is closed except where it is meant to be open. Walk the

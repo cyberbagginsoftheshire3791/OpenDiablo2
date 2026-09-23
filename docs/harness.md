@@ -252,7 +252,9 @@ this doc fails until it agrees.
   game uses. The village first, in a fresh process: reported built, not one
   Diablo II tile file (`.dt1`/`.ds1`) in the asset census, the player in its
   start tile, no tile past its 48x48 edge, the fence solid on all 25 sub-tiles
-  and the road open, a route out through the fence that steps on no blocked
+  and the road open, a strigoi-art house solid under its 3x3 footprint and
+  drawn in strips (two on its front tile, none behind its faces), a route
+  out through the fence that steps on no blocked
   tile (so it went by the gate), a goal outside the WEST fence reached the
   long way round -- out of the south gate and up the outside, every segment
   clear and the gate row crossed between x 23 and 25 (the pathfinder's

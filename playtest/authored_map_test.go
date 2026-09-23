@@ -87,6 +87,18 @@ func TestAuthoredMap(t *testing.T) {
 			int(num(fence, "walls")), walkable(fence))
 	}
 
+	// A house (strigoi-art, 3x3 at 28..30 x 26..28): solid under its whole
+	// footprint, drawn in strips along its two front faces -- the front tile
+	// carries both central strips, the tiles behind the faces none.
+	for _, c := range []struct {
+		x, y, walls int
+	}{{28, 26, 0}, {29, 27, 0}, {29, 26, 0}, {30, 28, 2}} {
+		ht := s.call("strigoi_get_tile", map[string]any{"x": c.x, "y": c.y})
+		if walkable(ht) != 0 || int(num(ht, "walls")) != c.walls {
+			t.Fatalf("house tile %d,%d: %d walkable, %d walls; want 0 and %d", c.x, c.y, walkable(ht), int(num(ht, "walls")), c.walls)
+		}
+	}
+
 	road := s.call("strigoi_get_tile", map[string]any{"x": 23, "y": 40})
 	if int(num(road, "walls")) != 0 || walkable(road) != 25 {
 		t.Fatalf("the road at 23,40: %d walls, %d of 25 walkable; want 0 and 25", int(num(road, "walls")), walkable(road))
@@ -233,7 +245,15 @@ func TestAuthoredMap(t *testing.T) {
 	// hero fed, and the spawner's roll made certain. Every group that arrives
 	// must stand OUTSIDE the village's inside area when it arrives: what comes
 	// from the dark comes in by the gate (d2gamescreen/spawn_outside.go).
+	s.call("strigoi_move_player_to", map[string]any{"x": 27.5, "y": 24.5, "wait": true, "max_ticks": 3000})
+
+	houses := s.call("strigoi_screenshot", map[string]any{"name": "authored-village-houses-day"})
+	t.Logf("between the headman's house and the next, by day: %s", str(houses, "path"))
+
 	s.call("strigoi_move_player_to", map[string]any{"x": 22.5, "y": 26.5, "wait": true, "max_ticks": 3000})
+
+	green := s.call("strigoi_screenshot", map[string]any{"name": "authored-village-green-day"})
+	t.Logf("the green by day, the houses around it: %s", str(green, "path"))
 	setField(s, "rising", "p", 0.0)
 	setField(s, "rising", "edge_floor", 0.0)
 	setField(s, "spawns", "chance", 1.0)
@@ -342,8 +362,10 @@ func parseShippedVillage(t *testing.T) *d2maptiled.Map {
 		t.Fatalf("reading the village: %v", err)
 	}
 
-	m, err := d2maptiled.Parse(data, "/maps", func(p string) ([]byte, error) {
-		return os.ReadFile(filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(path.Clean(p), "/maps"))))
+	strigoi := filepath.Dir(root)
+
+	m, err := d2maptiled.Parse(data, "/data/strigoi/maps", func(p string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(strigoi, filepath.FromSlash(strings.TrimPrefix(path.Clean(p), "/data/strigoi"))))
 	})
 	if err != nil {
 		t.Fatalf("the village does not parse outside the game either: %v", err)

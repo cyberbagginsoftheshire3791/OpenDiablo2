@@ -75,7 +75,7 @@ func (mr *MapRenderer) registerAuthoredImages() {
 		b := img.Bounds()
 		surface := mr.renderer.NewSurface(b.Dx(), b.Dy())
 		surface.ReplacePixels(img.Pix)
-		mr.setImageCacheRecord(d2mapengine.AuthoredStyle, key.Sequence, key.Type, 0, surface)
+		mr.setImageCacheRecord(d2mapengine.AuthoredStyle, key.Sequence, key.Type, key.Index, surface)
 	}
 }
 

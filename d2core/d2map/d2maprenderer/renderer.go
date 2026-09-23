@@ -192,13 +192,28 @@ func (mr *MapRenderer) Render(target d2interface.Surface) {
 		mr.renderMapDebug(mr.mapDebugVisLevel, target, startX, startY, endX, endY)
 	}
 
-	mr.renderPass3(target, startX, startY, endX, endY)
+	// A structure's strips stand up to maxStructureHeight above their tiles,
+	// so on an authored map the wall pass looks a few rows further down than
+	// the floor passes: a house whose front tiles are just below the screen
+	// still shows its roof.
+	endX3, endY3 := endX, endY
+	if len(mr.mapEngine.AuthoredImages()) > 0 {
+		endX3 = int(math.Min(float64(mapSize.Width), float64(endX+authoredCullRows)))
+		endY3 = int(math.Min(float64(mapSize.Height), float64(endY+authoredCullRows)))
+	}
+
+	mr.renderPass3(target, startX, startY, endX3, endY3)
 	mr.renderPass4(target, startX, startY, endX, endY)
 
 	if mr.entityDebugVisLevel > 0 {
 		mr.renderEntityDebug(target)
 	}
 }
+
+// authoredCullRows is how many extra tile rows the wall pass draws on an
+// authored map: 768 px (d2maptiled's tallest structure) / 40 px a row, less
+// what the 1050 px bottom margin already covers, rounded up. [DIAL]
+const authoredCullRows = 8
 
 // MoveCameraTo sets the position of the Camera to the given x and y coordinates.
 func (mr *MapRenderer) MoveCameraTo(position *d2vector.Position) {
@@ -434,7 +449,17 @@ func (mr *MapRenderer) renderWall(tile d2ds1.Tile, viewport *Viewport, target d2
 		return
 	}
 
-	viewport.PushTranslationOrtho(-80, float64(tile.YAdjust))
+	// A DT1 wall is one tile wide and hangs 80 pixels left of the tile's top
+	// corner. An authored wall is placed by d2mapengine.AuthoredWallLeft: the
+	// same for a one-tile wall, and half a diamond left or right for the
+	// strips a structure is cut into (M5.4).
+	left := -80.0
+	if d2mapengine.IsAuthoredTile(&tile) {
+		w, _ := img.GetSize()
+		left = d2mapengine.AuthoredWallLeft(tile.Type, w)
+	}
+
+	viewport.PushTranslationOrtho(left, float64(tile.YAdjust))
 	defer viewport.PopTranslation()
 
 	target.PushTranslation(viewport.GetTranslationScreen())

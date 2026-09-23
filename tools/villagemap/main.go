@@ -3,7 +3,10 @@
 // (data/strigoi/maps/tiles/placeholder-*.png).
 //
 // Everything it draws is a flat-coloured shape standing in for art that is
-// Josh's and GPT's to make (art is their lane). The map is the point: the
+// Josh's and GPT's to make (art is their lane) -- except where their art
+// already exists: the houses, the burned house, the well and the hearth are
+// the art-ready renders from strigoi-art (copied into data/strigoi/structures,
+// provenance there), placed as structures on their footprints. The map is the point: the
 // village laid out by the slice spec and G4 -- a hasty ditch and wattle fence
 // with its gate to the south and one corner unfinished, the church and its
 // graves on the high ground at the north end, a well on the green, timber
@@ -193,6 +196,11 @@ type tileDef struct {
 	img         *image.NRGBA
 	blocked     *bool
 	blocksSight *bool
+	// art is a path, relative to the maps folder, to real art from
+	// strigoi-art; img is then nil and nothing is drawn for it.
+	art string
+	// footprint marks a structure (placed as a tile object), in tiles.
+	footprint [2]int
 }
 
 func b(v bool) *bool { return &v }
@@ -241,7 +249,17 @@ func main() {
 	ts.add(tileDef{name: "tree", img: tree(), blocked: b(true)})
 	ts.add(tileDef{name: "grave", img: cross(), blocked: b(false)})
 
+	// The art that exists (strigoi-art, art-ready v1).
+	ts.add(tileDef{name: "village-well", art: "../structures/village-well/intact.png", blocked: b(true), blocksSight: b(false)})
+	ts.add(tileDef{name: "village-hearth", art: "../structures/village-hearth/unlit.png", blocked: b(true), blocksSight: b(false)})
+	ts.add(tileDef{name: "peasant-house", art: "../structures/peasant-house/intact.png", footprint: [2]int{3, 3}})
+	ts.add(tileDef{name: "burned-house", art: "../structures/burned-house/cold-ruin.png", footprint: [2]int{3, 3}})
+
 	for _, d := range ts.defs {
+		if d.img == nil {
+			continue
+		}
+
 		f, err := os.Create(filepath.Join(dir, "tiles", "placeholder-"+d.name+".png"))
 		if err != nil {
 			log.Fatal(err)
@@ -344,7 +362,8 @@ func main() {
 			}
 		}
 	}
-	set(walls, 24, 24, "well")
+	set(walls, 24, 24, "village-well")
+	set(walls, 21, 25, "village-hearth")
 
 	// Houses: 2x2 blocks on yards, 10-35 m apart (G4); the headman's is 3x2.
 	house := func(x, y, w, h int, kind string) {
@@ -361,13 +380,34 @@ func main() {
 			}
 		}
 	}
-	house(27, 19, 3, 2, "house") // the headman's
-	house(28, 26, 2, 2, "house")
-	house(31, 30, 2, 2, "house")
-	house(15, 26, 2, 2, "house")
-	house(18, 30, 2, 2, "house")
-	house(30, 14, 2, 2, "house")
-	house(24, 14, 2, 2, "house")
+	// The houses are structures (3x3, placed as tile objects below); here
+	// only their yards. The smithy has no art yet and stays a placeholder
+	// block on the walls layer.
+	type building struct {
+		x, y int
+		kind string
+	}
+
+	buildings := []building{
+		{27, 18, "peasant-house"}, // the headman's
+		{28, 26, "peasant-house"},
+		{31, 30, "burned-house"}, // last month's raid, inside the fence
+		{14, 26, "peasant-house"},
+		{17, 30, "peasant-house"},
+		{29, 13, "peasant-house"},
+		{23, 13, "peasant-house"},
+	}
+
+	for _, bl := range buildings {
+		for yy := bl.y - 1; yy <= bl.y+3; yy++ {
+			for xx := bl.x - 1; xx <= bl.x+3; xx++ {
+				if floor[xx+yy*side] != ts.gid["road"] {
+					set(floor, xx, yy, "yard")
+				}
+			}
+		}
+	}
+
 	house(26, 31, 2, 2, "smithy") // by the gate
 
 	// Forest on the slope above (north-west), thinning out.
@@ -404,6 +444,7 @@ func main() {
 		Rotation   float64 `json:"rotation"`
 		Visible    bool    `json:"visible"`
 		Point      bool    `json:"point"`
+		GID        int     `json:"gid,omitempty"`
 		Properties []prop  `json:"properties,omitempty"`
 	}
 	objects := []object{}
@@ -418,6 +459,15 @@ func main() {
 	objects = append(objects, object{ID: len(objects) + 1, Name: "the village", Type: "inside",
 		X: float64(lo) * tileH, Y: float64(lo) * tileH,
 		Width: float64(hi-lo+1) * tileH, Height: float64(hi-lo+1) * tileH, Visible: true})
+	// The structures: tile objects whose bottom corner is the footprint's
+	// bottom corner, where Tiled draws them and where the game stands them.
+	for _, bl := range buildings {
+		w, h := artSize(dir, ts.defs[ts.gid[bl.kind]-1].art)
+		objects = append(objects, object{ID: len(objects) + 1, Name: bl.kind, Type: "structure",
+			X: float64(bl.x+3) * tileH, Y: float64(bl.y+3) * tileH,
+			Width: float64(w), Height: float64(h), Visible: true, GID: ts.gid[bl.kind]})
+	}
+
 	npc := func(name, monstat string, tx, ty float64) {
 		add(name, "npc", tx, ty, prop{Name: "monstat", Type: "string", Value: monstat})
 	}
@@ -436,15 +486,32 @@ func main() {
 		Properties  []prop `json:"properties,omitempty"`
 	}
 	tiles := []tsTile{}
-	maxH := 0
+	maxH, maxW := 0, tileW
 	for i, d := range ts.defs {
-		t := tsTile{ID: i, Image: "tiles/placeholder-" + d.name + ".png", ImageWidth: tileW, ImageHeight: d.img.Bounds().Dy()}
+		t := tsTile{ID: i, Image: "tiles/placeholder-" + d.name + ".png", ImageWidth: tileW}
+		if d.img != nil {
+			t.ImageHeight = d.img.Bounds().Dy()
+		} else {
+			t.Image = d.art
+			t.ImageWidth, t.ImageHeight = artSize(dir, d.art)
+		}
+
+		if d.footprint != [2]int{} {
+			t.Properties = append(t.Properties,
+				prop{Name: "footprint_w", Type: "int", Value: d.footprint[0]},
+				prop{Name: "footprint_h", Type: "int", Value: d.footprint[1]})
+		}
+
 		if d.blocked != nil {
 			t.Properties = append(t.Properties, prop{Name: "blocked", Type: "bool", Value: *d.blocked})
 		}
 		if d.blocksSight != nil {
 			t.Properties = append(t.Properties, prop{Name: "blocks_sight", Type: "bool", Value: *d.blocksSight})
 		}
+		if t.ImageWidth > maxW {
+			maxW = t.ImageWidth
+		}
+
 		if t.ImageHeight > maxH {
 			maxH = t.ImageHeight
 		}
@@ -472,7 +539,7 @@ func main() {
 		},
 		"tilesets": []any{map[string]any{
 			"firstgid": 1, "name": "village-placeholder", "columns": 0, "margin": 0, "spacing": 0,
-			"tilewidth": tileW, "tileheight": maxH, "tilecount": len(tiles),
+			"tilewidth": maxW, "tileheight": maxH, "tilecount": len(tiles),
 			"objectalignment": "bottom", "tiles": tiles,
 		}},
 	}
@@ -493,4 +560,20 @@ func main() {
 	}
 	sort.Strings(names)
 	fmt.Printf("wrote %s: %dx%d, %d tile kinds (%v), %d objects\n", filepath.Join(dir, "village.tmj"), side, side, len(names), names, len(objects))
+}
+
+// artSize reads the size of a real art file, relative to the maps folder.
+func artSize(dir, rel string) (int, int) {
+	f, err := os.Open(filepath.Join(dir, filepath.FromSlash(rel)))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	cfg, err := png.DecodeConfig(f)
+	if err != nil {
+		log.Fatalf("%s: %v", rel, err)
+	}
+
+	return cfg.Width, cfg.Height
 }

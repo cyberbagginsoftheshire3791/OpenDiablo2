@@ -19,16 +19,49 @@ import (
 const AuthoredStyle byte = 250
 
 // AuthoredKey names one authored tile image: its sequence under
-// AuthoredStyle (the d2maptiled kind index) and the tile type it is drawn as.
+// AuthoredStyle (the d2maptiled kind index), the tile type it is drawn as,
+// and -- for a structure cut into strips -- which strip (the tile's
+// RandomIndex; 0 for everything else).
 type AuthoredKey struct {
 	Sequence byte
 	Type     d2enum.TileType
+	Index    byte
 }
 
-// AuthoredWallType is the tile type an authored wall is drawn as: an upper
-// wall, so the renderer draws it interleaved with the entities around it
-// (renderPass3), and not a roof, a special or a lower wall.
-const AuthoredWallType = d2enum.TilePillarsColumnsAndStandaloneObjects
+// The tile types authored walls are drawn as. All three are upper walls, so
+// the renderer draws them interleaved with the entities around them
+// (renderPass3) -- none is a roof, a special or a lower wall.
+const (
+	// AuthoredWallType is a one-tile wall (a fence, a tree, the well).
+	AuthoredWallType = d2enum.TilePillarsColumnsAndStandaloneObjects
+
+	// AuthoredStripLeft and AuthoredStripRight are the 80-pixel strips a
+	// STRUCTURE is cut into, one per tile along its two front faces, the way
+	// Diablo II cuts its own buildings: drawn tile by tile, each strip is
+	// ordered against the people beside it the way a one-tile wall is. A
+	// left-face strip covers the left half of its tile's diamond, a
+	// right-face strip the right half.
+	AuthoredStripLeft  = d2enum.TileLeftWall
+	AuthoredStripRight = d2enum.TileRightWall
+
+	// AuthoredStripWidth is one strip: half a tile's width.
+	AuthoredStripWidth = 80
+)
+
+// AuthoredWallLeft is how far left of its tile's top corner an authored
+// wall image is drawn: a left-face strip over the diamond's left half, a
+// right-face strip over its right half, anything else centred on the corner
+// by its own width (-80 for a one-tile wall, as a DT1 wall hangs).
+func AuthoredWallLeft(t d2enum.TileType, width int) float64 {
+	switch t {
+	case AuthoredStripLeft:
+		return -AuthoredStripWidth
+	case AuthoredStripRight:
+		return 0
+	}
+
+	return -float64(width) / 2
+}
 
 // IsAuthoredTile reports whether a tile's art comes from AuthoredImages rather
 // than from the DT1s. The renderer uses it to keep its DT1 cache builder off

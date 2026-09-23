@@ -38,13 +38,24 @@
 //     Any other property name is refused, so a typo cannot silently do
 //     nothing.
 //   - Flipped or rotated tiles are refused (the renderer draws art as-is).
+//   - STRUCTURES -- a house, a burned house, anything bigger than a tile --
+//     are TILE OBJECTS on the objects layer, whose tileset tile carries two
+//     int properties, "footprint_w" and "footprint_h" (tiles). Their art is
+//     (footprint_w + footprint_h) x 80 pixels wide, at most 768 tall, drawn
+//     bottom-centre on the footprint's bottom corner -- exactly where Tiled
+//     draws a tile object -- and the object must sit on the tile grid (snap
+//     to grid), unstretched, in a tileset whose object alignment is bottom.
+//     Footprints are square for now. Every footprint tile is solid
+//     (blocked=false is refused); blocks_sight defaults to true. Footprints
+//     may not overlap each other, a wall, or bare ground.
 //   - Editor settings the game would silently ignore are refused rather than
 //     ignored: hidden, translucent, offset, parallax or tinted layers; tileset
 //     tile offsets and render-size modes; collision shapes drawn in Tiled's
 //     Tile Collision Editor (use the "blocked" property); tile animations;
-//     tiles cut from a sub-rectangle of their image; and TILE objects, which
-//     Tiled anchors at their bottom corner rather than where they appear to
-//     stand -- place people with point objects.
+//     tiles cut from a sub-rectangle of their image; and TILE objects that
+//     are not structures (a person placed as a tile object would stand where
+//     Tiled anchors it, its bottom corner, not where it appears to stand --
+//     place people with point objects).
 //
 // # Coordinates
 //
@@ -107,11 +118,21 @@ type Layer int
 const (
 	LayerFloor Layer = iota
 	LayerWall
+	// LayerStructure is a kind placed as a structure tile object: drawn like
+	// a wall, on its footprint's front tile, and wider than one tile.
+	LayerStructure
 )
 
+// maxStructureHeight bounds a structure's art the way maxWallHeight bounds a
+// wall's. [DIAL]
+const maxStructureHeight = 768
+
 func (l Layer) String() string {
-	if l == LayerWall {
+	switch l {
+	case LayerWall:
 		return "walls"
+	case LayerStructure:
+		return "structure"
 	}
 
 	return "floor"
@@ -127,11 +148,38 @@ type Kind struct {
 	BlocksSight bool
 	// Pixels is the tile's art, premultiplied RGBA with its origin at 0,0.
 	Pixels *image.RGBA
+	// Footprint is a structure's size in tiles (W along x, H along y); zero
+	// for an ordinary tile.
+	Footprint image.Point
 }
 
-// Cell is one map tile: an index into Map.Kinds for each layer, -1 for none.
+// Cell is one map tile: an index into Map.Kinds for each layer, -1 for none,
+// and the structure standing on it as its index into Map.Structures PLUS ONE
+// -- 0 for none, so a Cell built without it is empty ground rather than the
+// first structure's.
 type Cell struct {
 	Floor, Wall int
+	Structure   int
+}
+
+// StructureOn returns the index into Map.Structures of the structure standing
+// on tile x, y, or -1.
+func (m *Map) StructureOn(x, y int) int {
+	return m.At(x, y).Structure - 1
+}
+
+// Structure is one placed structure: its kind, and its footprint in whole
+// tiles (Max exclusive). Its art stands on the bottom corner of the
+// footprint's FRONT tile, Max-1 on both axes (the game draws it in strips
+// along the two front faces; d2mapgen).
+type Structure struct {
+	Kind      int
+	Footprint image.Rectangle
+}
+
+// Front is the footprint's front tile, the one the structure is drawn on.
+func (s Structure) Front() image.Point {
+	return image.Pt(s.Footprint.Max.X-1, s.Footprint.Max.Y-1)
 }
 
 // NPC is one person the map places.
@@ -148,6 +196,7 @@ type Map struct {
 	Cells          []Cell // row-major, Width*Height
 	StartX, StartY float64
 	NPCs           []NPC
+	Structures     []Structure
 	// Inside is the "inside" areas in whole tiles, Max exclusive.
 	Inside []image.Rectangle
 }
@@ -177,13 +226,17 @@ func (m *Map) Blocked(x, y int) bool {
 		return true
 	}
 
-	return m.Kinds[c.Floor].Blocked || (c.Wall >= 0 && m.Kinds[c.Wall].Blocked)
+	return c.Structure > 0 || m.Kinds[c.Floor].Blocked || (c.Wall >= 0 && m.Kinds[c.Wall].Blocked)
 }
 
 // BlocksSight reports whether a line of sight stops at x, y. A tile with no
 // floor does not: there is nothing there to stop it.
 func (m *Map) BlocksSight(x, y int) bool {
 	c := m.At(x, y)
+
+	if c.Structure > 0 && m.Kinds[m.Structures[c.Structure-1].Kind].BlocksSight {
+		return true
+	}
 
 	return (c.Floor >= 0 && m.Kinds[c.Floor].BlocksSight) || (c.Wall >= 0 && m.Kinds[c.Wall].BlocksSight)
 }
@@ -297,8 +350,9 @@ type tmjTileset struct {
 		X int `json:"x"`
 		Y int `json:"y"`
 	} `json:"tileoffset"`
-	TileRenderSize string `json:"tilerendersize"`
-	FillMode       string `json:"fillmode"`
+	TileRenderSize  string `json:"tilerendersize"`
+	FillMode        string `json:"fillmode"`
+	ObjectAlignment string `json:"objectalignment"`
 }
 
 type tmjTile struct {
@@ -342,6 +396,11 @@ func (ts *tmjTileset) checkEditorOnly() error {
 		return fmt.Errorf("tileset %q renders at %q size; the game draws art at its own size", ts.Name, ts.TileRenderSize)
 	case ts.FillMode != "" && ts.FillMode != "stretch":
 		return fmt.Errorf("tileset %q uses fill mode %q", ts.Name, ts.FillMode)
+	case ts.ObjectAlignment != "" && ts.ObjectAlignment != "unspecified" && ts.ObjectAlignment != "bottom":
+		// Tiled draws a structure's tile object by this anchor; the game
+		// stands it on its bottom corner. Anything but bottom and the editor
+		// shows the house somewhere the game does not put it.
+		return fmt.Errorf("tileset %q aligns objects %q; structures need \"bottom\" (Tileset > Object Alignment)", ts.Name, ts.ObjectAlignment)
 	}
 
 	for i := range ts.Tiles {
@@ -573,16 +632,23 @@ func (p *parser) kind(gid int, layer Layer) (int, error) {
 
 	name := fmt.Sprintf("%s#%d", ts.Name, local)
 
-	if err := checkArt(pixels, layer); err != nil {
-		return 0, fmt.Errorf("%s: %w", name, err)
-	}
-
 	k := Kind{Name: name, Layer: layer, Pixels: pixels}
 
 	if tile != nil {
 		if err := k.properties(tile.Properties); err != nil {
 			return 0, fmt.Errorf("%s: %w", name, err)
 		}
+	}
+
+	switch {
+	case layer == LayerStructure && k.Footprint == (image.Point{}):
+		return 0, fmt.Errorf("%s is placed as a tile object but has no footprint_w/footprint_h; only structures are tile objects", name)
+	case layer != LayerStructure && k.Footprint != (image.Point{}):
+		return 0, fmt.Errorf("%s is a structure (it has a footprint) placed on the %s layer; place it as a tile object on the objects layer", name, layer)
+	}
+
+	if err := checkArt(pixels, layer, k.Footprint); err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
 	}
 
 	p.out.Kinds = append(p.out.Kinds, k)
@@ -692,8 +758,18 @@ func (p *parser) image(rel string) (*image.RGBA, error) {
 	return img, nil
 }
 
-func checkArt(img *image.RGBA, layer Layer) error {
+func checkArt(img *image.RGBA, layer Layer, footprint image.Point) error {
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+
+	if layer == LayerStructure {
+		want := (footprint.X + footprint.Y) * TileWidth / 2
+		if w != want || h < TileHeight || h > maxStructureHeight {
+			return fmt.Errorf("structure art is %dx%d; a %dx%d footprint wants %d wide and %d..%d tall",
+				w, h, footprint.X, footprint.Y, want, TileHeight, maxStructureHeight)
+		}
+
+		return nil
+	}
 
 	if layer == LayerFloor {
 		if w != TileWidth || h != TileHeight {
@@ -711,15 +787,28 @@ func checkArt(img *image.RGBA, layer Layer) error {
 }
 
 func (k *Kind) properties(props []tmjProperty) error {
-	sightSet := false
+	sightSet, blockedSet := false, false
 
 	for _, prop := range props {
 		var v bool
 
 		switch prop.Name {
 		case "blocked", "blocks_sight":
+		case "footprint_w", "footprint_h":
+			var n int
+			if prop.Type != "int" || json.Unmarshal(prop.Value, &n) != nil || n < 1 || n > 16 {
+				return fmt.Errorf("property %q must be an int from 1 to 16", prop.Name)
+			}
+
+			if prop.Name == "footprint_w" {
+				k.Footprint.X = n
+			} else {
+				k.Footprint.Y = n
+			}
+
+			continue
 		default:
-			return fmt.Errorf("unknown tile property %q; the game reads \"blocked\" and \"blocks_sight\"", prop.Name)
+			return fmt.Errorf("unknown tile property %q; the game reads \"blocked\", \"blocks_sight\", \"footprint_w\" and \"footprint_h\"", prop.Name)
 		}
 
 		if prop.Type != "bool" || json.Unmarshal(prop.Value, &v) != nil {
@@ -728,14 +817,37 @@ func (k *Kind) properties(props []tmjProperty) error {
 
 		if prop.Name == "blocked" {
 			k.Blocked = v
+			blockedSet = true
 		} else {
 			k.BlocksSight = v
 			sightSet = true
 		}
 	}
 
+	if (k.Footprint.X == 0) != (k.Footprint.Y == 0) {
+		return errors.New("a structure needs both footprint_w and footprint_h")
+	}
+
+	if k.Footprint != (image.Point{}) {
+		// Square only (v0): Tiled draws a tile object centred on its anchor,
+		// and only a square footprint's bottom corner is the art's centre.
+		if k.Footprint.X != k.Footprint.Y {
+			return fmt.Errorf("a %dx%d footprint is not square; structures are square for now", k.Footprint.X, k.Footprint.Y)
+		}
+
+		// Every footprint tile is solid (v0); saying otherwise would be
+		// silently ignored, so it is refused.
+		if blockedSet && !k.Blocked {
+			return errors.New("a structure cannot be blocked=false; its footprint is solid")
+		}
+
+		k.Blocked = true
+	}
+
+	// A structure is solid on its footprint whatever it says (v0), so its
+	// sight default follows that, not the blocked property.
 	if !sightSet {
-		k.BlocksSight = k.Blocked
+		k.BlocksSight = k.Blocked || k.Footprint != (image.Point{})
 	}
 
 	return nil
@@ -744,18 +856,27 @@ func (k *Kind) properties(props []tmjProperty) error {
 func (p *parser) objectLayer(l *tmjLayer) error {
 	starts := 0
 
+	// Structures first: a person is checked against the ground he stands on,
+	// and a house placed after him in the file is still a house.
+	for i := range l.Objects {
+		if o := &l.Objects[i]; o.GID != 0 {
+			if err := p.structure(o); err != nil {
+				return err
+			}
+		}
+	}
+
 	for i := range l.Objects {
 		o := &l.Objects[i]
+		if o.GID != 0 {
+			continue
+		}
 
 		kind := o.Class
 		if kind == "" {
 			kind = o.Type
 		} else if o.Type != "" && o.Type != o.Class {
 			return fmt.Errorf("object %d says both %q and %q", o.ID, o.Type, o.Class)
-		}
-
-		if o.GID != 0 {
-			return fmt.Errorf("object %d is a tile object, which Tiled anchors at its bottom corner, not where it seems to stand; use a point object", o.ID)
 		}
 
 		x, y := o.X/float64(p.raw.TileHeight), o.Y/float64(p.raw.TileHeight)
@@ -800,6 +921,76 @@ func (p *parser) objectLayer(l *tmjLayer) error {
 	if starts != 1 {
 		return fmt.Errorf("the objects layer holds %d player_start objects, want exactly 1", starts)
 	}
+
+	return nil
+}
+
+// structure reads a structure tile object: its tile's footprint laid back
+// from the object's position, which Tiled puts at the bottom corner of the
+// art -- the footprint's bottom corner.
+func (p *parser) structure(o *tmjObject) error {
+	class := o.Class
+	if class == "" {
+		class = o.Type
+	}
+
+	if class != "" && class != "structure" {
+		return fmt.Errorf("object %d is a tile object with class %q; tile objects are structures -- people are point objects", o.ID, class)
+	}
+
+	if len(o.Properties) > 0 || o.Rotation != 0 {
+		return fmt.Errorf("structure (object %d) takes no properties and no rotation", o.ID)
+	}
+
+	if o.GID&gidFlipMask != 0 {
+		return fmt.Errorf("structure (object %d) is flipped; the game draws art as it is", o.ID)
+	}
+
+	kind, err := p.kind(int(o.GID), LayerStructure)
+	if err != nil {
+		return fmt.Errorf("structure (object %d): %w", o.ID, err)
+	}
+
+	th := float64(p.raw.TileHeight)
+	fx, fy := math.Round(o.X/th), math.Round(o.Y/th)
+
+	if math.Abs(fx-o.X/th) > 0.01 || math.Abs(fy-o.Y/th) > 0.01 {
+		return fmt.Errorf("structure (object %d) at %.2f,%.2f is off the tile grid; turn on snapping", o.ID, o.X/th, o.Y/th)
+	}
+
+	art := p.out.Kinds[kind].Pixels.Bounds()
+	if (o.Width != 0 || o.Height != 0) && (int(o.Width) != art.Dx() || int(o.Height) != art.Dy()) {
+		return fmt.Errorf("structure (object %d) is sized %.0fx%.0f in the editor but its art is %dx%d; reset its size (Tiled stretches tile objects, the game does not)",
+			o.ID, o.Width, o.Height, art.Dx(), art.Dy())
+	}
+
+	fp := p.out.Kinds[kind].Footprint
+	r := image.Rect(int(fx)-fp.X, int(fy)-fp.Y, int(fx), int(fy))
+
+	if !r.In(image.Rect(0, 0, p.out.Width, p.out.Height)) {
+		return fmt.Errorf("structure (object %d) %s reaches off the %dx%d map", o.ID, r, p.out.Width, p.out.Height)
+	}
+
+	index := len(p.out.Structures)
+
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			c := &p.out.Cells[x+y*p.out.Width]
+
+			switch {
+			case c.Structure > 0:
+				return fmt.Errorf("structure (object %d) overlaps another structure at tile %d,%d", o.ID, x, y)
+			case c.Wall >= 0:
+				return fmt.Errorf("structure (object %d) overlaps a wall at tile %d,%d", o.ID, x, y)
+			case c.Floor < 0:
+				return fmt.Errorf("structure (object %d) stands over bare ground at tile %d,%d", o.ID, x, y)
+			}
+
+			c.Structure = index + 1
+		}
+	}
+
+	p.out.Structures = append(p.out.Structures, Structure{Kind: kind, Footprint: r})
 
 	return nil
 }

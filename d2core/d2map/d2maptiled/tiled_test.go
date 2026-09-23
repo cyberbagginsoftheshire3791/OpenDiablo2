@@ -350,6 +350,78 @@ func TestSharedImageReadOnce(t *testing.T) {
 	}
 }
 
+// withBarn adds a 2x2 structure to the fixture's tileset (gid 4, art 320x200)
+// and, when at is non-nil, places it with its bottom corner at tile at.
+func withBarn(t *testing.T, f *fixture, at *[2]float64) {
+	t.Helper()
+
+	f.files["/maps/tiles/barn.png"] = pngOf(t, 320, 200, house)
+	ts := f.m["tilesets"].([]any)[0].(map[string]any)
+	ts["tilecount"] = 4
+	ts["tiles"] = append(ts["tiles"].([]any), map[string]any{
+		"id": 3, "image": "tiles/barn.png", "properties": []any{
+			map[string]any{"name": "footprint_w", "type": "int", "value": 2},
+			map[string]any{"name": "footprint_h", "type": "int", "value": 2},
+		},
+	})
+
+	if at != nil {
+		f.layer(2)["objects"] = append(f.objects(), map[string]any{
+			"id": 20, "gid": 4, "x": at[0] * 80, "y": at[1] * 80, "width": 320.0, "height": 200.0,
+		})
+	}
+}
+
+func TestAStructureStandsOnItsFootprint(t *testing.T) {
+	f := newFixture(t)
+	withBarn(t, f, &[2]float64{2, 2}) // bottom corner at 2,2: tiles 0..1 x 0..1
+
+	m, err := f.parse(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(m.Structures) != 1 {
+		t.Fatalf("%d structures, want 1", len(m.Structures))
+	}
+
+	s := m.Structures[0]
+	if s.Footprint != image.Rect(0, 0, 2, 2) || s.Front() != image.Pt(1, 1) {
+		t.Fatalf("footprint %v front %v; want (0,0)-(2,2), front 1,1", s.Footprint, s.Front())
+	}
+
+	k := m.Kinds[s.Kind]
+	if k.Layer != LayerStructure || k.Footprint != image.Pt(2, 2) || k.Pixels.Bounds().Dx() != 320 {
+		t.Fatalf("kind %+v", k)
+	}
+
+	// Grass at 0,0 was open; under the barn it is solid and opaque.
+	if !m.Blocked(0, 0) || !m.BlocksSight(0, 0) || m.StructureOn(0, 0) != 0 || m.StructureOn(1, 1) != 0 {
+		t.Fatalf("0,0 under the barn: blocked %v sight %v cell %+v", m.Blocked(0, 0), m.BlocksSight(0, 0), m.At(0, 0))
+	}
+
+	if m.StructureOn(2, 2) != -1 || m.StructureOn(0, 2) != -1 {
+		t.Fatal("tiles beyond the footprint report a structure")
+	}
+
+	// Control: beside it, the grass is still open.
+	if m.Blocked(0, 2) {
+		t.Fatal("0,2 beside the barn is blocked")
+	}
+}
+
+// A person listed BEFORE a structure in the file is still checked against it.
+func TestAPersonUnderAStructureListedLaterIsRefused(t *testing.T) {
+	f := newFixture(t)
+	o := f.objects()[1].(map[string]any)
+	o["x"], o["y"] = 80.0*0.5, 80.0*0.5
+	withBarn(t, f, &[2]float64{2, 2})
+
+	if _, err := f.parse(t); err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("an npc under a house: %v", err)
+	}
+}
+
 // ---- every refusal, one broken thing at a time ---------------------------------
 
 func TestParseRefuses(t *testing.T) {
@@ -442,6 +514,55 @@ func TestParseRefuses(t *testing.T) {
 			tl["imagewidth"], tl["imageheight"], tl["width"], tl["height"] = 160, 80, 80, 80
 		}, "part of its image"},
 		{"tile object", func(t *testing.T, f *fixture) { f.objects()[1].(map[string]any)["gid"] = 1 }, "tile object"},
+		{"structure off the grid", func(t *testing.T, f *fixture) { withBarn(t, f, &[2]float64{2.3, 2}) }, "off the tile grid"},
+		{"structure over a wall", func(t *testing.T, f *fixture) { withBarn(t, f, &[2]float64{3, 2}) }, "overlaps a wall"},
+		{"structure over bare ground", func(t *testing.T, f *fixture) { withBarn(t, f, &[2]float64{4, 3}) }, "bare ground"},
+		{"structure off the map", func(t *testing.T, f *fixture) { withBarn(t, f, &[2]float64{5, 2}) }, "reaches off"},
+		{"structures overlapping", func(t *testing.T, f *fixture) {
+			withBarn(t, f, &[2]float64{2, 2})
+			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 21, "gid": 4, "x": 80.0 * 2, "y": 80.0 * 3})
+		}, "overlaps another structure"},
+		{"plain tile as a tile object", func(t *testing.T, f *fixture) {
+			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 21, "gid": 1, "x": 80.0, "y": 80.0})
+		}, "only structures are tile objects"},
+		{"structure on a tile layer", func(t *testing.T, f *fixture) {
+			withBarn(t, f, nil)
+			f.layer(1)["data"].([]any)[4] = 4
+		}, "place it as a tile object"},
+		{"structure art too narrow", func(t *testing.T, f *fixture) {
+			withBarn(t, f, &[2]float64{2, 2})
+			f.files["/maps/tiles/barn.png"] = pngOf(t, 240, 200, house)
+		}, "wants 320 wide"},
+		{"structure with one footprint side", func(t *testing.T, f *fixture) {
+			withBarn(t, f, &[2]float64{2, 2})
+			ts := f.m["tilesets"].([]any)[0].(map[string]any)
+			tl := ts["tiles"].([]any)[3].(map[string]any)
+			tl["properties"] = tl["properties"].([]any)[:1]
+		}, "both footprint_w and footprint_h"},
+		{"structure not square", func(t *testing.T, f *fixture) {
+			withBarn(t, f, &[2]float64{2, 2})
+			ts := f.m["tilesets"].([]any)[0].(map[string]any)
+			tl := ts["tiles"].([]any)[3].(map[string]any)
+			tl["properties"].([]any)[1].(map[string]any)["value"] = 1
+			f.files["/maps/tiles/barn.png"] = pngOf(t, 240, 200, house)
+		}, "not square"},
+		{"structure not blocked", func(t *testing.T, f *fixture) {
+			withBarn(t, f, &[2]float64{2, 2})
+			ts := f.m["tilesets"].([]any)[0].(map[string]any)
+			tl := ts["tiles"].([]any)[3].(map[string]any)
+			tl["properties"] = append(tl["properties"].([]any), map[string]any{"name": "blocked", "type": "bool", "value": false})
+		}, "blocked=false"},
+		{"structure stretched", func(t *testing.T, f *fixture) {
+			withBarn(t, f, &[2]float64{2, 2})
+			f.objects()[len(f.objects())-1].(map[string]any)["width"] = 300.0
+		}, "stretches"},
+		{"objects aligned top-left", func(t *testing.T, f *fixture) {
+			f.m["tilesets"].([]any)[0].(map[string]any)["objectalignment"] = "topleft"
+		}, "Object Alignment"},
+		{"structure flipped", func(t *testing.T, f *fixture) {
+			withBarn(t, f, nil)
+			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 21, "gid": uint32(0x80000004), "x": 160.0, "y": 160.0})
+		}, "flipped"},
 		{"inside without area", func(t *testing.T, f *fixture) {
 			f.layer(2)["objects"] = append(f.objects(), map[string]any{"id": 8, "type": "inside", "x": 80.0, "y": 80.0, "point": true})
 		}, "no area"},

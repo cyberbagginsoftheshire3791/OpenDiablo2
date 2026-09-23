@@ -3,6 +3,7 @@ package d2mapgen
 import (
 	"fmt"
 	"image"
+	"image/draw"
 	"math"
 	"path"
 	"sort"
@@ -125,9 +126,11 @@ func (g *MapGenerator) generateAuthored(p string) error {
 	// nonzero ID, and the client refuses a region it does not know).
 	g.engine.ResetAuthoredMap(d2enum.RegionAct1Town, m.Width, m.Height)
 
+	strips, stripImages := structureStrips(m)
+
 	for y := 0; y < m.Height; y++ {
 		for x := 0; x < m.Width; x++ {
-			*g.engine.Tile(x, y) = authoredTile(m, x, y)
+			*g.engine.Tile(x, y) = authoredTile(m, x, y, strips)
 		}
 	}
 
@@ -146,7 +149,12 @@ func (g *MapGenerator) generateAuthored(p string) error {
 	// corner of the NEXT tile (the generated town's DS1 start does exactly
 	// that -- 105.5 becomes 106.0), a tile the map never checked. The floor of
 	// the start puts him inside the tile the map put its start in.
-	g.engine.SetAuthored(authoredImages(m), math.Floor(m.StartX), math.Floor(m.StartY))
+	images := authoredImages(m)
+	for key, img := range stripImages {
+		images[key] = img
+	}
+
+	g.engine.SetAuthored(images, math.Floor(m.StartX), math.Floor(m.StartY))
 	g.engine.SetInside(m.Inside)
 	g.Infof("authored map %s: %dx%d tiles, %d tile kinds, %d npc(s)", p, m.Width, m.Height, len(m.Kinds), len(m.NPCs))
 
@@ -157,7 +165,7 @@ func (g *MapGenerator) generateAuthored(p string) error {
 // tiles of the reserved style, and its walk and sight flags set directly on
 // all 25 sub-tiles (v0 blocks whole tiles; a DT1 tile's per-sub-tile flags
 // have no counterpart in a Tiled tileset yet).
-func authoredTile(m *d2maptiled.Map, x, y int) d2mapengine.MapTile {
+func authoredTile(m *d2maptiled.Map, x, y int, strips map[image.Point][]d2ds1.Tile) d2mapengine.MapTile {
 	var t d2mapengine.MapTile
 
 	t.RegionType = d2enum.RegionAct1Town
@@ -168,12 +176,16 @@ func authoredTile(m *d2maptiled.Map, x, y int) d2mapengine.MapTile {
 		t.Components.Floors = []d2ds1.Tile{authoredDS1Tile(c.Floor, d2enum.TileFloor, 0)}
 	}
 
+	// The wall layer's wall stands on this tile's bottom corner: drawn its
+	// height, less the diamond's 80, above the tile's top.
 	if c.Wall >= 0 {
-		// Wall art stands on the floor diamond: its bottom 80 pixels are the
-		// tile, so the image is drawn that much less its height above it.
 		h := m.Kinds[c.Wall].Pixels.Bounds().Dy()
 		t.Components.Walls = []d2ds1.Tile{authoredDS1Tile(c.Wall, d2mapengine.AuthoredWallType, d2maptiled.TileHeight-h)}
 	}
+
+	// And any strips of a structure whose front faces run along this tile
+	// (the parser refuses a footprint over a wall, so a tile never has both).
+	t.Components.Walls = append(t.Components.Walls, strips[image.Pt(x, y)]...)
 
 	blocked, sight := m.Blocked(x, y), m.BlocksSight(x, y)
 
@@ -188,6 +200,63 @@ func authoredTile(m *d2maptiled.Map, x, y int) d2mapengine.MapTile {
 	}
 
 	return t
+}
+
+// structureStrips cuts every structure's art into the 80-pixel strips it is
+// drawn as, one per tile along its two front faces -- the way Diablo II cuts
+// its own buildings, so each strip is ordered against the people beside it
+// like any one-tile wall (a whole house drawn on its front tile hid anyone
+// walking up its east side, whose tiles are drawn first).
+//
+// For an n x n footprint whose front tile is F (footprint Max - 1), the art
+// is 2n strips wide and its bottom corner is at x = n*80. Strip j < n lies
+// over the LEFT face, on tile F - (n-1-j, 0); strip j >= n over the RIGHT
+// face, on tile F - (0, j-n). A tile k steps back along a face sits 40k
+// pixels higher, so its strip is drawn 80 + 40k - height above its top.
+//
+// It returns each tile's strip walls and every strip's image.
+func structureStrips(m *d2maptiled.Map) (map[image.Point][]d2ds1.Tile, map[d2mapengine.AuthoredKey]*image.RGBA) {
+	walls := map[image.Point][]d2ds1.Tile{}
+	images := map[d2mapengine.AuthoredKey]*image.RGBA{}
+
+	for _, s := range m.Structures {
+		art := m.Kinds[s.Kind].Pixels
+		h := art.Bounds().Dy()
+		n := s.Footprint.Dx()
+		front := s.Front()
+
+		for j := 0; j < 2*n; j++ {
+			typ, k, at := d2mapengine.AuthoredStripLeft, n-1-j, image.Pt(front.X-(n-1-j), front.Y)
+			if j >= n {
+				typ, k, at = d2mapengine.AuthoredStripRight, j-n, image.Pt(front.X, front.Y-(j-n))
+			}
+
+			strip := image.NewRGBA(image.Rect(0, 0, d2mapengine.AuthoredStripWidth, h))
+			draw.Draw(strip, strip.Bounds(), art, image.Pt(j*d2mapengine.AuthoredStripWidth, 0), draw.Src)
+
+			if transparent(strip) {
+				continue
+			}
+
+			tile := authoredDS1Tile(s.Kind, typ, d2maptiled.TileHeight+k*d2maptiled.TileHeight/2-h)
+			tile.RandomIndex = byte(j)
+
+			walls[at] = append(walls[at], tile)
+			images[d2mapengine.AuthoredKey{Sequence: byte(s.Kind), Type: typ, Index: byte(j)}] = strip
+		}
+	}
+
+	return walls, images
+}
+
+func transparent(img *image.RGBA) bool {
+	for i := 3; i < len(img.Pix); i += 4 {
+		if img.Pix[i] != 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 func authoredDS1Tile(kind int, typ d2enum.TileType, yAdjust int) d2ds1.Tile {
@@ -208,12 +277,14 @@ func authoredImages(m *d2maptiled.Map) map[d2mapengine.AuthoredKey]*image.RGBA {
 	out := make(map[d2mapengine.AuthoredKey]*image.RGBA, len(m.Kinds))
 
 	for i := range m.Kinds {
-		typ := d2enum.TileFloor
-		if m.Kinds[i].Layer == d2maptiled.LayerWall {
-			typ = d2mapengine.AuthoredWallType
+		switch m.Kinds[i].Layer {
+		case d2maptiled.LayerStructure:
+			continue // drawn only as strips (structureStrips)
+		case d2maptiled.LayerWall:
+			out[d2mapengine.AuthoredKey{Sequence: byte(i), Type: d2mapengine.AuthoredWallType}] = m.Kinds[i].Pixels
+		default:
+			out[d2mapengine.AuthoredKey{Sequence: byte(i), Type: d2enum.TileFloor}] = m.Kinds[i].Pixels
 		}
-
-		out[d2mapengine.AuthoredKey{Sequence: byte(i), Type: typ}] = m.Kinds[i].Pixels
 	}
 
 	return out

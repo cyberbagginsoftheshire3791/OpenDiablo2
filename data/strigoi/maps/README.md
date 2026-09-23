@@ -39,9 +39,20 @@ names say `placeholder-` so nobody mistakes them.
 - Tilesets **embedded** in the map (Map → Embed Tileset).
 - Tile properties: `blocked` (bool) and `blocks_sight` (bool; defaults to
   `blocked`). A fence or ditch is `blocked` but not `blocks_sight`.
-- Objects are **points**: one `player_start`, and `npc` objects with a string
+- People are **point** objects: one `player_start`, and `npc` objects with a string
   property `monstat` (the D2 stand-in: `warriv1`, `kashya`, `charsi`, `akara`
   are the four speakers).
+- **Structures** (anything bigger than a tile: a house) are **tile objects**
+  on the objects layer. Their tileset tile carries two int properties,
+  `footprint_w` and `footprint_h`; the art is (w + h) × 80 pixels wide,
+  up to 768 tall, drawn bottom-centre on the footprint's bottom corner --
+  where Tiled draws it. Snap to the grid, don't resize the object, keep
+  the tileset's Object Alignment at bottom, and keep footprints square
+  for now. The whole footprint is solid. The game draws a structure in
+  80-pixel strips along its two front faces, so people walking past its
+  sides are drawn in front of or behind it correctly.
+  The village's houses are the strigoi-art renders
+  (`data/strigoi/structures/`, provenance there).
 - **`inside` rectangles** mark ground the night does not arrive on: whatever
   comes from the dark is placed outside every inside area and has to come in
   by the gate. The village's covers the fence ring (tiles 12-35). Draw it
