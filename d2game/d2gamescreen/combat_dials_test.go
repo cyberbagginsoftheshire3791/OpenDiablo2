@@ -33,13 +33,40 @@ func TestTheShippedScreenTakesTheTurn(t *testing.T) {
 // And the flip must be the ONLY thing the screen changes: if a dial drifts
 // between the signed defaults and what ships, the numbers every playtest
 // asserts against stop describing the game Josh launches.
+//
+// T1 (23 Sep 2026) widens "the flip" to the tactical layer's four dials, and
+// NAMES them here rather than loosening the comparison: the screen changes
+// exactly the human flip and the tactical layer, and nothing else.
 func TestTheShippedDialsChangeNothingElse(t *testing.T) {
 	t.Parallel()
 
 	want := d2world.DefaultCombatDials()
 	want.PlayerControl = d2world.PlayerControlHuman
+	want.Paced = true
+	want.EngageTiles = d2world.TacticalEngageTiles
+	want.DisengageTiles = d2world.TacticalDisengageTiles
+	want.EnemyMoveTiles = d2world.TacticalEnemyMoveTiles
 
 	if got := shippedCombatDials(); got != want {
-		t.Fatalf("the shipped dials must be the signed defaults plus the human flip and nothing else:\n got  %+v\n want %+v", got, want)
+		t.Fatalf("the shipped dials must be the signed defaults plus the human flip and the tactical layer, nothing else:\n got  %+v\n want %+v", got, want)
+	}
+}
+
+// The tactical layer ships ON, and it stays OFF in the defaults so the
+// resolver's unit tests keep describing the world-time path. Both halves,
+// for the same reason TestTheShippedScreenTakesTheTurn pins both of its own.
+func TestTheShippedScreenIsPaced(t *testing.T) {
+	t.Parallel()
+
+	if !shippedCombatDials().Paced {
+		t.Fatal("a real launch must run the tactical layer: Paced = false")
+	}
+
+	if d2world.DefaultCombatDials().Paced {
+		t.Fatal("DefaultCombatDials must keep Paced off")
+	}
+
+	if got := shippedCombatDials().EngageTiles; got <= shippedCombatDials().AdjacentTiles {
+		t.Fatalf("a shipped fight must open before the enemy is adjacent: EngageTiles = %d", got)
 	}
 }

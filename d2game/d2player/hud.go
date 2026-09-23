@@ -151,6 +151,11 @@ type HUD struct {
 	overheadBarWidget *d2ui.CustomWidget
 	overheadBars      []overheadBarRender
 
+	// T1: the tactical overlay -- tile diamonds and the combat panel -- drawn
+	// by one full-viewport foreground widget while a paced fight runs.
+	tactical       *tacticalOverlay
+	tacticalWidget *d2ui.CustomWidget
+
 	// The selected-squad sheet (M4.4c-1, ruled ask 2/6): a panel of cards drawn
 	// by sheetWidget when sheetOpen, its Font16 lines painted through the
 	// invisible sheetLabel. It opens on selection and closes on deselect.
@@ -223,6 +228,7 @@ func NewHUD(
 		lastStripMinute:   -1,
 		bars:              bars,
 		sheetLabel:        sheetLabel,
+		tactical:          newTacticalOverlay(ui),
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -342,6 +348,13 @@ func (h *HUD) loadCustomWidgets() {
 	h.sheetWidget.SetPosition(0, 0)
 	h.sheetWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
 	h.panelGroup.AddWidget(h.sheetWidget)
+
+	// T1: the tactical overlay. Full viewport, foreground, and it draws nothing
+	// at all outside a paced fight.
+	h.tacticalWidget = h.uiManager.NewCustomWidget(h.renderTactical, screenWidth, screenHeight)
+	h.tacticalWidget.SetPosition(0, 0)
+	h.tacticalWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.tacticalWidget)
 }
 
 func (h *HUD) loadSkillResources() {
@@ -802,6 +815,7 @@ func (h *HUD) renderClockStrip(target d2interface.Surface) {
 func (h *HUD) Advance(elapsed float64) {
 	h.refreshClockStrip()
 	h.refreshOverheadBars()
+	h.refreshTactical(elapsed)
 	h.setStaminaTooltipText()
 	h.setExperienceTooltipText()
 

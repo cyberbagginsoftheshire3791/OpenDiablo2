@@ -500,6 +500,13 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 	shouldDoLeft := repeatDue(now, g.lastLeftBtnActionTime)
 	shouldDoRight := repeatDue(now, g.lastRightBtnActionTime)
 
+	// T1: no held-button walking inside a paced fight. A Move is one click,
+	// checked against his turn and his range; a held button would re-send it
+	// every repeat and earn a refusal each time.
+	if g.combat != nil && g.combat.Fighting() && g.combat.Paced() {
+		return true
+	}
+
 	if isLeft && shouldDoLeft && inRect && !g.hero.IsCasting() {
 		g.lastLeftBtnActionTime = now
 
@@ -619,6 +626,19 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 		// gameControls bind at the same input priority (brief §3.11).
 		if squadID := g.squadAtScreen(mx, my); squadID != "" {
 			g.selectSquad(squadID)
+			return true
+		}
+
+		// T1: a click on an enemy in a paced fight is a strike (or a walk to
+		// one). Consumed by returning BEFORE OnPlayerMove, like the squad select.
+		if enemyID := g.tacticalEnemyAt(mx, my); enemyID != "" {
+			g.inputListener.OnTacticalTarget(enemyID)
+			return true
+		}
+
+		// A click on the combat panel is a click on the panel, not on the
+		// tile behind it.
+		if g.inTacticalPanel(mx, my) {
 			return true
 		}
 

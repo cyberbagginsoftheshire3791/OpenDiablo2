@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 19 playtest scripts.** That count, the harness version below and the
+**The 20 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -99,6 +99,14 @@ this doc fails until it agrees.
   creates the first Strigoi creature from its shipped PNG, exposes its creature
   and animation state through the harness, and captures the same rendered frame
   used for the art readability review.
+* `tactical_test.go` — the twentieth, T1 (23 Sep 2026): the tactical layer
+  in a real launch at the SHIPPED combat dials. The fight opens while the enemy
+  is still out of reach and the enemy stops; the world is held for the player's
+  turn; a Move past the range is refused FOR RANGE (the panel's notice is the
+  assertion) and the same click is accepted once the dial allows it; the enemy
+  walks on its own turn (`steps_ordered`) and ends closer; one closed round costs
+  exactly `round_minutes` of world time; and the combat panel is on a real
+  800x600 frame.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

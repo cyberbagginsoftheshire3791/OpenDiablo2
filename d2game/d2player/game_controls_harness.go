@@ -74,12 +74,16 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 	casting := g.hero != nil && g.hero.IsCasting()
 
 	return map[string]interface{}{
-		"casting":           casting,
-		"inventory_open":    g.inventory.IsOpen(),
-		"skilltree_open":    g.skilltree.IsOpen(),
-		"hero_stats_open":   g.heroStatsPanel.IsOpen(),
-		"quest_log_open":    g.questLog.IsOpen(),
-		"party_open":        partyOpen,
+		"casting":         casting,
+		"inventory_open":  g.inventory.IsOpen(),
+		"skilltree_open":  g.skilltree.IsOpen(),
+		"hero_stats_open": g.heroStatsPanel.IsOpen(),
+		"quest_log_open":  g.questLog.IsOpen(),
+		"party_open":      partyOpen,
+
+		// T1: the refusal or hint the combat panel is showing, so a script can
+		// assert WHY a tactical click did nothing rather than only that it did.
+		"tactical_notice":   g.tacticalNoticeText(),
 		"help_open":         g.HelpOverlay.IsOpen(),
 		"escape_menu_open":  g.escapeMenu.IsOpen(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
@@ -107,4 +111,13 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"sheet_open":     g.hud.sheetOpen,
 		"sheet_cards":    sheetCards,
 	}
+}
+
+// tacticalNoticeText is the combat panel's live notice, "" when none is shown.
+func (g *GameControls) tacticalNoticeText() string {
+	if g.hud == nil || g.hud.tactical == nil {
+		return ""
+	}
+
+	return g.hud.tactical.notice
 }

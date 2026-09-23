@@ -752,6 +752,8 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 	c.lastActions = append(c.lastActions, a)
 	c.actions++
 
+	c.logBlow(a)
+
 	idx := len(c.lastActions) - 1
 
 	switch {

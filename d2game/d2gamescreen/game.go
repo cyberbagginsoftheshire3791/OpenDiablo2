@@ -63,6 +63,14 @@ func shippedCombatDials() d2world.CombatDials {
 	dials := d2world.DefaultCombatDials()
 	dials.PlayerControl = d2world.PlayerControlHuman
 
+	// T1, the tactical layer (23 Sep 2026): the fight is paced in real
+	// seconds, opens at the engage radius, and the packs walk on their turn.
+	// Every number is a [DIAL] -- see combat_tactical.go.
+	dials.Paced = true
+	dials.EngageTiles = d2world.TacticalEngageTiles
+	dials.DisengageTiles = d2world.TacticalDisengageTiles
+	dials.EnemyMoveTiles = d2world.TacticalEnemyMoveTiles
+
 	return dials
 }
 
@@ -220,6 +228,10 @@ func CreateGame(
 		shippedCombatDials(),
 	)
 
+	// T1: the screen walks a body on its turn -- d2world cannot import the
+	// map, so it asks through the Stepper interface (Animator's precedent).
+	game.combat.SetStepper(game)
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -242,8 +254,21 @@ func CreateGame(
 // Game represents the Gameplay screen
 type Game struct {
 	*d2mapentity.MapEntityFactory
-	asset                *d2asset.AssetManager
-	bestiary             *d2bestiary.Catalog
+	asset    *d2asset.AssetManager
+	bestiary *d2bestiary.Catalog
+
+	// T1: a click on a distant enemy spends the Move walking beside it and
+	// strikes on arrival; pendingStrike is that enemy until the walk settles.
+	pendingStrike      string
+	pendingStrikeStill int
+
+	// tacticalPace holds a body's own walking speed while a tactical walk
+	// borrows a faster one; see borrowPace in tactical.go.
+	tacticalPace map[string]float64
+
+	// tacticalReserved is the tile each ordered tactical walk will end on, so
+	// two packmates ordered in one activation cannot pick the same square.
+	tacticalReserved     map[string][2]int
 	gameClient           *d2client.GameClient
 	mapRenderer          *d2maprenderer.MapRenderer
 	uiManager            *d2ui.UIManager
@@ -494,6 +519,12 @@ func (v *Game) Advance(elapsed float64) error {
 		v.advanceWorld(elapsed)
 	}
 
+	// T1: the paced fight's own clock runs on real seconds whenever the screen
+	// is live -- not under the escape menu, which pauses everything.
+	if v.screenLive() {
+		v.tacticalAdvance(elapsed)
+	}
+
 	// The map keeps its ORIGINAL condition: the escape menu still freezes the
 	// animations, because that pause is a pause of the whole screen.
 	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
@@ -582,12 +613,22 @@ func (v *Game) Advance(elapsed float64) error {
 // player's own turn: an open turn stops the world, which is R2 §2A's "paused
 // clock" and the DecisionRate dial at zero.
 func (v *Game) worldRunning() bool {
-	menuClosed := v.escapeMenu != nil && !v.escapeMenu.IsOpen()
-	if !menuClosed && len(v.gameClient.Players) == 1 {
+	if !v.screenLive() {
 		return false
 	}
 
-	return v.combat == nil || !v.combat.Awaiting()
+	// T1: a PACED fight holds the world for its whole length, not only while
+	// his turn is open -- the packs' visible turns are part of the pause, and
+	// each round is paid for in world minutes by tacticalAdvance instead.
+	return v.combat == nil || !v.combat.WorldHeld()
+}
+
+// screenLive is the escape menu's half of worldRunning: the menu pauses a
+// single-player world and nothing else does.
+func (v *Game) screenLive() bool {
+	menuClosed := v.escapeMenu != nil && !v.escapeMenu.IsOpen()
+
+	return menuClosed || len(v.gameClient.Players) != 1
 }
 
 func (v *Game) advanceWorld(elapsed float64) {
@@ -944,6 +985,11 @@ func (v *Game) startChasesForTheAware() {
 		// here every tick would reset the re-path clock and reproduce M4.3a's
 		// 218-solves bug from the other direction.
 		if v.pursuit.Chasing(hunter.HunterID()) {
+			continue
+		}
+
+		// T1: inside a paced fight a participant moves only on its own turn.
+		if v.combat != nil && v.combat.WorldHeld() && v.combat.Participates(hunter.HunterID()) {
 			continue
 		}
 
@@ -1788,10 +1834,22 @@ func (v *Game) OnPlayerMove(targetX, targetY float64) {
 	//
 	// SpendMove does nothing unless a turn is open, so an ordinary walk
 	// outside a fight is untouched.
+	// T1: inside a paced fight a click is a Move, checked against his turn
+	// and his range; tacticalMove owns it entirely.
+	if v.tacticalMove(targetX, targetY) {
+		return
+	}
+
 	if v.combat != nil {
 		v.combat.SpendMove()
 	}
 
+	v.sendMove(targetX, targetY)
+}
+
+// sendMove orders the walk. Split out of OnPlayerMove so the tactical Move
+// sends exactly the packet an ordinary walk does.
+func (v *Game) sendMove(targetX, targetY float64) {
 	worldPosition := v.localPlayer.Position.World()
 
 	playerID, worldX, worldY := v.gameClient.PlayerID, worldPosition.X(), worldPosition.Y()

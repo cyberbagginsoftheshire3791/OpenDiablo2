@@ -42,6 +42,22 @@ type Combat struct {
 	morale   Morale
 	chases   Chases
 
+	// stepper moves a body on its turn in a paced fight (T1). Nil is legal:
+	// nothing steps, and an enemy out of reach waits where it stands.
+	stepper Stepper
+
+	// owedMinutes is the world time closed paced rounds have not yet been
+	// paid for; the game screen takes it with TakeRoundMinutes.
+	owedMinutes float64
+
+	// blowLog is the HUD's rolling log of the last few blows, fed by
+	// resolveBlow. It is separate from lastActions, which is one round's.
+	blowLog []BlowLine
+
+	// stepsOrdered counts the walks a paced fight ordered -- the evidence that
+	// a pack actually moved on its turn rather than waiting to be reached.
+	stepsOrdered int
+
 	rng *rand.Rand
 
 	encounter *encounter
@@ -411,6 +427,29 @@ type CombatDials struct {
 	// means three of a four-dog pack are down. Never against the dead -- see
 	// mundane(), and see the DoD for why that half is a named deferral.
 	QuickResolveAdvantage float64
+
+	// --- T1, the tactical layer (23 Sep 2026). See combat_tactical.go. ---
+
+	// Paced runs a HUMAN-controlled fight on real seconds, one visible beat at
+	// a time, and charges each closed round RoundMinutes of world time instead
+	// of letting world time pace the rounds. Off in DefaultCombatDials, on in
+	// the shipped game.
+	Paced bool
+
+	// EngageTiles is how close an aware enemy must be for a fight to OPEN. At
+	// or below AdjacentTiles it is adjacency, which is what every build before
+	// T1 did. DisengageTiles is how far away everything alive must be for a
+	// fight to END; at or below the engage radius it is the engage radius.
+	EngageTiles, DisengageTiles int
+
+	// EnemyMoveTiles is how far an enemy walks on its own turn in a paced
+	// fight. Zero means enemies do not step (the world-time path's behaviour).
+	EnemyMoveTiles int
+
+	// MoveTiles is the player's Move in tiles (the c-2 ruling: 2, and a click
+	// beyond it is REFUSED, not clamped). The game screen enforces it -- the
+	// route is the map's -- and reads it from here so there is one number.
+	MoveTiles int
 }
 
 // roundEpsilon absorbs the floating-point error in an ACCUMULATED world
@@ -459,6 +498,10 @@ func DefaultCombatDials() CombatDials {
 
 		LossWeight:            1.0,
 		QuickResolveAdvantage: 0.75,
+
+		// T1 is OFF here: the tactical layer is the game screen's choice, and
+		// the resolver's unit tests describe the world-time path.
+		MoveTiles: 2,
 	}
 }
 
@@ -553,6 +596,19 @@ type encounter struct {
 	// click or the End key, and Move-after-Action stays reachable.
 	moveSpent   bool
 	actionSpent bool
+
+	// --- T1: the paced round's state. Tick walks it; see combat_tactical.go.
+	// roundOpen is a paced round with a frozen sequence; acting is the pack
+	// whose activation is running; stepping is the members ordered to walk
+	// and not yet arrived; strikers is who strikes next, one per beat; beat
+	// is the pause still owed; stepWait is how long the walk has taken.
+	roundOpen  bool
+	playerWait float64
+	acting     []string
+	stepping   []string
+	strikers   []string
+	beat       float64
+	stepWait   float64
 }
 
 // NewCombat builds the encounter model and registers the "combat" provider.
@@ -627,6 +683,14 @@ func (c *Combat) Advance(worldMinutes float64) {
 	if c.encounter == nil {
 		c.tryStart()
 
+		return
+	}
+
+	// A PACED FIGHT IS NOT RUN BY WORLD TIME. Tick drives it and each closed
+	// round is paid for through TakeRoundMinutes -- which is how this call
+	// happens during a paced fight at all: the game advances the world by the
+	// round's minute, and that minute must not also resolve rounds here.
+	if c.paced() {
 		return
 	}
 
@@ -982,6 +1046,14 @@ func (c *Combat) endTurn() {
 	// Past the player's own slot, which the commit just resolved.
 	e.cursor++
 
+	// In a paced fight the rest of the round is Tick's, one visible beat at a
+	// time, starting with a beat so his own blow is seen to land first.
+	if c.paced() {
+		e.beat = TacticalBeatSeconds
+
+		return
+	}
+
 	c.walkSequence()
 	c.finishRound()
 
@@ -1022,7 +1094,9 @@ func (c *Combat) scanAware(target Quarry) (enemies []Combatant, chosen Quarry, d
 			continue
 		}
 
-		if !c.inReach(pair.Watcher, pair.Target) {
+		// ENGAGE, not strike: at the defaults the two radii are the same
+		// adjacency, and in a paced fight the approach is part of the fight.
+		if !within(pair.Watcher, pair.Target, c.engageTiles()) {
 			declined++
 
 			continue
@@ -1105,6 +1179,10 @@ func (c *Combat) reinforce() {
 		e.enemies = append(e.enemies, arrival)
 		e.enemyOrder = insertBySpeed(e.enemyOrder, id, c.profileOf(id).Speed, c.speedOf)
 		c.joined++
+
+		if c.paced() {
+			c.holdOne(id)
+		}
 	}
 }
 
@@ -1231,10 +1309,13 @@ func (c *Combat) tryStart() {
 	// and actions_round cannot tell them apart because both read 1.
 	c.lastActions = c.lastActions[:0]
 	c.actionsRound = 0
+	c.blowLog = c.blowLog[:0]
 
 	c.nextID++
 	c.started++
 	c.rounds++
+
+	c.holdParticipants()
 }
 
 // deadByBody reports that the registry knows this id's body AND that body has
@@ -1298,7 +1379,7 @@ func (c *Combat) pruneOrEnd() {
 	kept := e.enemies[:0]
 
 	for _, enemy := range e.enemies {
-		if e.gone(enemy.WatcherID()) || c.inReach(enemy, e.target) {
+		if e.gone(enemy.WatcherID()) || within(enemy, e.target, c.disengageTiles()) {
 			kept = append(kept, enemy)
 		}
 	}
@@ -1369,6 +1450,8 @@ func (e *encounter) endingReason() string {
 // invisible in the state and obvious in the counters -- the same argument the
 // four counters at the top of this file were added for.
 func (c *Combat) end(reason string) {
+	c.payOpenRound()
+
 	// The pace row is built from the encounter that is about to go, so it is
 	// captured HERE rather than by a caller reading a nil encounter a frame
 	// later. A fight that opened and closed between two frames is otherwise
@@ -1542,14 +1625,32 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"declined_reach": c.declines,
 		"round_minutes":  c.dials.RoundMinutes,
 		"adjacent_tiles": c.dials.AdjacentTiles,
-		"has_notice":     c.notice != nil,
-		"has_fitness":    c.fitness != nil,
-		"has_bodies":     c.bodies != nil,
-		"has_profiles":   c.profiles != nil,
-		"has_animator":   c.animator != nil,
-		"has_morale":     c.morale != nil,
-		"has_chases":     c.chases != nil,
-		"bodies_known":   0,
+
+		// T1. world_held is what the game screen's gate reads; owed_minutes is
+		// the paced world time not yet paid; steps_ordered counts the walks a
+		// paced fight ordered, the evidence a pack moved on its own turn.
+		"paced":            c.dials.Paced,
+		"engage_tiles":     c.dials.EngageTiles,
+		"disengage_tiles":  c.dials.DisengageTiles,
+		"enemy_move_tiles": c.dials.EnemyMoveTiles,
+		"move_tiles":       c.dials.MoveTiles,
+		"world_held":       c.WorldHeld(),
+		"owed_minutes":     c.owedMinutes,
+		"steps_ordered":    c.stepsOrdered,
+		"has_stepper":      c.stepper != nil,
+
+		// The radii IN FORCE, which differ from the dials above under the
+		// policy: engage and disengage are the tactical layer's alone.
+		"engage_radius":    c.engageTiles(),
+		"disengage_radius": c.disengageTiles(),
+		"has_notice":       c.notice != nil,
+		"has_fitness":      c.fitness != nil,
+		"has_bodies":       c.bodies != nil,
+		"has_profiles":     c.profiles != nil,
+		"has_animator":     c.animator != nil,
+		"has_morale":       c.morale != nil,
+		"has_chases":       c.chases != nil,
+		"bodies_known":     0,
 
 		// The resolver's facts about the LAST encounter, reported whether or
 		// not one is running: a fight that begins and ends inside one step is
@@ -1664,6 +1765,8 @@ func (c *Combat) HarnessState() map[string]interface{} {
 	state["surprised"] = e.surprised
 	state["surprise_why"] = e.surpriseWhy
 	state["first_side"] = e.firstSide()
+	state["acting"] = append([]string{}, e.acting...)
+	state["stepping"] = append([]string{}, e.stepping...)
 
 	parts := make([]map[string]interface{}, 0, len(e.enemies)+1)
 
@@ -1815,10 +1918,11 @@ func (c *Combat) HarnessSettableFields() []string {
 		// used, so a script cannot quietly prove the input path with the
 		// field path.
 		"adjacent_tiles", "advantage_shift", "auto_end_turn", "commit",
-		"crit_band", "crit_factor", "disengage", "forced_band", "graze_band",
+		"crit_band", "crit_factor", "disengage", "disengage_tiles",
+		"enemy_move_tiles", "engage_tiles", "forced_band", "graze_band",
 		"graze_factor", "hit_factor", "lit_level", "loss_weight",
-		"player_action", "player_control", "quick_resolve_advantage",
-		"round", "round_minutes", "shaken_penalty",
+		"move_tiles", "paced", "player_action", "player_control",
+		"quick_resolve_advantage", "round", "round_minutes", "shaken_penalty",
 	}
 }
 
@@ -1832,6 +1936,35 @@ func (c *Combat) HarnessSet(field string, value interface{}) error {
 		}
 
 		c.dials.PlayerControl = kind
+
+		return nil
+
+	case "paced":
+		on, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("paced wants a bool, got %v", value)
+		}
+
+		c.dials.Paced = on
+
+		return nil
+
+	case "engage_tiles", "disengage_tiles", "enemy_move_tiles", "move_tiles":
+		v, ok := toFloat(value)
+		if !ok || v < 0 || v > 64 {
+			return fmt.Errorf("%s wants a tile count 0-64, got %v", field, value)
+		}
+
+		switch field {
+		case "engage_tiles":
+			c.dials.EngageTiles = int(v)
+		case "disengage_tiles":
+			c.dials.DisengageTiles = int(v)
+		case "enemy_move_tiles":
+			c.dials.EnemyMoveTiles = int(v)
+		case "move_tiles":
+			c.dials.MoveTiles = int(v)
+		}
 
 		return nil
 

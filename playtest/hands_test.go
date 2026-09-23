@@ -308,6 +308,11 @@ func TestTheHandsStrike(t *testing.T) {
 		t.Fatalf("act 2: E must close a spent turn: %v", combatState(s))
 	}
 
+	// T1: the shipped fight is PACED, so the pack's half of the round plays out
+	// over visible beats after E and the round closes when it has. The ROUND
+	// row is read once it has -- what it says is unchanged.
+	stepUntilRoundClosed(t, s, 1)
+
 	if got := str(sub(combatState(s), "round_row"), "action"); got != "strike" {
 		t.Fatalf("act 2: E after F closes the round as end and the ROUND row keeps action=strike; got %q", got)
 	}
@@ -315,7 +320,7 @@ func TestTheHandsStrike(t *testing.T) {
 	// A fresh turn, and E on it is Commit(hold): the ROUND row reads hold.
 	openTurn(t, s)
 	s.call("strigoi_key", map[string]any{"key": "e"})
-	s.call("strigoi_step", map[string]any{"frames": 2})
+	stepUntilRoundClosed(t, s, 2)
 
 	if got := str(sub(combatState(s), "round_row"), "action"); got != "hold" {
 		t.Fatalf("act 2: E on a fresh turn is a hold and the ROUND row reads action=hold; got %q", got)
@@ -388,7 +393,8 @@ func TestTheHandsStrike(t *testing.T) {
 	s.call("strigoi_step", map[string]any{"frames": 4})
 
 	if !flag(t, combatState(s), "move_spent") {
-		t.Fatalf("act 2: a ground click must spend the Move (SpendMove); move_spent still false: %v", combatState(s))
+		t.Fatalf("act 2: a ground click must spend the Move (SpendMove); move_spent still false; the panel says %q: %v",
+			str(uiState(s), "tactical_notice"), combatState(s))
 	}
 
 	if !flag(t, combatState(s), "awaiting") {
@@ -407,6 +413,11 @@ func TestTheHandsStrike(t *testing.T) {
 	if flag(t, c, "awaiting") {
 		t.Fatalf("act 2: Move + Action must auto-end the turn with no E; still awaiting: %v", c)
 	}
+
+	// T1: the auto-ended round closes after the packs' paced turn, not in the
+	// frame the turn closed.
+	stepUntilRoundClosed(t, s, mustNum(t, sub(c, "round_row"), "round")+1)
+	c = combatState(s)
 
 	rr := sub(c, "round_row")
 	if str(rr, "action") != "strike" || !flag(t, rr, "move") {
@@ -1146,4 +1157,22 @@ func TestTheHandsDeferredToC2b(t *testing.T) {
 	t.Run("act6_break_away", func(t *testing.T) { t.Skip("c-2b: the MoveTiles range guard and the break-away act") })
 	t.Run("act7_click_to_strike", func(t *testing.T) { t.Skip("c-2b: click-to-strike over the strip, and the swing wait") })
 	t.Run("act8_ambush", func(t *testing.T) { t.Skip("c-2b: StartByPlayer and the ambush flags") })
+}
+
+// stepUntilRoundClosed steps frames until the ROUND row names `round` -- the
+// paced fight closes a round only after the packs' visible turns (T1), so a
+// fixed two-frame step no longer reaches the close.
+func stepUntilRoundClosed(t *testing.T, s *session, round float64) {
+	t.Helper()
+
+	for i := 0; i < 300; i++ {
+		c := combatState(s)
+		if mustNum(t, sub(c, "round_row"), "round") >= round || !flag(t, c, "fighting") {
+			return
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 4})
+	}
+
+	t.Fatalf("round %.0f never closed in 1200 frames: %v", round, combatState(s))
 }

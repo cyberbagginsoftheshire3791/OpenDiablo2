@@ -86,3 +86,29 @@ func strigoiStanceLabel(stance string) string {
 
 	return stance
 }
+
+// T1, the tactical layer's words (23 Sep 2026). The panel's lines and the
+// refusals a click in a paced fight can earn. Exported because the game screen
+// raises the refusals and this file is the one home for Strigoi's English.
+const (
+	TacticalRoundYours  = "Round %d  -  YOUR TURN"
+	TacticalRoundTheirs = "Round %d  -  they move"
+	TacticalPipMove     = "MOVE"
+	TacticalPipAction   = "ACTION"
+	TacticalPipReaction = "REACTION"
+	TacticalPipReady    = "ready"
+	TacticalPipSpent    = "spent"
+	TacticalKeys        = "click tile: move   click foe / F: strike   L: torch   E: end turn"
+	TacticalYou         = "You"
+	TacticalSomething   = "Something"
+	TacticalRiposte     = "Riposte!"
+	TacticalSlain       = "slain"
+
+	TacticalNotYourTurn = "Not your turn."
+	TacticalMoveSpent   = "Your Move is spent. Strike (F) or end the turn (E)."
+	TacticalActionSpent = "Your Action is spent. End the turn (E)."
+	TacticalTileTaken   = "Something is standing there."
+	TacticalNoWay       = "No way through."
+	TacticalTooFar      = "Too far: %d tiles, and your Move is %d."
+	TacticalOutOfReach  = "Out of reach."
+)
