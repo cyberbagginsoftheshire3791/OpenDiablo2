@@ -69,7 +69,13 @@ func TestHeroArt(t *testing.T) {
 	}
 
 	shot := s.call("strigoi_screenshot", map[string]any{"name": "hero-placeholder"})
-	t.Logf("the placeholder hero, walking: %s", str(shot, "path"))
+	t.Logf("the placeholder hero, walking: %s (read back in %.1f ms)", str(shot, "path"), num(shot, "read_ms"))
+
+	// The screenshot reports its own readback time (docs/bugs.md, the TownWalk
+	// stall): absent, it would read 0.
+	if num(shot, "read_ms") <= 0 {
+		t.Fatalf("the screenshot reports no readback time: %v", shot)
+	}
 
 	s.call("strigoi_step", map[string]any{"frames": 300})
 

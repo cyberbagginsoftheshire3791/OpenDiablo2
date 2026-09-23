@@ -267,17 +267,18 @@ func (s *ebitenSurface) ReplacePixels(pixels []byte) {
 	s.image.ReplacePixels(pixels)
 }
 
-// Screenshot returns an *image.RGBA of the surface
+// Screenshot returns an *image.RGBA of the surface.
+//
+// One readback of the whole surface: ReadPixels fills premultiplied RGBA in
+// row order, which is exactly *image.RGBA's Pix layout. (It used to be one
+// Image.At call per pixel -- 480,000 for the screen, each a colour conversion
+// and an interface allocation, after a first call that did this same
+// readback anyway.)
 func (s *ebitenSurface) Screenshot() *image.RGBA {
 	width, height := s.GetSize()
-	bounds := image.Rectangle{Min: image.Point{X: 0, Y: 0}, Max: image.Point{X: width, Y: height}}
-	rgba := image.NewRGBA(bounds)
+	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
 
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			rgba.Set(x, y, s.image.At(x, y))
-		}
-	}
+	s.image.ReadPixels(rgba.Pix)
 
 	return rgba
 }

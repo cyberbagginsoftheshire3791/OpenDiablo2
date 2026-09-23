@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -288,6 +289,9 @@ type harnessScreenshotOut struct {
 	W    int    `json:"w"`
 	H    int    `json:"h"`
 	Tick int64  `json:"tick"`
+	// ReadMS is how long reading the frame back took, on the game goroutine
+	// (docs/bugs.md: the TownWalk stall was a readback that did not return).
+	ReadMS float64 `json:"read_ms"`
 }
 
 type harnessDumpSurfaceIn struct {
@@ -746,7 +750,9 @@ func (a *App) harnessAddObservationTools(srv *mcp.Server) {
 				return
 			}
 
+			began := time.Now()
 			img = harness.drawTarget.Screenshot()
+			out.ReadMS = float64(time.Since(began).Microseconds()) / 1000
 		})
 		if err != nil {
 			return nil, out, err

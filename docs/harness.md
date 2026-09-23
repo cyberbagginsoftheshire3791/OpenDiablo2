@@ -378,7 +378,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_find_path` | The route the pathfinder would take, **without walking it**: waypoints in travel order (world tiles + subtiles), `reachable`, and `straight_line_clear`. That last field is the negative control — a route that arrives proves nothing unless the straight line did not. `from_x`/`from_y` default to the player. Added M4.3a. |
 | `strigoi_dump_map` | walk / entities / region window, ≤64×64 tiles |
 | `strigoi_read_log` | Ring of the last 5000 logger lines, cursor + RE2 filter |
-| `strigoi_screenshot` | PNG of the next frame; crop; inline image |
+| `strigoi_screenshot` | PNG of the next frame; crop; inline image; `read_ms`, how long the frame took to read back (one `ReadPixels`, ~33 ms) |
 | `strigoi_dump_surface` | floor_tile: the black-floor diagnostic (spec §5.3) |
 | `strigoi_list_systems` | Registered providers with their settable fields; the planned systems not yet registered |
 | `strigoi_get_system_state` | A provider's state as the system exposes it; `NOT_IMPLEMENTED` names the milestone that adds a planned one |
