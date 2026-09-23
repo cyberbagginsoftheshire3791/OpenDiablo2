@@ -29,13 +29,17 @@ One player's first day and night (`playtest/census_test.go`). **365 files from D
 | MPQ area | What it is | Replaced by |
 |---|---|---|
 | `data/global/tiles` (74) | Act 1 town and wilderness tiles -- the map itself | **M5.4**: maps authored in Tiled, drawn from our own tile PNGs |
-| `data/global/excel` (83) | D2's data tables (monsters, levels, objects, items, ...) the engine reads to build maps and entities | Shrinks with M5.4 (levels, objects) and as each entity moves to Strigoi's JSON |
+| `data/global/excel` (83) | D2's data tables (monsters, levels, objects, items, ...) the engine reads to build maps and entities | **83 → 31 (23 Sep):** 52 tables filled record sets nothing outside `d2records` reads, and are no longer loaded (`d2app/initialization.go`). The 31 left are read -- levels, objects, items and affixes, missiles, sounds, monsters, charstats, experience, inventory, skills; each goes as its readers move to Strigoi's own data |
 | `data/global/ui` (72) | menus, panels, front end, cursor, loading screen | our own UI art (Josh + GPT) through the PNG path |
 | `data/global/monsters` (39) | the town's people and animals (rogues, Warriv, Gheed, cows, chickens) | our villagers and livestock as PNG creatures (M5.1's path) |
 | `data/global/objects` (29) | town objects (waypoint, torches, barrels, ...) | authored with the map (M5.4) |
 | `data/global/chars` (20) | **the hero** (the amazon) | our Janissary as PNG sheets |
 | `data/local/font` (20) | the fonts | **done with `-fonts`** (23 Sep): a font set of TrueType/OpenType faces drawn into the same `d2font.Font` (`d2core/d2asset/strigoi_fonts.go`); 0 font files from the MPQs. Faces: IM Fell English (+ SC) and Uncial Antiqua, SIL OFL |
 | `data/global/items` (11), `palette` (6), `sfx` (4), `music` (2), `lng` (3) | inventory art, palettes, sounds, music, the string tables | our own art, sound and a Strigoi string table |
+
+## Measured: the 52 unread tables dropped (23 Sep 2026, evening)
+
+`TestAssetCensus` (the full first day and night on Act 1, no flags): **313 MPQ files** (was 365), `excel` 31. The own-everything probe below: **138** (was 190).
 
 ## Measured: our own map, hero and fonts together (23 Sep 2026)
 

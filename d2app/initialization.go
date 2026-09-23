@@ -98,35 +98,39 @@ func (a *App) initLanguage() {
 }
 
 func (a *App) initDataDictionaries() error {
+	// THE TABLES THE GAME READS (23 Sep 2026, M5.3's census): 31 of the 83
+	// Diablo II .txt tables this list used to load. The other 52 filled
+	// RecordManager fields that nothing outside d2core/d2records ever reads --
+	// LevelWarp, Books, MonProp, MonType, MonMode, ItemRatio, StorePage,
+	// Hireling, Gems, QualityItems, Runes, DifficultyLevels, AutoMap,
+	// LevelMaze, LevelSubstitutions, CubeRecipes, SuperUniques, SkillCalc,
+	// MissileCalc, BodyLocations, AutoMagic, TreasureClassEx, States, Shrines,
+	// ElemType, PlrMode, PetType, NPC, MonsterUniqueModifier, MonsterEquipment,
+	// UniqueAppellation, MonsterLevel, MonsterSound, MonsterSequence,
+	// PlayerClass, MonsterPlacement, ObjectGroup (parsed, then discarded),
+	// CompCode, MonsterAI, Events, Colors, ArmorType, WeaponClass, PlayerType,
+	// Composite, HitClass, UniquePrefix, UniqueSuffix, CubeModifier, CubeType,
+	// HirelingDescription, LowQualityItems -- so each was a file read from an
+	// MPQ for nothing. Their loaders stay registered (d2records), so one comes
+	// back by adding it here; code that starts reading one of those fields
+	// must add its table, or it reads an empty record set. How it was
+	// checked: for each loader, the fields it assigns, grepped repo-wide
+	// outside d2records and tests (history item 106).
+	//
+	// The order is the old list's, filtered: ItemTypes reads Item.All, which
+	// Load assembles once Weapons, Armor and Misc are in.
 	dictPaths := []string{
-		d2resource.LevelType, d2resource.LevelPreset, d2resource.LevelWarp,
+		d2resource.LevelType, d2resource.LevelPreset,
 		d2resource.ObjectType, d2resource.ObjectDetails, d2resource.Weapons,
-		d2resource.Armor, d2resource.Misc, d2resource.Books, d2resource.ItemTypes,
+		d2resource.Armor, d2resource.Misc, d2resource.ItemTypes,
 		d2resource.UniqueItems, d2resource.Missiles, d2resource.SoundSettings,
 		d2resource.MonStats, d2resource.MonStats2, d2resource.MonPreset,
-		d2resource.MonProp, d2resource.MonType, d2resource.MonMode,
 		d2resource.MagicPrefix, d2resource.MagicSuffix, d2resource.ItemStatCost,
-		d2resource.ItemRatio, d2resource.StorePage, d2resource.Overlays,
-		d2resource.CharStats, d2resource.Hireling, d2resource.Experience,
-		d2resource.Gems, d2resource.QualityItems, d2resource.Runes,
-		d2resource.DifficultyLevels, d2resource.AutoMap, d2resource.LevelDetails,
-		d2resource.LevelMaze, d2resource.LevelSubstitutions, d2resource.CubeRecipes,
-		d2resource.SuperUniques, d2resource.Inventory, d2resource.Skills,
-		d2resource.SkillCalc, d2resource.MissileCalc, d2resource.Properties,
-		d2resource.SkillDesc, d2resource.BodyLocations, d2resource.Sets,
-		d2resource.SetItems, d2resource.AutoMagic, d2resource.TreasureClass,
-		d2resource.TreasureClassEx, d2resource.States, d2resource.SoundEnvirons,
-		d2resource.Shrines, d2resource.ElemType, d2resource.PlrMode,
-		d2resource.PetType, d2resource.NPC, d2resource.MonsterUniqueModifier,
-		d2resource.MonsterEquipment, d2resource.UniqueAppellation, d2resource.MonsterLevel,
-		d2resource.MonsterSound, d2resource.MonsterSequence, d2resource.PlayerClass,
-		d2resource.MonsterPlacement, d2resource.ObjectGroup, d2resource.CompCode,
-		d2resource.MonsterAI, d2resource.RarePrefix, d2resource.RareSuffix,
-		d2resource.Events, d2resource.Colors, d2resource.ArmorType,
-		d2resource.WeaponClass, d2resource.PlayerType, d2resource.Composite,
-		d2resource.HitClass, d2resource.UniquePrefix, d2resource.UniqueSuffix,
-		d2resource.CubeModifier, d2resource.CubeType, d2resource.HirelingDescription,
-		d2resource.LowQualityItems,
+		d2resource.Overlays, d2resource.CharStats, d2resource.Experience,
+		d2resource.LevelDetails, d2resource.Inventory, d2resource.Skills,
+		d2resource.Properties, d2resource.SkillDesc, d2resource.Sets,
+		d2resource.SetItems, d2resource.TreasureClass, d2resource.SoundEnvirons,
+		d2resource.RarePrefix, d2resource.RareSuffix,
 	}
 
 	a.Info("Initializing asset manager")
