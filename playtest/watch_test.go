@@ -21,6 +21,10 @@ func TestWatch(t *testing.T) {
 		"hero_name": "Watchman", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
 	})
 	setField(s, "spawns", "chance", 0)
+
+	// M4.7 step 3: Night 1's dead stay down -- this script's subject is the watch,
+	// and a risen man coming for him would be a different script.
+	setField(s, "rising", "p", 0.0)
 	setField(s, "village", "rep", 30.0)
 
 	headman := villager(t, s, "Warriv")

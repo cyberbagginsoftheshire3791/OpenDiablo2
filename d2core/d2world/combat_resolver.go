@@ -72,8 +72,11 @@ const (
 	CommitStrike = "strike"
 	CommitLight  = "light"
 	CommitDouse  = "douse"
-	CommitHold   = "hold"
-	CommitEnd    = "end"
+	// CommitStake is the stake through a Downed man at his feet (M4.7 step
+	// 3b): an Action, resolved on the game screen like light and douse.
+	CommitStake = "stake"
+	CommitHold  = "hold"
+	CommitEnd   = "end"
 )
 
 // The reasons a blow's roll was shifted, reported per blow. Both can apply at
@@ -390,6 +393,12 @@ func (c *Combat) tryQuickResolve() bool {
 		starting++
 
 		id := enemy.WatcherID()
+
+		// A Downed man may stand again: the fight is not one to finish in a
+		// stroke while he lies there (the step-3b review; R2 §2B).
+		if e.gone(id) && c.stillIn(e, id) {
+			return false
+		}
 
 		if e.gone(id) {
 			continue
@@ -932,7 +941,7 @@ func (c *Combat) reachedZero(id string) {
 	c.loseNerve(id)
 
 	for _, enemy := range e.enemies {
-		if enemy != nil && !e.gone(enemy.WatcherID()) {
+		if enemy != nil && c.stillIn(e, enemy.WatcherID()) {
 			return
 		}
 	}

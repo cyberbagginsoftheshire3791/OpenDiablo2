@@ -26,6 +26,10 @@ func TestSurvive(t *testing.T) {
 	})
 	setField(s, "spawns", "chance", 0)
 
+	// M4.7 step 3: Night 1's dead stay down -- this script's subject is eating and shelter,
+	// and a risen man coming for him would be a different script.
+	setField(s, "rising", "p", 0.0)
+
 	// --- 1: eat ------------------------------------------------------------------
 	s.call("strigoi_key", map[string]any{"key": "i"})
 	s.call("strigoi_step", map[string]any{"frames": 2})

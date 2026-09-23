@@ -969,7 +969,7 @@ func (c *Combat) commit(choice, targetID string) error {
 	c.paceCommits++
 
 	switch choice {
-	case CommitStrike, CommitLight, CommitDouse, CommitHold:
+	case CommitStrike, CommitLight, CommitDouse, CommitStake, CommitHold:
 		c.lastActionVerb = choice
 	case CommitEnd:
 		// end closes a turn whose Action is already spent, so the Action verb
@@ -977,7 +977,7 @@ func (c *Combat) commit(choice, targetID string) error {
 	}
 
 	switch choice {
-	case CommitStrike, CommitLight, CommitDouse:
+	case CommitStrike, CommitLight, CommitDouse, CommitStake:
 		if e.actionSpent {
 			c.commitsRefused++
 
@@ -1021,8 +1021,8 @@ func (c *Combat) commit(choice, targetID string) error {
 	default:
 		c.commitsRefused++
 
-		return fmt.Errorf("commit %q refused: want one of %q, %q, %q, %q, %q",
-			choice, CommitStrike, CommitLight, CommitDouse, CommitHold, CommitEnd)
+		return fmt.Errorf("commit %q refused: want one of %q, %q, %q, %q, %q, %q",
+			choice, CommitStrike, CommitLight, CommitDouse, CommitStake, CommitHold, CommitEnd)
 	}
 
 	return nil
@@ -1397,7 +1397,7 @@ func (c *Combat) pruneOrEnd() {
 	allGone := true
 
 	for _, enemy := range e.enemies {
-		if enemy != nil && !e.gone(enemy.WatcherID()) {
+		if enemy != nil && c.stillIn(e, enemy.WatcherID()) {
 			allGone = false
 
 			break
@@ -1436,7 +1436,7 @@ func (c *Combat) pruneOrEnd() {
 	living := false
 
 	for _, enemy := range e.enemies {
-		if !e.gone(enemy.WatcherID()) {
+		if c.stillIn(e, enemy.WatcherID()) {
 			living = true
 
 			break
@@ -1474,6 +1474,61 @@ func (c *Combat) pruneOrEnd() {
 // dead", the participant row's dead:true -- deliberately still ask e.dead.
 func (e *encounter) gone(id string) bool { return e.dead[id] || e.routed[id] || e.broke[id] }
 
+// stillIn is "keeps the fight going": a participant not gone, or one of the
+// dead cut down whose body lies Downed and may stand again inside his window
+// (M4.7 step 3b; R2 §3, "possibly while the fight still runs"). The fight
+// goes on, round by round, until he stands or is staked -- or first light.
+func (c *Combat) stillIn(e *encounter, id string) bool {
+	if !e.gone(id) {
+		return true
+	}
+
+	return !e.broke[id] && c.corpses != nil && c.corpses.DownedMember(id)
+}
+
+// Rejoin puts a Downed man who stood again back into the fight he fell in
+// (M4.7 step 3b; R2 §3, "possibly while the fight still runs"), as the new
+// member he walks as. It is not an arrival -- no notice or engage gate: he
+// stands where he lay, in the fight he never left -- and the fallen one's
+// row goes with the remains the game takes off the map. It reports whether
+// the old member was in the fight.
+func (c *Combat) Rejoin(oldID string, stood Combatant) bool {
+	e := c.encounter
+	if e == nil || stood == nil || oldID == "" {
+		return false
+	}
+
+	in := false
+	kept := e.enemies[:0]
+
+	for _, en := range e.enemies {
+		if en != nil && en.WatcherID() == oldID {
+			in = true
+
+			continue
+		}
+
+		kept = append(kept, en)
+	}
+
+	e.enemies = kept
+
+	if !in {
+		return false
+	}
+
+	id := stood.WatcherID()
+	e.enemies = append(e.enemies, stood)
+	e.enemyOrder = insertBySpeed(e.enemyOrder, id, c.profileOf(id).Speed, c.speedOf)
+	c.joined++
+
+	if c.paced() {
+		c.holdOne(id)
+	}
+
+	return true
+}
+
 // onlyTheDead reports a side made wholly of the dead's row.
 func (c *Combat) onlyTheDead(enemies []Combatant) bool {
 	if len(enemies) == 0 {
@@ -1502,7 +1557,8 @@ func (c *Combat) BreakOff(leave func(id string) bool) int {
 	n := 0
 
 	for _, en := range e.enemies {
-		if en == nil || e.gone(en.WatcherID()) || !leave(en.WatcherID()) {
+		// A Downed man leaves with the rest: by day he lies until dark.
+		if en == nil || !c.stillIn(e, en.WatcherID()) || !leave(en.WatcherID()) {
 			continue
 		}
 
@@ -1515,7 +1571,7 @@ func (c *Combat) BreakOff(leave func(id string) bool) int {
 	}
 
 	for _, en := range e.enemies {
-		if en != nil && !e.gone(en.WatcherID()) {
+		if en != nil && c.stillIn(e, en.WatcherID()) {
 			return n
 		}
 	}

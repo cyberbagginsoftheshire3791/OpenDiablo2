@@ -1031,6 +1031,19 @@ func (s *Spawns) ProfileOf(memberID string) (Profile, bool) {
 	return Profile{}, false
 }
 
+// Member is one spawned member's watcher, by id.
+func (s *Spawns) Member(id string) (Watcher, bool) {
+	for _, gid := range s.groupIDs() {
+		for _, m := range s.groups[gid].members {
+			if m != nil && m.WatcherID() == id {
+				return m, true
+			}
+		}
+	}
+
+	return nil, false
+}
+
 // rowNamed finds a table row by its design name.
 func (s *Spawns) rowNamed(name string) (SpawnRow, bool) {
 	for i := range s.dials.Rows {

@@ -40,6 +40,11 @@ func TestSpawns(t *testing.T) {
 	})
 	t.Logf("spawned at %v", game["spawn_tile"])
 
+	// M4.7 step 3: this script is the TABLES' -- their rows, their rolls,
+	// their groups' morale -- and a risen man is none of those (the newest
+	// group act 6 inspects was one of the dead). The dead stay down.
+	setField(s, "rising", "p", 0.0)
+
 	p := s.call("strigoi_get_player", map[string]any{})
 	px, py := num(p, "x"), num(p, "y")
 	playerHandle := str(p, "handle")

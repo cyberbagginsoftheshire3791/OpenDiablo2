@@ -146,8 +146,8 @@ func TestRising(t *testing.T) {
 	throughTheNight(t, s)
 
 	c = corpsesState(s)
-	if mustNum(t, c, "fresh_human") != 2 || mustNum(t, c, "hasty_human") != 1 || mustNum(t, c, "closed_human") != 1 {
-		t.Fatalf("act 3: at first light the two lie down, open again: %v", c)
+	if mustNum(t, c, "downed_human") != 2 || mustNum(t, c, "hasty_human") != 1 || mustNum(t, c, "closed_human") != 1 {
+		t.Fatalf("act 3: at first light the two lie down, Downed: %v", c)
 	}
 
 	if r := risenGroups(s); r != 0 {

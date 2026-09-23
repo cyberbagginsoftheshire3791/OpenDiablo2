@@ -98,16 +98,22 @@ func TestCorpsesRisenFallsAsHimself(t *testing.T) {
 	c.Raised("dead:1", "m:7")
 	require.Equal(t, 0, open)
 
+	c.SetClock(func() float64 { return 42 })
 	c.Fall("m:7", RisenRow, 5, 6)
 
+	// Step 3b: he is Downed where he fell -- not open, not carrion -- and the
+	// minute he went down is kept for his window.
 	b, _ := c.Get("dead:1")
-	assert.Equal(t, CorpseFresh, b.State)
+	assert.Equal(t, CorpseDowned, b.State)
 	assert.Equal(t, [2]float64{5, 6}, [2]float64{b.X, b.Y})
-	assert.Equal(t, 1, open)
+	assert.InDelta(t, 42, b.DownedAt, 1e-9)
+	assert.True(t, b.Door(), "a Downed man is still a door")
+	assert.Equal(t, 0, open, "the Downed are not carrion")
 	assert.False(t, c.Has("m:7"), "not a second body")
+	assert.Equal(t, "m:7", c.LastWalker("dead:1"))
 
 	c.Fall("m:7", RisenRow, 9, 9)
-	assert.Equal(t, 1, open, "a second fall of the same man is nothing")
+	assert.Equal(t, 0, open, "a second fall of the same man is nothing")
 
 	c.Raised("dead:1", "m:8")
 	assert.Empty(t, c.risenAs["m:8"], "only a risen body walks")

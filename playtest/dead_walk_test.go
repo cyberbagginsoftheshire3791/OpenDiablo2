@@ -152,8 +152,8 @@ func TestTheDeadWalk(t *testing.T) {
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	c = corpsesState(s)
-	if mustNum(t, c, "fresh_human") != 4 {
-		t.Fatalf("act 4: each risen lies down, open again: %v", c)
+	if mustNum(t, c, "downed_human") != 4 {
+		t.Fatalf("act 4: each risen lies down where he stood, Downed: %v", c)
 	}
 
 	if _, ok := c["risen_human"]; ok {
@@ -168,7 +168,23 @@ func TestTheDeadWalk(t *testing.T) {
 		t.Fatalf("act 4: one fight left at first light: %.0f", got)
 	}
 
-	t.Logf("four rose, came for him at 02:15, and lay down at first light (%d in the fight)", enemies)
+	// --- 5: Q7a -- the Downed stand certainly the next night ------------------------------------
+	// THE CONTROL IS THE ODDS: at p 0 no open body could rise, so four risen
+	// at the first band are the Downed standing, not the roll.
+	setField(s, "rising", "p", 0.0)
+	setField(s, "spawns", "notice_radius", 0.05)
+	walkAwayFrom(t, s, bx, by, 8)
+
+	for i := 0; i < 400 && risenGroups(s) == 0; i++ {
+		s.call("strigoi_step_world", map[string]any{"world_minutes": 10.0})
+		keepAlive()
+	}
+
+	if got := risenGroups(s); got != 4 || mustNum(t, corpsesState(s), "risen_human") != 4 {
+		t.Fatalf("act 5: at odds 0 the four Downed stand in the next deep night: %d groups %v", got, corpsesState(s))
+	}
+
+	t.Logf("four rose, came for him at 02:15, lay down Downed at first light (%d in the fight), and stood again the next night at odds 0", enemies)
 }
 
 // risenGroups counts the risen row's groups on the map.

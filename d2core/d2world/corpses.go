@@ -32,6 +32,12 @@ const (
 	CorpseClosed CorpseState = "closed"
 	// CorpseRisen has left where it lay. Step 3 stands it up to fight.
 	CorpseRisen CorpseState = "risen"
+	// CorpseDowned is a risen man cut down, or laid down at first light (S1
+	// §6.2): not open -- no carrion -- and a door that stands again. At
+	// night he stands once his window runs out; by day he waits, and stands
+	// certainly in the next deep-night band (M4.7 Q7a). Only a stake keeps
+	// him down.
+	CorpseDowned CorpseState = "downed"
 )
 
 // CorpseClass is whose body it is.
@@ -50,11 +56,14 @@ type Corpse struct {
 	Class CorpseClass
 	State CorpseState
 	X, Y  float64
+
+	// DownedAt is the world minute he went down (CorpseDowned only).
+	DownedAt float64
 }
 
 // Door reports a body that can still rise: a man's, open or in a hasty grave.
 func (b *Corpse) Door() bool {
-	return b.Class == CorpseHuman && (b.State == CorpseFresh || b.State == CorpseHasty)
+	return b.Class == CorpseHuman && (b.State == CorpseFresh || b.State == CorpseHasty || b.State == CorpseDowned)
 }
 
 // Corpses is the registry. It is world state for one session: M4.6 owns the
@@ -65,6 +74,8 @@ type Corpses struct {
 	order   []string
 	risenAs map[string]string // every member a body has walked as -> the body
 	walker  map[string]string // a risen body -> the member it walks as NOW
+	last    map[string]string // a body -> the last member it walked as, standing or fallen
+	now     func() float64    // world minutes, for DownedAt (nil reads 0)
 	isHuman func(row string) bool
 	changed func(openDelta int)
 }
@@ -73,7 +84,7 @@ type Corpses struct {
 // changed hears every change to the count of open bodies (the carrion
 // weighting's input). Either may be nil.
 func NewCorpses(isHuman func(row string) bool, changed func(openDelta int)) *Corpses {
-	return &Corpses{byID: map[string]*Corpse{}, risenAs: map[string]string{}, walker: map[string]string{}, isHuman: isHuman, changed: changed}
+	return &Corpses{byID: map[string]*Corpse{}, risenAs: map[string]string{}, walker: map[string]string{}, last: map[string]string{}, isHuman: isHuman, changed: changed}
 }
 
 // Fall records a body where it fell. A second fall of the same id is ignored.
@@ -93,14 +104,13 @@ func (c *Corpses) fall(id, row string, x, y float64, human bool) *Corpse {
 	}
 
 	// A risen man who falls -- cut down, or laid down at first light -- is
-	// the SAME body lying open again where he stands (M4.7 step 3), not a new
+	// the SAME body, Downed where he fell (S1 §6.2; M4.7 step 3b), not a new
 	// one. Only once: a second fall of the same member finds him lying.
 	if cid, ok := c.risenAs[id]; ok {
 		b := c.byID[cid]
 		if b != nil && b.State == CorpseRisen && c.walker[cid] == id {
-			b.State, b.X, b.Y = CorpseFresh, x, y
+			b.State, b.X, b.Y, b.DownedAt = CorpseDowned, x, y, c.minutes()
 			delete(c.walker, cid)
-			c.open(1)
 		}
 
 		return b
@@ -178,7 +188,7 @@ func (c *Corpses) Nearest(x, y, r float64, keep func(*Corpse) bool) *Corpse {
 // §2, the stake pins the corpse in the grave). It reports whether it did.
 func (c *Corpses) Close(id string) bool {
 	b, ok := c.byID[id]
-	if !ok || (b.State != CorpseFresh && b.State != CorpseHasty) {
+	if !ok || (b.State != CorpseFresh && b.State != CorpseHasty && b.State != CorpseDowned) {
 		return false
 	}
 
@@ -230,7 +240,37 @@ func (c *Corpses) Raised(bodyID, memberID string) {
 	if b, ok := c.byID[bodyID]; ok && b.State == CorpseRisen && memberID != "" {
 		c.risenAs[memberID] = bodyID
 		c.walker[bodyID] = memberID
+		c.last[bodyID] = memberID
 	}
+}
+
+// DownedMember reports a member whose body lies Downed now: he fell, and has
+// neither stood again nor been staked (M4.7 step 3b).
+func (c *Corpses) DownedMember(memberID string) bool {
+	cid, ok := c.risenAs[memberID]
+	if !ok {
+		return false
+	}
+
+	b := c.byID[cid]
+
+	return b != nil && b.State == CorpseDowned && c.last[cid] == memberID
+}
+
+// LastWalker is the last member a body walked as, standing or fallen, or "".
+// When a Downed man stands again the fallen one's remains are taken off the
+// map, so the body is never drawn twice.
+func (c *Corpses) LastWalker(bodyID string) string { return c.last[bodyID] }
+
+// SetClock attaches the world minutes a Downed body's window is measured on.
+func (c *Corpses) SetClock(now func() float64) { c.now = now }
+
+func (c *Corpses) minutes() float64 {
+	if c.now == nil {
+		return 0
+	}
+
+	return c.now()
 }
 
 // All is every body, in the order they fell (copies).

@@ -39,11 +39,14 @@ var placedDeadOffsets = [][2]float64{
 }
 
 var (
-	errStakeNoBody  = errors.New("no man's body at your feet")
-	errStakeCarcass = errors.New("a beast's carcass does not rise")
-	errStakeNone    = errors.New("no stake -- whittle one from a branch")
-	errDigNoBody    = errors.New("no open body at your feet")
-	errBodyGone     = errors.New("it is gone -- it rose while you worked")
+	errStakeNoBody   = errors.New("no man's body at your feet")
+	errStakeCarcass  = errors.New("a beast's carcass does not rise")
+	errStakeNone     = errors.New("no stake -- whittle one from a branch")
+	errDigNoBody     = errors.New("no open body at your feet")
+	errBodyGone      = errors.New("it is gone -- it rose while you worked")
+	errStakeTurn     = errors.New("not your turn")
+	errStakeSpent    = errors.New("your Action is spent this turn")
+	errStakeNoDowned = errors.New("no fallen dead at your feet")
 )
 
 // walkable reports a whole tile a body can lie on and he can reach -- the
@@ -167,6 +170,11 @@ func (v *Game) work(minutes float64) error {
 }
 
 func (v *Game) stake() (seen bool, err error) {
+	// M4.7 step 3b: in a fight the stake is an Action against a Downed man.
+	if v.inFight() && !v.died && v.alive() {
+		return false, v.stakeInFight()
+	}
+
 	if err := v.fieldWorkRefused(); err != nil {
 		return false, err
 	}
@@ -216,6 +224,56 @@ func (v *Game) stake() (seen bool, err error) {
 	return seen, nil
 }
 
+// stakeInFight drives a stake through a Downed man at his feet as his turn's
+// Action (M4.7 step 3b; R2 §3): no minutes -- the Action is the time. The
+// Action is spent first, through the combat's own commit, so a refused
+// commit spends no stake.
+func (v *Game) stakeInFight() error {
+	switch {
+	case v.combat == nil || v.corpses == nil || v.kit == nil || v.localPlayer == nil:
+		return errStakeNoBody
+	case !v.combat.Awaiting():
+		return errStakeTurn
+	case v.combat.ActionSpent():
+		return errStakeSpent
+	}
+
+	px, py := v.localPlayer.GetPositionF()
+
+	body := v.corpses.Nearest(px, py, stakeReach, func(b *d2world.Corpse) bool {
+		return b.State == d2world.CorpseDowned && b.Class == d2world.CorpseHuman
+	})
+	if body == nil {
+		return errStakeNoDowned
+	}
+
+	if !v.kit.Carries(stakeItem) {
+		return errStakeNone
+	}
+
+	if err := v.combat.Commit(d2world.CommitStake, body.ID); err != nil {
+		return err
+	}
+
+	// An unpaced Commit can close the turn and walk the enemies' blows at
+	// once: a dead man drives no stake (the step-3b review).
+	if v.died || !v.alive() {
+		return errCraftDead
+	}
+
+	if !v.kit.Use(stakeItem) || !v.corpses.Close(body.ID) {
+		return errBodyGone
+	}
+
+	if v.rising != nil {
+		v.rising.Rite()
+	}
+
+	v.saveKit()
+
+	return nil
+}
+
 func (v *Game) dig() error {
 	if err := v.fieldWorkRefused(); err != nil {
 		return err
@@ -259,9 +317,10 @@ func (v *Game) CorpseMarks() []d2player.CorpseMark {
 
 		marks = append(marks, d2player.CorpseMark{
 			X: b.X, Y: b.Y,
-			Open:  b.State == d2world.CorpseFresh,
-			Grave: b.State == d2world.CorpseHasty,
-			Human: b.Class == d2world.CorpseHuman,
+			Downed: b.State == d2world.CorpseDowned,
+			Open:   b.State == d2world.CorpseFresh,
+			Grave:  b.State == d2world.CorpseHasty,
+			Human:  b.Class == d2world.CorpseHuman,
 		})
 	}
 
@@ -298,7 +357,24 @@ func (v *Game) raiseTheDead(b d2world.Corpse) string {
 		return ""
 	}
 
-	return v.spawns.Raise(b.X, b.Y)
+	member := v.spawns.Raise(b.X, b.Y)
+
+	// A Downed man standing again: the remains of the one who fell are taken
+	// off the map, so the body is never drawn twice (step 3b). Their lay is
+	// a no-op -- he is no longer that member's walker.
+	if old := v.corpses.LastWalker(b.ID); member != "" && old != "" && old != member {
+		// Back into the fight he fell in, at once -- not as an arrival that
+		// must be noticed and in reach (the step-3b review).
+		if w, ok := v.spawns.Member(member); ok && v.combat != nil {
+			v.combat.Rejoin(old, w)
+		}
+
+		if p, ok := v.spawns.ProfileOf(old); ok && p.Dead {
+			v.spawns.Despawn(p.Group)
+		}
+	}
+
+	return member
 }
 
 // firstLight is R2 §2A: the dead break off. A fight they are in loses them

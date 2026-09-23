@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 32 playtest scripts.** That count, the harness version below and the
+**The 33 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -211,8 +211,9 @@ this doc fails until it agrees.
   and the fight ends `dawn` (`ended_dawn` 1), each risen lying down open where
   he stood and no risen group left on the map.
   Scripts about other things that cross a deep night (`combat_rout_test.go`,
-  `hands_test.go`'s `handsStart`, `night_render_test.go`) set `rising.p` to 0
-  so Night 1's dead stay down.
+  `hands_test.go`'s `handsStart`, `night_render_test.go`, and since step 3b
+  `spawns_test.go`, `squads_test.go`, `survive_test.go`, `watch_test.go`) set
+  `rising.p` to 0 so Night 1's dead stay down.
 * `hearth_test.go` — the thirty-second, M4.7 step 4 (23 Sep 2026): the priest's
   rite, the hearth unlock, and a staking seen. By day with the village
   "watching" (`village.seen_radius` wide) a stake costs standing 5 and marks
@@ -223,6 +224,16 @@ this doc fails until it agrees.
   rite; the next night the risen man carries a bar and the hover names him
   "the dead", and at first light the priest closes the grave. `village` now
   takes `rite_radius` and `seen_radius` as settable fields.
+* `downed_test.go` — the thirty-third, M4.7 step 3b (23 Sep 2026): a risen man
+  cut down lies Downed, the fight holds, and only a stake keeps him down.
+  Three of Night 1's dead are staked by day so one door is left; at night he
+  comes and, under the player's own control, strikes cut him down -- Downed,
+  and the fight does not end. The control: held turn after turn, his window
+  (`rising.downed_minutes`, 3 rounds) runs out and he stands again, back in the
+  same fight at once. Cut down again, X on the next turn drives a stake through
+  him as the Action: the body Closed, one stake spent, the fight won.
+  `dead_walk_test.go` gains act 5: the four laid Downed at first light stand
+  the next night at rising odds 0 (Q7a).
   Negative controls ran red for the stake not closing and a carcass staked.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,

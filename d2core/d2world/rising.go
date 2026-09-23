@@ -30,11 +30,15 @@ type RisingDials struct {
 	PerOpenAtDawn float64
 	// PerRite is taken off pressure for each rite (a stake is one).
 	PerRite float64
+	// DownedMinutes is a Downed man's window at night: R2 §3's [3] rounds at
+	// the combat dials' 1 world minute a round. Staked inside it he stays
+	// down; not, and he stands again, "possibly while the fight still runs".
+	DownedMinutes float64
 }
 
 // DefaultRisingDials are the M4.7 note's step-2 numbers.
 func DefaultRisingDials() RisingDials {
-	return RisingDials{P: 0.3, HastyWeight: 0.25, Pressure: 0, PerOpenAtDawn: 0.02, PerRite: 0.01}
+	return RisingDials{P: 0.3, HastyWeight: 0.25, Pressure: 0, PerOpenAtDawn: 0.02, PerRite: 0.01, DownedMinutes: 3}
 }
 
 // Rising rolls the doors once per band.
@@ -57,7 +61,13 @@ type Rising struct {
 	raise func(Corpse) string
 	// firstLight hears the night end (step 3): the dead break off.
 	firstLight func()
+	// now is world minutes, for a Downed man's window (step 3b).
+	now        func() float64
+	stoodAgain int
 }
+
+// SetClock attaches the world minutes a Downed man's window is measured on.
+func (r *Rising) SetClock(now func() float64) { r.now = now }
 
 // SetRaise attaches what stands a body up in the world.
 func (r *Rising) SetRaise(raise func(Corpse) string) { r.raise = raise }
@@ -98,6 +108,8 @@ func (r *Rising) Advance() {
 		for b := r.lastBand + 1; b <= band; b++ {
 			r.roll()
 		}
+
+		r.standTheDowned()
 	case r.lastBand >= 0:
 		for b := r.lastBand + 1; b < risingBands; b++ {
 			r.roll()
@@ -133,8 +145,19 @@ func (r *Rising) roll() {
 		}
 
 		odds := p
-		if b.State == CorpseHasty {
+
+		switch b.State {
+		case CorpseHasty:
 			odds *= r.dials.HastyWeight
+		case CorpseDowned:
+			// Q7a: a Downed man stands certainly in the next deep-night band
+			// -- once his window is up. One cut down a minute before a band
+			// turns keeps the rest of his window (the step-3b review);
+			// standTheDowned stands him when it runs out.
+			odds = 1
+			if !r.windowUp(b) {
+				odds = 0
+			}
 		}
 
 		if r.rng.Float64() >= odds {
@@ -157,9 +180,41 @@ func (r *Rising) roll() {
 	}
 }
 
+// windowUp reports a Downed man's window run out (always, with no clock).
+func (r *Rising) windowUp(b Corpse) bool {
+	return r.now == nil || r.now()-b.DownedAt >= r.dials.DownedMinutes
+}
+
+// standTheDowned is the window running out at night: each Downed man whose
+// minutes are up stands again where he lies (S1 §6.2). Not a roll -- no draw.
+func (r *Rising) standTheDowned() {
+	if r.now == nil {
+		return
+	}
+
+	for _, b := range r.corpses.All() {
+		if b.State != CorpseDowned || !r.windowUp(b) {
+			continue
+		}
+
+		member := ""
+		if r.raise != nil {
+			if member = r.raise(b); member == "" {
+				continue
+			}
+		}
+
+		if r.corpses.Rise(b.ID) {
+			r.stoodAgain++
+			r.corpses.Raised(b.ID, member)
+		}
+	}
+}
+
 func (r *Rising) dawn() {
 	for _, b := range r.corpses.All() {
-		if b.Class == CorpseHuman && b.State == CorpseFresh {
+		// A Downed man is an unrited body too.
+		if b.Class == CorpseHuman && (b.State == CorpseFresh || b.State == CorpseDowned) {
 			r.pressure += r.dials.PerOpenAtDawn
 		}
 	}
@@ -179,6 +234,7 @@ func (r *Rising) HarnessState() map[string]interface{} {
 	return map[string]interface{}{
 		"p": r.dials.P, "hasty_weight": r.dials.HastyWeight, "pressure": r.pressure,
 		"chance": r.Chance(), "band": r.lastBand, "rolls": r.rolls, "risen": r.risen,
+		"stood_again": r.stoodAgain, "downed_minutes": r.dials.DownedMinutes,
 	}
 }
 

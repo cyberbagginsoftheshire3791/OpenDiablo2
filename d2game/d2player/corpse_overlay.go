@@ -15,10 +15,11 @@ import (
 
 // CorpseMark is one body as the HUD marks it.
 type CorpseMark struct {
-	X, Y  float64
-	Open  bool
-	Grave bool
-	Human bool
+	X, Y   float64
+	Open   bool
+	Grave  bool
+	Human  bool
+	Downed bool // a risen man down, and not for long (M4.7 step 3b)
 }
 
 // CorpseHolder is what the HUD and controls ask about the dead.
@@ -63,6 +64,7 @@ const (
 	corpseMarkHuman = 0x8a1c14e0
 	corpseMarkBeast = 0x6a4a28c0
 	corpseMarkGrave = 0x3a2e20e0
+	corpseMarkDown  = 0xd8301cf0
 	corpseMarkShut  = 0x606060a0
 )
 
@@ -72,6 +74,8 @@ func (g *GameControls) SetCorpseHolder(h CorpseHolder) { g.corpseHolder = h }
 // markColour is a mark's fill.
 func markColour(m CorpseMark) uint32 {
 	switch {
+	case m.Downed:
+		return corpseMarkDown
 	case m.Open && m.Human:
 		return corpseMarkHuman
 	case m.Open:
