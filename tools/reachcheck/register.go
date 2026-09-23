@@ -273,6 +273,8 @@ var Register = []Entry{
 		"T2: his mail's share off a blow of its class, and the wear it takes for it.", ""},
 	{sym(pkgItems, "Kit.CanBlock"), BucketWire, VerdictLive,
 		"T2: an unruined shield in the off-hand; resolveBlow steps one blow a round down a band when it answers true.", ""},
+	{sym(pkgWorld, "Combat.EndedReason"), BucketWire, VerdictLive,
+		"Death screen v0 (23 Sep 2026): Game.deathCause reads it on the frame he dies, to say a fight killed him.", ""},
 	{sym(pkgItems, "LoadHero"), BucketWire, VerdictLive,
 		"T2/T3: reads the hero's kit and progress from beside his save when the controls bind; its absence opens the loadout choice. Replaces T2's LoadSidecar (retired at T3: reach measured it dead once the game moved here).", ""},
 	{sym(pkgItems, "SaveHero"), BucketWire, VerdictLive,

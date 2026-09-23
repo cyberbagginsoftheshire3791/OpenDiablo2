@@ -127,6 +127,17 @@ func NewGameServer(asset *d2asset.AssetManager,
 	return gameServer, nil
 }
 
+// PortFree reports whether a local game server could bind its port now --
+// false while a previous game's server still holds it.
+func PortFree() bool {
+	l, err := net.Listen("tcp4", "127.0.0.1:"+port)
+	if err != nil {
+		return false
+	}
+
+	return l.Close() == nil
+}
+
 // Start essentially starts all of the game server go routines as well as begins listening for connection. This will
 // return an error if it is unable to bind to a socket.
 func (g *GameServer) Start() error {

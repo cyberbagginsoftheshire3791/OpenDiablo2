@@ -42,6 +42,12 @@ func (sm *ScreenManager) SetNextScreen(screen Screen) {
 	sm.nextScreen = screen
 }
 
+// Idle reports that no screen is waiting or loading.
+func (sm *ScreenManager) Idle() bool { return sm.nextScreen == nil && sm.loadingScreen == nil }
+
+// Current is the screen in play (nil while one loads).
+func (sm *ScreenManager) Current() Screen { return sm.currentScreen }
+
 // Advance updates the UI on every frame
 func (sm *ScreenManager) Advance(elapsed float64) error {
 	switch {

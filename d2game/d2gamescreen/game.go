@@ -143,6 +143,7 @@ func CreateGame(
 		items:                items,
 		talents:              talents,
 		gameClient:           gameClient,
+		navigator:            navigator,
 		gameControls:         nil,
 		localPlayer:          nil,
 		lastRegionType:       d2enum.RegionNone,
@@ -319,7 +320,14 @@ type Game struct {
 
 	// dawnPaidDay is the day whose dawn has paid its night's experience, and
 	// noticeDelta is the Quiet Step radius change already applied (T3).
-	dawnPaidDay          int
+	dawnPaidDay int
+
+	// Death screen v0: who navigates away, whether he has died, how, and his
+	// kit-and-progress file as it was when he entered.
+	navigator            d2interface.Navigator
+	died                 bool
+	death                d2player.Death
+	heroAtEntry          heroSnapshot
 	noticeDelta          float64
 	gameClient           *d2client.GameClient
 	mapRenderer          *d2maprenderer.MapRenderer
@@ -576,6 +584,10 @@ func (v *Game) Advance(elapsed float64) error {
 
 	// T1: the paced fight's own clock runs on real seconds whenever the screen
 	// is live -- not under the escape menu, which pauses everything.
+	// Death screen v0: the frame he dies, the screen goes up and his file
+	// goes back.
+	v.noticeDeath()
+
 	if v.screenLive() {
 		v.tacticalAdvance(elapsed)
 
@@ -679,6 +691,13 @@ func (v *Game) worldRunning() bool {
 	if v.choosingLoadout {
 		return false
 	}
+
+	// Death screen v0 does NOT hold the world, deliberately. D2's own death
+	// screen lets the world run on behind it, and holding it here stalled
+	// every harness verb that steps world minutes through a death (the clock
+	// HUD's day-long step, the resolver's you-can-lose act) for nothing a dead
+	// man could use. The screen is modal instead: no key or click reaches the
+	// game (d2player.deathKey, GameControls.dead).
 
 	// T1: a PACED fight holds the world for its whole length, not only while
 	// his turn is open -- the packs' visible turns are part of the pause, and
@@ -1884,6 +1903,7 @@ func (v *Game) bindGameControls() error {
 		v.bindKit()
 		v.gameControls.SetKitHolder(v)
 		v.gameControls.SetProgressHolder(v)
+		v.gameControls.SetDeathHolder(v)
 
 		if err := v.inputManager.BindHandler(v.gameControls); err != nil {
 			v.Error(bindControlsErrStr + player.ID())

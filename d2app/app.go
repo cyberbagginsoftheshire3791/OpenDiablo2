@@ -80,6 +80,11 @@ type App struct {
 	*d2util.Logger
 	errorMessage error
 	*Options
+
+	// reloadPath is a save waiting to be opened once the game it replaces
+	// has fully gone (death screen v0's "load last save"; see ReloadGame).
+	reloadPath   string
+	reloadFrames int
 }
 
 // Options is used to store all of the app options that can be set with arguments
@@ -433,6 +438,8 @@ func (a *App) advanceOnce(elapsedUnscaled, elapsed, elapsedLastScreenAdvance, cu
 	if err := a.screen.Advance(elapsedLastScreenAdvance); err != nil {
 		return err
 	}
+
+	a.advanceReload()
 
 	a.ui.Advance(elapsed)
 

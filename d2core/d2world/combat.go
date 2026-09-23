@@ -1472,6 +1472,10 @@ func (e *encounter) endingReason() string {
 // counter. An encounter that starts and ends between two harness reads is
 // invisible in the state and obvious in the counters -- the same argument the
 // four counters at the top of this file were added for.
+// EndedReason is why the last encounter ended ("" before any). The death
+// screen reads it to say a fight killed him.
+func (c *Combat) EndedReason() string { return c.endedReason }
+
 func (c *Combat) end(reason string) {
 	c.payOpenRound()
 

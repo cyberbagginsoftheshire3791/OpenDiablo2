@@ -92,9 +92,13 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"kit_rows":         g.kitRowsReport(),
 
 		// T3: the talent panel and its cells, clickable where drawn.
-		"talent_open":       g.hud != nil && g.hud.talents != nil && g.hud.talents.open,
-		"talent_cells":      g.talentCellsReport(),
-		"talent_note":       g.talentNoteText(),
+		"talent_open":  g.hud != nil && g.hud.talents != nil && g.hud.talents.open,
+		"talent_cells": g.talentCellsReport(),
+		"talent_note":  g.talentNoteText(),
+
+		// Death screen v0.
+		"death_open":        g.dead(),
+		"death_lines":       g.deathLinesReport(),
 		"help_open":         g.HelpOverlay.IsOpen(),
 		"escape_menu_open":  g.escapeMenu.IsOpen(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
@@ -186,4 +190,13 @@ func (g *GameControls) talentNoteText() string {
 	}
 
 	return g.hud.talents.notice
+}
+
+// deathLinesReport is the death screen's text, as drawn.
+func (g *GameControls) deathLinesReport() []string {
+	if !g.dead() {
+		return []string{}
+	}
+
+	return append([]string(nil), g.hud.death.lines...)
 }

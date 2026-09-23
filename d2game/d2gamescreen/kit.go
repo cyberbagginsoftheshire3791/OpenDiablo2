@@ -30,6 +30,9 @@ func (v *Game) bindKit() {
 
 	v.kitPath = d2items.SidecarPath(v.gameClient.SaveFilePath)
 
+	// Death screen v0: the file as he enters, before anything here writes it.
+	v.snapshotHero()
+
 	kit, progress, err := d2items.LoadHero(v.kitPath, v.items)
 
 	// T3: his progress rides in the same file; none yet is a fresh hero.

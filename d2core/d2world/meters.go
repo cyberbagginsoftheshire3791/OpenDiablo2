@@ -379,7 +379,7 @@ func (m *Meters) HarnessState() map[string]interface{} {
 
 // HarnessSettableFields lists the test-setup writes the meters allow.
 func (m *Meters) HarnessSettableFields() []string {
-	return []string{"activity", "consume", "fatigue", "food", "water"}
+	return []string{"activity", "consume", "fatigue", "food", "health", "water"}
 }
 
 // HarnessSet writes one allow-listed field. The three meters are directly
@@ -412,6 +412,19 @@ func (m *Meters) HarnessSet(field string, value interface{}) error {
 
 	case "consume":
 		return m.consumeField(value)
+
+	case "health":
+		// Standing the body at a health is the same test setup as standing it
+		// at a meter -- the death screen's playtest needs a body at 0 without
+		// a day of starvation to get there (23 Sep 2026).
+		f, ok := toFloat(value)
+		if !ok || m.body == nil || f < 0 {
+			return fmt.Errorf("health wants a number >= 0 and a body, got %v", value)
+		}
+
+		m.body.SetHealth(int(f))
+
+		return nil
 
 	default:
 		return fmt.Errorf("no settable field %q", field)

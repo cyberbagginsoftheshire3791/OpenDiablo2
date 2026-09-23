@@ -331,6 +331,9 @@ type GameControls struct {
 	// progressHolder is the owner of his experience and talents (T3).
 	progressHolder ProgressHolder
 
+	// deathHolder is the owner of his death (death screen v0).
+	deathHolder DeathHolder
+
 	// squads is the owner the player commands (M4.4c-1): the click handler and
 	// the cycle key select through it, and the selection hit test reads its
 	// model entities. It is the same instance the game screen registered as the
@@ -365,6 +368,10 @@ type SkillResource struct {
 
 // OnKeyRepeat is called to handle repeated key presses
 func (g *GameControls) OnKeyRepeat(event d2interface.KeyEvent) bool {
+	if g.dead() {
+		return true
+	}
+
 	if g.FreeCam {
 		var moveSpeed float64 = 8
 		if event.KeyMod() == d2enum.KeyModShift {
@@ -405,6 +412,12 @@ func (g *GameControls) OnKeyRepeat(event d2interface.KeyEvent) bool {
 
 // OnKeyDown handles key presses
 func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
+	// Death screen v0: a dead man has two keys, Enter and Escape, and nothing
+	// else reaches the game -- not a panel, not a verb.
+	if g.deathKey(event) {
+		return true
+	}
+
 	if event.Key() == d2enum.KeyEscape {
 		// T2: Escape closes the kit panel first, like any other panel.
 		if g.hud != nil && g.hud.kit != nil && g.hud.kit.open {
@@ -517,6 +530,10 @@ func truncateFloat64(n float64) float64 {
 
 // OnMouseButtonRepeat handles repeated mouse clicks
 func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
+	if g.dead() {
+		return true
+	}
+
 	const (
 		screenWidth, screenHeight         = 800, 600
 		halfScreenWidth, halfScreenHeight = screenWidth / 2, screenHeight / 2
@@ -640,6 +657,10 @@ func (g *GameControls) OnMouseButtonUp(event d2interface.MouseEvent) bool {
 // OnMouseButtonDown handles mouse button presses
 func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	mx, my := event.X(), event.Y()
+
+	if g.dead() {
+		return true
+	}
 
 	// T2: the loadout choice is modal, and a click on the kit panel is a
 	// click on the kit.

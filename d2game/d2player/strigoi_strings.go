@@ -155,3 +155,15 @@ const (
 	ProgressTaken        = "%s is his."
 	ProgressLevelUp      = "Level %d  -  a talent to choose (T)"
 )
+
+// Death screen v0 (23 Sep 2026).
+const (
+	DeathTitle      = "YOU ARE DEAD"
+	DeathOnTheNight = "Died on the night of %s %d %s %d, at %s."
+	DeathOnTheDay   = "Died on %s %d %s %d, at %s."
+	DeathByFight    = "Brought down in a fight."
+	DeathByHunger   = "Hunger took him."
+	DeathByThirst   = "Thirst took him."
+	DeathWhatIsLost = "All since he last left the world is lost."
+	DeathKeys       = "Enter: load last save      Esc: quit to the menu"
+)

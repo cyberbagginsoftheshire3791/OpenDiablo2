@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 22 playtest scripts.** That count, the harness version below and the
+**The 23 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -123,6 +123,14 @@ this doc fails until it agrees.
   maximum health by exactly 30 against the Long Marches control; experience and
   talents are on disk when he leaves. The "progress" provider's `grant_xp` is
   its one arranging verb, used only after the kill has proved the earning path.
+* `death_test.go` — the twenty-third, death screen v0 (23 Sep 2026). A level
+  earned this session is on disk; at 0 health (the "meters" provider's
+  `health`, a test-setup write like the meters) the screen is up and names the
+  day; no panel opens and L lights nothing (the world is NOT held -- D2's own
+  death screen lets it run on); his kit file is
+  back to the bytes it held when he entered; Enter reloads the save and he
+  stands up alive at level 1. Negative controls run red for the rollback and
+  the key gate.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

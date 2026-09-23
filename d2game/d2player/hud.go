@@ -164,6 +164,10 @@ type HUD struct {
 	talents       *talentOverlay
 	talentsWidget *d2ui.CustomWidget
 
+	// Death screen v0: over everything.
+	death       *deathOverlay
+	deathWidget *d2ui.CustomWidget
+
 	// The selected-squad sheet (M4.4c-1, ruled ask 2/6): a panel of cards drawn
 	// by sheetWidget when sheetOpen, its Font16 lines painted through the
 	// invisible sheetLabel. It opens on selection and closes on deselect.
@@ -239,6 +243,7 @@ func NewHUD(
 		tactical:          newTacticalOverlay(ui),
 		kit:               newKitOverlay(ui),
 		talents:           newTalentOverlay(ui),
+		death:             newDeathOverlay(ui),
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -377,6 +382,12 @@ func (h *HUD) loadCustomWidgets() {
 	h.talentsWidget.SetPosition(0, 0)
 	h.talentsWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
 	h.panelGroup.AddWidget(h.talentsWidget)
+
+	// Death screen v0, added last so it draws over every other panel.
+	h.deathWidget = h.uiManager.NewCustomWidget(h.renderDeath, screenWidth, screenHeight)
+	h.deathWidget.SetPosition(0, 0)
+	h.deathWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.deathWidget)
 }
 
 func (h *HUD) loadSkillResources() {
@@ -840,6 +851,7 @@ func (h *HUD) Advance(elapsed float64) {
 	h.refreshTactical(elapsed)
 	h.refreshKit()
 	h.refreshTalents()
+	h.refreshDeath()
 	h.setStaminaTooltipText()
 	h.setExperienceTooltipText()
 
