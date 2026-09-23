@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 35 playtest scripts.** That count, the harness version below and the
+**The 36 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -271,6 +271,14 @@ this doc fails until it agrees.
   generated Act 1 world is built instead, no authored tile is in the renderer's
   cache, and the census now DOES list tile files -- so the village's zero was a
   measurement.
+* `hero_art_test.go` — the thirty-sixth, M5.3 (23 Sep 2026): the hero drawn
+  from Strigoi's own PNG sheets (`data/strigoi/hero/placeholder/hero.json`, a
+  PLACEHOLDER from `tools/heroplaceholder` until the real Janissary) instead of
+  Diablo II's class composite. Control first: a missing hero manifest is
+  refused by name and the player is drawn by the composite. Then the
+  placeholder: reported used, the player's body "png", and the body drawing
+  its walk sheet through a walk (TW) and its idle sheet at rest (TN) --
+  `body_sheet`, which the composite does not have. Screenshot as evidence.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.
@@ -303,6 +311,12 @@ player is always handle `p:1`; other entities are `e:N` in first-seen order
 with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING ·
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · AWAITING_PLAYER · INTERNAL`.
+`GAME_NOT_TICKING` (23 Sep 2026) also writes every goroutine's stack to
+`stall-tick<N>-<time>.txt` in the run directory -- once per stall, however many
+calls wait on it -- and names the file in the error and in one log line; the
+error says how many update ticks ran during the wait (none: the loop stopped;
+some, on a draw request: it updated without drawing). The stacks stay out of
+the log so they cannot evict the lines that show what the game was doing.
 `AWAITING_PLAYER` (M4.4c-2a) is `strigoi_step_world`'s refusal when a human turn
 is open: the turn freezes the world clock (`Game.worldRunning()` reads
 `Combat.Awaiting()`), so a `world_minutes` step would never converge and would
@@ -338,7 +352,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_ping` | Liveness, commit, harness version, mode, tick, uptime |
 | `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems |
 | `strigoi_navigate` | main_menu · character_select · select_hero · credits |
-| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame |
+| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame |
 | `strigoi_save_game` | Write the `.od2` |
 | `strigoi_quit` | Manifest + exit (confirm: true) |
 
@@ -708,7 +722,10 @@ register when the game screen is constructed and close on unload.
 Entity state today — `Player`: name, class, act, gold, level, experience,
 health/mana/stamina with maxima, the four attributes, in_town, running,
 run_toggled, casting, animation_mode, direction, path_len, speed, left/right
-skill ids. `NPC`: name, monstat (+ id), has_paths, paths, path_index, action,
+skill ids, and `body` -- `composite` (Diablo II's class art) or `png` (a
+Strigoi hero, M5.3) -- with, for a PNG hero, `body_sheet`: which of its sheets
+the current mode resolved to (idle, walk, attack, hit, death, dead ...,
+fallbacks included). `NPC`: name, monstat (+ id), has_paths, paths, path_index, action,
 repetitions, done, animation_mode, direction, path_len, speed.
 
 ## Input — two layers

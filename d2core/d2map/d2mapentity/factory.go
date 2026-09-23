@@ -146,10 +146,45 @@ func (f *MapEntityFactory) NewPlayer(id, name string, x, y, direction int, heroT
 		d2enum.CompositeTypeShield:    equipment.Shield.GetItemCode(),
 	}
 
-	composite, err := f.asset.LoadComposite(d2enum.ObjectTypePlayer, heroType.GetToken(),
-		d2resource.PaletteUnits)
-	if err != nil {
-		panic(err)
+	// The body: a PNG hero when one is set (M5.3, player_body.go), else
+	// Diablo II's composite for the class -- and the composite too when the
+	// hero art is refused, with the reason kept for HeroArtReport.
+	var body playerBody
+
+	if p := heroArtPath(); p != "" {
+		hero, err := f.loadHeroBody(p, equipment.RightHand.GetWeaponClass(), direction)
+		recordHeroArt(p, err)
+
+		if err == nil {
+			body = hero
+		} else {
+			fmt.Printf("hero art %s refused, drawing the Diablo II hero instead: %v\n", p, err)
+		}
+	}
+
+	if body == nil {
+		composite, err := f.asset.LoadComposite(d2enum.ObjectTypePlayer, heroType.GetToken(),
+			d2resource.PaletteUnits)
+		if err != nil {
+			panic(err)
+		}
+
+		if err := composite.SetMode(d2enum.PlayerAnimationModeTownNeutral, equipment.RightHand.GetWeaponClass()); err != nil {
+			panic(err)
+		}
+
+		composite.SetDirection(direction)
+
+		if err := composite.Equip(layerEquipment); err != nil {
+			fmt.Printf("failed to equip, err: %v\n", err)
+		}
+
+		body = compositeBody{composite}
+	}
+
+	drain := 0.0
+	if cs := f.asset.Records.Character.Stats[heroType]; cs != nil {
+		drain = float64(cs.StaminaRunDrain)
 	}
 
 	stats.NextLevelExp = f.asset.Records.GetExperienceBreakpoint(heroType, stats.Level)
@@ -158,15 +193,16 @@ func (f *MapEntityFactory) NewPlayer(id, name string, x, y, direction int, heroT
 	heroState, _ := f.CreateHeroState(name, heroType, stats)
 
 	result := &Player{
-		mapEntity:  newMapEntity(x, y),
-		composite:  composite,
-		Equipment:  equipment,
-		Stats:      heroState.Stats,
-		Skills:     heroState.Skills,
-		LeftSkill:  heroState.Skills[leftSkill],
-		RightSkill: heroState.Skills[rightSkill],
-		name:       name,
-		Class:      heroType,
+		mapEntity:       newMapEntity(x, y),
+		composite:       body,
+		staminaRunDrain: drain,
+		Equipment:       equipment,
+		Stats:           heroState.Stats,
+		Skills:          heroState.Skills,
+		LeftSkill:       heroState.Skills[leftSkill],
+		RightSkill:      heroState.Skills[rightSkill],
+		name:            name,
+		Class:           heroType,
 		//nameLabel:    d2ui.NewLabel(d2resource.FontFormal11, d2resource.PaletteStatic),
 		isRunToggled: false,
 		isInTown:     true,
@@ -178,17 +214,6 @@ func (f *MapEntityFactory) NewPlayer(id, name string, x, y, direction int, heroT
 	result.mapEntity.uuid = id
 	result.SetSpeed(baseWalkSpeed)
 	result.mapEntity.directioner = result.rotate
-
-	err = composite.SetMode(d2enum.PlayerAnimationModeTownNeutral, equipment.RightHand.GetWeaponClass())
-	if err != nil {
-		panic(err)
-	}
-
-	composite.SetDirection(direction)
-
-	if err := composite.Equip(layerEquipment); err != nil {
-		fmt.Printf("failed to equip, err: %v\n", err)
-	}
 
 	return result
 }

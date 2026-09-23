@@ -1,0 +1,16 @@
+{
+  "animations": {
+    "attack": "attack.png",
+    "dead": "dead.png",
+    "death": "death.png",
+    "hit": "hit.png",
+    "idle": "idle.png",
+    "walk": "walk.png"
+  },
+  "fps": {
+    "attack": 10,
+    "death": 8,
+    "hit": 10
+  },
+  "name": "Placeholder janissary (tools/heroplaceholder -- NOT the real art)"
+}

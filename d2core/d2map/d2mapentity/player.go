@@ -6,7 +6,6 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2inventory"
 )
@@ -16,7 +15,8 @@ type Player struct {
 	mapEntity
 	name              string
 	animationMode     string
-	composite         *d2asset.Composite
+	composite         playerBody // Diablo II's composite, or a PNG hero (player_body.go)
+	staminaRunDrain   float64    // the class's run drain (charstats), read once at creation
 	Equipment         *d2inventory.CharacterEquipment
 	Stats             *d2hero.HeroStatsState
 	Skills            map[int]*d2hero.HeroSkill
@@ -122,8 +122,7 @@ func (p *Player) Advance(tickTime float64) {
 		p.animationMode = p.composite.GetAnimationMode()
 	}
 
-	charstats := p.composite.AssetManager.Records.Character.Stats[p.Class]
-	staminaDrain := float64(charstats.StaminaRunDrain)
+	staminaDrain := p.staminaRunDrain
 
 	// This number has been determined by trying it out and checking if the stamina drain is
 	// the same as in d2 with the drain value from the assets.
@@ -259,9 +258,14 @@ func (p *Player) GetVelocity() d2vector.Vector {
 // GetSize returns the current frame size
 func (p *Player) GetSize() (width, height int) {
 	width, height = p.composite.GetSize()
-	// https://github.com/OpenDiablo2/OpenDiablo2/issues/820
-	// nolint:gomnd // returns 1.5 of height
-	height = (height * 2) - (height / 2)
+
+	// The composite reports half its drawn height
+	// (https://github.com/OpenDiablo2/OpenDiablo2/issues/820); a PNG hero
+	// reports its frame, which is the whole of it.
+	if _, composite := p.composite.(compositeBody); composite {
+		// nolint:gomnd // returns 1.5 of height
+		height = (height * 2) - (height / 2)
+	}
 
 	return width, height
 }

@@ -40,6 +40,13 @@ func (p *Player) HarnessState() map[string]interface{} {
 
 	if p.composite != nil {
 		state["direction"] = p.composite.GetDirection()
+
+		// Which body draws him: Diablo II's composite or a PNG hero (M5.3).
+		state["body"] = "composite"
+		if png, ok := p.composite.(*pngBody); ok {
+			state["body"] = "png"
+			state["body_sheet"] = png.Sheet()
+		}
 	}
 
 	if p.LeftSkill != nil && p.LeftSkill.SkillRecord != nil {

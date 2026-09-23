@@ -24,6 +24,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2term"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
@@ -157,6 +158,7 @@ type harnessStartGameIn struct {
 	Seed        *int64  `json:"seed,omitempty" jsonschema:"nonzero: seed map generation, the world RNG, and entity IDs for a reproducible run (P3 E3/E5); overrides a pending set_seed"`
 	WaitSeconds float64 `json:"wait_seconds,omitempty" jsonschema:"how long to wait for the world to be ready; default 25"`
 	Loadout     string  `json:"loadout,omitempty" jsonschema:"new heroes only: sword-and-board or torch-and-blade (the default), or ask to leave the first-entry loadout choice open"`
+	HeroArt     string  `json:"hero_art,omitempty" jsonschema:"M5.3: draw the hero from this PNG hero manifest (game-relative, e.g. data/strigoi/hero/placeholder/hero.json); \"composite\" returns to Diablo II's class art; omit to keep the current setting (the -hero flag)"`
 	Map         string  `json:"map,omitempty" jsonschema:"M5.4: build the world from this authored Tiled map (.tmj, game-relative, e.g. data/strigoi/maps/village.tmj) instead of generating Act 1; stays set for later games in this process; \"generated\" returns to the generated world. Omit to keep the current setting (the -map flag, or the generated world)"`
 }
 
@@ -171,6 +173,10 @@ type harnessStartGameOut struct {
 	MapAsked string `json:"map_asked,omitempty"`
 	MapBuilt string `json:"map_built,omitempty"`
 	MapError string `json:"map_error,omitempty"`
+	// M5.3: the hero art asked for, used, and why it was refused.
+	HeroAsked string `json:"hero_asked,omitempty"`
+	HeroUsed  string `json:"hero_used,omitempty"`
+	HeroError string `json:"hero_error,omitempty"`
 }
 
 type harnessSaveGameOut struct {
@@ -328,6 +334,14 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			// default crypto-random IDs and the wall-clock map seed.
 			// "generated" returns to the generated world; "" keeps whatever is
 			// set (the -map flag, or an earlier start_game in this process).
+			switch in.HeroArt {
+			case "":
+			case "composite":
+				d2mapentity.SetHeroArt("")
+			default:
+				d2mapentity.SetHeroArt(in.HeroArt)
+			}
+
 			switch in.Map {
 			case "":
 			case "generated":
@@ -465,6 +479,13 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 
 				if mapErr != nil {
 					out.MapError = mapErr.Error()
+				}
+
+				var heroErr error
+				out.HeroAsked, out.HeroUsed, heroErr = d2mapentity.HeroArtReport()
+
+				if heroErr != nil {
+					out.HeroError = heroErr.Error()
 				}
 
 				return harnessText("in game · player %s at tile %.1f,%.1f · seed %d", out.Player, out.Spawn[0], out.Spawn[1], out.Seed), out, nil
