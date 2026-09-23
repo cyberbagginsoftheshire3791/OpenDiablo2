@@ -64,10 +64,11 @@ type harnessInputOut struct {
 // applied frame is over.
 func harnessWaitFrameAfter(applied int64) error {
 	deadline := time.Now().Add(harnessToolTimeout)
+	start := atomic.LoadInt64(&harness.tick)
 
 	for atomic.LoadInt64(&harness.tick) <= applied {
 		if time.Now().After(deadline) {
-			return errGameNotTicking
+			return harnessNotTicking(start)
 		}
 
 		time.Sleep(time.Millisecond)

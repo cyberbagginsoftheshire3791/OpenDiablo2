@@ -21,6 +21,11 @@ $ok = ($o | Where-Object { $_ -match '^ok' }).Count
 $fail = ($o | Where-Object { $_ -match 'FAIL' }).Count
 "test exit=$LASTEXITCODE ok=$ok fail=$fail" | Out-File $Log -Append
 $o | Where-Object { $_ -match 'FAIL|panic|\.go:' } | Out-File $Log -Append
+# The harness's own unit tests (d2app, 23 Sep 2026): tagged `harness`, so the
+# untagged run above -- and CI's -- never builds them (d2app links ebiten's UI;
+# see BUG-13 below). This machine has a screen, so they run here.
+$o = & go test -count=1 -tags harness ./d2app 2>&1
+"test harness exit=$LASTEXITCODE $(($o | Where-Object { $_ -match '^ok|FAIL|panic' }) -join ' ')" | Out-File $Log -Append
 $deps = & go list -deps ./d2core/d2world 2>&1
 "ebiten in d2world deps: $(($deps | Where-Object { $_ -match 'hajimehoshi/ebiten' }).Count)" | Out-File $Log -Append
 $deps = & go list -deps ./d2core/d2input 2>&1

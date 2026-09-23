@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -285,19 +286,93 @@ var errGameNotTicking = fmt.Errorf("GAME_NOT_TICKING: the game loop did not serv
 
 func harnessRunOn(q chan harnessCmd, fn func()) error {
 	c := harnessCmd{fn: fn, done: make(chan struct{})}
+	before := atomic.LoadInt64(&harness.tick)
 
 	select {
 	case q <- c:
 	case <-time.After(harnessToolTimeout):
-		return errGameNotTicking
+		return harnessNotTicking(before)
 	}
 
 	select {
 	case <-c.done:
 		return nil
 	case <-time.After(harnessToolTimeout):
-		return errGameNotTicking
+		return harnessNotTicking(before)
 	}
+}
+
+// harnessNotTickingStackCap bounds the goroutine dump.
+const harnessNotTickingStackCap = 1 << 20
+
+// harnessNotTicking is the error for a request the loop did not service in
+// time -- and the instrument for finding out why. The cause is otherwise
+// invisible from outside (docs/bugs.md: TownWalk's screenshot stall, seen
+// twice, the log ending mid-load each time), so it writes every goroutine's
+// stack to a file in the run directory and names the file in the log and the
+// error. It also says how many update ticks ran during the wait: none is a
+// loop that stopped; some, on a draw request, is a loop updating without
+// drawing.
+//
+// The stacks go to a FILE, not the log: a dump is thousands of lines, and in
+// the log's 5000-line ring it would evict exactly the lines that show what the
+// game was doing when it stalled.
+func harnessNotTicking(before int64) error {
+	now := atomic.LoadInt64(&harness.tick)
+	ticked := now - before
+	file := harnessDumpStacks(now)
+
+	log.Printf("harness: GAME_NOT_TICKING -- %d update ticks ran during the wait; every goroutine's stack is in %s", ticked, file)
+
+	return fmt.Errorf("%w (%d update ticks ran during the wait; stacks in %s)", errGameNotTicking, ticked, file)
+}
+
+// harnessStall remembers the last stack dump, so a loop stuck on one tick
+// answers every tool call waiting on it with ONE dump, not one each.
+//
+// nolint:gochecknoglobals // one loop per process, one stall at a time
+var harnessStall struct {
+	sync.Mutex
+	tick int64
+	file string
+}
+
+// harnessDumpStacks writes every goroutine's stack to a file in the run
+// directory (the system temp directory when there is none) and returns its
+// name -- or the earlier dump's, if the loop has not ticked since.
+func harnessDumpStacks(tick int64) string {
+	harnessStall.Lock()
+	defer harnessStall.Unlock()
+
+	if harnessStall.file != "" && harnessStall.tick == tick {
+		return harnessStall.file
+	}
+
+	buf := make([]byte, harnessNotTickingStackCap)
+	n := runtime.Stack(buf, true)
+	dump := buf[:n]
+
+	if n == len(buf) {
+		dump = append(dump, fmt.Sprintf("\n... TRUNCATED at %d bytes\n", len(buf))...)
+	}
+
+	dir := harness.runDir
+	if dir == "" {
+		dir = os.TempDir()
+	}
+
+	file := filepath.Join(dir, fmt.Sprintf("stall-tick%d-%s.txt", tick, time.Now().Format("150405.000")))
+
+	if err := os.WriteFile(file, dump, 0o640); err != nil {
+		// No file, so the log is the only place left to put them.
+		log.Printf("harness: cannot write the stall's stacks to %s (%v); they follow\n%s", file, err, dump)
+
+		file = "the game log (the stack file could not be written)"
+	}
+
+	harnessStall.tick, harnessStall.file = tick, file
+
+	return file
 }
 
 func harnessOnUpdate(fn func()) error { return harnessRunOn(harness.updateQ, fn) }
