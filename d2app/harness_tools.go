@@ -24,6 +24,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2term"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket"
@@ -156,6 +157,7 @@ type harnessStartGameIn struct {
 	Seed        *int64  `json:"seed,omitempty" jsonschema:"nonzero: seed map generation, the world RNG, and entity IDs for a reproducible run (P3 E3/E5); overrides a pending set_seed"`
 	WaitSeconds float64 `json:"wait_seconds,omitempty" jsonschema:"how long to wait for the world to be ready; default 25"`
 	Loadout     string  `json:"loadout,omitempty" jsonschema:"new heroes only: sword-and-board or torch-and-blade (the default), or ask to leave the first-entry loadout choice open"`
+	Map         string  `json:"map,omitempty" jsonschema:"M5.4: build the world from this authored Tiled map (.tmj, game-relative, e.g. data/strigoi/maps/village.tmj) instead of generating Act 1; stays set for later games in this process; \"generated\" returns to the generated world. Omit to keep the current setting (the -map flag, or the generated world)"`
 }
 
 type harnessStartGameOut struct {
@@ -164,6 +166,11 @@ type harnessStartGameOut struct {
 	Seed     int64      `json:"seed"`
 	Spawn    [2]float64 `json:"spawn_tile"`
 	WaitedS  float64    `json:"waited_s"`
+	// M5.4: the authored map asked for, the one actually built ("" when the
+	// world was generated), and why an asked-for map was refused.
+	MapAsked string `json:"map_asked,omitempty"`
+	MapBuilt string `json:"map_built,omitempty"`
+	MapError string `json:"map_error,omitempty"`
 }
 
 type harnessSaveGameOut struct {
@@ -319,6 +326,16 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			// Seed the in-process server's map generation (one-shot, E3) and
 			// make entity IDs reproducible (E5). Unseeded runs restore the
 			// default crypto-random IDs and the wall-clock map seed.
+			// "generated" returns to the generated world; "" keeps whatever is
+			// set (the -map flag, or an earlier start_game in this process).
+			switch in.Map {
+			case "":
+			case "generated":
+				d2mapgen.SetAuthoredMap("")
+			default:
+				d2mapgen.SetAuthoredMap(in.Map)
+			}
+
 			if seed != 0 {
 				d2server.SetNextGameSeed(seed)
 				uuid.SetRand(mrand.New(mrand.NewSource(seed)))
@@ -440,6 +457,15 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 				}
 
 				out.WaitedS = time.Since(begin).Seconds()
+
+				// M5.4: which world this is. Read after the client's own
+				// generation has run, so it reports the map both halves built.
+				var mapErr error
+				out.MapAsked, out.MapBuilt, mapErr = d2mapgen.AuthoredMapReport()
+
+				if mapErr != nil {
+					out.MapError = mapErr.Error()
+				}
 
 				return harnessText("in game · player %s at tile %.1f,%.1f · seed %d", out.Player, out.Spawn[0], out.Spawn[1], out.Seed), out, nil
 			}

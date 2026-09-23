@@ -36,3 +36,14 @@ One player's first day and night (`playtest/census_test.go`). **365 files from D
 | `data/global/chars` (20) | **the hero** (the amazon) | our Janissary as PNG sheets |
 | `data/local/font` (20) | the fonts | our own fonts (any free TTF, rendered to the same interface) |
 | `data/global/items` (11), `palette` (6), `sfx` (4), `music` (2), `lng` (3) | inventory art, palettes, sounds, music, the string tables | our own art, sound and a Strigoi string table |
+
+## Measured: the authored village (M5.4, 23 Sep 2026)
+
+`authored_map_test.go` builds the Tiled village in a fresh process and reads
+the census before anything else happens: **0 tile files (`.dt1`/`.ds1`) and
+219 MPQ files in all** at that point (menus, UI, fonts, palettes, the hero's
+and villagers' sprites, the data tables). Building the generated Act 1 world
+afterwards in the same process takes it to 361. An authored map resets the
+engine without the level type's DT1s (`MapEngine.ResetAuthoredMap`), and the
+game server no longer resets to a throw-away 100x100 Act 1 map before the
+generator builds the real one.

@@ -105,7 +105,12 @@ func NewGameServer(asset *d2asset.AssetManager,
 
 	mapEngine := d2mapengine.CreateMapEngine(l, asset)
 	mapEngine.SetSeed(gameServer.seed)
-	mapEngine.ResetMap(d2enum.RegionAct1Town, 100, 100)
+
+	// No ResetMap here: GenerateAct1Overworld resets the engine itself, to
+	// the size and tiles of whichever world it builds. The 100x100 Act 1
+	// reset that stood here loaded the town's DT1 files from the MPQs for a
+	// map that was thrown away before anything read it -- and, since M5.4,
+	// loaded them even for an authored world that draws none of them.
 
 	mapGen, err := d2mapgen.NewMapGenerator(asset, l, mapEngine)
 	if err != nil {

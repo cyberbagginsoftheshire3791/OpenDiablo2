@@ -41,6 +41,20 @@ func (g *MapGenerator) GenerateAct1Overworld() {
 	// could diverge; drawing from the engine's own generator fixes both.
 	g.rng = g.engine.Rand()
 
+	// M5.4: an authored (Tiled) map replaces the whole generated world when
+	// one is set (authored.go). Refused whole or built whole, never in part;
+	// a refusal falls through to the generated world with the reason logged.
+	if p := authoredMapPath(); p != "" {
+		err := g.generateAuthored(p)
+		recordAuthored(p, err)
+
+		if err == nil {
+			return
+		}
+
+		g.Errorf("authored map refused, generating the Act 1 world instead: %v", err)
+	}
+
 	wilderness1Details := g.asset.Records.GetLevelDetails(wildernessDetailsRecordID)
 
 	g.engine.ResetMap(d2enum.RegionAct1Town, mapWidth, mapHeight)

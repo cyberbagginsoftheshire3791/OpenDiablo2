@@ -1,6 +1,7 @@
 package d2mapengine
 
 import (
+	"image"
 	"math/rand"
 	"strings"
 
@@ -37,6 +38,11 @@ type MapEngine struct {
 	startSubTileX int                       // Starting X position
 	startSubTileY int                       // Starting Y position
 	dt1Files      []string                  // List of DS1 strings
+
+	// An authored (Tiled) map's art and start (authored.go); nil on a
+	// generated map. ResetMap clears both.
+	authoredImages map[AuthoredKey]*image.RGBA
+	authoredStart  *[2]float64
 
 	// Which authored bits line of sight obeys. Set explicitly in
 	// CreateMapEngine rather than left to the zero value, because the zero
@@ -88,16 +94,32 @@ func (m *MapEngine) GetStartingPosition() (x, y int) {
 
 // ResetMap clears all map and entity data and reloads it from the cached files.
 func (m *MapEngine) ResetMap(levelType d2enum.RegionIdType, width, height int) {
+	m.resetState(levelType, width, height)
+
+	for idx := range m.levelType.Files {
+		m.addDT1(m.levelType.Files[idx])
+	}
+}
+
+// ResetAuthoredMap is ResetMap for an authored (Tiled) map, M5.4: the same
+// clean slate and the same level type -- the region every system and the
+// palette are keyed to -- and NONE of that level type's Diablo II DT1 files.
+// An authored map's tiles are all its own (AuthoredStyle, authored.go), so
+// loading the Act 1 town's tile sets would only read the MPQs for art that
+// is never drawn; the asset census counts every such read.
+func (m *MapEngine) ResetAuthoredMap(levelType d2enum.RegionIdType, width, height int) {
+	m.resetState(levelType, width, height)
+}
+
+func (m *MapEngine) resetState(levelType d2enum.RegionIdType, width, height int) {
 	m.entities = make(map[string]d2interface.MapEntity)
 	m.levelType = *m.asset.Records.Level.Types[levelType]
 	m.size = d2geom.Size{Width: width, Height: height}
 	m.tiles = make([]MapTile, width*height)
 	m.dt1TileData = make([]d2dt1.Tile, 0)
 	m.dt1Files = make([]string, 0)
-
-	for idx := range m.levelType.Files {
-		m.addDT1(m.levelType.Files[idx])
-	}
+	m.authoredImages = nil
+	m.authoredStart = nil
 }
 
 func (m *MapEngine) addDT1(fileName string) {
@@ -331,6 +353,12 @@ func (m *MapEngine) GetTiles(style, sequence int, tileType d2enum.TileType) []d2
 
 // GetStartPosition returns the spawn point on entering the current map.
 func (m *MapEngine) GetStartPosition() (x, y float64) {
+	// An authored map names its start outright (M5.4); there is no special
+	// wall tile in it to find.
+	if m.authoredStart != nil {
+		return m.authoredStart[0], m.authoredStart[1]
+	}
+
 	for tileY := 0; tileY < m.size.Height; tileY++ {
 		for tileX := 0; tileX < m.size.Width; tileX++ {
 			tile := m.tiles[tileX+(tileY*m.size.Width)].Components

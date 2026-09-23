@@ -34,6 +34,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2input"
 	ebiteninput "github.com/OpenDiablo2/OpenDiablo2/d2core/d2input/ebiten"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2render/ebiten"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2term"
@@ -220,6 +221,7 @@ func (a *App) parseArguments() {
 	a.Options.LogLevel = flag.Int("l", d2util.LogLevelDefault, descLogging)
 	showVersion := flag.Bool("v", false, "Show version")
 	showHelp := flag.Bool("h", false, "Show help")
+	authoredMap := flag.String("map", "", "play on an authored Tiled map (.tmj, game-relative, e.g. data/strigoi/maps/village.tmj) instead of the generated Act 1 world")
 
 	flag.Usage = func() {
 		fmt.Printf("usage: %s [<flags>]\n\nFlags:\n", os.Args[0])
@@ -231,6 +233,9 @@ func (a *App) parseArguments() {
 	if *a.Options.LogLevel >= d2util.LogLevelUnspecified {
 		*a.Options.LogLevel = d2util.LogLevelDefault
 	}
+
+	// M5.4: set before any game exists, so the first world is the authored one.
+	d2mapgen.SetAuthoredMap(*authoredMap)
 
 	if *showVersion {
 		a.Infof("version: OpenDiablo2 (%s %s)", a.gitBranch, a.gitCommit)

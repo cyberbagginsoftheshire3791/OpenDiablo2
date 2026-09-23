@@ -6,6 +6,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2dt1"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 )
 
 const (
@@ -29,11 +30,20 @@ func (mr *MapRenderer) generateTileCache() {
 		mr.Error(err.Error())
 	}
 
+	mr.registerAuthoredImages()
+
 	tiles := *mr.mapEngine.Tiles()
 	for idx := range tiles {
 		tile := &tiles[idx]
 
+		// Authored tiles (M5.4) are never looked up in the DT1s: their art was
+		// registered above, and the builders below would find no DT1 tile for
+		// the reserved style and log an error for every one of them.
 		for i := range tile.Components.Floors {
+			if d2mapengine.IsAuthoredTile(&tile.Components.Floors[i]) {
+				continue
+			}
+
 			if !tile.Components.Floors[i].Hidden() && tile.Components.Floors[i].Prop1 != 0 {
 				mr.generateFloorCache(&tile.Components.Floors[i])
 			}
@@ -46,10 +56,26 @@ func (mr *MapRenderer) generateTileCache() {
 		}
 
 		for i := range tile.Components.Walls {
+			if d2mapengine.IsAuthoredTile(&tile.Components.Walls[i]) {
+				continue
+			}
+
 			if !tile.Components.Walls[i].Hidden() && tile.Components.Walls[i].Prop1 != 0 {
 				mr.generateWallCache(&tile.Components.Walls[i])
 			}
 		}
+	}
+}
+
+// registerAuthoredImages puts an authored map's tile art (M5.4) into the image
+// cache under the reserved style, where renderFloor and renderWall find it
+// exactly as they find a DT1 tile's. Nothing to do on a generated map.
+func (mr *MapRenderer) registerAuthoredImages() {
+	for key, img := range mr.mapEngine.AuthoredImages() {
+		b := img.Bounds()
+		surface := mr.renderer.NewSurface(b.Dx(), b.Dy())
+		surface.ReplacePixels(img.Pix)
+		mr.setImageCacheRecord(d2mapengine.AuthoredStyle, key.Sequence, key.Type, 0, surface)
 	}
 }
 

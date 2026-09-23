@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 34 playtest scripts.** That count, the harness version below and the
+**The 35 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -241,11 +241,26 @@ this doc fails until it agrees.
   One player's first day and night (the kit, talents and help panels, a talk,
   a forage, a night as shipped), then the "assets" provider's census --
   every file loaded and whether it came from a Diablo II MPQ or from Strigoi's
-  own files -- written to `strigoi-harness-runssset-census.{md,tsv}`. It
+  own files -- written to `strigoi-harness-runs\asset-census.{md,tsv}`. It
   asserts only that both kinds were seen and that nothing under
   `data/strigoi/` came from an MPQ; the MPQ count is reported, not pinned,
   because it is meant to fall. Baseline in `docs/asset-census.md`.
   Negative controls ran red for the stake not closing and a carcass staked.
+* `authored_map_test.go` — the thirty-fifth, M5.4 (23 Sep 2026): the world
+  built from a Tiled map (`data/strigoi/maps/village.tmj`) instead of Diablo
+  II's DS1 stamps, held against the map FILE parsed by the same package the
+  game uses. The village first, in a fresh process: reported built, not one
+  Diablo II tile file (`.dt1`/`.ds1`) in the asset census, the player in its
+  start tile, no tile past its 48x48 edge, the fence solid on all 25 sub-tiles
+  and the road open, a route out through the fence that steps on no blocked
+  tile (so it went by the gate), a church tile unreachable, the cached floor
+  surfaces equal to the repo's PNGs pixel for pixel (opaque and transparent),
+  the four speakers' stand-ins where the map put them under the labels the
+  dialogue binds, a walk out of the gate, and a daylight screenshot of the gate
+  as evidence only. Then the control: a missing map is refused whole, the
+  generated Act 1 world is built instead, no authored tile is in the renderer's
+  cache, and the census now DOES list tile files -- so the village's zero was a
+  measurement.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.
@@ -313,7 +328,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_ping` | Liveness, commit, harness version, mode, tick, uptime |
 | `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems |
 | `strigoi_navigate` | main_menu · character_select · select_hero · credits |
-| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs); returns after the first game frame |
+| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame |
 | `strigoi_save_game` | Write the `.od2` |
 | `strigoi_quit` | Manifest + exit (confirm: true) |
 

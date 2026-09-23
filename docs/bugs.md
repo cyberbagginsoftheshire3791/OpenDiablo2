@@ -91,5 +91,6 @@ the hardening burst on is added here.
 | 2026-09-23 | T1–T9 (Cowork, Opus 5.5) | ~500 | 1 | Nine full-suite runs (43–49 launches each) plus targeted runs and negative controls, 23 Sep. **One BUG-5 startup crash**: the T9 full run's `TestFeralDogStillInGame` died loading the main menu (`fontridiculous.tbl: EOF`, then a nil dereference in `MainMenu.createMainMenuButtons` → `NewButton`, `game-20260923-063622.log`); re-run alone 3/3 green. Separately a Windows save-rename failure ("Access is denied") made `TestKit` flaky ~1 in 5 until T6's `WriteFileAtomic` -- a real bug, not BUG-5. |
 
 | 2026-09-23 | M4.7 steps 1-4 (Cowork, Opus 5.5) | ~260 | 3 | Four full runs and targeted reruns. **Three BUG-5 crashes in the step-3b run** (TestCombatResolver, TestCraft, TestWolfStillInGame), all at main-menu load while a parallel build loaded the machine; the third was read rather than re-run, and it named the cause (BUG-5 row). |
+| 2026-09-23 | M5.4 (Cowork, Opus 5.5) | ~61 | 0 | M5.4's development and negative-control runs of `authored_map_test.go` (~12, several red on purpose) and the full suite at the M5.4 tree (**49 launches, 55 pass / 1 opt-in skip, 995 s**). No startup crash. |
 
 *The night is the enemy · history is the clock · grounded, then supernatural · one region done deeply.*
