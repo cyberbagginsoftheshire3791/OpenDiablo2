@@ -47,6 +47,11 @@ type GameClient struct {
 	Seed             int64                          // Map seed
 	RegenMap         bool                           // Regenerate tile cache on render (map has changed)
 
+	// SaveFilePath is the hero save this client opened. Strigoi keeps its own
+	// per-hero data (the kit, T2) in a sidecar beside it, so it must know which
+	// save is in play. Empty for a remote client.
+	SaveFilePath string
+
 	*d2util.Logger
 }
 
@@ -102,6 +107,8 @@ func Create(connectionType d2clientconnectiontype.ClientConnectionType,
 // If the client is remote it sends a PlayerConnectionRequestPacket to the
 // server (see d2netpacket).
 func (g *GameClient) Open(connectionString, saveFilePath string) error {
+	g.SaveFilePath = saveFilePath
+
 	switch g.connectionType {
 	case d2clientconnectiontype.LANServer, d2clientconnectiontype.Local:
 		g.scriptEngine.AllowEval()

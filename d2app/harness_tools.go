@@ -23,6 +23,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2term"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket"
@@ -154,6 +155,7 @@ type harnessStartGameIn struct {
 	HeroClass   string  `json:"hero_class,omitempty" jsonschema:"one of: amazon, assassin, barbarian, druid, necromancer, paladin, sorceress"`
 	Seed        *int64  `json:"seed,omitempty" jsonschema:"nonzero: seed map generation, the world RNG, and entity IDs for a reproducible run (P3 E3/E5); overrides a pending set_seed"`
 	WaitSeconds float64 `json:"wait_seconds,omitempty" jsonschema:"how long to wait for the world to be ready; default 25"`
+	Loadout     string  `json:"loadout,omitempty" jsonschema:"new heroes only: sword-and-board or torch-and-blade (the default), or ask to leave the first-entry loadout choice open"`
 }
 
 type harnessStartGameOut struct {
@@ -358,9 +360,25 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 				}
 
 				savePath = state.FilePath
+
+				// T2: a fresh hero gets his kit written beside his save, so a
+				// script does not open on the loadout choice -- unless it asks
+				// for exactly that ("ask"), which is how the choice is tested.
+				if err := harnessWriteKit(a, savePath, in.Loadout); err != nil {
+					startErr = err
+					return
+				}
 			} else if _, err := os.Stat(savePath); err != nil {
 				startErr = harnessErr("SAVE_NOT_FOUND", fmt.Sprintf("no save at %q", savePath), "pass hero_name+hero_class to create one")
 				return
+			} else if _, err := os.Stat(d2items.SidecarPath(savePath)); os.IsNotExist(err) {
+				// T2: an existing save with no kit (every pre-T2 save) would
+				// open on the loadout choice and hold the world; give it the
+				// requested kit unless the script asked to see the choice.
+				if err := harnessWriteKit(a, savePath, in.Loadout); err != nil {
+					startErr = err
+					return
+				}
 			}
 
 			a.ToCreateGame(savePath, d2clientconnectiontype.Local, "")
@@ -930,4 +948,43 @@ func (a *App) harnessAddActionTools(srv *mcp.Server) {
 
 		return harnessText("timeout at %.2f,%.2f after %d ticks", out.Position[0], out.Position[1], out.Ticks), out, nil
 	})
+}
+
+// harnessWriteKit writes a new hero's starting kit (T2). "" is the catalogue's
+// default loadout; "ask" writes nothing.
+func harnessWriteKit(a *App, savePath, loadout string) error {
+	// "ask" must really leave the choice open: a fresh hero can reuse a save
+	// name whose old kit file is still there, so it is removed, not skipped.
+	if loadout == "ask" {
+		if err := os.Remove(d2items.SidecarPath(savePath)); err != nil && !os.IsNotExist(err) {
+			return harnessErr("INTERNAL", fmt.Sprintf("kit: %v", err), "")
+		}
+
+		return nil
+	}
+
+	data, err := a.asset.LoadFile("/data/strigoi/items.json")
+	if err != nil {
+		return harnessErr("INTERNAL", fmt.Sprintf("item table: %v", err), "")
+	}
+
+	cat, err := d2items.Load(data)
+	if err != nil {
+		return harnessErr("INTERNAL", fmt.Sprintf("item table: %v", err), "")
+	}
+
+	if loadout == "" {
+		loadout = cat.DefaultLoadout()
+	}
+
+	kit, err := cat.NewKit(loadout)
+	if err != nil {
+		return harnessErr("BAD_ARGUMENT", err.Error(), "loadout is sword-and-board, torch-and-blade or ask")
+	}
+
+	if err := d2items.SaveSidecar(d2items.SidecarPath(savePath), kit); err != nil {
+		return harnessErr("INTERNAL", fmt.Sprintf("kit: %v", err), "")
+	}
+
+	return nil
 }

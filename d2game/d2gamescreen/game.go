@@ -21,6 +21,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2bestiary"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
@@ -96,6 +97,18 @@ func CreateGame(
 		return nil, err
 	}
 
+	// T2: the item table loads beside the bestiary, and for the same reason an
+	// invalid one stops the screen: a half-authored kit is worse than none.
+	itemData, err := asset.LoadFile(itemCatalogPath)
+	if err != nil {
+		return nil, fmt.Errorf("load Strigoi items: %w", err)
+	}
+
+	items, err := d2items.Load(itemData)
+	if err != nil {
+		return nil, err
+	}
+
 	// find the local player and its initial location
 	var startX, startY float64
 
@@ -115,6 +128,7 @@ func CreateGame(
 	game := &Game{
 		asset:                asset,
 		bestiary:             bestiary,
+		items:                items,
 		gameClient:           gameClient,
 		gameControls:         nil,
 		localPlayer:          nil,
@@ -232,6 +246,10 @@ func CreateGame(
 	// map, so it asks through the Stepper interface (Animator's precedent).
 	game.combat.SetStepper(game)
 
+	// T2: the resolver reads the hero's weapon, mail and shield through the
+	// screen, which owns the kit.
+	game.combat.SetKits(game)
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -268,7 +286,14 @@ type Game struct {
 
 	// tacticalReserved is the tile each ordered tactical walk will end on, so
 	// two packmates ordered in one activation cannot pick the same square.
-	tacticalReserved     map[string][2]int
+	tacticalReserved map[string][2]int
+
+	// T2, the kit: the item table, the local hero's gear, where it is saved,
+	// and whether the first-entry loadout choice is holding the world.
+	items                *d2items.Catalog
+	kit                  *d2items.Kit
+	kitPath              string
+	choosingLoadout      bool
 	gameClient           *d2client.GameClient
 	mapRenderer          *d2maprenderer.MapRenderer
 	uiManager            *d2ui.UIManager
@@ -441,6 +466,8 @@ func (v *Game) OnUnload() error {
 		if err := v.OnPlayerSave(); err != nil {
 			return err
 		}
+
+		v.saveKit()
 	}
 
 	if err := v.gameClient.Close(); err != nil {
@@ -614,6 +641,11 @@ func (v *Game) Advance(elapsed float64) error {
 // clock" and the DecisionRate dial at zero.
 func (v *Game) worldRunning() bool {
 	if !v.screenLive() {
+		return false
+	}
+
+	// T2: nothing moves while he chooses how he carries himself.
+	if v.choosingLoadout {
 		return false
 	}
 
@@ -799,6 +831,9 @@ func (v *Game) writeTorchOut() {
 
 		v.light.Remove(carried.ID)
 
+		// T2: and it is gone from his hand.
+		v.spendBurntTorch()
+
 		// Removed means gone: the next frame reads no carried source, so the
 		// edge must reset here or a second torch could never report its own
 		// burn-out.
@@ -858,6 +893,10 @@ func (v *Game) applyFightingActivity() {
 		v.writeRoundLine()
 
 		v.writePaceLine()
+
+		// T2: a fight wears his mail and his shield, and wear is a durable fact
+		// -- written when the fight closes, not only when he leaves.
+		v.saveKit()
 	}
 }
 
@@ -1809,6 +1848,10 @@ func (v *Game) bindGameControls() error {
 		}
 
 		v.gameControls.Load()
+
+		// T2: his kit, or the choice that makes it.
+		v.bindKit()
+		v.gameControls.SetKitHolder(v)
 
 		if err := v.inputManager.BindHandler(v.gameControls); err != nil {
 			v.Error(bindControlsErrStr + player.ID())

@@ -68,32 +68,37 @@ func TestUIInventory(t *testing.T) {
 	// let the camera settle on the player (it converges per frame, not per sim second)
 	s.call("strigoi_step", map[string]any{"frames": 30})
 
-	// 2. tap i: the inventory opens (the default key map binds B and I)
+	// 2. tap i: since T2 (23 Sep 2026) I opens STRIGOI'S kit panel, not the
+	//    D2 grid (U1 §5.2: six slots and a pack that is a list). The D2 grid
+	//    staying closed is asserted, so a regression back to it goes red.
 	key := s.call("strigoi_key", map[string]any{"key": "i", "action": "tap"})
 	if num(key, "tick_applied") <= 0 {
 		t.Fatalf("key: no tick_applied in %v", key)
 	}
 
 	ui = sub(s.call("strigoi_get_system_state", map[string]any{"system": "ui"}), "state")
-	if ui["inventory_open"] != true || ui["right_panel_open"] != true {
-		t.Fatalf("after tapping i: want inventory_open, got %v", ui)
+	if ui["kit_open"] != true || ui["inventory_open"] != false {
+		t.Fatalf("after tapping i: want the kit panel and not the D2 grid, got %v", ui)
 	}
 
-	// 3. screenshot: the inventory panel (right half, above the HUD) is drawn
-	shot := s.call("strigoi_screenshot", map[string]any{"name": "inventory"})
-	lit, total := litFraction(t, str(shot, "path"), 420, 40, 780, 520)
-	t.Logf("inventory panel region: %d/%d sampled pixels lit (%.0f%%)", lit, total, 100*float64(lit)/float64(total))
+	// 3. the panel is drawn: its rows are on the provider, and its warm edge
+	//    is on the frame at the panel's left border. The panel is DARK by
+	//    design, so the old "25% lit" test cannot apply to it.
+	if rows, _ := ui["kit_rows"].([]any); len(rows) < 7 {
+		t.Fatalf("the kit panel lists six worn slots and a pack header at least; got %d rows", len(rows))
+	}
 
-	if float64(lit) < 0.25*float64(total) {
-		t.Fatalf("the inventory panel region is mostly black (%d/%d lit) — the panel did not render", lit, total)
+	shot := s.call("strigoi_screenshot", map[string]any{"name": "inventory"})
+	if r, g, b := pixelAt(t, str(shot, "path"), 404, 100); r < 0x40 || r > 0x70 || g < 0x30 || g > 0x5a || b > 0x38 {
+		t.Fatalf("no kit panel edge at (404,100): rgb=(%d,%d,%d)", r, g, b)
 	}
 
 	// 4. tap i again: it closes
 	s.call("strigoi_key", map[string]any{"key": "i"})
 
 	ui = sub(s.call("strigoi_get_system_state", map[string]any{"system": "ui"}), "state")
-	if ui["inventory_open"] != false {
-		t.Fatalf("after the second tap: want inventory closed, got %v", ui)
+	if ui["kit_open"] != false {
+		t.Fatalf("after the second tap: want the kit panel closed, got %v", ui)
 	}
 
 	// 5. escape opens the escape menu; escape again closes it
@@ -297,4 +302,24 @@ func litFraction(t *testing.T, path string, x0, y0, x1, y1 int) (lit, total int)
 	}
 
 	return lit, total
+}
+
+// pixelAt reads one pixel of a screenshot as 8-bit channels.
+func pixelAt(t *testing.T, path string, x, y int) (r, g, b uint32) {
+	t.Helper()
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("screenshot %s: %v", path, err)
+	}
+	defer f.Close()
+
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatalf("screenshot %s: %v", path, err)
+	}
+
+	r16, g16, b16, _ := img.At(x, y).RGBA()
+
+	return r16 >> 8, g16 >> 8, b16 >> 8
 }

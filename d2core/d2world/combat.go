@@ -42,6 +42,9 @@ type Combat struct {
 	morale   Morale
 	chases   Chases
 
+	// kits is what each combatant carries (T2). Nil is legal: no gear.
+	kits Kits
+
 	// stepper moves a body on its turn in a paced fight (T1). Nil is legal:
 	// nothing steps, and an enemy out of reach waits where it stands.
 	stepper Stepper
@@ -570,6 +573,10 @@ type encounter struct {
 	// reactionUsedInRound is the round in which the player's one Reaction was
 	// spent. R2 §3 bullet 6 caps reactions at one per round.
 	reactionUsedInRound int
+
+	// blockUsedInRound is the round his shield last turned a blow (T2): one a
+	// round, like the Reaction.
+	blockUsedInRound int
 
 	round     int
 	sinceTurn float64

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
@@ -489,6 +490,15 @@ func (v *CharacterSelect) onDeleteCharacterConfirmClicked() {
 	err := os.Remove(v.gameStates[v.selectedCharacter].FilePath)
 	if err != nil {
 		v.Error(err.Error())
+	}
+
+	// T2: his kit goes with him. The save's name is reused by the next hero
+	// (getFirstFreeFileName), who would otherwise inherit worn mail and a
+	// spent torch and never be asked to choose (review finding).
+	if kit := d2items.SidecarPath(v.gameStates[v.selectedCharacter].FilePath); kit != "" {
+		if err := os.Remove(kit); err != nil && !os.IsNotExist(err) {
+			v.Error(err.Error())
+		}
 	}
 
 	v.charScrollbar.SetCurrentOffset(0)

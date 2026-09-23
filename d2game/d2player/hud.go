@@ -156,6 +156,10 @@ type HUD struct {
 	tactical       *tacticalOverlay
 	tacticalWidget *d2ui.CustomWidget
 
+	// T2: the loadout choice and the kit panel, one foreground widget.
+	kit       *kitOverlay
+	kitWidget *d2ui.CustomWidget
+
 	// The selected-squad sheet (M4.4c-1, ruled ask 2/6): a panel of cards drawn
 	// by sheetWidget when sheetOpen, its Font16 lines painted through the
 	// invisible sheetLabel. It opens on selection and closes on deselect.
@@ -229,6 +233,7 @@ func NewHUD(
 		bars:              bars,
 		sheetLabel:        sheetLabel,
 		tactical:          newTacticalOverlay(ui),
+		kit:               newKitOverlay(ui),
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -355,6 +360,12 @@ func (h *HUD) loadCustomWidgets() {
 	h.tacticalWidget.SetPosition(0, 0)
 	h.tacticalWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
 	h.panelGroup.AddWidget(h.tacticalWidget)
+
+	// T2: the kit panel and the loadout choice, drawn over everything else.
+	h.kitWidget = h.uiManager.NewCustomWidget(h.renderKit, screenWidth, screenHeight)
+	h.kitWidget.SetPosition(0, 0)
+	h.kitWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.kitWidget)
 }
 
 func (h *HUD) loadSkillResources() {
@@ -816,6 +827,7 @@ func (h *HUD) Advance(elapsed float64) {
 	h.refreshClockStrip()
 	h.refreshOverheadBars()
 	h.refreshTactical(elapsed)
+	h.refreshKit()
 	h.setStaminaTooltipText()
 	h.setExperienceTooltipText()
 

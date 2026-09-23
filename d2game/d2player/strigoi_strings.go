@@ -1,6 +1,10 @@
 package d2player
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
+)
 
 // Strigoi-owned display strings. This is the one place the game's own
 // hand-authored English lives — the strings that are NOT keys in a D2 string
@@ -111,4 +115,32 @@ const (
 	TacticalNoWay       = "No way through."
 	TacticalTooFar      = "Too far: %d tiles, and your Move is %d."
 	TacticalOutOfReach  = "Out of reach."
+)
+
+// T2, the kit's words (23 Sep 2026).
+const (
+	KitChooseTitle = "How does he carry himself out of the dark?"
+	KitChooseBoard = "1   Sword and board - the shield turns one blow a round. No torch."
+	KitChooseTorch = "2   Torch and blade - light where he stands. Nothing to block with."
+	KitChooseHint  = "Chosen once. Press 1 or 2, or click."
+	KitTitle       = "Kit    click: take off / put on    I: close"
+	KitEmpty       = "-"
+	KitPackHeader  = "Pack   (load %.1f kg)"
+	KitRangedNote  = "(carried, no shooting yet)"
+	KitShieldNote  = "block, %d pts"
+	KitArmourNote  = "%d pts"
+	KitTorchNote   = "%.0f min"
+	KitSlotMain    = "Hand"
+	KitSlotOff     = "Off"
+	KitSlotBody    = "Body"
+	KitSlotHead    = "Head"
+	KitSlotBelt    = "Belt"
+
+	TacticalNoTorch = "No torch in his off-hand."
+)
+
+// The loadout choice's keys.
+const (
+	kitKeyOne = d2enum.Key1
+	kitKeyTwo = d2enum.Key2
 )

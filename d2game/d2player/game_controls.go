@@ -15,6 +15,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
@@ -324,6 +325,9 @@ type GameControls struct {
 	// of sticks, and one torch is what makes the rationing bite.
 	torchesCarried int
 
+	// kitHolder is the game screen's owner of the hero's gear (T2).
+	kitHolder KitHolder
+
 	// squads is the owner the player commands (M4.4c-1): the click handler and
 	// the cycle key select through it, and the selection hit test reads its
 	// model entities. It is the same instance the game screen registered as the
@@ -399,7 +403,19 @@ func (g *GameControls) OnKeyRepeat(event d2interface.KeyEvent) bool {
 // OnKeyDown handles key presses
 func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 	if event.Key() == d2enum.KeyEscape {
+		// T2: Escape closes the kit panel first, like any other panel.
+		if g.hud != nil && g.hud.kit != nil && g.hud.kit.open {
+			g.hud.kit.open = false
+			return true
+		}
+
 		g.onEscKey()
+
+		return true
+	}
+
+	// T2: nothing happens before he has chosen his loadout.
+	if g.kitKey(event) {
 		return true
 	}
 
@@ -410,7 +426,12 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 		g.clearScreen()
 		g.updateLayout()
 	case d2enum.ToggleInventoryPanel:
-		g.toggleInventoryPanel()
+		// T2: the Strigoi kit replaces the D2 grid when a kit is bound.
+		if g.kitHolder != nil {
+			g.toggleKitPanel()
+		} else {
+			g.toggleInventoryPanel()
+		}
 	case d2enum.TogglePartyPanel:
 		if !g.isSinglePlayer {
 			g.togglePartyPanel()
@@ -499,6 +520,12 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 	inRect := !g.isInActiveMenusRect(event.X(), event.Y())
 	shouldDoLeft := repeatDue(now, g.lastLeftBtnActionTime)
 	shouldDoRight := repeatDue(now, g.lastRightBtnActionTime)
+
+	// T2: nothing walks or casts while he is choosing his loadout, and a held
+	// button over the kit panel is a click on the panel (review finding).
+	if g.kitHolder != nil && (g.kitHolder.ChoosingLoadout() || g.overKitPanel(event.X(), event.Y())) {
+		return true
+	}
 
 	// T1: no held-button walking inside a paced fight. A Move is one click,
 	// checked against his turn and his range; a held button would re-send it
@@ -595,6 +622,17 @@ func (g *GameControls) OnMouseButtonUp(event d2interface.MouseEvent) bool {
 // OnMouseButtonDown handles mouse button presses
 func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	mx, my := event.X(), event.Y()
+
+	// T2: the loadout choice is modal, and a click on the kit panel is a
+	// click on the kit.
+	if event.Button() == d2enum.MouseButtonLeft && g.kitClick(mx, my) {
+		return true
+	}
+
+	// And no right-click cast through the choice or the panel either.
+	if g.kitHolder != nil && (g.kitHolder.ChoosingLoadout() || g.overKitPanel(mx, my)) {
+		return true
+	}
 
 	for i := range g.actionableRegions {
 		// If click is on a game control element
@@ -754,7 +792,29 @@ func (g *GameControls) combatTorch() {
 	// Decide what the key means before anything is spent.
 	var choice string
 
+	// T2: with a kit, the torch is the one in his off-hand -- sword-and-board
+	// has none, and that is the dilemma the loadout chose. Without a kit (a
+	// harness or unit build that never bound one) the old counter stands.
+	var kitTorch *d2items.Instance
+
+	// With a kit, the only torch he can light or douse is the one in his hand.
+	if carried != nil && g.kitHolder != nil && g.kitHolder.Kit() != nil {
+		if _, _, ok := g.kitHolder.Kit().OffHandTorch(); !ok {
+			g.TacticalNotice(TacticalNoTorch)
+			return
+		}
+	}
+
 	switch {
+	case carried == nil && g.kitHolder != nil && g.kitHolder.Kit() != nil:
+		_, inst, ok := g.kitHolder.Kit().OffHandTorch()
+		if !ok || inst.BurnLeft <= 0 {
+			g.TacticalNotice(TacticalNoTorch)
+			return // refused: nothing in his off-hand to light
+		}
+
+		kitTorch = inst
+		choice = d2world.CommitLight
 	case carried == nil:
 		if g.torchesCarried <= 0 {
 			return // refused: no torch remains
@@ -776,8 +836,21 @@ func (g *GameControls) combatTorch() {
 	}
 
 	if carried == nil {
-		g.light.Add(d2world.SourceTorch, true, 0, 0)
-		g.torchesCarried--
+		src := g.light.Add(d2world.SourceTorch, true, 0, 0)
+
+		// The light model owns the burn from here; the kit's minutes are
+		// what this torch had left when it was last put away.
+		//
+		// OWNERSHIP MOVES, it is not copied: the kit keeps zero from here, so
+		// whatever takes the lit torch away -- burning out, being put away, a
+		// script removing the source -- leaves the kit nothing stale to
+		// relight. Measured: a copied burn relit a "spent" torch at 60 minutes.
+		if kitTorch != nil {
+			src.Burn = kitTorch.BurnLeft
+			kitTorch.BurnLeft = 0
+		} else {
+			g.torchesCarried--
+		}
 
 		return
 	}
@@ -1004,6 +1077,10 @@ func (g *GameControls) isInActiveMenusRect(px, py int) bool {
 	}
 
 	if g.escapeMenu.IsOpen() {
+		return true
+	}
+
+	if g.overKitPanel(px, py) {
 		return true
 	}
 

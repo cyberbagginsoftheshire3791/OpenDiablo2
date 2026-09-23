@@ -1,6 +1,10 @@
 package d2world
 
-import "math"
+import (
+	"math"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
+)
 
 // T1, THE TACTICAL LAYER (23 Sep 2026).
 //
@@ -561,6 +565,14 @@ func (c *Combat) Tactical() TacticalView {
 		if f := c.fitnessOf(v.PlayerID); f != nil {
 			v.ReactionAvailable = f.ReactionAvailable() && !f.Shaken() &&
 				e.reactionUsedInRound != e.round && !(e.round == 1 && e.surprised)
+		}
+
+		// T2: and a blade that ripostes -- the pip must not offer what the
+		// resolver will refuse (riposteAllowed reads the same weapon).
+		if k := c.kitOf(v.PlayerID); k != nil {
+			if b, ok := k.MainBite(); !ok || b.Reaction != d2items.ReactionRiposte {
+				v.ReactionAvailable = false
+			}
 		}
 	}
 

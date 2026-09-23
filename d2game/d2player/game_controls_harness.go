@@ -83,7 +83,13 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 
 		// T1: the refusal or hint the combat panel is showing, so a script can
 		// assert WHY a tactical click did nothing rather than only that it did.
-		"tactical_notice":   g.tacticalNoticeText(),
+		"tactical_notice": g.tacticalNoticeText(),
+
+		// T2: the kit panel and the loadout choice.
+		"kit_open":          g.hud != nil && g.hud.kit != nil && g.hud.kit.open,
+		"choosing_loadout":  g.kitHolder != nil && g.kitHolder.ChoosingLoadout(),
+		"kit_notice":        g.kitNoticeText(),
+		"kit_rows":          g.kitRowsReport(),
 		"help_open":         g.HelpOverlay.IsOpen(),
 		"escape_menu_open":  g.escapeMenu.IsOpen(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
@@ -120,4 +126,32 @@ func (g *GameControls) tacticalNoticeText() string {
 	}
 
 	return g.hud.tactical.notice
+}
+
+// kitNoticeText is the kit panel's last refusal, "" when none.
+func (g *GameControls) kitNoticeText() string {
+	if g.hud == nil || g.hud.kit == nil {
+		return ""
+	}
+
+	return g.hud.kit.notice
+}
+
+// kitRowsReport is the panel's clickable rows with their screen y, so a script
+// clicks exactly what the player would.
+func (g *GameControls) kitRowsReport() []map[string]interface{} {
+	out := []map[string]interface{}{}
+
+	if g.hud == nil || g.hud.kit == nil {
+		return out
+	}
+
+	for _, r := range g.hud.kit.rows {
+		out = append(out, map[string]interface{}{
+			"text": r.text, "slot": string(r.slot), "pack": r.pack,
+			"x": kitPanelX + kitPadX + 4, "y": r.y + kitRowHeight/2,
+		})
+	}
+
+	return out
 }

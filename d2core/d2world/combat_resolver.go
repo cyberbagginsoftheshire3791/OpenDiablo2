@@ -3,6 +3,8 @@ package d2world
 import (
 	"math"
 	"sort"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 )
 
 // THE RESOLVER. Everything up to the blow existed before this file; nothing
@@ -98,6 +100,10 @@ type Profile struct {
 	Speed                int
 	DamageMin, DamageMax int
 
+	// DamageClass is how its blow hurts (cut, thrust, blunt), which is what
+	// armour is rated against (T2). "" reads as cut.
+	DamageClass string
+
 	// Count is how many the PACK started with, and step 5 needs it twice: the
 	// rout decrement scales with it (a loss out of two is half the pack; a
 	// loss out of six is not), and quick-resolve's advantage is measured
@@ -157,6 +163,14 @@ type action struct {
 	targetHasBody     bool
 	advantageWhy      string
 	reaction          string
+
+	// T2, the kit: the band before a shield stepped it down, whether one
+	// did, what armour took off, the damage class and the weapon that struck.
+	bandRolled string
+	blocked    bool
+	absorbed   int
+	class      string
+	weapon     string
 }
 
 // playerProfile is the M4.5 note's "one clearly-labelled placeholder melee
@@ -648,8 +662,18 @@ func (c *Combat) riposteAllowed(idx int, attackerID string) bool {
 		return false
 	}
 
-	if c.lastActions[idx].band != BandGraze {
+	// THE ROLLED BAND, not the one a shield turned it into: a blow the shield
+	// stepped down to a graze was a good blow well met, not a poor one to
+	// answer. And the answer needs a blade that ripostes (E3 §4's column):
+	// an empty hand, a spear or a mace gives none.
+	if c.lastActions[idx].bandRolled != BandGraze {
 		return false
+	}
+
+	if k := c.kitOf(e.target.QuarryID()); k != nil {
+		if b, ok := k.MainBite(); !ok || b.Reaction != d2items.ReactionRiposte {
+			return false
+		}
 	}
 
 	// A Riposte cannot itself trigger a Riposte: the enemy side has no
@@ -686,6 +710,23 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 		profile = c.profileOf(attackerID)
 	}
 
+	// T2: the player strikes with what is in his hand. The kılıç bites 12-20,
+	// the placeholder's own range, so the starting kit moves no number; a
+	// knife or an axe does. No kit, or an empty hand, keeps the placeholder.
+	class, vsMail, weapon := profile.DamageClass, 0.0, ""
+	if attackerIsPlayer {
+		if k := c.kitOf(attackerID); k != nil {
+			if b, ok := k.MainBite(); ok {
+				profile.DamageMin, profile.DamageMax = b.Min, b.Max
+				class, vsMail, weapon = string(b.Class), b.VsMail, b.Item
+			}
+		}
+	}
+
+	if class == "" {
+		class = string(d2items.Cut)
+	}
+
 	// DRAW ONE: the d100. DRAW TWO: the damage. Both always, in this order,
 	// forced band or not -- see this file's header.
 	roll := c.rng.Intn(100) + 1
@@ -717,9 +758,38 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 		band = c.dials.ForcedBand
 	}
 
+	// T2: THE SHIELD STEPS ONE BLOW A ROUND DOWN A BAND -- crit to hit, hit to
+	// graze [DIAL: once a round]. Enough to blunt a pack, not to erase one. It
+	// draws nothing from the RNG, so the fight's sequence is the same with a
+	// shield or without.
+	rolled := band
+	targetKit := c.kitOf(targetID)
+	blocked := false
+
+	if targetKit != nil && !attackerIsPlayer && (band == BandHit || band == BandCrit) &&
+		targetKit.CanBlock() && c.encounter.blockUsedInRound != round {
+		if band == BandCrit {
+			band = BandHit
+		} else {
+			band = BandGraze
+		}
+
+		targetKit.SpendBlock()
+		c.encounter.blockUsedInRound = round
+		blocked = true
+	}
+
 	// The floor of 1 is what makes "bounded" true at the bottom: a graze is a
 	// small wound, never nothing.
 	damage := int(float64(base) * c.factorFor(band))
+
+	// T2: his mail takes its share off a blow of its class, and wears for it.
+	absorbed := 0
+	if targetKit != nil && !attackerIsPlayer {
+		absorbed = targetKit.Absorb(d2items.DamageClass(class), vsMail, band)
+		damage -= absorbed
+	}
+
 	if damage < 1 {
 		damage = 1
 	}
@@ -729,6 +799,8 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 		roll: roll, mod: mod, score: score, band: band,
 		base: base, damage: damage,
 		advantageWhy: why, reaction: reaction,
+		bandRolled: rolled, blocked: blocked, absorbed: absorbed,
+		class: class, weapon: weapon,
 	}
 
 	c.animate(attackerID, ActSwing)
@@ -1097,6 +1169,11 @@ func (c *Combat) actionRows() []map[string]interface{} {
 			"damage":        a.damage,
 			"advantage_why": a.advantageWhy,
 			"reaction":      a.reaction,
+			"band_rolled":   a.bandRolled,
+			"blocked":       a.blocked,
+			"absorbed":      a.absorbed,
+			"damage_class":  a.class,
+			"weapon":        a.weapon,
 		}
 
 		if a.targetHasBody {
@@ -1129,4 +1206,23 @@ func clampScore(score int) int {
 	}
 
 	return score
+}
+
+// Kits is how the resolver reads what a combatant carries (T2). The game
+// screen implements it; nil, or a nil kit for an id, means no gear -- the
+// placeholder profile and no armour, which is every fight before T2 and every
+// resolver unit test that does not ask for one.
+type Kits interface {
+	KitOf(id string) *d2items.Kit
+}
+
+// SetKits attaches the kit source.
+func (c *Combat) SetKits(k Kits) { c.kits = k }
+
+func (c *Combat) kitOf(id string) *d2items.Kit {
+	if c.kits == nil || id == "" {
+		return nil
+	}
+
+	return c.kits.KitOf(id)
 }

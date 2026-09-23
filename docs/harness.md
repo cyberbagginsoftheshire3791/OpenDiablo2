@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 20 playtest scripts.** That count, the harness version below and the
+**The 21 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -107,6 +107,15 @@ this doc fails until it agrees.
   walks on its own turn (`steps_ordered`) and ends closer; one closed round costs
   exactly `round_minutes` of world time; and the combat panel is on a real
   800x600 frame.
+* `kit_test.go` — the twenty-first, T2 (23 Sep 2026): the hero's gear. A new
+  hero opens on the loadout choice with the world held (`start_game`'s
+  `loadout: "ask"`); `1` writes the sword-and-board kit beside his save; `I`
+  opens the Strigoi kit panel and a click takes the sabre off and puts it back;
+  `L` is refused for want of a torch; in a forced-crit fight the shield turns a
+  blow and the mail absorbs and wears, and the wear is on disk when he leaves.
+  Its control, `TestKitTorchAndBladeControl`, lights the torch and never blocks.
+  **`start_game` takes `loadout`** (sword-and-board, torch-and-blade -- the
+  default -- or `ask`); every other script gets the default kit written for it.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

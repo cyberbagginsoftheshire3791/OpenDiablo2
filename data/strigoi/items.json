@@ -1,0 +1,50 @@
+{
+  "items": [
+    {"id": "kilic", "name": "Kilic (sabre)", "kind": "weapon", "slot": "main", "weight_kg": 0.8,
+     "weapon": {"hands": 1, "reach": 1, "class": "cut", "min": 12, "max": 20, "reaction": "riposte"}},
+    {"id": "straight-sword", "name": "Straight sword", "kind": "weapon", "slot": "main", "weight_kg": 1.2,
+     "weapon": {"hands": 1, "reach": 1, "class": "cut", "min": 11, "max": 19, "reaction": "riposte"}},
+    {"id": "knife", "name": "Knife", "kind": "weapon", "slot": "belt", "weight_kg": 0.2,
+     "weapon": {"hands": 1, "reach": 1, "class": "cut", "min": 6, "max": 11, "reaction": "riposte"}},
+    {"id": "spear", "name": "Spear", "kind": "weapon", "slot": "main", "weight_kg": 2.0,
+     "weapon": {"hands": 2, "reach": 2, "class": "thrust", "min": 10, "max": 18, "reaction": "brace"}},
+    {"id": "axe", "name": "Axe", "kind": "weapon", "slot": "main", "weight_kg": 1.5,
+     "weapon": {"hands": 1, "reach": 1, "class": "cut", "min": 13, "max": 22, "reaction": "opportunity"}},
+    {"id": "mace", "name": "Mace", "kind": "weapon", "slot": "main", "weight_kg": 1.6,
+     "weapon": {"hands": 1, "reach": 1, "class": "blunt", "min": 11, "max": 18, "reaction": "none", "vs_mail": 0.5}},
+    {"id": "scythe", "name": "Scythe", "kind": "weapon", "slot": "main", "weight_kg": 2.2,
+     "weapon": {"hands": 2, "reach": 2, "class": "cut", "min": 13, "max": 24, "reaction": "brace"}},
+    {"id": "composite-bow", "name": "Composite bow", "kind": "weapon", "slot": "main", "weight_kg": 0.9,
+     "weapon": {"hands": 2, "reach": 6, "class": "thrust", "min": 10, "max": 18, "reaction": "none", "ranged": true}},
+    {"id": "arrows", "name": "War arrows", "kind": "tool", "slot": "pack", "weight_kg": 0.05, "stack": 30,
+     "tool": {"verb": "shoot"}},
+    {"id": "torch", "name": "Torch", "kind": "light", "slot": "off", "weight_kg": 0.5,
+     "light": {"radius": 5, "burn_minutes": 60}},
+    {"id": "kalkan", "name": "Shield (kalkan)", "kind": "armour", "slot": "off", "weight_kg": 3.0,
+     "armour": {"block": true, "points": 10, "repair": "none"}},
+    {"id": "light-mail", "name": "Mail coat", "kind": "armour", "slot": "body", "weight_kg": 9.0,
+     "armour": {"reduction": {"cut": 4, "thrust": 2, "blunt": 1}, "points": 14, "repair": "smith"}},
+    {"id": "helmet", "name": "Helmet", "kind": "armour", "slot": "head", "weight_kg": 1.5,
+     "armour": {"reduction": {"cut": 3, "thrust": 3, "blunt": 2}, "points": 8, "crit_only": true, "repair": "none"}},
+    {"id": "dolama", "name": "Dolama", "kind": "armour", "slot": "body", "weight_kg": 1.5,
+     "armour": {"reduction": {"cut": 1}, "points": 0}},
+    {"id": "ak-bork", "name": "Ak bork", "kind": "story", "slot": "head", "weight_kg": 0.3},
+    {"id": "stake", "name": "Stake", "kind": "tool", "slot": "belt", "weight_kg": 0.3,
+     "tool": {"verb": "stake"}},
+    {"id": "spade", "name": "Spade", "kind": "tool", "slot": "pack", "weight_kg": 2.0,
+     "tool": {"verb": "dig"}},
+    {"id": "peksimet", "name": "Peksimet (hardtack)", "kind": "tool", "slot": "pack", "weight_kg": 0.25, "stack": 20,
+     "tool": {"verb": "eat"}}
+  ],
+  "loadouts": {
+    "sword-and-board": {
+      "main": "kilic", "off": "kalkan", "body": "light-mail", "head": "ak-bork", "belt1": "knife",
+      "pack": ["composite-bow", "arrows:12", "dolama", "peksimet:6"]
+    },
+    "torch-and-blade": {
+      "main": "kilic", "off": "torch", "body": "light-mail", "head": "ak-bork", "belt1": "knife",
+      "pack": ["composite-bow", "arrows:12", "dolama", "peksimet:6"]
+    }
+  },
+  "default_loadout": "torch-and-blade"
+}

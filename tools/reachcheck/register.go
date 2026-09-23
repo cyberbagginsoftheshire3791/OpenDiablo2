@@ -66,6 +66,7 @@ const (
 	pkgWorld    = "d2core/d2world"
 	pkgScreen   = "d2game/d2gamescreen"
 	pkgBestiary = "d2core/d2bestiary"
+	pkgItems    = "d2core/d2items"
 	// pkgEntity joined at M4.5 step 3, when the NPC gained its first two
 	// exported members that combat cares about. Before that, nothing in
 	// d2mapentity was worth a claim: the entity was a sprite on a path.
@@ -251,6 +252,30 @@ var Register = []Entry{
 		"Whether a turn is open and waiting for a person. The torch key refuses to spend when it is false, and T1's tactical Move and click-to-strike refuse out of turn on it. Since T1 the WORLD gate reads WorldHeld instead, which is Awaiting widened to the whole of a paced fight.", ""},
 	{sym(pkgWorld, "Combat.WorldHeld"), BucketWire, VerdictLive,
 		"T1: the game screen's world gate. A paced fight holds the world for its whole length and pays for each round with TakeRoundMinutes. If this goes dark the world runs in real time through a fight again and rounds stop costing exactly one world minute.", ""},
+	{sym(pkgWorld, "Combat.SetKits"), BucketWire, VerdictLive,
+		"T2: CreateGame attaches the screen as the resolver's Kits source, so his weapon sets his bite and his mail and shield answer a blow. Nil is legal (no gear), so losing this line is silent -- the action rows' weapon/absorbed/blocked fields are the instrument.", ""},
+	{sym(pkgScreen, "Game.KitOf"), BucketWire, VerdictLive,
+		"T2: the d2world.Kits seam -- the local hero's kit, read by resolveBlow and riposteAllowed on every blow.", ""},
+	{sym(pkgScreen, "Game.ChooseLoadout"), BucketWire, VerdictLive,
+		"T2: the one loadout choice, from the first-entry panel (keys 1/2 or a click) through the KitHolder seam; writes the kit sidecar and releases the held world.", ""},
+	{sym(pkgScreen, "Game.EquipFromPack"), BucketWire, VerdictLive,
+		"T2: a click on a pack row in the kit panel.", ""},
+	{sym(pkgScreen, "Game.UnequipSlot"), BucketWire, VerdictLive,
+		"T2: a click on a worn row in the kit panel; a torch put away takes its minutes out of the light model with it.", ""},
+	{sym(pkgPlayer, "GameControls.SetKitHolder"), BucketWire, VerdictLive,
+		"T2: bindGameControls hands the controls the kit owner; the I key, the L key and the loadout choice all read through it.", ""},
+	{sym(pkgItems, "Load"), BucketWire, VerdictLive,
+		"T2: loads and validates data/strigoi/items.json when a game screen is built; an invalid table stops the screen, like the bestiary.", ""},
+	{sym(pkgItems, "Kit.MainBite"), BucketWire, VerdictLive,
+		"T2: his weapon as the resolver rolls it -- range after make and condition, class, reaction.", ""},
+	{sym(pkgItems, "Kit.Absorb"), BucketWire, VerdictLive,
+		"T2: his mail's share off a blow of its class, and the wear it takes for it.", ""},
+	{sym(pkgItems, "Kit.CanBlock"), BucketWire, VerdictLive,
+		"T2: an unruined shield in the off-hand; resolveBlow steps one blow a round down a band when it answers true.", ""},
+	{sym(pkgItems, "LoadSidecar"), BucketWire, VerdictLive,
+		"T2: reads the hero's kit from beside his save when the controls bind; its absence opens the loadout choice.", ""},
+	{sym(pkgItems, "SaveSidecar"), BucketWire, VerdictLive,
+		"T2: writes the kit on every change and on leaving the world alive (never for a dead hero, the 12 Sep ruling).", ""},
 	{sym(pkgWorld, "Combat.Paced"), BucketWire, VerdictLive,
 		"T1: whether a paced fight would run now (dial on AND a person at the controls). The game screen gates the tactical Move, click-to-strike and the no-hold-walk rule on it, so an unpaced or policy fight keeps the old click behaviour (review finding, 23 Sep).", ""},
 	{sym(pkgWorld, "Combat.Tick"), BucketWire, VerdictLive,

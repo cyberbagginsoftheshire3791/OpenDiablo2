@@ -130,7 +130,7 @@ func TestCombatResolver(t *testing.T) {
 		base, damage := num(row, "base"), num(row, "damage")
 		band := str(row, "band")
 
-		want := expectedDamage(base, bandFactor(t, dials, band))
+		want := armouredDamage(t, row, playerID, bandFactor(t, dials, band))
 		if damage != want {
 			t.Fatalf("act 2: %s's %s of base %.0f must do %.0f damage, reported %.0f: %v",
 				str(row, "attacker"), band, base, want, damage, row)
@@ -214,7 +214,7 @@ func TestCombatResolver(t *testing.T) {
 				t.Fatalf("act 3: forced_band=%q must apply to every blow: %v", band, row)
 			}
 
-			want := expectedDamage(num(row, "base"), bandFactor(t, sub(combat, "dials"), band))
+			want := armouredDamage(t, row, playerID, bandFactor(t, sub(combat, "dials"), band))
 			if num(row, "damage") != want {
 				t.Fatalf("act 3: %s damage must follow the forced band: %v", band, row)
 			}
@@ -891,6 +891,39 @@ func bandFactor(t *testing.T, dials map[string]any, band string) float64 {
 	t.Fatalf("no such band %q; dials=%v", band, dials)
 
 	return 0
+}
+
+// armouredDamage is expectedDamage after his mail (T2, 23 Sep 2026): a blow ON
+// the player loses what the mail absorbs, and the absorption is checked against
+// the number the TEST knows from data/strigoi/items.json -- the default kit's
+// mail takes 4 off a cut and 2 off a thrust -- rather than trusted from the
+// row. A blow BY the player absorbs nothing, because no enemy wears armour.
+func armouredDamage(t *testing.T, row map[string]any, playerID string, factor float64) float64 {
+	t.Helper()
+
+	absorbed := mustNum(t, row, "absorbed")
+
+	if str(row, "target") != playerID {
+		if absorbed != 0 {
+			t.Fatalf("no enemy wears armour, yet a blow on one absorbed %.0f: %v", absorbed, row)
+		}
+
+		return expectedDamage(mustNum(t, row, "base"), factor)
+	}
+
+	// Sound, damaged (past half its points: the reduction halves) or ruined
+	// (none) -- three values and no others, because a long script wears it.
+	mail := map[string]float64{"cut": 4, "thrust": 2, "blunt": 1}[mustStr(t, row, "damage_class")]
+	if absorbed != mail && absorbed != math.Round(mail/2) && absorbed != 0 {
+		t.Fatalf("his mail takes %.0f off a %s (or half, worn, or none, ruined); the row says %.0f: %v",
+			mail, str(row, "damage_class"), absorbed, row)
+	}
+
+	if d := float64(int(mustNum(t, row, "base")*factor)) - absorbed; d > 1 {
+		return d
+	}
+
+	return 1
 }
 
 // expectedDamage is the formula the TEST chooses: max(1, base*factor).

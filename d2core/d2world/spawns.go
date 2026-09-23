@@ -157,6 +157,13 @@ type SpawnRow struct {
 	// project creature still inherit MaxHPNormal from Code until they are
 	// replaced. Nothing in N1 gives a number for either health or damage. [DIAL]
 	DamageMin, DamageMax int
+
+	// DamageClass is how the row's blow hurts, which is what armour is rated
+	// against (T2). A bite and a tusk are thrusts, an opportunist's blade a
+	// cut. [DIAL] -- N1 and E3 say which animals bite; neither says how mail
+	// takes a bite, and this is the reading that lets a coat of mail matter
+	// less against teeth than against a knife.
+	DamageClass string
 }
 
 // SpawnDials are the numbers M4.3b ships with. Every one is a [DIAL].
@@ -272,7 +279,7 @@ func DefaultSpawnDials() SpawnDials {
 				// N1 §5: dusk into night, near bodies and roads, drawn by
 				// carrion and noise. The nearest row, and the first thing a
 				// player meets.
-				Name: "dogs", Code: "fallen1",
+				Name: "dogs", Code: "fallen1", DamageClass: "thrust",
 				StageWeight: stageWeights(0.6, 0, 0, 1.0),
 				BandWeight:  [3]float64{1.0, 0.8, 0.6},
 				MinCount:    2, MaxCount: 4,
@@ -285,7 +292,7 @@ func DefaultSpawnDials() SpawnDials {
 				// N1 §5: deep night, from the woods, bolder as the night's
 				// bands advance -- which is the band curve running the other
 				// way from the dogs'.
-				Name: "wolves", Code: "zombie1",
+				Name: "wolves", Code: "zombie1", DamageClass: "thrust",
 				StageWeight: stageWeights(1.0, 0, 0, 0),
 				BandWeight:  [3]float64{0.5, 1.0, 1.5},
 				MinCount:    3, MaxCount: 6,
@@ -298,7 +305,7 @@ func DefaultSpawnDials() SpawnDials {
 				// N1 §5: dawn and dusk, field and wood edges. Solitary or a
 				// small sounder; the daylight row, so the night is not the
 				// only time something happens.
-				Name: "boar", Code: "skeleton1",
+				Name: "boar", Code: "skeleton1", DamageClass: "thrust",
 				StageWeight: stageWeights(0, 0.5, 0, 0.5),
 				BandWeight:  [3]float64{1, 1, 1},
 				MinCount:    1, MaxCount: 2,
@@ -310,7 +317,7 @@ func DefaultSpawnDials() SpawnDials {
 				// S1 §6.4's human row: dusk and pre-dawn, "when men move",
 				// weighted by the player's light. The kit waits on E3; the
 				// mechanism is here now.
-				Name: "opportunists", Code: "fallen1",
+				Name: "opportunists", Code: "fallen1", DamageClass: "cut",
 				StageWeight: stageWeights(0.4, 0.6, 0, 0.8),
 				BandWeight:  [3]float64{0.8, 0.6, 0.4},
 				MinCount:    2, MaxCount: 3,
@@ -875,6 +882,8 @@ func (s *Spawns) ProfileOf(memberID string) (Profile, bool) {
 				DamageMin: row.DamageMin,
 				DamageMax: row.DamageMax,
 				Count:     g.spawned,
+
+				DamageClass: row.DamageClass,
 			}, true
 		}
 	}
