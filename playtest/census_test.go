@@ -106,11 +106,11 @@ func TestAssetCensus(t *testing.T) {
 	// into it.)
 	var strs strings.Builder
 
-	strs.WriteString("key\tfound\tasks\ttext\n")
+	strs.WriteString("key\tfound\ttext\n")
 
 	for _, raw := range asList(a["strings"]) {
 		k := raw.(map[string]any)
-		fmt.Fprintf(&strs, "%s\t%v\t%.0f\t%q\n", str(k, "key"), k["found"], num(k, "asks"), str(k, "text"))
+		fmt.Fprintf(&strs, "%s\t%v\t%q\n", str(k, "key"), k["found"], str(k, "text"))
 	}
 
 	if mustNum(t, a, "strings_asked") == 0 {

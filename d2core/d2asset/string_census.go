@@ -10,15 +10,20 @@ import (
 // read whole from the MPQs at boot, for the few hundred keys the UI asks
 // for. Replacing them with Strigoi's own words starts with knowing which
 // keys those are: every key TranslateString is asked for is recorded here,
-// with whether a table had it and how often it was asked. The harness's
+// once, with whether a table had it and what it became. The harness's
 // "assets" system reports it (strings_asked, strings_missing, strings).
+//
+// HOW OFTEN a key was asked is deliberately not kept: the HUD asks for its
+// tooltips every frame it draws, so the count measured frames drawn, not
+// anything about the game -- and, being in the harness state digest, it
+// made two launches of the same seeded run differ (docs/harness.md, leak
+// register #2).
 
 // StringAsk is one key the game has asked for.
 type StringAsk struct {
 	Key   string
 	Found bool
 	Text  string // what it was translated to ("" when not found)
-	Asks  int
 }
 
 type stringCensus struct {
@@ -34,12 +39,11 @@ func (c *stringCensus) record(key, text string, found bool) {
 		c.byKey = map[string]*StringAsk{}
 	}
 
-	if a, ok := c.byKey[key]; ok {
-		a.Asks++
+	if _, ok := c.byKey[key]; ok {
 		return
 	}
 
-	c.byKey[key] = &StringAsk{Key: key, Found: found, Text: text, Asks: 1}
+	c.byKey[key] = &StringAsk{Key: key, Found: found, Text: text}
 }
 
 // StringsAsked is every key asked for so far, sorted by key (copies).

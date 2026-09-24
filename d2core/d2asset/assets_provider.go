@@ -39,7 +39,7 @@ func (p assetsProvider) HarnessState() map[string]interface{} {
 	missing := 0
 
 	for _, a := range asked {
-		strs = append(strs, map[string]interface{}{"key": a.Key, "found": a.Found, "text": a.Text, "asks": a.Asks})
+		strs = append(strs, map[string]interface{}{"key": a.Key, "found": a.Found, "text": a.Text})
 
 		if !a.Found {
 			missing++
