@@ -137,6 +137,16 @@ func (am *AssetManager) FileExists(filePath string) (bool, error) {
 	return am.Loader.Exists(filePath), nil
 }
 
+// UseDefaultLanguage sets the language without reading Diablo II's language
+// file (data/local/use, from the MPQs): for a game whose words and fonts are
+// Strigoi's own, the install's language chooses nothing.
+func (am *AssetManager) UseDefaultLanguage() string {
+	am.language = defaultLanguage
+	am.languageModifier = d2resource.GetLabelModifier(defaultLanguage)
+
+	return defaultLanguage
+}
+
 // LoadLanguage loads language from resource path
 func (am *AssetManager) LoadLanguage(languagePath string) string {
 	languageByte, err := am.LoadFile(languagePath)

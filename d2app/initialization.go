@@ -90,7 +90,14 @@ func (a *App) initConfig(config *d2config.Configuration) error {
 }
 
 func (a *App) initLanguage() {
-	a.language = a.asset.LoadLanguage(d2resource.LocalLanguage)
+	// With Strigoi's words AND fonts the install's language chooses nothing
+	// -- it picks Diablo II's string tables and font folders -- so its file
+	// (data/local/use, from the MPQs) is not read.
+	if a.Options.strings != nil && *a.Options.strings != "" && a.Options.fontSet != nil && *a.Options.fontSet != "" {
+		a.language = a.asset.UseDefaultLanguage()
+	} else {
+		a.language = a.asset.LoadLanguage(d2resource.LocalLanguage)
+	}
 	a.asset.Loader.SetLanguage(&a.language)
 
 	a.charset = d2resource.GetFontCharset(a.language)

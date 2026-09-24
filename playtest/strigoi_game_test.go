@@ -80,7 +80,9 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		t.Fatalf("the census shows no Diablo II UI file; its areas are not what this script reads: %v", sub(a, "by_area"))
 	}
 
-	for _, area := range []string{"data/global/tiles", "data/global/chars", "data/local/font", "data/local/lng"} {
+	// data/local is Diablo II's language file (data/local/use), unread when
+	// the words and fonts are Strigoi's.
+	for _, area := range []string{"data/global/tiles", "data/global/chars", "data/local/font", "data/local/lng", "data/local"} {
 		if n := mpqIn(a, area); n != 0 {
 			t.Errorf("%s: %.0f file(s) from Diablo II's MPQs, want none", area, n)
 		}
