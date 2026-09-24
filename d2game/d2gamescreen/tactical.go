@@ -49,13 +49,16 @@ func (v *Game) StepToward(id string, x, y float64, tiles int) bool {
 		return false
 	}
 
-	path = truncateRoute(fx, fy, path, tiles)
-
 	// THE WALK MUST END ON A FREE TILE, and the goal being free is not enough:
 	// a cut walk ends on an intermediate waypoint, and a packmate ordered a
 	// moment earlier has already claimed its destination without standing on
-	// it yet. Back off along the path to the last free tile (review finding).
+	// it yet. A leg cut short stops short of a taken tile; a whole waypoint
+	// on one is backed off (review findings).
 	taken := v.occupiedTiles(id)
+	free := func(x, y float64) bool { return !taken[[2]int{int(math.Floor(x)), int(math.Floor(y))}] }
+
+	path = truncateRoute(fx, fy, path, tiles, free)
+
 	for len(path) > 0 {
 		end := path[len(path)-1]
 		if !taken[[2]int{int(math.Floor(end[0])), int(math.Floor(end[1]))}] {
@@ -331,25 +334,79 @@ func routeLength(fx, fy float64, route [][2]float64) float64 {
 	return length
 }
 
-// truncateRoute keeps the waypoints a `tiles`-tile walk reaches, by the same
-// measure routeTiles charges.
-func truncateRoute(fx, fy float64, route [][2]float64, tiles int) [][2]float64 {
+// truncateRoute keeps the walk a `tiles`-tile move reaches, by the same
+// measure routeTiles charges. The waypoint that would carry it past the move
+// is not dropped but cut short: the path finder returns a straight run over
+// open ground as ONE waypoint at its far end, and dropping that left a body
+// more than a move away with nowhere to go -- a risen man six tiles off across
+// the village green stood still for forty rounds (the default-game sweep,
+// 23 Sep 2026). free, when given, is where a cut leg may END (not a tile
+// another body stands on or has claimed): the leg is cut short of the first
+// point that is not, so a body behind a packmate on its straight line stops
+// behind him rather than not at all.
+func truncateRoute(fx, fy float64, route [][2]float64, tiles int, free func(x, y float64) bool) [][2]float64 {
 	limit := float64(tiles)*math.Sqrt2 + 0.05
 	length, cx, cy := 0.0, fx, fy
 	out := make([][2]float64, 0, len(route))
 
-	for _, w := range route {
-		length += math.Hypot(w[0]-cx, w[1]-cy)
-		cx, cy = w[0], w[1]
+	within := func(x, y, walked float64) bool {
+		return walked <= limit && chebyshevTiles(fx, fy, x, y) <= tiles
+	}
 
-		if length > limit || chebyshevTiles(fx, fy, w[0], w[1]) > tiles {
-			break
+	for _, w := range route {
+		seg := math.Hypot(w[0]-cx, w[1]-cy)
+
+		if within(w[0], w[1], length+seg) {
+			length += seg
+			cx, cy = w[0], w[1]
+			out = append(out, w)
+
+			continue
 		}
 
-		out = append(out, w)
+		// Part of this leg fits: go as far along it as the move allows, and
+		// no further than the last free point.
+		cutWithin := within
+		if free != nil {
+			cutWithin = func(x, y, walked float64) bool { return within(x, y, walked) && free(x, y) }
+		}
+
+		if cut, ok := cutLeg(cx, cy, w, length, truncateStep, cutWithin); ok {
+			out = append(out, cut)
+		}
+
+		break
 	}
 
 	return out
+}
+
+// truncateStep is how finely a leg is cut, in tiles: a twentieth of a
+// subtile's width is far below anything the walk or the tile checks see.
+const truncateStep = 0.01
+
+// cutLeg is the furthest point along the leg from (cx, cy) to w, in steps of
+// step tiles, that within accepts (having walked `walked` tiles before the
+// leg). ok is false when not even the first step fits.
+func cutLeg(cx, cy float64, w [2]float64, walked, step float64,
+	within func(x, y, walked float64) bool) (end [2]float64, ok bool) {
+	seg := math.Hypot(w[0]-cx, w[1]-cy)
+	if seg == 0 {
+		return end, false
+	}
+
+	ux, uy := (w[0]-cx)/seg, (w[1]-cy)/seg
+
+	for d := step; d < seg; d += step {
+		x, y := cx+ux*d, cy+uy*d
+		if !within(x, y, walked+d) {
+			break
+		}
+
+		end, ok = [2]float64{x, y}, true
+	}
+
+	return end, ok
 }
 
 // tacticalAdvance runs once per live frame: the fight's own clock, the world
