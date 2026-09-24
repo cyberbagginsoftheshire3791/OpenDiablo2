@@ -39,6 +39,28 @@ One player's first day and night (`playtest/census_test.go`). **365 files from D
 | `data/local/lng` (3) | the string tables | **done with `-strings`** (23 Sep): Strigoi's own words for the 217 keys the UI asks for (`data/strigoi/strings/strings.json`); `TestAssetCensus` writes the string census (`string-census.tsv`) beside the repo |
 | `data/global/animdata.d2`, `data/local/use` (1 each) | the composites' animation speeds; the install's language code (the numbered labels' modifier) | animdata goes with the last DCC sprite; `use` can go once the language is Strigoi's setting |
 
+## Measured: the default game, 24 Sep 2026 (history items 110-114)
+
+The default game (no switches) over `TestStrigoiIsTheGame`'s first hour -- a
+new game, the kit, talents and help, an hour of world time -- and, in a probe
+(not a committed script), the way a friend meets it: main menu, the new-hero
+screen, the character list, then the same hour.
+
+| Step | Commit | MPQ files (first hour) |
+|---|---|---:|
+| Diablo II's language file unread | `d3d78bc7` | 134 |
+| the grid inventory's test items gone, and the 11 item tables only they needed | `43ec354a` | 112 |
+| the generated world's 4 tables load only when one is built | `50e9b235` | 108 |
+| Diablo II's quest log, character panel, grid and skill tree load their art when opened | `7986f9ea` | **66** |
+
+**A friend's launch, menus included: 80 MPQ files, 47 of them sprites.** They
+are the menus and their buttons, the Diablo II logo, the new-hero screen's
+amazon, the loading screen, the cursors, the HUD, the help overlay's pieces
+and the four villager stand-ins. The other 33 are 16 tables (villagers, hero,
+starting gear, HUD layout, sounds, levels), 5 palettes, 7 sounds and music,
+4 villager `.cof`s and `animdata.d2`. The sprite list, with sizes and override
+paths, is the project's `claude/art-needs-2026-09-24.md`.
+
 ## Measured: our own words too (23 Sep 2026, evening)
 
 The own-everything probe with `-strings` added: **135 MPQ files, 53 of ours**; `lng` 0. Left: `excel` 31, `ui` 72, `items` 11, `monsters` 8, `palette` 5, `sfx` 4, `music` 2, `animdata.d2`, `use`.

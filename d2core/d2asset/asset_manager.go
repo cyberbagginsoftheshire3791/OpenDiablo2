@@ -100,6 +100,10 @@ func (am *AssetManager) SetLogLevel(level d2util.LogLevel) {
 
 // LoadAsset loads an asset
 func (am *AssetManager) LoadAsset(filePath string) (io.ReadSeeker, error) {
+	if override := am.soundOverride(filePath); override != "" { // sound_override.go
+		filePath = override
+	}
+
 	data, err := am.Loader.Load(filePath)
 	if err != nil {
 		errStr := fmt.Sprintf(fmtLoadAsset, filePath, err.Error())
@@ -133,6 +137,10 @@ func (am *AssetManager) LoadFile(filePath string) ([]byte, error) { // I DO NOT 
 
 // FileExists checks if a file exists on the underlying file system at the given file path.
 func (am *AssetManager) FileExists(filePath string) (bool, error) {
+	if am.soundOverride(filePath) != "" { // sound_override.go
+		return true, nil
+	}
+
 	filePath = filepath.Clean(filePath)
 
 	am.Logger.Debugf("Checking if file exists %s", filePath)

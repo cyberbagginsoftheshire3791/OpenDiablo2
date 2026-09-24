@@ -31,3 +31,17 @@ put it here at the sprite's own path, lower-cased, with `.png` for `.dc6` /
   drawn instead; it never stops the game.
 - A sprite with several frames or states (a button's up and down) needs them
   all: the game asks for frame 1, 2 ... Match the original's frame count.
+
+## Sound and music
+
+A `.wav` works the same way, keeping its name: put it at the sound's own path,
+lower-cased, under `data/strigoi/override`:
+
+    data/global/sfx/cursor/button.wav  ->  data/strigoi/override/data/global/sfx/cursor/button.wav
+    data/global/music/act1/town1.wav   ->  data/strigoi/override/data/global/music/act1/town1.wav
+
+It is played instead of Diablo II's, and it counts as there even where
+Diablo II's file is not. (Which file a named sound effect is still comes from
+Diablo II's `sounds.txt`, one of the tables the game reads until they are
+Strigoi's own -- the file itself is yours.) The sounds and music a launch still reads from Diablo II
+are listed in the project's `claude/art-needs-2026-09-24.md`.
