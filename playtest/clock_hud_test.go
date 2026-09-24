@@ -243,6 +243,10 @@ func TestEscapePausesTheWorld(t *testing.T) {
 		t.Fatalf("positive control: the world was not running before the menu (%.4f -> %.4f)", w0, wRun)
 	}
 
+	if held := mustStr(t, uiState(s), "world_held_by"); held != "" {
+		t.Fatalf("positive control: world_held_by %q before the menu, want \"\" (running)", held)
+	}
+
 	// Open the escape menu.
 	s.call("strigoi_key", map[string]any{"key": "escape"})
 
@@ -271,4 +275,24 @@ func TestEscapePausesTheWorld(t *testing.T) {
 			"(+%.4f over 600 frames); advanceWorld must be gated on the menu (item 1)",
 			wMenu, wAfter, wAfter-wMenu)
 	}
+
+	// The hold is named, and step_world refuses it by name rather than
+	// spinning to its tick cap past the client's timeout (history item 121).
+	if held := mustStr(t, ui, "world_held_by"); held != "escape_menu" {
+		t.Fatalf("world_held_by %q under the menu, want \"escape_menu\"", held)
+	}
+
+	if msg := s.callErr("strigoi_step_world", map[string]any{"world_minutes": 10.0}); !strings.Contains(msg, "WORLD_HELD") || !strings.Contains(msg, `"escape_menu"`) {
+		t.Fatalf("step_world under the menu: got %q, want WORLD_HELD naming \"escape_menu\"", msg)
+	}
+
+	// Closed, the world runs again and step_world steps it.
+	s.call("strigoi_key", map[string]any{"key": "escape"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if held := mustStr(t, uiState(s), "world_held_by"); held != "" {
+		t.Fatalf("world_held_by %q with the menu closed, want \"\"", held)
+	}
+
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 10.0})
 }

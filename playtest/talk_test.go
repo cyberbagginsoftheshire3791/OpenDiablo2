@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -101,6 +102,17 @@ func TestTalk(t *testing.T) {
 
 	if after := worldMinutes(t, s); after != before {
 		t.Fatalf("act 3: the world is held while he talks; the clock ran %.2f -> %.2f", before, after)
+	}
+
+	// The hold is named, and step_world refuses it rather than spinning to its
+	// tick cap (history item 121). Act 4's hour is measured from `before`, so
+	// it also proves the refusal moved nothing.
+	if held := mustStr(t, uiState(s), "world_held_by"); held != "talk" {
+		t.Fatalf("act 3: world_held_by %q while he talks, want \"talk\"", held)
+	}
+
+	if msg := s.callErr("strigoi_step_world", map[string]any{"world_minutes": 10.0}); !strings.Contains(msg, "WORLD_HELD") || !strings.Contains(msg, `"talk"`) {
+		t.Fatalf("act 3: step_world during a talk: got %q, want WORLD_HELD naming \"talk\"", msg)
 	}
 
 	// --- 4: answers ------------------------------------------------------------

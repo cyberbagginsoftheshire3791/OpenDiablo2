@@ -594,8 +594,27 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 				"release it with strigoi_set_system_field clock.frozen=false, or step frames with strigoi_step")
 		}
 
+		// The game's own holds wedge it the same way (history item 121): the
+		// escape menu, an open talk, the loadout choice. A paced fight is the
+		// one hold that still moves the clock, a round's minutes at a time; its
+		// open turn is AWAITING_PLAYER's, below. Anything else -- including a
+		// hold added later -- is refused by name.
+		held, err := harnessWorldHeldBy()
+		if err != nil {
+			return nil, out, err
+		}
+
+		if held != "" && held != "fight" {
+			out.SimSeconds = harnessTimeSnapshot().SimSeconds
+
+			return nil, out, harnessErr("WORLD_HELD",
+				fmt.Sprintf("stepped %d ticks and the world is held by %q -- no number of ticks moves it", out.Ticks, held),
+				"close what holds it (strigoi_key escape closes the menu and walks away from a talk; answer the loadout with strigoi_key 1 or 2), or step frames with strigoi_step")
+		}
+
 		// M4.4c-2a: an open player turn freezes the world clock exactly as the
-		// escape menu does (Game.worldRunning() reads Combat.Awaiting()), so a
+		// escape menu does (Game.WorldHeldBy reads Combat.WorldHeld, which is
+		// Awaiting widened to a paced fight's whole length), so a
 		// step_world into a waiting turn would never converge -- it spins to
 		// maxTicks while the playtest client's 60s callTimeout fires first,
 		// Fatalf's the script and leaves harness.stepping true, poisoning the
@@ -684,7 +703,7 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 		return nil, out, harnessErr("TIMEOUT_LOADING",
 			fmt.Sprintf("stepped %d ticks and the clock advanced only %s of %s world minutes",
 				out.Ticks, harnessFmtFloat(out.WorldMinutes), harnessFmtFloat(worldMinutes)),
-			"was the step batch capped, or is the world held another way -- the escape menu, an open talk, the loadout choice?")
+			"was the step batch capped?")
 	}
 
 	return harnessText("stepped %d ticks · %s world minutes · digest %s",
@@ -733,6 +752,47 @@ func harnessClockFrozen() (bool, error) {
 	}
 
 	return frozen, nil
+}
+
+// harnessWorldHeldBy reads the ui provider's world_held_by (Game.WorldHeldBy)
+// on the game goroutine, strictly: no ui provider, an absent or non-string
+// field, or "unknown" (the game screen never attached) is an error, never a
+// running world.
+func harnessWorldHeldBy() (string, error) {
+	var (
+		found, present bool
+		got            interface{}
+	)
+
+	if err := harnessOnUpdate(func() {
+		p, ok := d2harness.Lookup("ui")
+		if !ok {
+			return
+		}
+
+		found = true
+		got, present = p.HarnessState()["world_held_by"]
+	}); err != nil {
+		return "", err
+	}
+
+	held, isString := got.(string)
+
+	switch {
+	case !found:
+		return "", harnessErr("INTERNAL", "no ui provider is registered mid-step", "")
+	case !present:
+		return "", harnessErr("INTERNAL", "the ui provider does not report `world_held_by`",
+			"the field was renamed -- fix the provider or the WORLD_HELD guard")
+	case !isString:
+		return "", harnessErr("INTERNAL", fmt.Sprintf("the ui provider reports `world_held_by` as %T, not a string", got),
+			"the field changed type -- fix the provider or the WORLD_HELD guard")
+	case held == "unknown":
+		return "", harnessErr("INTERNAL", "the game screen has not told the controls what holds the world",
+			"GameControls.SetWorldHolder was not called -- a shipped game calls it in Game.OnLoad")
+	}
+
+	return held, nil
 }
 
 // harnessClockRate reads the clock's current compression (world minutes per

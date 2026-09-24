@@ -417,8 +417,12 @@ var Register = []Entry{
 		"L. One key: light, relight or douse, decided before anything is spent so that a refused commit changes nothing. Reached from OnKeyDown.", ""},
 	{sym(pkgPlayer, "GameControls.combatEndTurn"), BucketWire, VerdictLive,
 		"E. Ends the turn -- hold when the Action is unspent, end when it is spent. Reached from OnKeyDown. Without it a turn with an unspent Move waits forever.", ""},
+	{sym(pkgScreen, "Game.WorldHeldBy"), BucketWire, VerdictLive,
+		"Names what holds the world (the escape menu, the loadout choice, a talk, a paced fight) or \"\" while it runs. worldRunning is WorldHeldBy() == \"\", and the ui provider reports it so step_world refuses a hold no number of ticks lifts (history item 121).", ""},
+	{sym(pkgPlayer, "GameControls.SetWorldHolder"), BucketWire, VerdictLive,
+		"Game.OnLoad attaches the game screen's WorldHeldBy to the controls, for the ui provider's world_held_by. Without it the field reads \"unknown\" and step_world refuses to step at all.", ""},
 	{sym(pkgScreen, "Game.worldRunning"), BucketWire, VerdictLive,
-		"The one boolean that stops the world for an open turn, keeping BOTH of its original terms (menu closed OR not single-player) and adding !Awaiting. advanceWorld is gated on it; MapEngine.Advance deliberately is NOT, so sprites animate and in-flight walks finish while a person thinks.", ""},
+		"The one boolean that stops the world, keeping BOTH of its original terms (menu closed OR not single-player) and adding the paced fight (Combat.WorldHeld, Awaiting widened); since history item 121 it is WorldHeldBy() == \"\". advanceWorld is gated on it; MapEngine.Advance deliberately is NOT, so sprites animate and in-flight walks finish while a person thinks.", ""},
 	{sym(pkgWorld, "Combat.Encounter"), BucketWire, VerdictLive,
 		"Which fight is live RIGHT NOW. The wish console verb asks it as the player types, from Game.commandWish, bound in Game.OnLoad in a shipped build. It exists because the two things that look like an answer are not one: LastRound names the last CLOSED round and is empty through the whole of round one, LastPace only exists after the fight is over and goes on naming it.", ""},
 	// The class pin (ruled 11 Sep 2026, built in M4.4c-2a). Two rows, not one:

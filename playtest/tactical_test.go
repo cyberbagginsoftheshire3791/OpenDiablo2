@@ -104,6 +104,17 @@ func TestTacticalFight(t *testing.T) {
 		t.Fatalf("act 2: the world moved during his turn (%.6f -> %.6f)", w0, w1)
 	}
 
+	// A paced fight is the one named hold step_world does not refuse -- it
+	// moves the clock a round at a time -- and his open turn inside it is
+	// AWAITING_PLAYER's, not WORLD_HELD's (history item 121).
+	if held := mustStr(t, uiState(s), "world_held_by"); held != "fight" {
+		t.Fatalf("act 2: world_held_by %q in a paced fight, want \"fight\"", held)
+	}
+
+	if msg := s.callErr("strigoi_step_world", map[string]any{"world_minutes": 10.0}); !strings.Contains(msg, "AWAITING_PLAYER") {
+		t.Fatalf("act 2: step_world during his turn: got %q, want AWAITING_PLAYER", msg)
+	}
+
 	// --- 6: the overlay is on screen --------------------------------------------
 	shot := s.call("strigoi_screenshot", map[string]any{"name": "t1-tactical-player-turn"})
 	f, err := os.Open(str(shot, "path"))

@@ -53,6 +53,15 @@ func TestKit(t *testing.T) {
 		t.Fatalf("act 1: the world moved while he was choosing (%.4f -> %.4f)", w0, w1)
 	}
 
+	// The hold is named, and step_world refuses it (history item 121).
+	if held := mustStr(t, uiState(s), "world_held_by"); held != "loadout" {
+		t.Fatalf("act 1: world_held_by %q while he chooses, want \"loadout\"", held)
+	}
+
+	if msg := s.callErr("strigoi_step_world", map[string]any{"world_minutes": 10.0}); !strings.Contains(msg, "WORLD_HELD") || !strings.Contains(msg, `"loadout"`) {
+		t.Fatalf("act 1: step_world during the loadout choice: got %q, want WORLD_HELD naming \"loadout\"", msg)
+	}
+
 	s.call("strigoi_key", map[string]any{"key": "1"})
 	s.call("strigoi_step", map[string]any{"frames": 2})
 

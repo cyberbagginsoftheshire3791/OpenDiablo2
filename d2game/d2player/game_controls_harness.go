@@ -110,6 +110,7 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"death_lines":       g.deathLinesReport(),
 		"help_open":         g.HelpOverlay.IsOpen(),
 		"escape_menu_open":  g.escapeMenu.IsOpen(),
+		"world_held_by":     g.worldHeldByReport(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
 		"left_panel_open":   g.isLeftPanelOpen(),
 		"right_panel_open":  g.isRightPanelOpen(),

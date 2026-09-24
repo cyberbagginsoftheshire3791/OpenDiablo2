@@ -764,28 +764,37 @@ func (v *Game) Advance(elapsed float64) error {
 // (M4.1). It is driven by the same delta the rest of the screen receives, so
 // under the playtest harness's stepped clock the world is reproducible and
 // nothing here ever reads the wall clock.
-// worldRunning is one home for one truth, with three readers: advanceWorld's
-// gate, the pace timer, and the harness.
+// worldRunning is one home for one truth: advanceWorld's gate reads it, and
+// the harness reads the same truth through WorldHeldBy, which names what holds
+// the world.
 //
 // BOTH ORIGINAL TERMS ARE KEPT -- the world runs when the menu is closed OR
 // the game is not single-player, because the menu never pauses a multiplayer
 // world, and v1.0 of c-2's note inverted that clause. The new term is the
 // player's own turn: an open turn stops the world, which is R2 §2A's "paused
 // clock" and the DecisionRate dial at zero.
-func (v *Game) worldRunning() bool {
+func (v *Game) worldRunning() bool { return v.WorldHeldBy() == "" }
+
+// WorldHeldBy names what holds the world still -- d2player.WorldHeldByMenu,
+// ByLoadout, ByTalk or ByFight -- or "" while it runs. The harness reads it
+// (the ui provider's world_held_by) so strigoi_step_world refuses a world
+// that no number of ticks will move instead of spinning to its tick cap
+// (history item 121). A paced fight is the one hold that still moves the
+// clock, a round's minutes at a time.
+func (v *Game) WorldHeldBy() string {
 	if !v.screenLive() {
-		return false
+		return d2player.WorldHeldByMenu
 	}
 
 	// T2: nothing moves while he chooses how he carries himself.
 	if v.choosingLoadout {
-		return false
+		return d2player.WorldHeldByLoadout
 	}
 
 	// T4: nor while he talks. Time a talk costs (labour) is paid by the
 	// answer that costs it, not by the minutes he spends reading.
 	if v.talk != nil && !v.talk.Done() {
-		return false
+		return d2player.WorldHeldByTalk
 	}
 
 	// Death screen v0 does NOT hold the world, deliberately. D2's own death
@@ -798,7 +807,11 @@ func (v *Game) worldRunning() bool {
 	// T1: a PACED fight holds the world for its whole length, not only while
 	// his turn is open -- the packs' visible turns are part of the pause, and
 	// each round is paid for in world minutes by tacticalAdvance instead.
-	return v.combat == nil || !v.combat.WorldHeld()
+	if v.combat != nil && v.combat.WorldHeld() {
+		return d2player.WorldHeldByFight
+	}
+
+	return ""
 }
 
 // screenLive is the escape menu's half of worldRunning: the menu pauses a
@@ -2035,6 +2048,7 @@ func (v *Game) bindGameControls() error {
 		v.gameControls.SetTalkHolder(v)
 		v.gameControls.SetForageHolder(v)
 		v.gameControls.SetCorpseHolder(v)
+		v.gameControls.SetWorldHolder(v)
 
 		// M4.7 Q2a: Night 1's dead, around where he enters.
 		v.placeTheDead()

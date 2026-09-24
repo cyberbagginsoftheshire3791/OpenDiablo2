@@ -373,9 +373,16 @@ player is always handle `p:1`; other entities are `e:N` in first-seen order
 with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING ·
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · AWAITING_PLAYER · CLOCK_FROZEN ·
-INTERNAL`. `CLOCK_FROZEN` (24 Sep 2026, harness 0.12.1) is `strigoi_step_world`'s
-refusal when the clock is frozen: no number of ticks moves it, and the stepper
-used to spin to its tick cap past the client's timeout before saying so.
+WORLD_HELD · INTERNAL`. `CLOCK_FROZEN` (24 Sep 2026, harness 0.12.1) is
+`strigoi_step_world`'s refusal when the clock is frozen: no number of ticks
+moves it, and the stepper used to spin to its tick cap past the client's
+timeout before saying so. `WORLD_HELD` (harness 0.12.2) is the same refusal
+for the game's own holds, named by the ui provider's `world_held_by`
+(`Game.WorldHeldBy`): `escape_menu`, `talk`, `loadout`. `fight` (a paced
+fight) is not refused -- it moves the clock a round at a time, and its open
+turn is `AWAITING_PLAYER`'s. Both are checked every pass; the menu, a talk and
+the loadout choice only begin from input, so in practice they are caught on
+the first.
 `GAME_NOT_TICKING` (23 Sep 2026) also writes every goroutine's stack to
 `stall-tick<N>-<time>.txt` in the run directory -- once per stall, however many
 calls wait on it -- and names the file in the error and in one log line; the
@@ -389,7 +396,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.12.1)
+## The tools (37; harness 0.12.2)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -787,7 +794,11 @@ accumulated seconds — not the world clock), and since 23 Sep 2026
 `mini_panel_open` and `mini_panel_buttons` (the HUD button menu's buttons by
 name -- character, inventory, skills, automap, message, quest, menu, party,
 and `open_close` -- each `{x, y, w, h, visible}` in screen pixels, so a script
-clicks where they are drawn). Read-only. It registers in
+clicks where they are drawn), and since 24 Sep `world_held_by` (what holds the
+world, `Game.WorldHeldBy`: `""` while it runs, `escape_menu`, `loadout`,
+`talk`, `fight`; `"unknown"` if the game screen never attached --
+`strigoi_step_world` refuses all but `""` and `fight` with `WORLD_HELD`).
+Read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
 register when the game screen is constructed and close on unload.
 

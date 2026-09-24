@@ -328,6 +328,9 @@ type GameControls struct {
 	// kitHolder is the game screen's owner of the hero's gear (T2).
 	kitHolder KitHolder
 
+	// worldHolder answers what holds the world still (history item 121).
+	worldHolder WorldHolder
+
 	// progressHolder is the owner of his experience and talents (T3).
 	progressHolder ProgressHolder
 
