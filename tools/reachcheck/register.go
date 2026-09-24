@@ -702,7 +702,7 @@ var Register = []Entry{
 	{sym(pkgPlayer, "GameControls.skillsAction"), BucketWire, VerdictLive,
 		"The skill key, the mini-panel's skill button and the add-skill button open Strigoi's talents, not Diablo II's skill tree.", ""},
 	{sym(pkgAsset, "AssetManager.EnsureRecords"), BucketWire, VerdictLive,
-		"The generated world's four tables load when it is built (generateAct1World, LoadStamp, NewObject); without the call a -classic game has no presets.", ""},
+		"The generated world's four tables load when it is built (generateAct1World, LoadStamp, NewObject); without the call a -classic game has no presets. The missiles and cast overlays load on the first cast (GameClient.handleCastSkillPacket); without it a right-click casts nothing.", ""},
 	{sym(pkgMapGen, "MapGenerator.GenerateHostWorld"), BucketWire, VerdictLive,
 		"A client builds the world its host built, from the GenerateMap packet (GameClient.handleGenerateMapPacket) -- a local game's client too.", ""},
 	{sym(pkgPlayer, "miniPanel.buttonsReport"), BucketObserve, VerdictHarnessOnly,

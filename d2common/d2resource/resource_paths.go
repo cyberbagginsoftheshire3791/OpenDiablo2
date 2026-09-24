@@ -300,7 +300,7 @@ const (
 	ItemTypes             = "/data/global/excel/ItemTypes.txt"
 	QualityItems          = "/data/global/excel/qualityitems.txt"
 	LowQualityItems       = "/data/global/excel/lowqualityitems.txt"
-	Overlays              = "/data/global/excel/Overlay.txt"
+	Overlays              = "/data/global/excel/Overlay.txt" // CastRecords
 	Runes                 = "/data/global/excel/runes.txt"
 	Sets                  = "/data/global/excel/Sets.txt"
 	SetItems              = "/data/global/excel/SetItems.txt"
@@ -459,7 +459,7 @@ const (
 
 	// --- Skill Data ---
 
-	Missiles = "/data/global/excel/Missiles.txt"
+	Missiles = "/data/global/excel/Missiles.txt" // CastRecords
 
 	// --- Palettes ---
 
@@ -509,3 +509,11 @@ const (
 //
 // nolint:gochecknoglobals // a fixed list, read by the generator and its tools
 var GeneratedWorldRecords = []string{LevelPreset, MonPreset, ObjectType, ObjectDetails}
+
+// CastRecords are the tables only a Diablo II skill cast reads: its missiles
+// and its cast overlay. They load on the first cast
+// (GameClient.handleCastSkillPacket), not at boot -- a game that never casts
+// never reads them.
+//
+// nolint:gochecknoglobals // a fixed list, read by the cast
+var CastRecords = []string{Missiles, Overlays}

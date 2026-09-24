@@ -105,7 +105,7 @@ func (a *App) initLanguage() {
 }
 
 func (a *App) initDataDictionaries() error {
-	// THE TABLES THE GAME READS (23 Sep 2026, M5.3's census): 16 of the 83
+	// THE TABLES THE GAME READS (23 Sep 2026, M5.3's census): 14 of the 83
 	// Diablo II .txt tables this list used to load. 52 of the rest filled
 	// RecordManager fields that nothing outside d2core/d2records ever reads --
 	// LevelWarp, Books, MonProp, MonType, MonMode, ItemRatio, StorePage,
@@ -143,14 +143,18 @@ func (a *App) initDataDictionaries() error {
 	// (d2resource.GeneratedWorldRecords, AssetManager.EnsureRecords), so the
 	// default game, which builds the authored village, never reads them.
 	//
+	// AND TWO MORE LOAD LATER (history item 116): Missiles and Overlays are
+	// read only when a Diablo II skill is cast (a right-click, or a
+	// shift-click), and load then (GameClient.handleCastSkillPacket).
+	//
 	// The order is the old list's, filtered.
 	dictPaths := []string{
 		d2resource.LevelType,
 		d2resource.Weapons,
 		d2resource.Armor, d2resource.Misc,
-		d2resource.Missiles, d2resource.SoundSettings,
+		d2resource.SoundSettings,
 		d2resource.MonStats, d2resource.MonStats2,
-		d2resource.Overlays, d2resource.CharStats, d2resource.Experience,
+		d2resource.CharStats, d2resource.Experience,
 		d2resource.LevelDetails, d2resource.Inventory, d2resource.Skills,
 		d2resource.SkillDesc, d2resource.SoundEnvirons,
 	}

@@ -7,7 +7,9 @@ import "sync"
 // table only Diablo II's generated world reads -- its DS1 presets and the
 // objects and monsters they place -- is loaded by EnsureRecords when that
 // world is first built, so the default game, which builds the authored
-// village, never reads it from the MPQs.
+// village, never reads it from the MPQs. Likewise the tables only a Diablo
+// II skill cast reads (d2resource.CastRecords, history item 116) load on the
+// first cast.
 type recordsLoaded struct {
 	mu   sync.Mutex
 	done map[string]bool

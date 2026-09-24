@@ -15,6 +15,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
@@ -304,6 +305,12 @@ func (g *GameClient) handleMovePlayerPacket(packet d2netpacket.NetPacket) error 
 func (g *GameClient) handleCastSkillPacket(packet d2netpacket.NetPacket) error {
 	playerCast, err := d2netpacket.UnmarshalCast(packet.PacketData)
 	if err != nil {
+		return err
+	}
+
+	// Diablo II's missiles and cast overlays load on the first cast, not at
+	// boot (d2resource.CastRecords): a game that never casts never reads them.
+	if err := g.asset.EnsureRecords(d2resource.CastRecords...); err != nil {
 		return err
 	}
 

@@ -126,10 +126,11 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		t.Fatalf("font set %q, string table %q: want Strigoi's", str(a, "font_set"), str(a, "string_set"))
 	}
 
-	// Diablo II's tables: 16 of its 83 at most (history items 111, 113) --
-	// the generated world's four load only when one is built.
-	if n := mpqIn(a, "data/global/excel"); n == 0 || n > 16 {
-		t.Errorf("data/global/excel: %.0f table(s) from Diablo II's MPQs, want 1..16", n)
+	// Diablo II's tables: 14 of its 83 at most (history items 111, 113, 116)
+	// -- the generated world's four load only when one is built, the
+	// missiles and cast overlays only when a skill is cast.
+	if n := mpqIn(a, "data/global/excel"); n == 0 || n > 14 {
+		t.Errorf("data/global/excel: %.0f table(s) from Diablo II's MPQs, want 1..14", n)
 	}
 
 	// The census's area names are what this reads: an area it still reads
@@ -161,6 +162,31 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		}
 
 		t.Errorf("%.0f key(s) the game asked for are not in Strigoi's string table: %v", mustNum(t, a, "strings_missing"), missing)
+	}
+
+	// A right-click still casts Diablo II's right skill (history item 116),
+	// and the missile and overlay tables load with the first cast, not before.
+	cast := []string{"/data/global/excel/missiles.txt", "/data/global/excel/overlay.txt"}
+
+	for _, table := range cast {
+		if censusHas(a, table) {
+			t.Errorf("%s was read before anything was cast", table)
+		}
+	}
+
+	sx, sy := pair(s.call("strigoi_get_player", map[string]any{}), "screen")
+	if sx == 0 && sy == 0 {
+		t.Fatal("strigoi_get_player reported no screen position; the right-click would miss him")
+	}
+
+	s.call("strigoi_click", map[string]any{"x": int(sx) + 60, "y": int(sy), "button": "right"})
+	s.call("strigoi_step", map[string]any{"frames": 30})
+
+	after := sub(s.call("strigoi_get_system_state", map[string]any{"system": "assets"}), "state")
+	for _, table := range cast {
+		if !censusHas(after, table) {
+			t.Errorf("a right-click beside him (screen %.0f,%.0f) did not read %s", sx+60, sy, table)
+		}
 	}
 
 	// Diablo II's quest log and character panel load their art when first

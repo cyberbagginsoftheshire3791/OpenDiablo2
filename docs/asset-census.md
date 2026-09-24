@@ -29,7 +29,7 @@ One player's first day and night (`playtest/census_test.go`). **365 files from D
 | MPQ area | What it is | Replaced by |
 |---|---|---|
 | `data/global/tiles` (74) | Act 1 town and wilderness tiles -- the map itself | **M5.4**: maps authored in Tiled, drawn from our own tile PNGs |
-| `data/global/excel` (83) | D2's data tables (monsters, levels, objects, items, ...) the engine reads to build maps and entities | **83 → 31 (23 Sep):** 52 tables filled record sets nothing outside `d2records` reads, and are no longer loaded (`d2app/initialization.go`). The 31 left are read -- levels, objects, items and affixes, missiles, sounds, monsters, charstats, experience, inventory, skills; each goes as its readers move to Strigoi's own data |
+| `data/global/excel` (83) | D2's data tables (monsters, levels, objects, items, ...) the engine reads to build maps and entities | **83 → 31 (23 Sep):** 52 tables filled record sets nothing outside `d2records` reads, and are no longer loaded (`d2app/initialization.go`). The 31 left are read -- levels, objects, items and affixes, missiles, sounds, monsters, charstats, experience, inventory, skills; each goes as its readers move to Strigoi's own data. Since 24 Sep the generated world's 4 load only when one is built, and the missiles and cast overlays only on the first cast: 14 load at boot |
 | `data/global/ui` (72) | menus, panels, front end, cursor, loading screen | our own UI art (Josh + GPT): **a PNG at `data/strigoi/override/<the sprite's path, lower-cased>.png` is drawn instead, no code per sprite** (23 Sep; `data/strigoi/override/README.md`; sizes from `strigoi_describe_sprite`) |
 | `data/global/monsters` (39) | the town's people and animals (rogues, Warriv, Gheed, cows, chickens) | our villagers and livestock as PNG creatures (M5.1's path) |
 | `data/global/objects` (29) | town objects (waypoint, torches, barrels, ...) | authored with the map (M5.4) |
@@ -51,12 +51,15 @@ screen, the character list, then the same hour.
 | Diablo II's language file unread | `d3d78bc7` | 134 |
 | the grid inventory's test items gone, and the 11 item tables only they needed | `43ec354a` | 112 |
 | the generated world's 4 tables load only when one is built | `50e9b235` | 108 |
-| Diablo II's quest log, character panel, grid and skill tree load their art when opened | `7986f9ea` | **66** |
+| Diablo II's quest log, character panel, grid and skill tree load their art when opened | `7986f9ea` | 66 |
+| the missiles and cast overlays load on the first cast (a right-click) | (history item 116) | **64** |
 
-**A friend's launch, menus included: 80 MPQ files, 47 of them sprites.** They
+**A friend's launch, menus included: 80 MPQ files, 47 of them sprites**
+(measured at `4e303446`; 78 since the cast tables left boot -- re-derived,
+not re-measured, as that probe never casts). They
 are the menus and their buttons, the Diablo II logo, the new-hero screen's
 amazon, the loading screen, the cursors, the HUD, the help overlay's pieces
-and the four villager stand-ins. The other 33 are 16 tables (villagers, hero,
+and the four villager stand-ins. The other 33 were 16 tables, now 14 (villagers, hero,
 starting gear, HUD layout, sounds, levels), 5 palettes, 7 sounds and music,
 4 villager `.cof`s and `animdata.d2`. The sprite list, with sizes and override
 paths, is the project's `claude/art-needs-2026-09-24.md`.
