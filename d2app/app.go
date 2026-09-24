@@ -224,10 +224,13 @@ func (a *App) parseArguments() {
 	a.Options.LogLevel = flag.Int("l", d2util.LogLevelDefault, descLogging)
 	showVersion := flag.Bool("v", false, "Show version")
 	showHelp := flag.Bool("h", false, "Show help")
-	a.Options.strings = flag.String("strings", "", "answer every label from a Strigoi string table (game-relative, e.g. data/strigoi/strings/strings.json) instead of Diablo II's")
-	a.Options.fontSet = flag.String("fonts", "", "draw every word from a Strigoi font set (game-relative, e.g. data/strigoi/fonts/fonts.json) instead of Diablo II's fonts")
-	heroArt := flag.String("hero", "", "draw the hero from a PNG hero manifest (game-relative, e.g. data/strigoi/hero/placeholder/hero.json) instead of Diablo II's class art")
-	authoredMap := flag.String("map", "", "play on an authored Tiled map (.tmj, game-relative, e.g. data/strigoi/maps/village.tmj) instead of the generated Act 1 world")
+	// Strigoi's own four are the default (strigoi_defaults.go); "diablo" names
+	// Diablo II's for any one, -classic for all of them.
+	classic := flag.Bool("classic", false, "Diablo II's generated Act 1, class art, fonts and words (each of -map, -hero, -fonts, -strings can still name Strigoi's)")
+	a.Options.strings = flag.String("strings", "", "the string table every label is answered from (default "+defaultStrings+"; diablo = Diablo II's)")
+	a.Options.fontSet = flag.String("fonts", "", "the font set every word is drawn in (default "+defaultFonts+"; diablo = Diablo II's)")
+	heroArt := flag.String("hero", "", "the hero's PNG manifest (default "+defaultHero+"; diablo = Diablo II's class art)")
+	authoredMap := flag.String("map", "", "the authored Tiled map played on (default "+defaultMap+"; diablo = Diablo II's generated Act 1)")
 
 	flag.Usage = func() {
 		fmt.Printf("usage: %s [<flags>]\n\nFlags:\n", os.Args[0])
@@ -240,9 +243,24 @@ func (a *App) parseArguments() {
 		*a.Options.LogLevel = d2util.LogLevelDefault
 	}
 
-	// M5.4: set before any game exists, so the first world is the authored one.
-	d2mapgen.SetAuthoredMap(*authoredMap)
-	d2mapentity.SetHeroArt(*heroArt)
+	// Set before any game exists, so the first world is the chosen one.
+	given := map[string]string{}
+
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "map", "hero", "fonts", "strings":
+			given[f.Name] = f.Value.String()
+		}
+	})
+
+	launch := resolveLaunch(*classic, given)
+
+	d2mapgen.SetAuthoredMap(launch.Map)
+	d2mapentity.SetHeroArt(launch.Hero)
+	*a.Options.fontSet = launch.Fonts
+	*a.Options.strings = launch.Strings
+
+	_, _ = authoredMap, heroArt // read through flag.Visit above
 
 	if *showVersion {
 		a.Infof("version: OpenDiablo2 (%s %s)", a.gitBranch, a.gitCommit)

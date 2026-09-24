@@ -53,7 +53,7 @@ func TestStrigoiFonts(t *testing.T) {
 
 	shipped.stop()
 
-	ours := startWith(t, "-fonts", set)
+	ours := startWith(t, "-classic", "-fonts", set)
 	day(ours, "fonts-strigoi")
 
 	mpq, fontSet := fontFiles(ours)

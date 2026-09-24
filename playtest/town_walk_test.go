@@ -96,6 +96,15 @@ func TestTownWalk(t *testing.T) {
 	}
 
 	// 5. screenshot: the HUD region must not be black (the floor may be — known bug)
+	//
+	// PAUSED for the shot. The walk above is live, as this script is; the
+	// shot is not, because a frame read back from the GPU while the game runs
+	// flat out has five times in full suites never come back (a D3D11 Map
+	// past the 5 s deadline, 0 ticks -- docs/bugs.md, the stall files). The
+	// stall is the machine's, not this script's subject.
+	s.call("strigoi_pause", map[string]any{})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
 	shot := s.call("strigoi_screenshot", map[string]any{"name": "town"})
 	shotPath := str(shot, "path")
 

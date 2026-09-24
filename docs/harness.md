@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 38 playtest scripts.** That count, the harness version below and the
+**The 39 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -290,6 +290,15 @@ this doc fails until it agrees.
   launcher's `startWith`): the census reports the set, and after the menu, a
   new game, the kit, talents and help panels, `data/local/font` has NO file
   from an MPQ. Screenshots of both menus and both kit panels.
+* **Since 23 Sep 2026 the game with no switches is Strigoi's own** (the village,
+  the Janissary's sheets, Strigoi's fonts and words; `d2app/strigoi_defaults.go`),
+  and `-classic` is Diablo II's generated Act 1, class art, fonts and words. The
+  launcher's `start(t)` passes **`-classic`**, so every script written against
+  Act 1 keeps its world; `startWith(t, flags...)` passes only what it is given.
+* `strigoi_game_test.go` — the thirty-ninth: the game launched with NO switches
+  builds the village, draws the hero from Strigoi's sheets, uses Strigoi's font
+  set and string table, and a first hour reads no Diablo II tile, class-art,
+  font or string file. (Measured at the time: 135 MPQ files.)
 * `words_test.go` — the thirty-eighth, M5.3 (23 Sep 2026): every label answered
   from Strigoi's own string table (`-strings data/strigoi/strings/strings.json`).
   Control: as shipped, Diablo II's string tables come from the MPQs. With
@@ -345,7 +354,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (36; harness 0.12.0)
+## The tools (37; harness 0.12.0)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -399,6 +408,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_find_path` | The route the pathfinder would take, **without walking it**: waypoints in travel order (world tiles + subtiles), `reachable`, and `straight_line_clear`. That last field is the negative control — a route that arrives proves nothing unless the straight line did not. `from_x`/`from_y` default to the player. Added M4.3a. |
 | `strigoi_dump_map` | walk / entities / region window, ≤64×64 tiles |
 | `strigoi_read_log` | Ring of the last 5000 logger lines, cursor + RE2 filter |
+| `strigoi_describe_sprite` | A sprite's directions, frames and frame sizes as drawn, whether a Strigoi PNG stands in for it, and its override path (`data/strigoi/override/<path, lower-cased>.png`, M5.3). Loading it counts in the census |
 | `strigoi_screenshot` | PNG of the next frame; crop; inline image; `read_ms`, how long the frame took to read back (one `ReadPixels`, ~33 ms) |
 | `strigoi_dump_surface` | floor_tile: the black-floor diagnostic (spec §5.3) |
 | `strigoi_list_systems` | Registered providers with their settable fields; the planned systems not yet registered |

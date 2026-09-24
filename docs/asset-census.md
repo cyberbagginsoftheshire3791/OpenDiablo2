@@ -30,7 +30,7 @@ One player's first day and night (`playtest/census_test.go`). **365 files from D
 |---|---|---|
 | `data/global/tiles` (74) | Act 1 town and wilderness tiles -- the map itself | **M5.4**: maps authored in Tiled, drawn from our own tile PNGs |
 | `data/global/excel` (83) | D2's data tables (monsters, levels, objects, items, ...) the engine reads to build maps and entities | **83 → 31 (23 Sep):** 52 tables filled record sets nothing outside `d2records` reads, and are no longer loaded (`d2app/initialization.go`). The 31 left are read -- levels, objects, items and affixes, missiles, sounds, monsters, charstats, experience, inventory, skills; each goes as its readers move to Strigoi's own data |
-| `data/global/ui` (72) | menus, panels, front end, cursor, loading screen | our own UI art (Josh + GPT) through the PNG path |
+| `data/global/ui` (72) | menus, panels, front end, cursor, loading screen | our own UI art (Josh + GPT): **a PNG at `data/strigoi/override/<the sprite's path, lower-cased>.png` is drawn instead, no code per sprite** (23 Sep; `data/strigoi/override/README.md`; sizes from `strigoi_describe_sprite`) |
 | `data/global/monsters` (39) | the town's people and animals (rogues, Warriv, Gheed, cows, chickens) | our villagers and livestock as PNG creatures (M5.1's path) |
 | `data/global/objects` (29) | town objects (waypoint, torches, barrels, ...) | authored with the map (M5.4) |
 | `data/global/chars` (20) | **the hero** (the amazon) | our Janissary as PNG sheets |

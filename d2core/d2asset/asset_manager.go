@@ -173,6 +173,19 @@ func (am *AssetManager) LoadAnimationWithEffect(animationPath, palettePath strin
 
 	am.Debugf(fmtLoadAnimation, animationPath, palettePath, effect)
 
+	// M5.3: a Strigoi PNG at the sprite's override path is drawn in its
+	// place (sprite_override.go). The cache keeps the asked-for path. A
+	// broken drop-in -- a corrupt PNG, a manifest that does not fit the
+	// sheet -- must not stop the game: it is reported and Diablo II's drawn.
+	if override := am.spriteOverride(animationPath); override != "" {
+		animation, err := am.loadPNG(override, effect)
+		if err == nil {
+			return animation, am.animations.Insert(cachePath, animation, defaultCacheEntryWeight)
+		}
+
+		am.Errorf("sprite override %s refused, drawing %s: %v", override, animationPath, err)
+	}
+
 	var (
 		animation d2interface.Animation
 		err       error

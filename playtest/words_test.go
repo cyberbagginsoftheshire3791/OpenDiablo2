@@ -77,7 +77,7 @@ func TestStrigoiWords(t *testing.T) {
 
 	shipped.stop()
 
-	ours := startWith(t, "-strings", table)
+	ours := startWith(t, "-classic", "-strings", table)
 	day(ours, "words-strigoi", "The headman")
 
 	a := census(ours)

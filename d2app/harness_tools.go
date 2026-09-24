@@ -95,6 +95,7 @@ func (a *App) harnessServe() {
 	a.harnessAddProviderTools(srv) // harness_providers.go (M3.4)
 	a.harnessAddInputTools(srv)    // harness_input.go (M3.4)
 	a.harnessAddSpawnTools(srv)    // harness_spawn.go (M3.4)
+	a.harnessAddSpriteTools(srv)   // harness_sprite.go (M5.3)
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, &mcp.StreamableHTTPOptions{})
 
@@ -334,17 +335,19 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			// default crypto-random IDs and the wall-clock map seed.
 			// "generated" returns to the generated world; "" keeps whatever is
 			// set (the -map flag, or an earlier start_game in this process).
-			switch in.HeroArt {
-			case "":
-			case "composite":
+			// "diablo" means Diablo II's here as on the command line
+			// (strigoi_defaults.go), in any case.
+			switch {
+			case in.HeroArt == "":
+			case strings.EqualFold(in.HeroArt, "composite"), strings.EqualFold(in.HeroArt, diabloValue):
 				d2mapentity.SetHeroArt("")
 			default:
 				d2mapentity.SetHeroArt(in.HeroArt)
 			}
 
-			switch in.Map {
-			case "":
-			case "generated":
+			switch {
+			case in.Map == "":
+			case strings.EqualFold(in.Map, "generated"), strings.EqualFold(in.Map, diabloValue):
 				d2mapgen.SetAuthoredMap("")
 			default:
 				d2mapgen.SetAuthoredMap(in.Map)

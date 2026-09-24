@@ -333,8 +333,10 @@ func (c *Composite) loadCompositeLayer(layerKey, layerValue, animationMode, weap
 	for idx := range animationPaths {
 		tried = append(tried, animationPaths[idx])
 
+		// A layer whose Diablo II file is gone but whose Strigoi override
+		// is there (sprite_override.go) is still a layer.
 		exists, err := c.FileExists(animationPaths[idx])
-		if err != nil || !exists {
+		if (err != nil || !exists) && c.spriteOverride(animationPaths[idx]) == "" {
 			continue
 		}
 

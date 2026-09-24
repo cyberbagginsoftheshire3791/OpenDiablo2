@@ -52,7 +52,11 @@ type session struct {
 func start(t *testing.T) *session {
 	t.Helper()
 
-	return startWith(t)
+	// -classic: the suite's scripts were written against Diablo II's
+	// generated Act 1, class art, fonts and words, and keep them so their
+	// record stays comparable. Strigoi's own defaults have their own script
+	// (strigoi_game_test.go), launched with no switches at all.
+	return startWith(t, "-classic")
 }
 
 // startWith is start with extra command-line flags for the game (-fonts ...).
