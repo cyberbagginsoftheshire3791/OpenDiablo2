@@ -115,6 +115,21 @@ func TestClockHUD(t *testing.T) {
 			h0, m0, expectHoursToDusk(m0))
 	}
 
+	// A frozen clock refuses a world-minutes step outright (history item
+	// 120), and the refusal moves nothing: it used to spin to its tick cap,
+	// past the client's timeout.
+	simBefore := mustNum(t, s.call("strigoi_get_time_mode", map[string]any{}), "sim_seconds")
+
+	if msg := s.callErr("strigoi_step_world", map[string]any{"world_minutes": 10.0}); !strings.Contains(msg, "CLOCK_FROZEN") {
+		t.Fatalf("step_world on a frozen clock: got %q, want CLOCK_FROZEN", msg)
+	}
+
+	// Refused before a tick ran: the frozen clock cannot show that, so the
+	// simulation's own seconds are the witness.
+	if simAfter := mustNum(t, s.call("strigoi_get_time_mode", map[string]any{}), "sim_seconds"); simAfter != simBefore {
+		t.Fatalf("the refused step ran ticks first: sim_seconds %v -> %v", simBefore, simAfter)
+	}
+
 	// ---- step a chosen span and assert the readout FELL by that span ----
 	// Unfreeze first: a frozen clock ignores the step (worldClock.Advance
 	// returns 0), the same rule night_light §11 turns on.

@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.12.0"         // c-2b: strigoi_click{hold_frames} (BUG-7's instrument half), spawns.max_groups settable
+	harnessVersion     = "0.12.1"         // 24 Sep: step_world refuses a frozen clock (CLOCK_FROZEN); c-2b: strigoi_click{hold_frames}, spawns.max_groups settable
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64

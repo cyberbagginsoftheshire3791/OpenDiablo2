@@ -549,17 +549,19 @@ func harnessSleep(d time.Duration) { time.Sleep(d) }
 // the requested number of world minutes has passed (P3 spec §3.4). It never
 // sets the clock — it steps it, so what a script asserts about a date is the
 // clock's arithmetic and not the test's (§4.5). The compression differs
-// between day and night, so the tick count is estimated from the clock's
-// current rate and re-estimated after every batch.
+// between day and night, so each batch is sized at the clock's FASTEST rate
+// (max_rate) and the remainder re-measured after it: a batch can only fall
+// short, never run past the target across dawn (history item 117).
 func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult, harnessStepOut, error) {
 	var out harnessStepOut
 
 	const (
 		maxTicks = 200000
 		minBatch = 10
-		// Aim slightly SHORT and converge from below: each pass closes 98% of
-		// what is left, so a 1110-minute step lands in about three passes and
-		// the final one overshoots by at most minBatch ticks' worth.
+		// Aim slightly SHORT and converge from below: sized at the fastest
+		// rate, each pass closes 98% of what is left by day and at least 61% by
+		// night, so a 1110-minute step lands in a handful of passes and the
+		// final one overshoots by at most minBatch ticks' worth.
 		fudge = 0.98
 	)
 
@@ -575,6 +577,23 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 	target := start + worldMinutes
 
 	for out.Ticks < maxTicks {
+		// A frozen clock never reaches the target: every tick advances it by
+		// 0, and this loop spun to maxTicks -- past the playtest client's 60 s
+		// timeout -- before saying so (history item 120). Checked every pass,
+		// like the open turn below, so a clock frozen mid-step is caught too.
+		frozen, err := harnessClockFrozen()
+		if err != nil {
+			return nil, out, err
+		}
+
+		if frozen {
+			out.SimSeconds = harnessTimeSnapshot().SimSeconds
+
+			return nil, out, harnessErr("CLOCK_FROZEN",
+				fmt.Sprintf("stepped %d ticks and the world clock is frozen -- no number of ticks moves it", out.Ticks),
+				"release it with strigoi_set_system_field clock.frozen=false, or step frames with strigoi_step")
+		}
+
 		// M4.4c-2a: an open player turn freezes the world clock exactly as the
 		// escape menu does (Game.worldRunning() reads Combat.Awaiting()), so a
 		// step_world into a waiting turn would never converge -- it spins to
@@ -611,8 +630,8 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 
 		rate, _ := harnessClockRate()
 		if rate <= 0 {
-			return nil, out, harnessErr("INTERNAL", "the clock reports a zero rate — is it frozen?",
-				"a frozen clock cannot be stepped in world minutes; release it with strigoi_set_system_field clock.frozen=false")
+			return nil, out, harnessErr("INTERNAL", "the clock reports a zero rate",
+				"a rate is a dial (DayRate, NightRate) and is never zero in a shipped build -- check the clock's dials")
 		}
 
 		// Sized at the clock's FASTEST rate, not the one in force: the rate
@@ -665,7 +684,7 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 		return nil, out, harnessErr("TIMEOUT_LOADING",
 			fmt.Sprintf("stepped %d ticks and the clock advanced only %s of %s world minutes",
 				out.Ticks, harnessFmtFloat(out.WorldMinutes), harnessFmtFloat(worldMinutes)),
-			"is the clock frozen, or the step batch capped?")
+			"was the step batch capped, or is the world held another way -- the escape menu, an open talk, the loadout choice?")
 	}
 
 	return harnessText("stepped %d ticks · %s world minutes · digest %s",
@@ -676,6 +695,44 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 // on the game goroutine. ok is false when no clock is registered.
 func harnessClockMinutes() (minutes float64, ok bool) {
 	return harnessClockField("world_minutes")
+}
+
+// harnessClockFrozen reads the clock provider's `frozen` flag on the game
+// goroutine. It reads STRICTLY, for harnessCombatAwaiting's reason: no clock,
+// an absent field or one of another type is an error, never "not frozen"; and
+// a game that is not ticking is its own error (GAME_NOT_TICKING), passed
+// through rather than misread as a rename.
+func harnessClockFrozen() (bool, error) {
+	var (
+		frozen, found, present bool
+		got                    interface{}
+	)
+
+	if err := harnessOnUpdate(func() {
+		p, ok := d2harness.Lookup("clock")
+		if !ok {
+			return
+		}
+
+		found = true
+		got, present = p.HarnessState()["frozen"]
+		frozen, _ = got.(bool)
+	}); err != nil {
+		return false, err
+	}
+
+	switch _, isBool := got.(bool); {
+	case !found:
+		return false, harnessErr("INTERNAL", "no clock provider is registered mid-step", "")
+	case !present:
+		return false, harnessErr("INTERNAL", "the clock provider does not report `frozen`",
+			"the field was renamed -- fix the provider or the CLOCK_FROZEN guard")
+	case !isBool:
+		return false, harnessErr("INTERNAL", fmt.Sprintf("the clock provider reports `frozen` as %T, not a bool", got),
+			"the field changed type -- fix the provider or the CLOCK_FROZEN guard")
+	}
+
+	return frozen, nil
 }
 
 // harnessClockRate reads the clock's current compression (world minutes per

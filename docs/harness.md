@@ -372,7 +372,10 @@ player is always handle `p:1`; other entities are `e:N` in first-seen order
 (stable under a seed, per process). Errors come back as `CODE: message — hint`
 with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING ·
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
-FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · AWAITING_PLAYER · INTERNAL`.
+FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · AWAITING_PLAYER · CLOCK_FROZEN ·
+INTERNAL`. `CLOCK_FROZEN` (24 Sep 2026, harness 0.12.1) is `strigoi_step_world`'s
+refusal when the clock is frozen: no number of ticks moves it, and the stepper
+used to spin to its tick cap past the client's timeout before saying so.
 `GAME_NOT_TICKING` (23 Sep 2026) also writes every goroutine's stack to
 `stall-tick<N>-<time>.txt` in the run directory -- once per stall, however many
 calls wait on it -- and names the file in the error and in one log line; the
@@ -386,7 +389,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.12.0)
+## The tools (37; harness 0.12.1)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
