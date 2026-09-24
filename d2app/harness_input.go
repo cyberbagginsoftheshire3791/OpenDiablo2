@@ -37,7 +37,7 @@ type harnessClickIn struct {
 	Y      int      `json:"y" jsonschema:"screen pixel y (0..599)"`
 	Button string   `json:"button,omitempty" jsonschema:"left (default), right, middle"`
 	Mods   []string `json:"mods,omitempty" jsonschema:"modifier keys held for the click: shift, control, alt"`
-	Hold   int      `json:"hold_frames,omitempty" jsonschema:"hold the button DOWN for this many frames before releasing (default 1, a tap). 2 or more is what reaches the click-and-hold path: GameControls.OnMouseButtonRepeat and its 0.25 s threshold, which a tap cannot reach by construction (BUG-7)"`
+	Hold   int      `json:"hold_frames,omitempty" jsonschema:"hold the button DOWN for this many frames before releasing (default 1, a tap). 2 or more is what reaches the click-and-hold path: GameControls.OnMouseButtonRepeat and its 0.25 s threshold, which a tap cannot reach by construction (BUG-7). PAUSED, each held frame is one dt tick, so the simulation (sim_seconds, world time) moves N ticks"`
 }
 
 type harnessCursorIn struct {
@@ -130,8 +130,15 @@ const harnessHoldFramesMax = 600
 // The modifiers stay a one-poll tap, as they are for a tap click: a held
 // shift-click is a different question (a repeating cast) and it needs its own
 // assertion before it gets a verb.
+//
+// stepFrame runs one frame with the button down. PAUSED, it must be a real
+// tick (dt of simulated time), not a wait for the next frame: a paused frame
+// has zero deltas, so the controls' clock never reached the 0.25 s repeat
+// threshold and every OnMouseButtonRepeat saw repeatDue false -- the hold was
+// delivered and did nothing, and a script's "the hold walked him" was the
+// PRESS's walk (history item 123, found by instrumenting the handler).
 func harnessApplyHeldClick(what string, x, y int, button d2enum.MouseButton,
-	mods []d2enum.Key, frames int) (harnessInputOut, error) {
+	mods []d2enum.Key, frames int, stepFrame func() error) (harnessInputOut, error) {
 	out := harnessInputOut{Applied: what}
 
 	if harness.input == nil {
@@ -152,11 +159,22 @@ func harnessApplyHeldClick(what string, x, y int, button d2enum.MouseButton,
 		return out, err
 	}
 
+	// The press is polled on a frame of its own before any held frame runs,
+	// so OnMouseButtonDown always fires at the same point in the hold: a
+	// paused step queued behind it could otherwise drain in the same frame
+	// and land the press a tick late (the 0.12.3 review).
+	if err := harnessWaitFrameAfter(out.Tick); err != nil {
+		return out, err
+	}
+
 	// Whole frames, each one an input poll the game sees with the button still
 	// down. The controls' clock accrues per frame, which is what carries it past
 	// the 0.25 s threshold -- so the count is deterministic rather than a sleep.
 	for i := 0; i < frames; i++ {
-		if err := harnessWaitFrameAfter(atomic.LoadInt64(&harness.tick)); err != nil {
+		if err := stepFrame(); err != nil {
+			// Best effort: never leave the button stuck down for the next call.
+			_ = harnessOnUpdate(func() { harness.input.MouseUp(button) })
+
 			return out, err
 		}
 	}
@@ -226,7 +244,7 @@ func (a *App) harnessAddInputTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_click",
-		Description: "Scripted mouse click at SCREEN PIXELS x,y (800x600): the cursor moves there and the button is pressed for one poll and released the next, with optional held modifiers (shift-click casts the left skill). A click on open ground walks the player there through the normal controls. Use strigoi_get_player's screen field to aim at the player. hold_frames 2 or more HOLDS the button down for that many frames instead, which is the only way to reach the click-and-hold path (OnMouseButtonRepeat).",
+		Description: "Scripted mouse click at SCREEN PIXELS x,y (800x600): the cursor moves there and the button is pressed for one poll and released the next, with optional held modifiers (shift-click casts the left skill). A click on open ground walks the player there through the normal controls. Use strigoi_get_player's screen field to aim at the player. hold_frames 2 or more HOLDS the button down for that many frames instead, which is the only way to reach the click-and-hold path (OnMouseButtonRepeat); paused, each held frame is one dt tick, so the simulation moves.",
 		Annotations: harnessAnnMut(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessClickIn) (*mcp.CallToolResult, harnessInputOut, error) {
 		harnessLogCall("strigoi_click")
@@ -260,9 +278,48 @@ func (a *App) harnessAddInputTools(srv *mcp.Server) {
 		var out harnessInputOut
 
 		if in.Hold > 1 {
+			// Live, a frame carries wall time; paused, each held frame is one
+			// dt tick, as strigoi_step's are, so the hold lasts in simulated
+			// time what it says (see harnessApplyHeldClick).
+			stepFrame := func() error { return harnessWaitFrameAfter(atomic.LoadInt64(&harness.tick)) }
+
+			if snap := harnessTimeSnapshot(); snap.Mode == "paused" {
+				// A paused hold steps the simulation, so it takes the stepping
+				// flag as strigoi_step does: nothing else steps while it holds.
+				harness.mu.Lock()
+				if harness.stepping {
+					harness.mu.Unlock()
+
+					return nil, harnessInputOut{}, harnessErr("BAD_ARGUMENT", "a step is already executing", "wait for it to return")
+				}
+
+				harness.stepping = true
+				harness.mu.Unlock()
+
+				defer func() {
+					harness.mu.Lock()
+					harness.stepping = false
+					harness.mu.Unlock()
+				}()
+
+				dt := snap.DT
+				stepFrame = func() error {
+					var stepErr error
+					if err := harnessOnUpdate(func() { stepErr = a.harnessStepTicks(1, dt) }); err != nil {
+						return err
+					}
+
+					if stepErr != nil {
+						return harnessErr("INTERNAL", fmt.Sprintf("advance failed mid-hold: %v", stepErr), "")
+					}
+
+					return nil
+				}
+			}
+
 			out, err = harnessApplyHeldClick(
 				fmt.Sprintf("%s click at %d,%d held %d frame(s)", in.Button, in.X, in.Y, in.Hold),
-				in.X, in.Y, button, mods, in.Hold)
+				in.X, in.Y, button, mods, in.Hold, stepFrame)
 		} else {
 			out, err = harnessApplyInput(fmt.Sprintf("%s click at %d,%d", in.Button, in.X, in.Y), func() {
 				for _, m := range mods {

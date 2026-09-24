@@ -604,15 +604,15 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 		// single-click path consumes the select by returning before
 		// OnPlayerMove (OnMouseButtonDown below); THIS is a SECOND caller of
 		// OnPlayerMove, reached once the button is down past
-		// mouseBtnActionsThreshold (0.25 s, d2core/d2input/input_manager.go),
+		// mouseBtnActionsThreshold (0.25 s, repeatDue above, on the controls' clock),
 		// so without this guard holding the button on a model orders exactly
 		// the walk clause 10 forbids. Found by the c-1 review, 15 Sep 2026.
 		//
-		// The playtest cannot reach this line: strigoi_click presses AND
-		// releases inside one frame (d2app/harness_input.go), so
-		// repeatDue(now, now) is false by construction. It is verified by
-		// reading, and the gap is named in the build note rather than papered
-		// over with a script that does not exercise it.
+		// Asserted by playtest/squads_test.go act 9 (history item 123): a
+		// 40-frame held click on a second squad's model walks nobody, and
+		// with this guard disabled the same hold walks him. (Until 24 Sep a
+		// paused held click never made repeatDue true, so nothing reached
+		// this line -- BUG-7.)
 		if g.squadAtScreen(event.X(), event.Y()) != "" {
 			return true
 		}

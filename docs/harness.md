@@ -396,7 +396,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.12.2)
+## The tools (37; harness 0.12.3)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -505,10 +505,15 @@ path that walks the hero and casts the left skill. Until this, a tap made
 from any script (BUG-7). The result's `applied` says `held N frame(s)`, so a
 script can assert it got a hold rather than a tap. Modifiers stay a one-poll tap:
 a held shift-click is a repeating cast, which is a different question and needs
-its own assertion before it gets a verb. **What this does NOT close is BUG-7's
-other half** — c-1's squad guard inside that handler is still unasserted, and
-`playtest/squads_test.go` act 8 explains why with the measurement that stopped it
-being claimed.
+its own assertion before it gets a verb. **Paused, each held frame is one dt
+tick, so a held click moves the simulation (sim_seconds, world time) by N
+ticks, and it takes the stepping flag as `strigoi_step` does** (harness 0.12.3,
+24 Sep 2026): until then a paused hold waited on
+zero-delta frames, the controls' clock never reached the 0.25 s repeat
+threshold, and every `OnMouseButtonRepeat` saw `repeatDue` false — the hold
+reached the handler and did nothing there. **BUG-7 is closed by that:**
+`playtest/squads_test.go` act 9 holds a click on a second squad's model and
+asserts no walk, and with c-1's guard disabled the same hold walks him.
 
 **`spawns`** (M4.3b) reports the
 stage tables and their current weights, the deep-night `band`, `open_bodies`

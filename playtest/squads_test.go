@@ -34,8 +34,9 @@ import (
 //     a floor on a DAYLIGHT frame AND a deliberately dark one. Each frame
 //     asserts its OWN background luminance first, so neither can quietly
 //     become the other case;
-//  8. a script can HOLD a mouse button at all -- strigoi_click's hold_frames,
-//     which closes BUG-7's instrument half but NOT its guard assertion;
+//  8. a script can HOLD a mouse button at all -- strigoi_click's hold_frames;
+//  9. c-1's squad guard on the HELD path: a 40-frame hold on a second squad's
+//     model selects it and walks nobody (BUG-7, closed 24 Sep 2026);
 //  7. a TABLE-SPAWNED enemy gets a bar -- the gate is keyed on the spawn row,
 //     not the stand-in monstats code the sprite comes from.
 //
@@ -533,23 +534,14 @@ func TestSquadsOnScreen(t *testing.T) {
 	// act asserts it: a held click is delivered as a hold, the controls act on
 	// it, and the button does not stay stuck down.
 	//
-	// IT DOES NOT ASSERT c-1'S SQUAD GUARD IN THAT HANDLER, and the reason is
-	// measured rather than assumed. A draft of this act held a click on a squad
-	// model and asserted no walk. It passed -- and it passed WITH THE GUARD
-	// DISABLED, twice: once against the hero's own model, where a walk order is a
-	// no-op (the same weakness the c-1 review caught in act 2), and again against
-	// a squad deployed 2.00 tiles away. So something upstream of the guard
-	// already stops that walk. The suspect is isInActiveMenusRect: the
-	// select-click opens the sheet on the same press, and a point inside an open
-	// panel's rect is excluded from the walk before the guard is consulted --
-	// which would make the guard unreachable for a PLAYER too, not just for a
-	// script. NOT ESTABLISHED: a probe found a held click on open ground at x+70
-	// walks whether the sheet was open or not, but that click closed the sheet,
-	// so it never tested the geometry that matters. The panel rects are c-2b's
-	// own territory (the strip at y 470-524).
-	//
-	// A GREEN ASSERTION WHOSE CONTROL PASSES IS WORSE THAN NO ASSERTION, so the
-	// claim is left out and docs/bugs.md BUG-7 carries what is still owed.
+	// WHY THE GUARD WAS ONCE UNASSERTABLE, MEASURED (history item 123). A 19
+	// Sep draft held a click on a squad model, asserted no walk, and passed
+	// WITH THE GUARD DISABLED. The suspect then was isInActiveMenusRect; it was
+	// not that. Instrumenting OnMouseButtonRepeat showed every repeat of a
+	// PAUSED hold saw repeatDue false: the held frames were zero-delta, so the
+	// controls' clock never passed the 0.25 s threshold, and this act's walk
+	// was the PRESS's. Paused holds now tick dt per frame (harness 0.12.3), and
+	// act 9 asserts the guard with a control that walks.
 	s.call("strigoi_click", map[string]any{"x": 5, "y": 5, "button": "left"}) // dismiss the sheet
 	s.call("strigoi_step", map[string]any{"frames": 10})
 
@@ -594,9 +586,80 @@ func TestSquadsOnScreen(t *testing.T) {
 	}
 
 	t.Logf("act 8 PASS: a 40-frame held click is delivered AS a hold, the controls act on it "+
-		"(%.2f,%.2f -> %.2f,%.2f), and a tap afterwards still works. BUG-7's instrument half is "+
-		"closed; its guard assertion is NOT, and the row says why",
+		"(%.2f,%.2f -> %.2f,%.2f), and a tap afterwards still works",
 		holdFromX, holdFromY, restX, restY)
+
+	// --- ACT 9: c-1's squad guard on the HELD path (BUG-7, closed 24 Sep) ------
+	//
+	// A select-click on a squad model is consumed before OnPlayerMove (act 3).
+	// A HELD one reaches OnMouseButtonRepeat once the button has been down past
+	// 0.25 s, and there c-1's guard is what stops the walk. Held 40 frames (0.67
+	// s at the default tick) on a second squad's model two tiles off: no walk.
+	// THE CONTROL: with the guard disabled, the same hold walks him -- which is
+	// also the proof the repeat path ran at all (a paused hold once never did).
+	s.call("strigoi_set_system_field", map[string]any{
+		"system": "meters", "field": "squad_add", "value": map[string]any{},
+	})
+
+	// Let act 8's last walk finish first: a hero still walking would move
+	// through this act's no-walk assertion on his own.
+	settled := false
+
+	for i := 0; i < 60 && !settled; i++ {
+		s.call("strigoi_step", map[string]any{"frames": 10})
+		settled = mustNum(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "path_len") == 0
+	}
+
+	if !settled {
+		t.Fatal("act 9: the hero never finished act 8's walk; a no-walk assertion now would mean nothing")
+	}
+
+	// And no fight is open: OnMouseButtonRepeat returns before the guard in a
+	// paced fight, which would pass this act without testing it.
+	if flag(t, combatState(s), "fighting") {
+		t.Fatalf("act 9: a fight is open, so the held path never reaches the guard: %v", combatState(s)["encounter"])
+	}
+
+	s.call("strigoi_step", map[string]any{"frames": 30})
+
+	sq9 := squadList(t, metersState(s))
+	if len(sq9) < 2 {
+		t.Fatalf("act 9: squad_add did not add a second squad: %v", metersState(s)["squads"])
+	}
+
+	s9entity := mustStr(t, modelList(t, sq9[1])[0], "entity")
+	s9info := s.call("strigoi_get_entity", map[string]any{"handle": handleFor(t, s, s9entity)})
+	s9sx, s9sy := pair(s9info, "screen")
+
+	hero9 := s.call("strigoi_get_player", map[string]any{})
+	h9x, h9y := mustNum(t, hero9, "x"), mustNum(t, hero9, "y")
+
+	if away := math.Hypot(mustNum(t, s9info, "x")-h9x, mustNum(t, s9info, "y")-h9y); away < squadSelectMinDist {
+		t.Fatalf("act 9: the second squad's model is only %.2f tiles away -- too close for a no-walk assertion", away)
+	}
+
+	held := s.call("strigoi_click", map[string]any{
+		"x": int(s9sx), "y": int(s9sy), "button": "left", "hold_frames": 40,
+	})
+	if applied := mustStr(t, held, "applied"); !strings.Contains(applied, "held 40 frame(s)") {
+		t.Fatalf("act 9: strigoi_click did not report a held press: %q", applied)
+	}
+
+	s.call("strigoi_step", map[string]any{"frames": 30})
+
+	if got := mustStr(t, uiState(s), "selected_squad"); got != mustStr(t, sq9[1], "squad") {
+		t.Fatalf("act 9: the held click on the model did not select its squad, got %q", got)
+	}
+
+	assertNoWalk(t, "act 9 (held)", s.call("strigoi_get_player", map[string]any{}), h9x, h9y)
+
+	s.call("strigoi_set_system_field", map[string]any{
+		"system": "meters", "field": "squad_remove", "value": mustStr(t, sq9[1], "squad"),
+	})
+	s.call("strigoi_click", map[string]any{"x": 5, "y": 5, "button": "left"}) // dismiss the sheet
+	s.call("strigoi_step", map[string]any{"frames": 10})
+
+	t.Logf("act 9 PASS: a 40-frame held click on a second squad's model selected it and walked nobody")
 }
 
 // enemyBars counts the overhead bars the "ui" provider marks as an enemy's.

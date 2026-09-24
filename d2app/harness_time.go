@@ -334,7 +334,7 @@ func harnessTimeSnapshot() harnessTimeModeOut {
 func (a *App) harnessAddTimeTools(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_get_time_mode",
-		Description: "The simulation clock: live (wall clock) or paused (frozen; advanced only by strigoi_step). sim_seconds counts stepped time only.",
+		Description: "The simulation clock: live (wall clock) or paused (frozen; advanced only by strigoi_step, strigoi_step_world and a held strigoi_click). sim_seconds counts stepped time only.",
 		Annotations: harnessAnnRO(true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in struct{}) (*mcp.CallToolResult, harnessTimeModeOut, error) {
 		harnessLogCall("strigoi_get_time_mode")
@@ -345,7 +345,7 @@ func (a *App) harnessAddTimeTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_pause",
-		Description: "Freeze the simulation clock: frames keep rendering, deltas are zero, strigoi_step is the only way time moves. Idempotent.",
+		Description: "Freeze the simulation clock: frames keep rendering, deltas are zero, and time moves only by strigoi_step, strigoi_step_world or a held strigoi_click (one dt tick per held frame). Idempotent.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, OpenWorldHint: harnessBoolPtr(false), DestructiveHint: harnessBoolPtr(false)},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in struct{}) (*mcp.CallToolResult, harnessTimeModeOut, error) {
 		harnessLogCall("strigoi_pause")
