@@ -166,7 +166,7 @@ func (g *GameControls) talkClick(mx, my int) bool {
 	x, y := e.GetPositionF()
 	t.notice = ""
 
-	if err := g.talkHolder.TalkTo(e.Label(), x, y); err != nil {
+	if err := g.talkHolder.TalkTo(nameKey(e), x, y); err != nil {
 		// Out of reach is not an error to show over the world; the click
 		// falls through and he walks toward the villager instead.
 		return false
@@ -291,7 +291,7 @@ func (h *HUD) hoveredVillager(mx, my int) d2interface.MapEntity {
 	holder := h.gameControls.talkHolder
 
 	return h.hoveredEntityWhere(mx, my, func(e d2interface.MapEntity) bool {
-		return holder.RoleFor(e.Label()) != ""
+		return holder.RoleFor(nameKey(e)) != ""
 	})
 }
 

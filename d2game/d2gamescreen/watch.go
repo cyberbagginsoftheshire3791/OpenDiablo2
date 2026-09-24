@@ -6,6 +6,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2dialogue"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
 )
@@ -35,7 +36,7 @@ func (v *Game) headmanEntity() d2interface.MapEntity {
 	}
 
 	for _, e := range v.gameClient.MapEngine.Entities() {
-		if e.Label() == sp.StandIn {
+		if d2mapentity.NameKey(e) == sp.StandIn {
 			return e
 		}
 	}

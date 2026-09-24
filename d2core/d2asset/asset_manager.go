@@ -81,6 +81,11 @@ type AssetManager struct {
 	// M5.3: Strigoi's own fonts (strigoi_fonts.go); nil is Diablo II's.
 	fontSet     *FontSet
 	fontSetPath string
+
+	// M5.3: every string key asked for (string_census.go), and Strigoi's
+	// own string table when one is in use (strigoi_strings.go).
+	stringCensus  stringCensus
+	stringSetPath string
 }
 
 // SetLogLevel sets the log level for the asset manager,  record manager, and file loader
@@ -336,14 +341,23 @@ func (am *AssetManager) TranslateString(input interface{}) string {
 	case fmt.Stringer:
 		key = s.String()
 	case int:
-		key = fmt.Sprintf("#%d", d2enum.BaseLabelNumbers(s+am.languageModifier))
+		modifier := am.languageModifier
+		if am.stringSetPath != "" {
+			modifier = 0 // Strigoi's table is one language (strigoi_strings.go)
+		}
+
+		key = fmt.Sprintf("#%d", d2enum.BaseLabelNumbers(s+modifier))
 	}
 
 	for idx := range am.tables {
 		if value, found := am.tables[idx][key]; found {
+			am.stringCensus.record(key, value, true)
+
 			return value
 		}
 	}
+
+	am.stringCensus.record(key, "", false)
 
 	// Fix to allow v.setDescLabels("#123") to be bypassed for a patch in issue #360. Reenable later.
 	// log.Panicf("Could not find a string for the key '%s'", key)

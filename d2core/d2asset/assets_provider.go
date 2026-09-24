@@ -34,6 +34,18 @@ func (p assetsProvider) HarnessState() map[string]interface{} {
 		areas[area][e.Source]++
 	}
 
+	asked := p.am.StringsAsked()
+	strs := make([]map[string]interface{}, 0, len(asked))
+	missing := 0
+
+	for _, a := range asked {
+		strs = append(strs, map[string]interface{}{"key": a.Key, "found": a.Found, "text": a.Text, "asks": a.Asks})
+
+		if !a.Found {
+			missing++
+		}
+	}
+
 	byArea := map[string]interface{}{}
 	for a, m := range areas {
 		byArea[a] = map[string]interface{}{"mpq": m[d2loader.CensusMPQ], "native": m[d2loader.CensusNative]}
@@ -47,5 +59,10 @@ func (p assetsProvider) HarnessState() map[string]interface{} {
 		"by_area":      byArea,
 		"files":        files,
 		"font_set":     p.am.FontSetPath(), // "" is Diablo II's fonts
+		// The string census (string_census.go): every key the UI asked for.
+		"string_set":      p.am.StringSetPath(), // "" is Diablo II's string tables
+		"strings_asked":   len(asked),
+		"strings_missing": missing,
+		"strings":         strs,
 	}
 }

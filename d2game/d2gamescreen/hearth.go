@@ -82,7 +82,7 @@ func (v *Game) speakerEntity(speaker string) d2interface.MapEntity {
 	}
 
 	for _, e := range v.gameClient.MapEngine.Entities() {
-		if _, npc := e.(*d2mapentity.NPC); npc && e.Label() == sp.StandIn {
+		if _, npc := e.(*d2mapentity.NPC); npc && d2mapentity.NameKey(e) == sp.StandIn {
 			return e
 		}
 	}

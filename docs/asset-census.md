@@ -35,7 +35,13 @@ One player's first day and night (`playtest/census_test.go`). **365 files from D
 | `data/global/objects` (29) | town objects (waypoint, torches, barrels, ...) | authored with the map (M5.4) |
 | `data/global/chars` (20) | **the hero** (the amazon) | our Janissary as PNG sheets |
 | `data/local/font` (20) | the fonts | **done with `-fonts`** (23 Sep): a font set of TrueType/OpenType faces drawn into the same `d2font.Font` (`d2core/d2asset/strigoi_fonts.go`); 0 font files from the MPQs. Faces: IM Fell English (+ SC) and Uncial Antiqua, SIL OFL |
-| `data/global/items` (11), `palette` (6), `sfx` (4), `music` (2), `lng` (3) | inventory art, palettes, sounds, music, the string tables | our own art, sound and a Strigoi string table |
+| `data/global/items` (11), `palette` (6), `sfx` (4), `music` (2) | inventory art, palettes, sounds, music | our own art and sound |
+| `data/local/lng` (3) | the string tables | **done with `-strings`** (23 Sep): Strigoi's own words for the 217 keys the UI asks for (`data/strigoi/strings/strings.json`); `TestAssetCensus` writes the string census (`string-census.tsv`) beside the repo |
+| `data/global/animdata.d2`, `data/local/use` (1 each) | the composites' animation speeds; the install's language code (the numbered labels' modifier) | animdata goes with the last DCC sprite; `use` can go once the language is Strigoi's setting |
+
+## Measured: our own words too (23 Sep 2026, evening)
+
+The own-everything probe with `-strings` added: **135 MPQ files, 53 of ours**; `lng` 0. Left: `excel` 31, `ui` 72, `items` 11, `monsters` 8, `palette` 5, `sfx` 4, `music` 2, `animdata.d2`, `use`.
 
 ## Measured: the 52 unread tables dropped (23 Sep 2026, evening)
 

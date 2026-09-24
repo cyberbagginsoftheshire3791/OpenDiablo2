@@ -94,6 +94,7 @@ type Options struct {
 	Debug    *bool
 	profiler *string
 	fontSet  *string
+	strings  *string
 	Server   *d2networking.ServerOptions
 	LogLevel *d2util.LogLevel
 }
@@ -223,6 +224,7 @@ func (a *App) parseArguments() {
 	a.Options.LogLevel = flag.Int("l", d2util.LogLevelDefault, descLogging)
 	showVersion := flag.Bool("v", false, "Show version")
 	showHelp := flag.Bool("h", false, "Show help")
+	a.Options.strings = flag.String("strings", "", "answer every label from a Strigoi string table (game-relative, e.g. data/strigoi/strings/strings.json) instead of Diablo II's")
 	a.Options.fontSet = flag.String("fonts", "", "draw every word from a Strigoi font set (game-relative, e.g. data/strigoi/fonts/fonts.json) instead of Diablo II's fonts")
 	heroArt := flag.String("hero", "", "draw the hero from a PNG hero manifest (game-relative, e.g. data/strigoi/hero/placeholder/hero.json) instead of Diablo II's class art")
 	authoredMap := flag.String("map", "", "play on an authored Tiled map (.tmj, game-relative, e.g. data/strigoi/maps/village.tmj) instead of the generated Act 1 world")

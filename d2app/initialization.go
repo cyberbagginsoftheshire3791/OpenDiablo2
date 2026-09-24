@@ -175,6 +175,18 @@ func (a *App) initAnimationData(path string) error {
 }
 
 func (a *App) loadStrings() error {
+	// M5.3: Strigoi's own words, when asked for, INSTEAD of Diablo II's three
+	// tables -- none of them is loaded. A refused table is reported and
+	// Diablo II's are read as before.
+	if a.Options.strings != nil && *a.Options.strings != "" {
+		err := a.asset.UseStringTable(*a.Options.strings)
+		if err == nil {
+			return nil
+		}
+
+		a.Errorf("string table refused, reading Diablo II's: %v", err)
+	}
+
 	tablePaths := []string{
 		d2resource.PatchStringTable,
 		d2resource.ExpansionStringTable,

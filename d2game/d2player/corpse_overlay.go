@@ -36,7 +36,7 @@ type CorpseHolder interface {
 // and the harness both read it, so what a script asserts is what is drawn.
 func (g *GameControls) hoverLabel(e d2interface.MapEntity) string {
 	if g.talkHolder != nil {
-		if role := g.talkHolder.RoleFor(e.Label()); role != "" {
+		if role := g.talkHolder.RoleFor(nameKey(e)); role != "" {
 			return role
 		}
 	}

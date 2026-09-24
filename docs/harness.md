@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 37 playtest scripts.** That count, the harness version below and the
+**The 38 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -240,7 +240,10 @@ this doc fails until it agrees.
 * `census_test.go` — the thirty-fourth, M5.2 (23 Sep 2026): the asset census.
   One player's first day and night (the kit, talents and help panels, a talk,
   a forage, a night as shipped), then the "assets" provider's census (which
-  also reports `font_set`, the font set in use or "" for Diablo II's) --
+  also reports `font_set`, the font set in use or "" for Diablo II's;
+  `string_set`, likewise for the string table; and the string census --
+  `strings_asked`, `strings_missing` and `strings`, every key the UI asked
+  TranslateString for, whether it was found and what it became) --
   every file loaded and whether it came from a Diablo II MPQ or from Strigoi's
   own files -- written to `strigoi-harness-runs\asset-census.{md,tsv}`. It
   asserts only that both kinds were seen and that nothing under
@@ -287,6 +290,16 @@ this doc fails until it agrees.
   launcher's `startWith`): the census reports the set, and after the menu, a
   new game, the kit, talents and help panels, `data/local/font` has NO file
   from an MPQ. Screenshots of both menus and both kit panels.
+* `words_test.go` — the thirty-eighth, M5.3 (23 Sep 2026): every label answered
+  from Strigoi's own string table (`-strings data/strigoi/strings/strings.json`).
+  Control: as shipped, Diablo II's string tables come from the MPQs. With
+  `-strings`, after the menu, a game, the kit/talents/help panels, the
+  character panel, a talk with the headman (found by his translated name,
+  "The headman") and two hours of world time, `data/local/lng` has no MPQ
+  file AND every key the UI asked for was in the table (`strings_missing` 0;
+  the missing keys are named if not). Screenshots of the trademark screen,
+  the menu and the character panel. `census_test.go` also checks that every
+  Strigoi text keeps the printf verbs of the Diablo II text it replaces.
 * `minimized_test.go` — OPT-IN and skipped by default (it minimizes every
   window on the desktop): whether the game keeps ticking while minimized,
   P3 spec A2.1. Run it with `STRIGOI_TEST_MINIMIZED=1`.

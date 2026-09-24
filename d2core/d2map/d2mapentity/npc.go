@@ -254,6 +254,30 @@ func (v *NPC) Label() string {
 	return v.name
 }
 
+// NameKey is the name the NPC is KNOWN by, untranslated: its monstats
+// NameString, the string-table key its Label is translated from ("Warriv",
+// whatever the table makes of it). Code that recognises a villager by the
+// sprite standing in for him (d2dialogue's stand_in) matches this, not the
+// Label -- with Strigoi's own words (-strings) the Label is "The headman".
+// An NPC without a record answers its Label.
+func (v *NPC) NameKey() string {
+	if v.monstatRecord != nil && v.monstatRecord.NameString != "" {
+		return v.monstatRecord.NameString
+	}
+
+	return v.name
+}
+
+// NameKey is e's untranslated name when it has one (an NPC's), else its
+// Label: what a stand-in is matched against.
+func NameKey(e d2interface.MapEntity) string {
+	if k, ok := e.(interface{ NameKey() string }); ok {
+		return k.NameKey()
+	}
+
+	return e.Label()
+}
+
 // GetPosition returns the NPC's position
 func (v *NPC) GetPosition() d2vector.Position {
 	return v.mapEntity.Position
