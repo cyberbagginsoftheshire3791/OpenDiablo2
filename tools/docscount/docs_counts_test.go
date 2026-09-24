@@ -29,14 +29,15 @@ import (
 const harnessDoc = "docs/harness.md"
 
 // playtestStart is the project's own definition of "a playtest script": a file
-// under playtest/ that calls the start() helper, which is what builds and
+// under playtest/ that calls the start() helper -- or startWith(), the same
+// launch with switches of its own (23 Sep 2026) -- which is what builds and
 // launches the harness binary. The shell form of the same count is
 //
-//	git grep -l --untracked -E '\bstart\(' -- 'playtest/*_test.go' | wc -l
+//	git grep -l --untracked -E '\bstart(With)?\(' -- 'playtest/*_test.go' | wc -l
 //
 // and this regexp is that -E pattern. Nothing shells out to git: the test must
 // work in a tree that is not a checkout.
-var playtestStart = regexp.MustCompile(`\bstart\(`)
+var playtestStart = regexp.MustCompile(`\bstart(With)?\(`)
 
 // harnessVersionRe reads the constant rather than a doc comment or a changelog
 // entry, so the version the server reports is the version this gate compares.

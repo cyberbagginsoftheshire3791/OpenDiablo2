@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 39 playtest scripts.** That count, the harness version below and the
+**The 40 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -295,6 +295,11 @@ this doc fails until it agrees.
   and `-classic` is Diablo II's generated Act 1, class art, fonts and words. The
   launcher's `start(t)` passes **`-classic`**, so every script written against
   Act 1 keeps its world; `startWith(t, flags...)` passes only what it is given.
+* `strigoi_night_test.go` — the fortieth: a first day and night on the DEFAULT game
+  (the village): talk with "The headman", a forage, then world time until the
+  next morning with the hero kept alive; the night must come and go and the
+  spawn tables must run (first run: 288 checks, 73 spawned, 0 failures, 69
+  notices). Morning screenshot.
 * `strigoi_game_test.go` — the thirty-ninth: the game launched with NO switches
   builds the village, draws the hero from Strigoi's sheets, uses Strigoi's font
   set and string table, and a first hour reads no Diablo II tile, class-art,
