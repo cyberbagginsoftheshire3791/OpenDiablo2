@@ -9,6 +9,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2ds1"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2geom"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen/d2wilderness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapstamp"
 )
@@ -45,14 +46,33 @@ func (g *MapGenerator) GenerateAct1Overworld() {
 	// one is set (authored.go). Refused whole or built whole, never in part;
 	// a refusal falls through to the generated world with the reason logged.
 	if p := authoredMapPath(); p != "" {
-		err := g.generateAuthored(p)
-		recordAuthored(p, err)
+		sha, err := g.generateAuthored(p)
+		recordAuthored(p, sha, err)
 
 		if err == nil {
 			return
 		}
 
 		g.Errorf("authored map refused, generating the Act 1 world instead: %v", err)
+
+		// A map can be refused after drawing from the world RNG (each NPC it
+		// placed drew its behaviour seed), and a client that never tried it
+		// must build the same fallback: the world starts from its seed again.
+		g.engine.ReseedRand(g.engine.Seed())
+		g.rng = g.engine.Rand()
+	}
+
+	g.generateAct1World()
+}
+
+// generateAct1World builds Diablo II's generated Act 1: a town layout and the
+// wilderness around it, drawn from the world RNG (g.rng, set by the caller).
+func (g *MapGenerator) generateAct1World() {
+	// The generated world's own tables load now, not at boot (records_lazy.go).
+	// Without them there is no world to build, and saying why beats the
+	// index panic a missing preset would be further in.
+	if err := g.asset.EnsureRecords(d2resource.GeneratedWorldRecords...); err != nil {
+		g.Fatalf("cannot build Diablo II's generated world: its tables did not load: %v", err)
 	}
 
 	wilderness1Details := g.asset.Records.GetLevelDetails(wildernessDetailsRecordID)

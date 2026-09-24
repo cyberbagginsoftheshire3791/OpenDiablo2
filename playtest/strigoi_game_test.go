@@ -126,9 +126,10 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		t.Fatalf("font set %q, string table %q: want Strigoi's", str(a, "font_set"), str(a, "string_set"))
 	}
 
-	// Diablo II's tables: 20 of its 83 at most (history item 111).
-	if n := mpqIn(a, "data/global/excel"); n == 0 || n > 20 {
-		t.Errorf("data/global/excel: %.0f table(s) from Diablo II's MPQs, want 1..20", n)
+	// Diablo II's tables: 16 of its 83 at most (history items 111, 113) --
+	// the generated world's four load only when one is built.
+	if n := mpqIn(a, "data/global/excel"); n == 0 || n > 16 {
+		t.Errorf("data/global/excel: %.0f table(s) from Diablo II's MPQs, want 1..16", n)
 	}
 
 	// The census's area names are what this reads: an area it still reads

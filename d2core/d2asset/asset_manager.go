@@ -86,6 +86,9 @@ type AssetManager struct {
 	// own string table when one is in use (strigoi_strings.go).
 	stringCensus  stringCensus
 	stringSetPath string
+
+	// Which tables are loaded (records_lazy.go).
+	recordsLoaded recordsLoaded
 }
 
 // SetLogLevel sets the log level for the asset manager,  record manager, and file loader
@@ -432,19 +435,6 @@ func (am *AssetManager) LoadDataDictionary(path string) (*d2txt.DataDictionary, 
 
 // LoadRecords will load the records for the given path into the record manager.
 // This is dependant on the record manager having bound a loader for the given path.
-func (am *AssetManager) LoadRecords(path string) error {
-	dict, err := am.LoadDataDictionary(path)
-	if err != nil {
-		return err
-	}
-
-	err = am.Records.Load(path, dict)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
 
 // loadDC6 creates an Animation from d2dc6.DC6 and d2dat.DATPalette
 func (am *AssetManager) loadDC6(path string,

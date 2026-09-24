@@ -54,6 +54,12 @@ type GameServer struct {
 	packetManagerChan chan ReceivedPacket
 	heroStateFactory  *d2hero.HeroStateFactory
 
+	// hostMap and hostSHA are the world this server built (d2mapgen.HostMap
+	// straight after its own generation), sent to every client that joins:
+	// the process-wide report can change under a live server (the harness's
+	// start_game, a client's own build), this cannot.
+	hostMap, hostSHA string
+
 	*d2util.Logger
 }
 
@@ -118,6 +124,7 @@ func NewGameServer(asset *d2asset.AssetManager,
 	}
 
 	mapGen.GenerateAct1Overworld()
+	gameServer.hostMap, gameServer.hostSHA = d2mapgen.HostMap()
 
 	gameServer.mapEngines = append(gameServer.mapEngines, mapEngine)
 
@@ -364,7 +371,8 @@ func (g *GameServer) handleClientConnection(client ClientConnection, x, y float6
 		g.Errorf("GameServer: error sending UpdateServerInfoPacket to client %s: %s", client.GetUniqueID(), err)
 	}
 
-	gmp, err := d2netpacket.CreateGenerateMapPacket(d2enum.RegionAct1Town)
+	// The world this host built, so the client builds the same one.
+	gmp, err := d2netpacket.CreateGenerateMapPacket(d2enum.RegionAct1Town, g.hostMap, g.hostSHA)
 	if err != nil {
 		g.Errorf("GenerateMapPacket: %v", err)
 	}

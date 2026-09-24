@@ -3,6 +3,7 @@ package d2mapgen
 import (
 	"errors"
 	"image"
+	"strings"
 	"testing"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -137,21 +138,21 @@ func TestSetAuthoredMapNormalisesAndForgets(t *testing.T) {
 	t.Cleanup(func() { SetAuthoredMap("") })
 
 	SetAuthoredMap(`data\strigoi\maps\village.tmj`)
-	recordAuthored("/data/strigoi/maps/village.tmj", nil)
+	recordAuthored("/data/strigoi/maps/village.tmj", "", nil)
 
 	asked, built, err := AuthoredMapReport()
 	if asked != "/data/strigoi/maps/village.tmj" || built != asked || err != nil {
 		t.Fatalf("report %q %q %v", asked, built, err)
 	}
 
-	recordAuthored(asked, errors.New("bad"))
+	recordAuthored(asked, "", errors.New("bad"))
 
 	if _, built, err = AuthoredMapReport(); built != "" || err == nil {
 		t.Fatalf("a refused build left built=%q err=%v", built, err)
 	}
 
 	// The client's success after the server's refusal does not erase it.
-	recordAuthored(asked, nil)
+	recordAuthored(asked, "", nil)
 
 	if _, built, err = AuthoredMapReport(); built != "" || err == nil || err.Error() != "bad" {
 		t.Fatalf("a later success papered over the refusal: built=%q err=%v", built, err)
@@ -256,5 +257,79 @@ func TestAStructureKindIsNotAWholeImage(t *testing.T) {
 	images := authoredImages(m)
 	if len(images) != 1 || images[d2mapengine.AuthoredKey{Sequence: 1, Type: d2mapengine.AuthoredWallType}] == nil {
 		t.Fatalf("images %v; want only the wall", images)
+	}
+}
+
+// A client's world is the host's only if it built the host's map, from the
+// same file: another map, none, or a different copy is named.
+func TestHostMapMismatch(t *testing.T) {
+	const village = "/data/strigoi/maps/village.tmj"
+
+	for _, c := range []struct {
+		name                    string
+		hostMap, hostSHA, built string
+		sha                     string
+		want                    string // "" = the host's world
+	}{
+		{"the generated world", "", "", "", "", ""},
+		{"the same map, the same file", village, "abc", village, "abc", ""},
+		{"a host that sent no sha", village, "", village, "abc", ""},
+		{"a different copy", village, "abc", village, "def", "differs from the host's"},
+		{"another map", village, "abc", "/data/strigoi/maps/other.tmj", "abc", "the host built"},
+		{"nothing built", village, "abc", "", "", "the host built"},
+	} {
+		err := hostMapMismatch(c.hostMap, c.hostSHA, c.built, c.sha)
+
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: %v, want the host's world", c.name, err)
+		case c.want != "" && (err == nil || !errors.Is(err, errNotTheHostsMap) || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%s: %v, want an error naming %q", c.name, err, c.want)
+		}
+	}
+}
+
+// HostMap reports the map built and the sha it was built from, and forgets
+// both when the setting changes or a build is refused.
+func TestHostMapFollowsTheBuild(t *testing.T) {
+	t.Cleanup(func() { SetAuthoredMap("") })
+
+	SetAuthoredMap("data/strigoi/maps/village.tmj")
+	recordAuthored("/data/strigoi/maps/village.tmj", "abc", nil)
+
+	if p, sha := HostMap(); p != "/data/strigoi/maps/village.tmj" || sha != "abc" {
+		t.Fatalf("HostMap %q %q after a build", p, sha)
+	}
+
+	recordAuthored("/data/strigoi/maps/village.tmj", "", errors.New("refused"))
+
+	if p, sha := HostMap(); p != "" || sha != "" {
+		t.Fatalf("HostMap %q %q after a refusal; want the generated world", p, sha)
+	}
+
+	SetAuthoredMap("")
+
+	if p, sha := HostMap(); p != "" || sha != "" {
+		t.Fatalf("HostMap %q %q after the setting was cleared", p, sha)
+	}
+}
+
+// Which way a client builds the host's world: by its own setting when that is
+// the host's (a local game, always), the generated world when the host built
+// that (set to, or its map refused), the host's map otherwise.
+func TestHostWorldBranch(t *testing.T) {
+	const village = "/data/strigoi/maps/village.tmj"
+
+	for _, c := range []struct{ asked, hostMap, want string }{
+		{village, village, byTheSetting},
+		{"", "", byTheSetting},
+		{"/data/strigoi/maps/missing.tmj", "", theGeneratedWorld}, // the host's map was refused
+		{village, "", theGeneratedWorld},
+		{"", village, theHostsMap}, // a friend who launched -classic joins the village
+		{"/data/strigoi/maps/other.tmj", village, theHostsMap},
+	} {
+		if got := hostWorldBranch(c.asked, c.hostMap); got != c.want {
+			t.Errorf("set to %q, host built %q: %s, want %s", c.asked, c.hostMap, got, c.want)
+		}
 	}
 }

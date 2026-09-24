@@ -105,7 +105,7 @@ func (a *App) initLanguage() {
 }
 
 func (a *App) initDataDictionaries() error {
-	// THE TABLES THE GAME READS (23 Sep 2026, M5.3's census): 20 of the 83
+	// THE TABLES THE GAME READS (23 Sep 2026, M5.3's census): 16 of the 83
 	// Diablo II .txt tables this list used to load. 52 of the rest filled
 	// RecordManager fields that nothing outside d2core/d2records ever reads --
 	// LevelWarp, Books, MonProp, MonType, MonMode, ItemRatio, StorePage,
@@ -136,13 +136,20 @@ func (a *App) initDataDictionaries() error {
 	// it was checked: every reader of those fields outside d2records, by grep
 	// (the list in history item 111), and the playtest suite both ways.
 	//
+	// AND FOUR LOAD LATER (history item 113): LevelPreset, MonPreset,
+	// ObjectType and ObjectDetails are read only by Diablo II's generated
+	// world (its DS1 stamps and the objects they place) and the harness's
+	// object spawn. They load when those first need them
+	// (d2resource.GeneratedWorldRecords, AssetManager.EnsureRecords), so the
+	// default game, which builds the authored village, never reads them.
+	//
 	// The order is the old list's, filtered.
 	dictPaths := []string{
-		d2resource.LevelType, d2resource.LevelPreset,
-		d2resource.ObjectType, d2resource.ObjectDetails, d2resource.Weapons,
+		d2resource.LevelType,
+		d2resource.Weapons,
 		d2resource.Armor, d2resource.Misc,
 		d2resource.Missiles, d2resource.SoundSettings,
-		d2resource.MonStats, d2resource.MonStats2, d2resource.MonPreset,
+		d2resource.MonStats, d2resource.MonStats2,
 		d2resource.Overlays, d2resource.CharStats, d2resource.Experience,
 		d2resource.LevelDetails, d2resource.Inventory, d2resource.Skills,
 		d2resource.SkillDesc, d2resource.SoundEnvirons,

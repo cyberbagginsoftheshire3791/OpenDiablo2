@@ -284,7 +284,7 @@ const (
 
 	// --- Data ---
 
-	LevelPreset        = "/data/global/excel/LvlPrest.txt"
+	LevelPreset        = "/data/global/excel/LvlPrest.txt" // GeneratedWorldRecords
 	LevelType          = "/data/global/excel/LvlTypes.txt"
 	ObjectType         = "/data/global/excel/objtype.txt"
 	LevelWarp          = "/data/global/excel/LvlWarp.txt"
@@ -501,3 +501,11 @@ const (
 	PaletteTransformSky       = "/data/global/palette/sky/Pal.pl2"
 	PaletteTransformTrademark = "/data/global/palette/trademark/Pal.pl2"
 )
+
+// GeneratedWorldRecords are the tables only Diablo II's generated world reads:
+// its DS1 presets and the monsters and objects they place. They load when that
+// world is first built (AssetManager.EnsureRecords), not at boot -- the
+// default game builds the authored village and never needs them.
+//
+// nolint:gochecknoglobals // a fixed list, read by the generator and its tools
+var GeneratedWorldRecords = []string{LevelPreset, MonPreset, ObjectType, ObjectDetails}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2ds1"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 )
@@ -66,6 +67,8 @@ func (f *StampFactory) randFloat64() float64 {
 // not generate wilderness for what it got. The filter lives here rather than
 // being written twice, because two copies of "which files count" would drift.
 func (f *StampFactory) PresetFileNames(levelPreset int) []string {
+	f.ensureTables()
+
 	var names []string
 
 	for _, fileRecord := range f.asset.Records.Level.Presets[levelPreset].Files {
@@ -78,6 +81,8 @@ func (f *StampFactory) PresetFileNames(levelPreset int) []string {
 }
 
 func (f *StampFactory) LoadStamp(levelType d2enum.RegionIdType, levelPreset, fileIndex int) *Stamp {
+	f.ensureTables()
+
 	stamp := &Stamp{
 		factory:     f,
 		entity:      f.entity,
@@ -125,4 +130,13 @@ func (f *StampFactory) LoadStamp(levelType d2enum.RegionIdType, levelPreset, fil
 	}
 
 	return stamp
+}
+
+// ensureTables loads the presets, monster and object tables a stamp reads,
+// if nothing has yet: they load with the generated world, not at boot
+// (d2resource.GeneratedWorldRecords).
+func (f *StampFactory) ensureTables() {
+	if err := f.asset.EnsureRecords(d2resource.GeneratedWorldRecords...); err != nil {
+		f.Fatalf("cannot stamp Diablo II's map presets: their tables did not load: %v", err)
+	}
 }

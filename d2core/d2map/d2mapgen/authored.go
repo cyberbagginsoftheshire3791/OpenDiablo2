@@ -1,6 +1,9 @@
 package d2mapgen
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	"image/draw"
@@ -39,6 +42,7 @@ var authored struct {
 	sync.Mutex
 	path  string // what was asked for; "" = the generated world
 	built string // the path last built successfully
+	sha   string // the SHA-256 (hex) of the .tmj last built
 	err   error  // why the last attempt was refused
 }
 
@@ -55,7 +59,7 @@ func SetAuthoredMap(p string) {
 	authored.Lock()
 	defer authored.Unlock()
 
-	authored.path, authored.built, authored.err = p, "", nil
+	authored.path, authored.built, authored.sha, authored.err = p, "", "", nil
 }
 
 // AuthoredMapReport returns the map asked for, the map last built from it
@@ -74,7 +78,7 @@ func authoredMapPath() string {
 	return authored.path
 }
 
-func recordAuthored(p string, err error) {
+func recordAuthored(p, sha string, err error) {
 	authored.Lock()
 	defer authored.Unlock()
 
@@ -87,37 +91,141 @@ func recordAuthored(p string, err error) {
 			authored.err = err
 		}
 
-		authored.built = ""
+		authored.built, authored.sha = "", ""
 
 		return
 	}
 
 	if authored.err == nil {
-		authored.built = p
+		authored.built, authored.sha = p, sha
 	}
 }
 
-// generateAuthored builds the world from the Tiled map at p. Every refusal
+// HostMap is the world a host tells a joining client to build (the
+// GenerateMap packet): the authored map it built and the SHA-256 of its .tmj,
+// or "", "" for Diablo II's generated Act 1 -- which is also where a refused
+// map fell back to.
+func HostMap() (path, sha string) {
+	authored.Lock()
+	defer authored.Unlock()
+
+	return authored.built, authored.sha
+}
+
+// GenerateHostWorld builds the world a host said it built. The client's own
+// map setting chooses nothing here: a friend who launched with other switches
+// still stands in the host's world, and one whose copy of the map is not the
+// host's, byte for byte, is told so. The returned error is that telling --
+// the world is built either way (the host's map from this machine's copy,
+// or the generated world if this machine cannot build it at all), and play
+// in it would not be the host's.
+//
+// In a local game the host is this process, so the setting is the host's and
+// the world is built exactly as GenerateAct1Overworld builds it, report and
+// all.
+func (g *MapGenerator) GenerateHostWorld(hostMap, hostSHA string) error {
+	switch hostWorldBranch(authoredMapPath(), hostMap) {
+	case byTheSetting:
+		g.GenerateAct1Overworld()
+
+		if hostMap == "" {
+			return nil
+		}
+
+		built, sha := HostMap()
+
+		return hostMapMismatch(hostMap, hostSHA, built, sha)
+	case theGeneratedWorld:
+		// The host built Diablo II's world -- set to, or after its map was
+		// refused, which reseeded it (GenerateAct1Overworld): from the seed.
+		g.engine.ReseedRand(g.engine.Seed())
+		g.rng = g.engine.Rand()
+		g.generateAct1World()
+
+		return nil
+	}
+
+	g.rng = g.engine.Rand()
+
+	sha, err := g.generateAuthored(hostMap)
+	if err != nil {
+		g.engine.ReseedRand(g.engine.Seed())
+		g.rng = g.engine.Rand()
+		g.generateAct1World()
+
+		return fmt.Errorf("the host's map %s could not be built here, so this is not the host's world: %w", hostMap, err)
+	}
+
+	return hostMapMismatch(hostMap, hostSHA, hostMap, sha)
+}
+
+// How a client builds its host's world (GenerateHostWorld).
+const (
+	byTheSetting      = "by the setting"      // the host built what this process is set to build
+	theGeneratedWorld = "the generated world" // the host built Diablo II's; this process is set otherwise
+	theHostsMap       = "the host's map"      // the host built a map this process is not set to
+)
+
+// hostWorldBranch is which way a client set to asked builds the world a host
+// built as hostMap ("" = the generated world). A local game is always by the
+// setting unless the host's map was refused, when it is the generated world.
+func hostWorldBranch(asked, hostMap string) string {
+	switch {
+	case hostMap == asked:
+		return byTheSetting
+	case hostMap == "":
+		return theGeneratedWorld
+	default:
+		return theHostsMap
+	}
+}
+
+// errNotTheHostsMap is what a client's world that is not the host's wraps.
+var errNotTheHostsMap = errors.New("not the host's map")
+
+// hostMapMismatch is why the map a client built is not the host's, or nil:
+// another map, or the same one from a different file. A host that sent no
+// SHA (a build from before it did) is taken at its word on the path.
+func hostMapMismatch(hostMap, hostSHA, built, sha string) error {
+	if hostMap == "" {
+		return nil
+	}
+
+	if built != hostMap {
+		return fmt.Errorf("%w: the host built %s, this game built %q", errNotTheHostsMap, hostMap, built)
+	}
+
+	if hostSHA != "" && sha != hostSHA {
+		return fmt.Errorf("%w: %s differs from the host's (sha256 %.12s here, %.12s there) -- both need the same build",
+			errNotTheHostsMap, hostMap, sha, hostSHA)
+	}
+
+	return nil
+}
+
+// generateAuthored builds the world from the Tiled map at p and returns the
+// SHA-256 (hex) of the .tmj it read -- what a host sends a joining client to
+// check its copy against (HostMap). Every refusal
 // that can be foreseen -- the file, its format, a monstat it names -- comes
 // before the engine is touched; one that cannot (NewNPC failing) leaves a
 // half-built map, which the caller's fallback resets along with everything
 // else when it generates the Act 1 world.
-func (g *MapGenerator) generateAuthored(p string) error {
+func (g *MapGenerator) generateAuthored(p string) (sha string, err error) {
 	data, err := g.asset.LoadFile(p)
 	if err != nil {
-		return fmt.Errorf("loading %s: %w", p, err)
+		return "", fmt.Errorf("loading %s: %w", p, err)
 	}
 
 	m, err := d2maptiled.Parse(data, path.Dir(p), g.asset.LoadFile)
 	if err != nil {
-		return fmt.Errorf("%s: %w", p, err)
+		return "", fmt.Errorf("%s: %w", p, err)
 	}
 
 	stats := make([]*d2records.MonStatRecord, len(m.NPCs))
 
 	for i, n := range m.NPCs {
 		if stats[i] = findMonstat(g.asset.Records.Monster.Stats, n.Monstat); stats[i] == nil {
-			return fmt.Errorf("%s: npc %q names no monstats record", p, n.Monstat)
+			return "", fmt.Errorf("%s: npc %q names no monstats record", p, n.Monstat)
 		}
 	}
 
@@ -137,7 +245,7 @@ func (g *MapGenerator) generateAuthored(p string) error {
 	for i, n := range m.NPCs {
 		npc, err := g.engine.NewNPC(subtile(n.X), subtile(n.Y), stats[i], 0)
 		if err != nil {
-			return fmt.Errorf("%s: npc %q: %w", p, n.Monstat, err)
+			return "", fmt.Errorf("%s: npc %q: %w", p, n.Monstat, err)
 		}
 
 		g.engine.AddEntity(npc)
@@ -158,7 +266,9 @@ func (g *MapGenerator) generateAuthored(p string) error {
 	g.engine.SetInside(m.Inside)
 	g.Infof("authored map %s: %dx%d tiles, %d tile kinds, %d npc(s)", p, m.Width, m.Height, len(m.Kinds), len(m.NPCs))
 
-	return nil
+	sum := sha256.Sum256(data)
+
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // authoredTile is one engine tile of an authored map: its floor and wall as

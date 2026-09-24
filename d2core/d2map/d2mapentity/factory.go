@@ -371,6 +371,10 @@ func (f *MapEntityFactory) NewObject(x, y int, objectRec *d2records.ObjectDetail
 		Position:     d2vector.NewPosition(locX, locY),
 		name:         f.asset.TranslateString(objectRec.Name),
 	}
+	if err := f.asset.EnsureRecords(d2resource.ObjectType); err != nil {
+		return nil, err
+	}
+
 	objectType := f.asset.Records.Object.Types[objectRec.Index]
 
 	composite, err := f.asset.LoadComposite(d2enum.ObjectTypeItem, objectType.Token,

@@ -113,6 +113,11 @@ func (a *App) harnessSpawn(kind, code string, x, y float64) (d2interface.MapEnti
 // harnessObjectRecord resolves an objects.txt entry by index or by exact
 // (case-insensitive) name; the lowest index wins a name tie.
 func (a *App) harnessObjectRecord(code string) *d2records.ObjectDetailRecord {
+	// objects.txt loads with the generated world, not at boot.
+	if err := a.asset.EnsureRecords(d2resource.ObjectDetails, d2resource.ObjectType); err != nil {
+		return nil
+	}
+
 	details := a.asset.Records.Object.Details
 
 	if idx, err := strconv.Atoi(code); err == nil {

@@ -3,6 +3,7 @@ package d2client
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 
@@ -46,6 +47,11 @@ type GameClient struct {
 	Players          map[string]*d2mapentity.Player // IDs of the other players
 	Seed             int64                          // Map seed
 	RegenMap         bool                           // Regenerate tile cache on render (map has changed)
+
+	// mapMismatch is why the world this client built is not the host's
+	// (d2mapgen.GenerateHostWorld), or nil. Written by the packet goroutine.
+	mapMismatch   error
+	mapMismatchMu sync.Mutex
 
 	// SaveFilePath is the hero save this client opened. Strigoi keeps its own
 	// per-hero data (the kit, T2) in a sidecar beside it, so it must know which
@@ -197,7 +203,17 @@ func (g *GameClient) handleGenerateMapPacket(packet d2netpacket.NetPacket) error
 	}
 
 	if mapData.RegionType == d2enum.RegionAct1Town {
-		g.mapGen.GenerateAct1Overworld()
+		// The host's world, not this process's own setting: see
+		// d2mapgen.GenerateHostWorld. A client whose copy differs is told
+		// loudly and keeps the reason for whoever asks (MapMismatch).
+		mismatch := g.mapGen.GenerateHostWorld(mapData.Map, mapData.MapSHA256)
+		if mismatch != nil {
+			g.Errorf("THIS IS NOT THE HOST'S WORLD: %v", mismatch)
+		}
+
+		g.mapMismatchMu.Lock()
+		g.mapMismatch = mismatch
+		g.mapMismatchMu.Unlock()
 	}
 
 	g.RegenMap = true
@@ -470,4 +486,13 @@ func (g *GameClient) handlePlayerDisconnectionPacket(packet d2netpacket.NetPacke
 // IsSinglePlayer returns a bool for whether the game is a single-player game
 func (g *GameClient) IsSinglePlayer() bool {
 	return g.connectionType == d2clientconnectiontype.Local
+}
+
+// MapMismatch reports why the world this client built is not the one its host
+// built -- another map, or a different copy of it -- or nil when it is.
+func (g *GameClient) MapMismatch() error {
+	g.mapMismatchMu.Lock()
+	defer g.mapMismatchMu.Unlock()
+
+	return g.mapMismatch
 }
