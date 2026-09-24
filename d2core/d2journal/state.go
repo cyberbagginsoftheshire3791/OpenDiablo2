@@ -21,8 +21,16 @@ type Facts interface {
 	Date() (string, bool)
 }
 
-// Counts answers a {count:item} placeholder: how many he carries now.
-type Counts func(item string) int
+// Lookups are what the panel's text asks the game, live: how many of an item
+// he carries (a {count:item}), and where an anchored place lies from him,
+// in tiles -- east is +x and north is -y, the generated map's own north (its
+// north fence is at the low y, d2mapgen/act1_overworld.go:236-239). On the
+// isometric screen that north is up and to the LEFT: a villager straight up
+// the screen reads "north-west".
+type Lookups struct {
+	Count func(item string) int
+	Where func(anchor string) (dx, dy float64, ok bool)
+}
 
 // Day is one slice date's calendar and sky, from the game's day table. The
 // minutes are minute-of-day; Moonrise is -1 when the moon does not rise
@@ -172,13 +180,18 @@ func (j *Journal) Note(event string) bool {
 	return true
 }
 
-// MarkRead records a writing read (J2).
-func (j *Journal) MarkRead(id string) {
-	if j == nil {
-		return
+// Read records a writing read (J2) and reports whether it was the first
+// time: only a first read pays. A writing the table does not hold is not
+// read at all.
+func (j *Journal) Read(id string) (first bool) {
+	if j == nil || j.book.writings[id] == nil {
+		return false
 	}
 
+	first = j.st.Reads[id] == 0
 	j.st.Reads[id]++
+
+	return first
 }
 
 // Events is how many times an event has been raised.
@@ -376,7 +389,7 @@ type View struct {
 func (j *Journal) Parts() []Part { return j.book.Parts }
 
 // View is a part's rows, newest first, with counts filled in.
-func (j *Journal) View(part string, counts Counts) []View {
+func (j *Journal) View(part string, lk Lookups) []View {
 	var out []View
 
 	seen := j.st.Seen[part]
@@ -403,7 +416,7 @@ func (j *Journal) View(part string, counts Counts) []View {
 			}
 
 			out = append(out, View{
-				ID: t.ID, Title: t.Title, Text: fillCounts(j.taskText(t, ts.State), counts),
+				ID: t.ID, Title: t.Title, Text: fillCounts(j.taskText(t, ts.State), lk.Count),
 				Mark: ts.State, Seq: ts.Seq, Unread: ts.Seq > seen,
 			})
 		}
@@ -417,7 +430,12 @@ func (j *Journal) View(part string, counts Counts) []View {
 			continue
 		}
 
-		out = append(out, View{ID: e.ID, Title: e.Title, Text: fillCounts(e.Text, counts), Seq: seq, Unread: seq > seen})
+		text := fillCounts(e.Text, lk.Count)
+		if e.Anchor != "" {
+			text += "\n\n" + whereIs(e.Anchor, lk.Where)
+		}
+
+		out = append(out, View{ID: e.ID, Title: e.Title, Text: text, Seq: seq, Unread: seq > seen})
 	}
 
 	sort.SliceStable(out, func(a, b int) bool {
@@ -446,7 +464,7 @@ func (j *Journal) taskText(t *Task, state string) string {
 func (j *Journal) Unread(part string) int {
 	n := 0
 
-	for _, v := range j.View(part, nil) {
+	for _, v := range j.View(part, Lookups{}) {
 		if v.Unread {
 			n++
 		}
@@ -483,7 +501,7 @@ func (j *Journal) Title(id string) string {
 	return ""
 }
 
-func fillCounts(text string, counts Counts) string {
+func fillCounts(text string, counts func(string) int) string {
 	return countPattern.ReplaceAllStringFunc(text, func(m string) string {
 		if counts == nil {
 			return "0"

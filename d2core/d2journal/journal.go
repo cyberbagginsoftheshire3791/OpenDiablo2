@@ -40,6 +40,10 @@ import (
 const (
 	PartDays  = "days"
 	PartTasks = "tasks"
+
+	// PartWritings holds the writings he has read (J2): each writing in the
+	// table becomes an entry there, written the first time he reads it.
+	PartWritings = "writings"
 )
 
 // Layout bounds the panel draws to; Load refuses text that would not fit.
@@ -88,7 +92,27 @@ type Entry struct {
 	Text    string `json:"text"`
 	When    When   `json:"when"`
 	Sources string `json:"sources,omitempty"` // provenance; never shown
+
+	// Anchor makes the entry a PLACE (J2): the panel adds, live, which way
+	// the place lies from where he stands and how far. It names something
+	// the game can locate (Names.Anchors: a villager, for now).
+	Anchor string `json:"anchor,omitempty"`
 }
+
+// Writing is a thing he can read (J2): a book, a charter, a mark. Reading it
+// the first time pays XP and writes its entry -- the whole text, in his
+// words -- into the writings part; conditions elsewhere may read it
+// ({"read": "R03"}), which is how a writing gives a tip or opens a task.
+type Writing struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Text    string `json:"text"`
+	XP      int    `json:"xp"`
+	Sources string `json:"sources,omitempty"`
+}
+
+// WritingEntry is the entry id a writing's text is written under.
+func WritingEntry(id string) string { return "w_" + strings.ToLower(id) }
 
 // Stage is one state of a task: what makes it so, and what the page says.
 type Stage struct {
@@ -155,26 +179,28 @@ type DayPage struct {
 
 // Book is the validated journal table.
 type Book struct {
-	Parts   []Part  `json:"parts"`
-	Entries []Entry `json:"entries"`
-	Tasks   []Task  `json:"tasks"`
-	DayPage DayPage `json:"day_page"`
+	Parts    []Part    `json:"parts"`
+	Entries  []Entry   `json:"entries"`
+	Tasks    []Task    `json:"tasks"`
+	Writings []Writing `json:"writings,omitempty"`
+	DayPage  DayPage   `json:"day_page"`
 
-	parts   map[string]bool
-	entries map[string]*Entry
-	tasks   map[string]*Task
-	names   Names
+	parts    map[string]bool
+	entries  map[string]*Entry
+	tasks    map[string]*Task
+	writings map[string]*Writing
+	names    Names
 }
 
 // Names are what the game can report, for Load to check every condition
 // against. Items are what a {count:item} placeholder may name.
 type Names struct {
-	Flags    []string
-	Rungs    []string
-	Events   []string
-	States   []string
-	Writings []string
-	Items    []string
+	Flags   []string
+	Rungs   []string
+	Events  []string
+	States  []string
+	Items   []string
+	Anchors []string // what a place's anchor may name
 }
 
 var (
@@ -203,10 +229,10 @@ func Load(data []byte, n Names) (*Book, error) {
 		return nil, fmt.Errorf("decode journal: %w", err)
 	}
 
-	b.names = n
 	b.parts = map[string]bool{}
 	b.entries = map[string]*Entry{}
 	b.tasks = map[string]*Task{}
+	b.writings = map[string]*Writing{}
 
 	for i, p := range b.Parts {
 		if p.ID == "" || p.Title == "" {
@@ -230,6 +256,37 @@ func Load(data []byte, n Names) (*Book, error) {
 		}
 	}
 
+	// The writings: each one is a name a read condition may use, and an
+	// entry, written the first time he reads it, holding its text.
+	if len(b.Writings) > 0 && !b.parts[PartWritings] {
+		return nil, fmt.Errorf("the journal has writings and no %q part", PartWritings)
+	}
+
+	// The only names a read may use are the table's own writings: a read of
+	// anything else could never be recorded (Journal.Read).
+	var readable []string
+
+	for i := range b.Writings {
+		w := &b.Writings[i]
+
+		if w.ID == "" || b.writings[w.ID] != nil {
+			return nil, fmt.Errorf("writing %d: an id, and only once (%q)", i, w.ID)
+		}
+
+		if w.XP < 0 {
+			return nil, fmt.Errorf("writing %s: xp cannot be negative", w.ID)
+		}
+
+		b.writings[w.ID] = w
+		readable = append(readable, w.ID)
+		b.Entries = append(b.Entries, Entry{
+			ID: WritingEntry(w.ID), Part: PartWritings, Title: w.Title, Text: w.Text,
+			When: When{Read: w.ID}, Sources: w.Sources,
+		})
+	}
+
+	b.names = n
+
 	known := func(list []string) map[string]bool {
 		m := map[string]bool{}
 		for _, s := range list {
@@ -241,9 +298,9 @@ func Load(data []byte, n Names) (*Book, error) {
 
 	sets := map[string]map[string]bool{
 		"flag": known(n.Flags), "rung": known(n.Rungs), "event": known(n.Events),
-		"state": known(n.States), "read": known(n.Writings),
+		"state": known(n.States), "read": known(readable),
 	}
-	items := known(n.Items)
+	items, anchors := known(n.Items), known(n.Anchors)
 
 	checkText := func(where, text string) error {
 		if strings.TrimSpace(text) == "" {
@@ -307,6 +364,15 @@ func Load(data []byte, n Names) (*Book, error) {
 
 		if err := checkWhen(where, e.When, sets); err != nil {
 			return nil, err
+		}
+
+		if e.Anchor != "" && !anchors[e.Anchor] {
+			return nil, fmt.Errorf("%s: no anchor %q to place it by", where, e.Anchor)
+		}
+
+		// A place's text carries two more lines, the where-line and a blank.
+		if e.Anchor != "" && len(Wrap(e.Text, WrapWidth)) > MaxLines-2 {
+			return nil, fmt.Errorf("%s: a place's text must leave two lines for where it lies", where)
 		}
 
 		b.entries[e.ID] = e
@@ -445,6 +511,19 @@ func (b *Book) checkDayPage() error {
 	}
 
 	return nil
+}
+
+// Writing is a writing by id, or nil.
+func (b *Book) Writing(id string) *Writing { return b.writings[id] }
+
+// WritingIDs is every writing, in table order: what a talk's read may name.
+func (b *Book) WritingIDs() []string {
+	out := make([]string, 0, len(b.Writings))
+	for _, w := range b.Writings {
+		out = append(out, w.ID)
+	}
+
+	return out
 }
 
 // Entry is an entry by id, or nil.

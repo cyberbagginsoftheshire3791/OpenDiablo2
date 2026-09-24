@@ -2,6 +2,7 @@ package d2journal
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -148,4 +149,35 @@ func (p DayPage) Render(d Day) (title, text string) {
 	lines = append(lines, "", fill(p.Data))
 
 	return fill(p.Title), strings.Join(lines, "\n")
+}
+
+// compass are the eight ways, clockwise from north.
+var compass = [8]string{"north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"}
+
+// whereIs says where an anchored place lies from him: a way and a distance
+// in paces (a tile taken as a pace), or that he cannot tell from here.
+func whereIs(anchor string, where func(string) (dx, dy float64, ok bool)) string {
+	if where == nil {
+		return "I cannot tell from here which way it lies."
+	}
+
+	dx, dy, ok := where(anchor)
+	if !ok || math.IsNaN(dx+dy) || math.IsInf(dx+dy, 0) {
+		return "I cannot tell from here which way it lies."
+	}
+
+	dist := math.Hypot(dx, dy)
+	if dist < 3 {
+		return "It is here, a few paces from me."
+	}
+
+	// North is -y: the bearing clockwise from north.
+	bearing := math.Atan2(dx, -dy) * 180 / math.Pi
+	if bearing < 0 {
+		bearing += 360
+	}
+
+	way := compass[int(math.Floor(bearing/45+0.5))%8]
+
+	return fmt.Sprintf("It lies %s of me, about %d paces.", way, int(math.Round(dist)))
 }

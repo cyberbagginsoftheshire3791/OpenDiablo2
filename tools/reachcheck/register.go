@@ -740,6 +740,15 @@ var Register = []Entry{
 		"The open journal takes every key (A3): Q or Escape close it, the arrows turn parts and rows. Reached from OnKeyDown before every verb.", ""},
 	{sym(pkgPlayer, "GameControls.journalClick"), BucketWire, VerdictLive,
 		"A click on the open journal picks a tab or a row, and nothing reaches the world under it. Reached from OnMouseButtonDown.", ""},
+	// J2, the writings (24 Sep 2026).
+	{sym(pkgJournal, "Journal.Read"), BucketWire, VerdictLive,
+		"Records a writing read and reports the first read, which alone pays (Game.readWriting, from a talk answer's read effect).", ""},
+	{sym(pkgScreen, "Game.readWriting"), BucketWire, VerdictLive,
+		"A talk answer that reads (Effects.Read) pays the first read's experience and opens his journal at the writing (Game.Answer, once the talk has ended).", ""},
+	{sym(pkgPlayer, "GameControls.OpenJournalAt"), BucketWire, VerdictLive,
+		"Opens the journal at a part and a row: the writing just read to him. Refused as Q is.", ""},
+	{sym(pkgScreen, "Game.whereIs"), BucketWire, VerdictLive,
+		"Where a place's anchor (a villager) stands from him, for the journal's which-way-and-how-far line (Game.JournalRows).", ""},
 	{sym(pkgPlayer, "GameControls.journalViewReport"), BucketObserve, VerdictHarnessOnly,
 		"Reads the open journal's tabs, rows and text for the harness ui state, so a script clicks where they are drawn. Changes nothing.", ""},
 }

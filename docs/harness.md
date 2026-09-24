@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 41 playtest scripts.** That count, the harness version below and the
+**The 42 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -346,6 +346,15 @@ this doc fails until it agrees.
   provider adds `journal_open`, `journal_view` (tabs and rows where drawn,
   the text) and `journal_notice`. `strigoi_game_test.go`'s Q act now opens
   the journal and never reads the quest log's art.
+* `writings_test.go` — the forty-second, J2 (24 Sep 2026): the things he can
+  read. At the hearth the priest reads him the book on the stand: the talk
+  ends, the journal opens at the writing (`writings` part, `w_r01`) with its
+  text, and the first read pays 5; read again (the control) it opens again
+  and pays nothing, and `reads` counts 2. The list of their dead writes "Only
+  on Saturday" before the tale (a tip) and pays 10. The well woman's answer
+  about their dead writes the graves and the churchyard, and from eight
+  tiles off the church's place in the village part says which way it lies
+  and how far. Screenshots of the psalter and the placed church.
 * `strigoi_game_test.go` — the thirty-ninth: the game launched with NO switches
   builds the village, draws the hero from Strigoi's sheets, uses Strigoi's font
   set and string table, and a first hour reads no Diablo II tile, class-art,

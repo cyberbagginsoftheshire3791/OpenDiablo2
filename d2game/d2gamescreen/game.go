@@ -166,6 +166,14 @@ func CreateGame(
 		return nil, err
 	}
 
+	// J2: nothing a villager reads him may be missing from the journal's
+	// writings -- the answer would open an empty page.
+	for _, id := range dialogue.WritingsNamed() {
+		if journalBook.Writing(id) == nil {
+			return nil, fmt.Errorf("dialogue reads %q, which is not in the journal's writings", id)
+		}
+	}
+
 	// find the local player and its initial location
 	var startX, startY float64
 

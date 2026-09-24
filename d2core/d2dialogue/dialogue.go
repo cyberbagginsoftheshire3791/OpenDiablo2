@@ -101,6 +101,12 @@ type Effects struct {
 	// notices him. Together they are what the shelter rung MEANS.
 	Rest    float64 `json:"rest,omitempty"`
 	Shelter bool    `json:"shelter,omitempty"`
+
+	// Read shows him a writing (J2): a book, a charter, a mark, by its id in
+	// the journal's table, which the game checks at load. The answer that
+	// reads must END the talk -- the writing opens in his journal, and the
+	// journal does not open over a talk.
+	Read string `json:"read,omitempty"`
 }
 
 // Choice is one thing he can say.
@@ -133,8 +139,11 @@ type Speaker struct {
 }
 
 // MaxAnswers is the most choices a node may offer: the talk panel draws this
-// many, and keys 1-9 must never reach one it did not draw.
-const MaxAnswers = 6
+// many, and keys 1-9 must never reach one it did not draw. Seven since J2
+// (the priest's six writings and a way out). Computed, not measured: six
+// lines of text and seven answers end at y 544 (talk_panel.go), above the
+// HUD's main panel; the shipped nodes end by y 480.
+const MaxAnswers = 7
 
 // Book is the validated dialogue table.
 type Book struct {
@@ -285,6 +294,16 @@ func Load(data []byte) (*Book, error) {
 				return nil, err
 			}
 
+			if c.Effects.Read != "" && c.Next != "" {
+				return nil, fmt.Errorf("%s reads %s and leads on to %q; an answer that reads must end the talk", where, c.Effects.Read, c.Next)
+			}
+
+			// A read takes no time of the world's: minutes that could open a
+			// fight or kill him would pay a read he never finished.
+			if e := c.Effects; e.Read != "" && (e.Minutes > 0 || e.Rest > 0 || e.Shelter) {
+				return nil, fmt.Errorf("%s reads %s and spends time; a read is not labour", where, e.Read)
+			}
+
 			if _, ok := b.Nodes[c.Next]; c.Next != "" && !ok {
 				return nil, fmt.Errorf("%s leads to no node %q", where, c.Next)
 			}
@@ -360,6 +379,22 @@ func (b *Book) ItemsNamed() []string {
 	sort.Strings(out)
 
 	return out
+}
+
+// WritingsNamed is every writing a choice reads, for the game to check
+// against the journal's table (J2).
+func (b *Book) WritingsNamed() []string {
+	seen := map[string]bool{}
+
+	for _, n := range b.Nodes {
+		for _, c := range n.Choices {
+			if c.Effects.Read != "" {
+				seen[c.Effects.Read] = true
+			}
+		}
+	}
+
+	return sortedSet(seen)
 }
 
 // SlotsNamed is every armour slot a choice mends, for the same check.

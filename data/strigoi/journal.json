@@ -23,6 +23,10 @@
     {
       "id": "survival",
       "title": "Survival"
+    },
+    {
+      "id": "writings",
+      "title": "Writings"
     }
   ],
   "entries": [
@@ -297,6 +301,68 @@
         "event": "node:priest_wary"
       },
       "sources": "dialogue priest_wary"
+    },
+    {
+      "id": "p_gap",
+      "part": "village",
+      "title": "The gap in the ditch",
+      "text": "Where the headman stands with his hayfork, at the gap the carts went through.",
+      "when": {
+        "flag": "met_headman"
+      },
+      "sources": "village.tmj; the headman's post",
+      "anchor": "headman"
+    },
+    {
+      "id": "p_well",
+      "part": "village",
+      "title": "The well",
+      "text": "The well, and the trough she lets me drink from.",
+      "when": {
+        "event": "node:well"
+      },
+      "sources": "village.tmj",
+      "anchor": "well_woman"
+    },
+    {
+      "id": "p_forge",
+      "part": "village",
+      "title": "The forge",
+      "text": "The smith's forge, and the bellows he lets me pump for bread.",
+      "when": {
+        "event": "node:smith"
+      },
+      "sources": "village.tmj",
+      "anchor": "smith"
+    },
+    {
+      "id": "p_church",
+      "part": "village",
+      "title": "The church",
+      "text": "The wooden church on the high ground, with their graves beside it.",
+      "when": {
+        "any": [
+          {
+            "event": "node:priest_wary"
+          },
+          {
+            "event": "node:priest"
+          }
+        ]
+      },
+      "sources": "G4; village.tmj",
+      "anchor": "priest"
+    },
+    {
+      "id": "p_churchyard",
+      "part": "village",
+      "title": "The churchyard",
+      "text": "Their dead lie on the high ground by the church, the well woman says, under wooden crosses with no names. If the priest grants the rite, a grave dug within sight of his church he will close at first light.",
+      "when": {
+        "read": "R08"
+      },
+      "sources": "R08; M4.7 Q4a (the built rite radius, placed by the priest)",
+      "anchor": "priest"
     },
     {
       "id": "v_stand_start",
@@ -602,7 +668,14 @@
       "title": "Only on Saturday",
       "text": "They say the dead come out every night but Saturday. On Saturday they lie in their graves.",
       "when": {
-        "flag": "heard_tale"
+        "any": [
+          {
+            "flag": "heard_tale"
+          },
+          {
+            "read": "R03"
+          }
+        ]
       },
       "sources": "R1 s3 ATTESTED; C3 GROUNDED (Murgoci, Pamfile)"
     },
@@ -1305,6 +1378,78 @@
         "text": "I showed the smith how the army forges an edge."
       },
       "sources": "map s4; dialogue smith"
+    }
+  ],
+  "writings": [
+    {
+      "id": "R01",
+      "title": "The book on the stand",
+      "xp": 5,
+      "text": "Thick pages, black letters and red. I cannot make one of the letters speak. The priest set his finger on the page and said it without looking down: 'He that dwells in the help of the Highest, shall sojourn under the shelter of the God of heaven... Thou shalt not be afraid of terror by night; nor of the arrow flying by day; nor of the evil thing that walks in darkness; nor of calamity, and the evil spirit at noon-day. A thousand shall fall at thy side, and ten thousand at thy right hand; but it shall not come nigh thee.'\nHe says they read it at midday, at the late office, and over the dead before they go into the ground. I asked whether it keeps the dead down. He said a psalm is not a lock.",
+      "sources": "Psalm 90:1, 5-7 LXX, Brenton (public domain); uses GROUNDED (modern Orthodox practice); a manuscript on a village lectern INFERENCE; the priest recites, so his literacy stays UNKNOWN (H7)"
+    },
+    {
+      "id": "R02",
+      "title": "A loose leaf",
+      "xp": 5,
+      "text": "He read me the verses of the long late office they keep in the fasts, when the whole church answers: God is with us. 'Know, ye Gentiles, and be conquered; hearken ye, even to the extremity of the earth... whatsoever counsel ye shall take, the Lord shall bring it to nought; and whatsoever word ye shall speak, it shall not stand among you: for God is with us.'\nI told him that where I come from, the unbelievers are his people. He said that here they are mine. Then he read another line, from earlier in the same office: 'I will both lie down in peace and sleep: for thou, Lord, only hast caused me to dwell securely.' He did not ask whether I believed it. He asked whether I slept.",
+      "sources": "Isaiah 8:9-10 and Psalm 4:9, Brenton (public domain); both in Great Compline, which is kept in the Apostles' Fast (attack verified); the leaf in a village chest INFERENCE"
+    },
+    {
+      "id": "R03",
+      "title": "The list of their dead",
+      "xp": 10,
+      "text": "Two columns, he says: the living on one side, the dead on the other. He reads them before the service, every name. He read me the dead. 'Remember, O Lord, the souls of thy servants: Stanciul. Manea the elder. Tatul, and his wife. Drag.' And on down the page. The last names are in fresher ink and a hurried hand: men who went with the prince's host this spring. Beside some he has made a small mark. 'That one we buried. That one we did not find.' At the foot, no name: 'and those whose names Thou knowest.'\nI asked if my four from the field could be on it. He said he would have to think what that would mean, for them and for him.",
+      "sources": "pomelnic genre ATTESTED (Bistrita 1407, Moldavian, monastic); a village list in 1462 INFERENCE; names COMPOSED from 1439 and 1459 charters; the closing formula COMPOSED; the unanswered question keeps M11 P5 and map decision 10 open"
+    },
+    {
+      "id": "R04",
+      "title": "The parchment",
+      "xp": 5,
+      "text": "He would not let me touch it. 'It was read out once, when my father was given it. We keep it for the next prince to see.' The priest read me pieces. 'I, in Christ God the right-believing and Christ-loving Io Vlad, voivode and lord... give to Stanciul and his sons this village, to be their ohaba, and their children's and grandchildren's... And after the death of my lordship, whoever God wills to be prince... let him confirm it. And whoever dares to break it, may the Lord God destroy him here in the body, and in the age to come let his soul have part with Judas and Arius. Written at Târgoviște, in the year six thousand nine hundred and forty-eight.'\n'Which Vlad?' I asked. 'The father,' said the headman. Then, lower: 'And which prince confirms it now?'",
+      "sources": "COMPOSED FROM ATTESTED FORMULAS, not a real document: opening and curse (1439, 1459; press tier), succession clause (Ilie 2023); NO exemptions list (attack: it contradicted 'what they owe'; dues VERIFY); 6948 = 1439/40 COMPUTED (Vlad II); the village free INFERENCE"
+    },
+    {
+      "id": "R05",
+      "title": "The notched stick",
+      "xp": 5,
+      "text": "A hazel stick as long as my forearm, split down its length. He keeps one half; the prince's man carries the other, and when the two are laid together the notches must meet. There is no writing on it. So many cuts for each house's tenth of the flock, so many for the hay he says they owe the prince, a deeper cut where a debt was paid. 'The prince's man has not come for his half this year,' he said. 'Perhaps no one will.' It is the only book he reads, and he reads it without a priest.",
+      "sources": "split tally for dues GROUNDED (1708 and c. 1800 evidence); the dues H7 s1 VERIFY; notch meanings INFERENCE (invented); use in 1462 INFERENCE"
+    },
+    {
+      "id": "R06",
+      "title": "Letters by the icon",
+      "xp": 5,
+      "text": "A painted man holding a book, and beside his head two letters on each side with a mark over them. The priest says it is the Christ's name, shortened as the holy names are written. The old women say that once, inside a church, a holy icon fell on a strigoi and destroyed it. The priest says an icon is not a stone to throw, and that I should stand where I am.",
+      "sources": "IC XC with titlo GROUNDED; the falling-icon tale M11 ATTESTED MEDIUM (Pamfile 1916), kept as hearsay (no holy hand-grenade); 'barely remember' cut pending map decision 4"
+    },
+    {
+      "id": "R07",
+      "title": "Cuts in the door-post",
+      "xp": 5,
+      "text": "Small letters cut into the wood of the door-post, some old and softened, one still pale. The priest says men cut there what must not be forgotten: a death, a hailstorm, a year. The pale one is his own. 'In the year six thousand nine hundred and seventy, in the month of June, the Sultan came into the land, and the people went up into the hills with their beasts.' He asked me if that was true. I said it was, and that he had left out the night.",
+      "sources": "practice ATTESTED for the princely church at Arges, 1352, in plaster; on a wooden village door-post INFERENCE (attack); text COMPOSED; 'went up into the hills' follows G4 and Chalkokondyles and the emptied-not-burned rule; 6970 COMPUTED"
+    },
+    {
+      "id": "R08",
+      "title": "Graves without names",
+      "xp": 10,
+      "text": "I asked the woman at the well where their dead lie. On the high ground by the church, she said, under wooden crosses, some fallen, and no names on any of them. The dead are known, she says, by who comes to them: on the third day, the ninth, the fortieth, and once a year after. When no one comes any more, the priest still has them on his list. When the list is gone, God has them. I thought of the four in the field, who are on no list anywhere.",
+      "sources": "no names INFERENCE (inscribed crosses are 16th century on); days 3/9/40 GROUNDED (Byzantine); hearsay voice"
+    },
+    {
+      "id": "R11",
+      "title": "Two coins",
+      "xp": 5,
+      "text": "The smith turned a coin out of a rag to show me what their prince pays with: thin silver, lighter than ours. On one face an eagle on a helmet; on the other a shield cut in two, a moon and a star on one half and bars on the other. He could not read the rim; the priest could: 'Io Vladislav, voivode, lord.' The prince the Wallachian killed, six summers ago. His silver still goes. I showed them one of ours from a dead man's purse. A paymaster once read one for me: on one face the Sultan's name, Mehmed son of Murad Khan; on the other, may his reign be eternal, and where it was struck; and the year, eight hundred and sixty-five. The smith weighed one in each palm and said he would rather have iron.",
+      "sources": "Vladislav II ducat, legend 'Io Vladislav voievod gospodin', helm-and-eagle / split shield (attack: replaces the disputed Vlad coin, which E1 keeps out); Vladislav II killed by Vlad III 1456 ATTESTED; akce legend and reverse GROUNDED (tertiary), 865 AH; barter framing S1 s8.3"
+    },
+    {
+      "id": "R12",
+      "title": "Notes in the Gospel",
+      "xp": 5,
+      "text": "He would not let me near the altar, so he brought it to me: boards, worn leather, a clasp. On the last leaf, writing in two hands. The old one, he read: 'This holy Gospel was given to the church by its donor and his wife, for their souls and their parents' souls, in the days of Io... voivode. Whoever takes it from this church, let him answer for it at the dread Judgment.' Under it, the new hand, his: 'In this year the Sultan's army went by on the road below, and we saw its dust for three days.'\nHe says books outlive the men who write in them. I asked who he thought would read it. He said: someone who can.",
+      "sources": "donor notes GROUNDED (15th-century manuscripts; the 1498 Moldavian example); the curse COMPOSED, unverified for colophons; the priest's line COMPOSED; a village Gospel INFERENCE; altar exclusion general Orthodox practice"
     }
   ],
   "day_page": {

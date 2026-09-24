@@ -91,15 +91,17 @@ func TestLoadRefuses(t *testing.T) {
 			`"speakers":[{"id":"s","role":"T","stand_in":"Y","openings":[{"node":"n"}]},`, 1),
 		"an empty node id": strings.Replace(good, `"nodes":{`, `"nodes":{"":{"text":"x","choices":[]},`, 1),
 		"too many answers": strings.Replace(good, `[{"text":"bye"}]`,
-			`[{"text":"1"},{"text":"2"},{"text":"3"},{"text":"4"},{"text":"5"},{"text":"6"},{"text":"7"}]`, 1),
-		"a negative effect":    strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","effects":{"water":-5}}`, 1),
-		"a negative watch":     strings.Replace(good, `"watch":1`, `"watch":-1`, 1),
-		"no watch minutes":     strings.Replace(good, `"watch_minutes":60,`, ``, 1),
-		"no watch radius":      strings.Replace(good, `"watch_radius":10,`, ``, 1),
-		"no rite radius":       strings.Replace(good, `"rite_radius":12,`, ``, 1),
-		"no seen radius":       strings.Replace(good, `"seen_radius":8,`, ``, 1),
-		"a negative seen cost": strings.Replace(good, `"seen_cost":5`, `"seen_cost":-1`, 1),
-		"a flag nothing sets":  strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","requires":{"flag":"typo"}}`, 1),
+			`[{"text":"1"},{"text":"2"},{"text":"3"},{"text":"4"},{"text":"5"},{"text":"6"},{"text":"7"},{"text":"8"}]`, 1),
+		"a read that leads on":   strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","next":"n","effects":{"read":"R01"}}`, 1),
+		"a read that takes time": strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","effects":{"read":"R01","minutes":30}}`, 1),
+		"a negative effect":      strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","effects":{"water":-5}}`, 1),
+		"a negative watch":       strings.Replace(good, `"watch":1`, `"watch":-1`, 1),
+		"no watch minutes":       strings.Replace(good, `"watch_minutes":60,`, ``, 1),
+		"no watch radius":        strings.Replace(good, `"watch_radius":10,`, ``, 1),
+		"no rite radius":         strings.Replace(good, `"rite_radius":12,`, ``, 1),
+		"no seen radius":         strings.Replace(good, `"seen_radius":8,`, ``, 1),
+		"a negative seen cost":   strings.Replace(good, `"seen_cost":5`, `"seen_cost":-1`, 1),
+		"a flag nothing sets":    strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","requires":{"flag":"typo"}}`, 1),
 	}
 
 	// And a flag some choice DOES set is fine -- the mirror of the typo case.
@@ -113,6 +115,16 @@ func TestLoadRefuses(t *testing.T) {
 		if _, err := Load([]byte(doc)); err == nil {
 			t.Errorf("%s must be refused", name)
 		}
+	}
+
+	// J2: a read that ends the talk loads, and is named for the game's check.
+	reads, err := Load([]byte(strings.Replace(good, `{"text":"bye"}`, `{"text":"bye","effects":{"read":"R01"}}`, 1)))
+	if err != nil {
+		t.Fatalf("a read that ends the talk: %v", err)
+	}
+
+	if got := strings.Join(reads.WritingsNamed(), ","); got != "R01" {
+		t.Fatalf("WritingsNamed %q", got)
 	}
 }
 

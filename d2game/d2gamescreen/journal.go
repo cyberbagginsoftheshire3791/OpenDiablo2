@@ -66,10 +66,11 @@ func journalNames(dialogue *d2dialogue.Book, items *d2items.Catalog, recipes *d2
 	}
 
 	return d2journal.Names{
-		Flags:  append(dialogue.FlagsNamed(), flagSeenStaking),
-		Rungs:  dialogue.RungIDs(),
-		States: d2journal.GameStates(),
-		Items:  items.IDs(),
+		Flags:   append(dialogue.FlagsNamed(), flagSeenStaking),
+		Rungs:   dialogue.RungIDs(),
+		Anchors: dialogue.SpeakerIDs(),
+		States:  d2journal.GameStates(),
+		Items:   items.IDs(),
 		Events: d2journal.GameEvents(d2journal.Vocabulary{
 			Rows: rows, Recipes: recipeIDs, Speakers: dialogue.SpeakerIDs(), Nodes: dialogue.NodeIDs(),
 		}),
@@ -299,7 +300,70 @@ func (v *Game) JournalRows(part string) []d2journal.View {
 		return nil
 	}
 
-	return v.journal.View(part, v.kitCount)
+	return v.journal.View(part, d2journal.Lookups{Count: v.kitCount, Where: v.whereIs})
+}
+
+// whereIs is where a place's anchor stands from him, in tiles (J2): east is
+// +x and north is -y. The anchors are villagers, found by their stand-in.
+func (v *Game) whereIs(anchor string) (dx, dy float64, ok bool) {
+	e := v.speakerEntity(anchor)
+	if e == nil || v.localPlayer == nil {
+		return 0, 0, false
+	}
+
+	ex, ey := e.GetPositionF()
+	px, py := v.localPlayer.GetPositionF()
+
+	return ex - px, ey - py, true
+}
+
+// readWriting is J2's read effect, after the talk that read it has ended: the
+// first read pays its experience, and every read opens his journal at the
+// writing, so he can read it again.
+func (v *Game) readWriting(id string) {
+	if v.journal == nil || v.journalBook == nil {
+		return
+	}
+
+	w := v.journalBook.Writing(id)
+	if w == nil {
+		return
+	}
+
+	first := v.journal.Read(id)
+
+	// Written now, not next frame, so the page is there to open.
+	written := v.journal.Evaluate(journalFacts{v})
+
+	if first && v.progress != nil && v.talents != nil {
+		v.gainXP(w.XP)
+	}
+
+	v.saveKit()
+
+	if v.gameControls == nil {
+		return
+	}
+
+	v.gameControls.OpenJournalAt(d2journal.PartWritings, d2journal.WritingEntry(id))
+
+	// What else the read wrote -- a tip, a place -- is said when he closes
+	// the journal (the notice waits while it is open; it is set after the
+	// opening, which clears an old one).
+	var also []string
+
+	for _, e := range append(append([]string{}, written.Entries...), written.Tasks...) {
+		if e != d2journal.WritingEntry(id) {
+			also = append(also, v.journal.Title(e))
+		}
+	}
+
+	switch {
+	case len(also) == 1:
+		v.gameControls.JournalNotice(fmt.Sprintf(d2player.JournalWritten, also[0]), journalNoticeSeconds)
+	case len(also) > 1:
+		v.gameControls.JournalNotice(fmt.Sprintf(d2player.JournalWrittenMore, also[0], len(also)-1), journalNoticeSeconds)
+	}
 }
 
 // JournalLeave marks a part read.

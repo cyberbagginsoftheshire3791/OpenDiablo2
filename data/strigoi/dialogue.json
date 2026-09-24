@@ -77,8 +77,18 @@
         {"text": "Ask to sleep inside the palisade tonight.",
          "next": "headman_shelter",
          "requires": {"rung": "shelter", "time": "night", "not_flags": ["slept_inside", "watch_promised"]}},
+        {"text": "Ask what the village keeps written.", "next": "headman_papers",
+         "requires": {"rung": "trade"}},
         {"text": "Your bread. Hand it over.", "next": "headman_threat"},
         {"text": "Nothing. Leave him be."}
+      ]
+    },
+    "headman_papers": {
+      "text": "'Written?' He almost laughs. 'One parchment in my chest, given to my father. And a stick with notches, which is the only book I read.'",
+      "choices": [
+        {"text": "Ask about the parchment in the chest.", "effects": {"read": "R04"}},
+        {"text": "Ask about the notched stick.", "effects": {"read": "R05"}},
+        {"text": "Nothing more."}
       ]
     },
     "headman_work": {
@@ -131,6 +141,7 @@
          "effects": {"rep": 4, "water": 100, "minutes": 20, "set": ["drew_water"]}},
         {"text": "Help her pluck the geese, for the feathers. (half an hour)",
          "effects": {"minutes": 30, "give": {"feathers": 6}}},
+        {"text": "Ask where their dead are buried.", "effects": {"read": "R08"}},
         {"text": "Leave."}
       ]
     },
@@ -153,6 +164,7 @@
          "effects": {"minutes": 60, "give": {"wire": 2}}},
         {"text": "Work a morning at his anvil, and he mends your mail. (three hours)",
          "effects": {"minutes": 180, "mend": "body"}},
+        {"text": "Ask about the coin in his rag.", "effects": {"read": "R11"}},
         {"text": "Leave."}
       ]
     },
@@ -167,7 +179,20 @@
         {"text": "Listen.", "next": "priest_tale", "effects": {"set": ["heard_tale"]}},
         {"text": "Ask about the rite for the dead.", "next": "priest_rite",
          "requires": {"rung": "rite"}},
+        {"text": "Ask about the church's writings.", "next": "priest_books"},
         {"text": "Leave."}
+      ]
+    },
+    "priest_books": {
+      "text": "He looks at you a long while. 'You cannot read them. I can read you some, if you will stand still for it.'",
+      "choices": [
+        {"text": "The book open on the stand.", "effects": {"read": "R01"}},
+        {"text": "The loose leaf he keeps in his chest.", "effects": {"read": "R02"}},
+        {"text": "The list of names by the altar.", "effects": {"read": "R03"}},
+        {"text": "The letters beside the painted face.", "effects": {"read": "R06"}},
+        {"text": "The cuts in the door-post.", "effects": {"read": "R07"}},
+        {"text": "The Gospel book.", "effects": {"read": "R12"}},
+        {"text": "Nothing more."}
       ]
     },
     "priest_tale": {

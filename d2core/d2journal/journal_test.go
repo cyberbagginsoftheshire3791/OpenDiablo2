@@ -31,17 +31,18 @@ func (f *facts) Date() (string, bool) {
 }
 
 var testNames = Names{
-	Flags:    []string{"met", "promised", "gate", "dug"},
-	Rungs:    []string{"water", "trade"},
-	Events:   []string{"kept", "broken", "staked", "asked"},
-	States:   []string{"hungry"},
-	Writings: []string{"R01"},
-	Items:    []string{"arrows"},
+	Flags:   []string{"met", "promised", "gate", "dug"},
+	Rungs:   []string{"water", "trade"},
+	Events:  []string{"kept", "broken", "staked", "asked"},
+	States:  []string{"hungry"},
+	Items:   []string{"arrows"},
+	Anchors: []string{"priest"},
 }
 
 // minimal is a valid book the refusal cases each break one way.
 const minimal = `{
- "parts": [{"id": "days", "title": "Days"}, {"id": "tasks", "title": "Tasks"}, {"id": "self", "title": "Myself"}],
+ "parts": [{"id": "days", "title": "Days"}, {"id": "tasks", "title": "Tasks"}, {"id": "self", "title": "Myself"},
+  {"id": "writings", "title": "Writings"}],
  "entries": [
   {"id": "start", "part": "self", "title": "Taken", "text": "I was taken.", "when": {"start": true}},
   {"id": "met", "part": "self", "title": "The headman", "text": "An old man.", "when": {"flag": "met"}},
@@ -50,7 +51,8 @@ const minimal = `{
   {"id": "hungry", "part": "self", "title": "Hunger", "text": "Empty.", "when": {"state": "hungry"}},
   {"id": "later", "part": "days", "title": "Later", "text": "The army goes.", "when": {"date": "1462-06-19"}},
   {"id": "both", "part": "self", "title": "Both", "text": "Met and staked.", "when": {"all": [{"flag": "met"}, {"event": "staked"}]}},
-  {"id": "arrows", "part": "self", "title": "Arrows", "text": "I have {count:arrows} left.", "when": {"start": true}}
+  {"id": "arrows", "part": "self", "title": "Arrows", "text": "I have {count:arrows} left.", "when": {"start": true}},
+  {"id": "church", "part": "self", "title": "The church", "text": "A wooden church.", "when": {"read": "R02"}, "anchor": "priest"}
  ],
  "tasks": [
   {"id": "watch", "title": "The watch", "repeats": true,
@@ -63,6 +65,7 @@ const minimal = `{
    "failed": {"when": {"flag": "gate"}, "text": "Shut out."}},
   {"id": "deed", "title": "A deed", "done": {"when": {"flag": "dug"}, "text": "Done at once."}}
  ],
+ "writings": [{"id": "R02", "title": "A loose leaf", "text": "He read me the verses.", "xp": 5}],
  "day_page": {"title": "{weekday}, {day} {month}", "lines": ["The {ramazan} day of Ramazan.", "{event}"],
   "data": "Sunset {sunset} · moonrise {moonrise}, {lit} lit · moonless dark {moonless}",
   "events": {"1462-06-17": "The morning after."}, "fast_words": {"dry": "dry food only"}}
@@ -87,32 +90,42 @@ func mustLoad(t *testing.T) (*Book, *Journal) {
 
 func TestLoadRefuses(t *testing.T) {
 	cases := map[string][2]string{
-		"unknown field":         {`"repeats": true,`, `"repeats": true, "colour": "red",`},
-		"two kinds":             {`"when": {"flag": "met"}}`, `"when": {"flag": "met", "rung": "water"}}`},
-		"no kind":               {`"when": {"state": "hungry"}}`, `"when": {}}`},
-		"unknown flag":          {`{"flag": "met"}}`, `{"flag": "mett"}}`},
-		"unknown rung":          {`{"rung": "water"}}`, `{"rung": "wine"}}`},
-		"unknown event":         {`"when": {"event": "staked"}}`, `"when": {"event": "stakd"}}`},
-		"unknown state":         {`{"state": "hungry"}}`, `{"state": "hungri"}}`},
-		"bad date":              {`"1462-06-19"}}`, `"19 June"}}`},
-		"duplicate id":          {`{"id": "deed"`, `{"id": "met"`},
-		"empty text":            {`"text": "I was taken."`, `"text": "  "`},
-		"long title":            {`"title": "Taken"`, `"title": "Taken far from home as a boy"`},
-		"no days part":          {`{"id": "days", "title": "Days"}, `, ``},
-		"entry in tasks":        {`"part": "self", "title": "Taken"`, `"part": "tasks", "title": "Taken"`},
-		"no such part":          {`"part": "self", "title": "Taken"`, `"part": "selves", "title": "Taken"`},
-		"fail without open":     {`{"id": "deed", "title": "A deed", "done"`, `{"id": "deed", "title": "A deed", "failed": {"when": {"flag": "gate"}, "text": "x"}, "done"`},
-		"repeats without open":  {`{"id": "deed", "title": "A deed",`, `{"id": "deed", "title": "A deed", "repeats": true,`},
-		"start in a task":       {`"done": {"when": {"flag": "dug"}, "text": "Done at once."}`, `"done": {"when": {"start": true}, "text": "Done at once."}`},
-		"unknown count":         {`{count:arrows}`, `{count:bolts}`},
-		"unknown day field":     {`{moonless}`, `{moonset}`},
-		"not start":             {`{"state": "hungry"}}`, `{"not": {"start": true}}}`},
-		"bad not":               {`{"state": "hungry"}}`, `{"not": {"flag": "nope"}}}`},
-		"empty all":             {`{"all": [{"flag": "met"}, {"event": "staked"}]}`, `{"all": []}`},
-		"unknown read in any":   {`{"all": [{"flag": "met"}, {"event": "staked"}]}`, `{"any": [{"flag": "met"}, {"read": "R99"}]}`},
-		"bad id":                {`{"id": "start"`, `{"id": "Start Here"`},
-		"task never appears":    {`{"id": "deed", "title": "A deed", "done": {"when": {"flag": "dug"}, "text": "Done at once."}}`, `{"id": "deed", "title": "A deed"}`},
-		"long text":             {`"text": "I was taken."`, `"text": "` + strings.Repeat("word ", 300) + `"`},
+		"unknown field":            {`"repeats": true,`, `"repeats": true, "colour": "red",`},
+		"two kinds":                {`"when": {"flag": "met"}}`, `"when": {"flag": "met", "rung": "water"}}`},
+		"no kind":                  {`"when": {"state": "hungry"}}`, `"when": {}}`},
+		"unknown flag":             {`{"flag": "met"}}`, `{"flag": "mett"}}`},
+		"unknown rung":             {`{"rung": "water"}}`, `{"rung": "wine"}}`},
+		"unknown event":            {`"when": {"event": "staked"}}`, `"when": {"event": "stakd"}}`},
+		"unknown state":            {`{"state": "hungry"}}`, `{"state": "hungri"}}`},
+		"bad date":                 {`"1462-06-19"}}`, `"19 June"}}`},
+		"duplicate id":             {`{"id": "deed"`, `{"id": "met"`},
+		"empty text":               {`"text": "I was taken."`, `"text": "  "`},
+		"long title":               {`"title": "Taken"`, `"title": "Taken far from home as a boy"`},
+		"no days part":             {`{"id": "days", "title": "Days"}, `, ``},
+		"entry in tasks":           {`"part": "self", "title": "Taken"`, `"part": "tasks", "title": "Taken"`},
+		"no such part":             {`"part": "self", "title": "Taken"`, `"part": "selves", "title": "Taken"`},
+		"fail without open":        {`{"id": "deed", "title": "A deed", "done"`, `{"id": "deed", "title": "A deed", "failed": {"when": {"flag": "gate"}, "text": "x"}, "done"`},
+		"repeats without open":     {`{"id": "deed", "title": "A deed",`, `{"id": "deed", "title": "A deed", "repeats": true,`},
+		"start in a task":          {`"done": {"when": {"flag": "dug"}, "text": "Done at once."}`, `"done": {"when": {"start": true}, "text": "Done at once."}`},
+		"unknown count":            {`{count:arrows}`, `{count:bolts}`},
+		"unknown day field":        {`{moonless}`, `{moonset}`},
+		"not start":                {`{"state": "hungry"}}`, `{"not": {"start": true}}}`},
+		"bad not":                  {`{"state": "hungry"}}`, `{"not": {"flag": "nope"}}}`},
+		"empty all":                {`{"all": [{"flag": "met"}, {"event": "staked"}]}`, `{"all": []}`},
+		"unknown read in any":      {`{"all": [{"flag": "met"}, {"event": "staked"}]}`, `{"any": [{"flag": "met"}, {"read": "R99"}]}`},
+		"bad id":                   {`{"id": "start"`, `{"id": "Start Here"`},
+		"task never appears":       {`{"id": "deed", "title": "A deed", "done": {"when": {"flag": "dug"}, "text": "Done at once."}}`, `{"id": "deed", "title": "A deed"}`},
+		"long text":                {`"text": "I was taken."`, `"text": "` + strings.Repeat("word ", 300) + `"`},
+		"unknown anchor":           {`"title": "The headman", "text": "An old man.",`, `"title": "The headman", "text": "An old man.", "anchor": "bishop",`},
+		"writing twice":            {`"writings": [`, `"writings": [{"id": "R02", "title": "Again", "text": "x", "xp": 1},`},
+		"negative xp":              {`"xp": 5`, `"xp": -5`},
+		"writing title too long":   {`"title": "A loose leaf"`, `"title": "A loose leaf from the Book of Hours"`},
+		"writing text too long":    {`"text": "He read me the verses."`, `"text": "` + strings.Repeat("word ", 300) + `"`},
+		"writing's entry collides": {`{"id": "start", "part": "self"`, `{"id": "w_r02", "part": "self"`},
+		"writings with no part": {`,
+  {"id": "writings", "title": "Writings"}]`, `]`},
+		"long place text":       {`"text": "A wooden church."`, `"text": "` + strings.Repeat("word ", 200) + `"`},
+		"read of no writing":    {`{"read": "R02"}`, `{"read": "R09"}`},
 		"day page without data": {`"data": "Sunset {sunset} · moonrise {moonrise}, {lit} lit · moonless dark {moonless}"`, `"data": ""`},
 	}
 
@@ -207,6 +220,62 @@ func TestNot(t *testing.T) {
 	}
 }
 
+func TestWritingsAndPlaces(t *testing.T) {
+	b, j := mustLoad(t)
+	f := newFacts()
+	j.Evaluate(f)
+
+	if b.Writing("R02") == nil || b.Entry(WritingEntry("R02")) == nil {
+		t.Fatal("a writing is in the table, with its entry")
+	}
+
+	if j.Read("R09") {
+		t.Fatal("a writing the table does not hold was read")
+	}
+
+	if !j.Read("R02") {
+		t.Fatal("the first read is not first")
+	}
+
+	if j.Read("R02") {
+		t.Fatal("a second read counted as first")
+	}
+
+	w := j.Evaluate(f)
+	if strings.Join(w.Entries, ",") != "church,w_r02" && strings.Join(w.Entries, ",") != "w_r02,church" {
+		t.Fatalf("reading wrote %v; want the writing's entry and the place it reveals", w.Entries)
+	}
+
+	where := func(dx, dy float64) string {
+		for _, v := range j.View("self", Lookups{Where: func(string) (float64, float64, bool) { return dx, dy, true }}) {
+			if v.ID == "church" {
+				return v.Text
+			}
+		}
+
+		return ""
+	}
+
+	for _, c := range []struct {
+		dx, dy float64
+		want   string
+	}{
+		{0, -10, "north of me, about 10 paces"},
+		{10, 0, "east of me"},
+		{7, 7, "south-east of me, about 10 paces"},
+		{-7, -7, "north-west"},
+		{1, 1, "here, a few paces"},
+	} {
+		if got := where(c.dx, c.dy); !strings.Contains(got, c.want) {
+			t.Errorf("a place at %v,%v reads %q; want %q", c.dx, c.dy, got, c.want)
+		}
+	}
+
+	if got := where(0, 0); !strings.HasPrefix(got, "A wooden church.") {
+		t.Errorf("the place keeps its own text first: %q", got)
+	}
+}
+
 func TestDayPagesAndDates(t *testing.T) {
 	_, j := mustLoad(t)
 	f := newFacts()
@@ -251,7 +320,7 @@ func TestDayPagesAndDates(t *testing.T) {
 	}
 
 	// The page heads what its own frame wrote: newest first.
-	rows := j.View(PartDays, nil)
+	rows := j.View(PartDays, Lookups{})
 	if len(rows) != 4 || rows[0].ID != "page:1462-06-19" || rows[1].ID != "later" {
 		t.Fatalf("days part %+v", rows)
 	}
@@ -360,7 +429,7 @@ func TestTaskFailsFromOpen(t *testing.T) {
 		t.Fatalf("gate closed on an open ditch: %q", s)
 	}
 
-	rows := j.View(PartTasks, nil)
+	rows := j.View(PartTasks, Lookups{})
 	if len(rows) != 1 || rows[0].Mark != TaskFailed || rows[0].Text != "Shut out." {
 		t.Fatalf("tasks part %+v", rows)
 	}
@@ -429,7 +498,7 @@ func TestUnreadAndLeave(t *testing.T) {
 	f.flags["met"] = true
 	j.Evaluate(f)
 
-	rows := j.View("self", func(string) int { return 12 })
+	rows := j.View("self", Lookups{Count: func(string) int { return 12 }})
 	if !rows[0].Unread || rows[0].ID != "met" {
 		t.Fatalf("newest first and unread: %+v", rows[0])
 	}
@@ -515,7 +584,7 @@ func TestShippedJournal(t *testing.T) {
 	// and no entry mentions the dropped keepsake (ruled 24 Sep).
 	cross := regexp.MustCompile(`(?i)\bcross(es)?\b`)
 	for _, e := range b.Entries {
-		text := strings.NewReplacer("sign of the cross", "", "in a cross", "").Replace(e.Text)
+		text := strings.NewReplacer("sign of the cross", "", "in a cross", "", "wooden crosses", "").Replace(e.Text) // grave-markers, not the dropped keepsake
 		if cross.MatchString(text) {
 			t.Errorf("entry %s mentions a cross: %q", e.ID, e.Text)
 		}
@@ -596,10 +665,11 @@ func shippedBook(t *testing.T) (*Book, Names) {
 	}
 
 	names := Names{
-		Flags:  append(dialogue.FlagsNamed(), "seen_staking"),
-		Rungs:  dialogue.RungIDs(),
-		States: GameStates(),
-		Items:  itemIDs,
+		Flags:   append(dialogue.FlagsNamed(), "seen_staking"),
+		Rungs:   dialogue.RungIDs(),
+		Anchors: dialogue.SpeakerIDs(),
+		States:  GameStates(),
+		Items:   itemIDs,
 		Events: GameEvents(Vocabulary{
 			Rows: gameRows(), Recipes: recipeIDs, Speakers: dialogue.SpeakerIDs(), Nodes: dialogue.NodeIDs(),
 		}),
@@ -643,7 +713,7 @@ func gameDays() []Day {
 }
 
 func written(j *Journal, part, id string) bool {
-	for _, v := range j.View(part, nil) {
+	for _, v := range j.View(part, Lookups{}) {
 		if v.ID == id {
 			return true
 		}

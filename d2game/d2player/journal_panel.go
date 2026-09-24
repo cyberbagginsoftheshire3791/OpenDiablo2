@@ -200,6 +200,45 @@ func (g *GameControls) openJournal() {
 	g.showJournalPart(j.part)
 }
 
+// OpenJournalAt opens the journal at a part and a row (J2: a writing just
+// read to him). It is refused as Q is -- JournalAllowed -- and a row not
+// written leaves the part at its top.
+func (g *GameControls) OpenJournalAt(part, row string) {
+	if g.journalHolder == nil || g.hud == nil || g.hud.journal == nil {
+		return
+	}
+
+	j := g.hud.journal
+
+	// Open straight onto the part: turning to it from the part he last
+	// closed on would mark that part read unseen (J2 review B2).
+	if !j.open {
+		for i, p := range g.journalHolder.JournalParts() {
+			if p.ID == part {
+				j.part = i
+			}
+		}
+
+		g.openJournal()
+	} else {
+		for i, p := range j.parts {
+			if p.ID == part && i != j.part {
+				g.showJournalPart(i)
+			}
+		}
+	}
+
+	if !j.open || j.part >= len(j.parts) || j.parts[j.part].ID != part {
+		return
+	}
+
+	for k, r := range j.rows {
+		if r.ID == row {
+			g.selectJournalRow(k)
+		}
+	}
+}
+
 func (g *GameControls) closeJournal() {
 	j := g.hud.journal
 	if !j.open {
@@ -325,9 +364,11 @@ func journalTabW(n int) int {
 
 func journalTabX(i, n int) int { return journalX + journalPadX + i*(journalTabW(n)+journalTabGap) }
 
-// advanceJournal counts the notice down.
+// advanceJournal counts the notice down -- only while it can be seen: a
+// notice raised with the journal open (J2: a tip a writing gave) waits for it
+// to close.
 func (h *HUD) advanceJournal(elapsed float64) {
-	if j := h.journal; j != nil && j.noticeLeft > 0 {
+	if j := h.journal; j != nil && !j.open && j.noticeLeft > 0 {
 		if j.noticeLeft -= elapsed; j.noticeLeft <= 0 {
 			j.notice, j.noticeLeft = "", 0
 		}

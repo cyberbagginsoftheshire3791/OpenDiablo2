@@ -212,6 +212,12 @@ func (v *Game) Answer(i int) error {
 
 	v.saveKit()
 
+	// J2: a writing read to him opens in his journal once the talk is over
+	// (Load refuses a read that leads on, so it always is).
+	if effects.Read != "" && (v.talk == nil || v.talk.Done()) {
+		v.readWriting(effects.Read)
+	}
+
 	return nil
 }
 
