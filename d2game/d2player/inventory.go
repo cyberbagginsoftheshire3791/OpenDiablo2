@@ -65,6 +65,12 @@ func NewInventory(asset *d2asset.AssetManager,
 
 // Inventory represents the inventory
 type Inventory struct {
+	// loaded: Load has run. The panel loads its art the first time it is
+	// opened, not with the HUD -- Diablo II's panels that Strigoi has replaced
+	// or not yet used are never opened in most games, and their sprites were
+	// read from the MPQs at every start (M5.3's census, history item 114).
+	loaded bool
+
 	asset         *d2asset.AssetManager
 	item          *diablo2item.ItemFactory
 	uiManager     *d2ui.UIManager
@@ -99,6 +105,12 @@ func (g *Inventory) Toggle() {
 
 // Load the resources required by the inventory
 func (g *Inventory) Load() {
+	if g.loaded {
+		return
+	}
+
+	g.loaded = true
+
 	var err error
 
 	g.panelGroup = g.uiManager.NewWidgetGroup(d2ui.RenderPriorityInventory)
@@ -158,6 +170,8 @@ func (g *Inventory) Load() {
 
 // Open opens the inventory
 func (g *Inventory) Open() {
+	g.Load()
+
 	g.isOpen = true
 	g.panelGroup.SetVisible(true)
 }
@@ -165,6 +179,12 @@ func (g *Inventory) Open() {
 // Close closes the inventory
 func (g *Inventory) Close() {
 	g.isOpen = false
+
+	if !g.loaded { // never opened: nothing is drawn to hide
+		g.onCloseCb()
+		return
+	}
+
 	g.moveGoldPanel.Close()
 	g.panelGroup.SetVisible(false)
 	g.itemTooltip.SetVisible(false)

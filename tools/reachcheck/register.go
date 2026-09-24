@@ -77,6 +77,11 @@ const (
 	// usefully claim; F, L and E are the first three handlers whose going dark
 	// would mean a person cannot play the game at all.
 	pkgPlayer = "d2game/d2player"
+	// pkgAsset and pkgMapGen joined on 23-24 Sep 2026 (M5.3's census): the
+	// tables that load only when a generated world is built, and the world a
+	// joining client builds from its host's.
+	pkgAsset  = "d2core/d2asset"
+	pkgMapGen = "d2core/d2map/d2mapgen"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -688,6 +693,20 @@ var Register = []Entry{
 	// every stake -- "the corpse machine drives it when it lands" (M4.3b ask 3).
 	{sym(pkgWorld, "Spawns.SetOpenBodies"), BucketWire, VerdictLive,
 		"M4.7: the corpse registry's change hook (game.go) moves the carrion count by one on every body that falls and every body staked.", ""},
+
+	// 23-24 Sep 2026 (history items 111-113).
+	{sym(pkgWorld, "Combat.Adjacent"), BucketWire, VerdictLive,
+		"The fight's reach for two points: inReach uses it, and the stake in a fight (Game.stakeInFight) takes the Downed man it counts as beside him.", ""},
+	{sym(pkgPlayer, "GameControls.inventoryAction"), BucketWire, VerdictLive,
+		"The inventory key and the HUD mini-panel's inventory button open Strigoi's kit, not Diablo II's grid.", ""},
+	{sym(pkgPlayer, "GameControls.skillsAction"), BucketWire, VerdictLive,
+		"The skill key, the mini-panel's skill button and the add-skill button open Strigoi's talents, not Diablo II's skill tree.", ""},
+	{sym(pkgAsset, "AssetManager.EnsureRecords"), BucketWire, VerdictLive,
+		"The generated world's four tables load when it is built (generateAct1World, LoadStamp, NewObject); without the call a -classic game has no presets.", ""},
+	{sym(pkgMapGen, "MapGenerator.GenerateHostWorld"), BucketWire, VerdictLive,
+		"A client builds the world its host built, from the GenerateMap packet (GameClient.handleGenerateMapPacket) -- a local game's client too.", ""},
+	{sym(pkgPlayer, "miniPanel.buttonsReport"), BucketObserve, VerdictHarnessOnly,
+		"Reads the mini-panel's button rects for the harness ui state, so a script clicks where they are drawn. Changes nothing.", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in

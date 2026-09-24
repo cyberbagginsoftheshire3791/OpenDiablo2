@@ -144,6 +144,12 @@ func NewQuestLog(asset *d2asset.AssetManager,
 
 // QuestLog represents the quest log
 type QuestLog struct {
+	// loaded: Load has run. The panel loads its art the first time it is
+	// opened, not with the HUD -- Diablo II's panels that Strigoi has replaced
+	// or not yet used are never opened in most games, and their sprites were
+	// read from the MPQs at every start (M5.3's census, history item 114).
+	loaded bool
+
 	asset         *d2asset.AssetManager
 	uiManager     *d2ui.UIManager
 	panel         *d2ui.Sprite
@@ -207,6 +213,12 @@ type questLogTab struct {
 
 // Load the data for the hero status panel
 func (s *QuestLog) Load() {
+	if s.loaded {
+		return
+	}
+
+	s.loaded = true
+
 	var err error
 
 	s.panelGroup = s.uiManager.NewWidgetGroup(d2ui.RenderPriorityQuestLog)
@@ -556,6 +568,8 @@ func (s *QuestLog) Toggle() {
 
 // Open opens the hero status panel
 func (s *QuestLog) Open() {
+	s.Load()
+
 	s.isOpen = true
 	s.panelGroup.SetVisible(true)
 	s.setTab(s.selectedTab)
@@ -565,6 +579,12 @@ func (s *QuestLog) Open() {
 // Close closed the hero status panel
 func (s *QuestLog) Close() {
 	s.isOpen = false
+
+	if !s.loaded { // never opened: nothing is drawn to hide
+		s.onCloseCb()
+		return
+	}
+
 	s.panelGroup.SetVisible(false)
 
 	for i := 0; i < s.maxPlayersAct; i++ {

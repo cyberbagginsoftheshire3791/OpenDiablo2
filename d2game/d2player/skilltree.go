@@ -121,6 +121,12 @@ func newSkillTree(
 }
 
 type skillTree struct {
+	// loaded: Load has run. The panel loads its art the first time it is
+	// opened, not with the HUD -- Diablo II's panels that Strigoi has replaced
+	// or not yet used are never opened in most games, and their sprites were
+	// read from the MPQs at every start (M5.3's census, history item 114).
+	loaded bool
+
 	resources       *skillTreeHeroTypeResources
 	asset           *d2asset.AssetManager
 	uiManager       *d2ui.UIManager
@@ -146,6 +152,12 @@ type skillTree struct {
 }
 
 func (s *skillTree) load() {
+	if s.loaded {
+		return
+	}
+
+	s.loaded = true
+
 	s.panelGroup = s.uiManager.NewWidgetGroup(d2ui.RenderPrioritySkilltree)
 	s.iconGroup = s.uiManager.NewWidgetGroup(d2ui.RenderPrioritySkilltreeIcon)
 
@@ -376,6 +388,11 @@ func (s *skillTree) Toggle() {
 func (s *skillTree) Close() {
 	s.isOpen = false
 
+	if !s.loaded { // never opened: nothing is drawn to hide
+		s.onCloseCb()
+		return
+	}
+
 	s.panelGroup.SetVisible(false)
 	s.iconGroup.SetVisible(false)
 
@@ -384,6 +401,8 @@ func (s *skillTree) Close() {
 
 // Open the skill tree
 func (s *skillTree) Open() {
+	s.load()
+
 	s.isOpen = true
 
 	s.panelGroup.SetVisible(true)

@@ -163,6 +163,51 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		t.Errorf("%.0f key(s) the game asked for are not in Strigoi's string table: %v", mustNum(t, a, "strings_missing"), missing)
 	}
 
+	// Diablo II's quest log and character panel load their art when first
+	// opened (history item 114): none of it was read above, both still open
+	// and close on their keys, and opening each does read its art -- so the
+	// absence above was a measurement.
+	for _, c := range []struct{ key, open, art string }{
+		{"q", "quest_log_open", "/data/global/ui/menu/a1q1.dc6"},
+		{"c", "hero_stats_open", "/data/global/ui/panel/invchar6.dc6"},
+	} {
+		if censusHas(a, c.art) {
+			t.Errorf("%s was read before its panel (%s) was opened", c.art, c.open)
+		}
+
+		s.call("strigoi_key", map[string]any{"key": c.key})
+		s.call("strigoi_step", map[string]any{"frames": 4})
+
+		if !flag(t, uiState(s), c.open) {
+			t.Fatalf("%s did not open its panel (%s)", c.key, c.open)
+		}
+
+		if !censusHas(sub(s.call("strigoi_get_system_state", map[string]any{"system": "assets"}), "state"), c.art) {
+			t.Errorf("opening %s did not read %s; the census cannot see the panel's art", c.open, c.art)
+		}
+
+		s.call("strigoi_key", map[string]any{"key": c.key})
+		s.call("strigoi_step", map[string]any{"frames": 4})
+
+		if flag(t, uiState(s), c.open) {
+			t.Fatalf("%s did not close its panel (%s)", c.key, c.open)
+		}
+	}
+
 	t.Logf("Strigoi, as launched: %.0f MPQ files, %.0f of ours, %.0f string keys asked (%.0f missing)",
 		num(a, "mpq_files"), num(a, "native_files"), num(a, "strings_asked"), num(a, "strings_missing"))
+}
+
+// censusHas reports whether the assets census lists a file (paths compared
+// case-blind and slash-normalised, as the loader records them).
+func censusHas(assets map[string]any, path string) bool {
+	want := strings.ToLower(strings.ReplaceAll(path, `\`, "/"))
+
+	for _, raw := range asList(assets["files"]) {
+		if f, ok := raw.(map[string]any); ok && strings.ToLower(strings.ReplaceAll(str(f, "path"), `\`, "/")) == want {
+			return true
+		}
+	}
+
+	return false
 }

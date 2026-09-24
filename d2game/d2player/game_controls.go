@@ -1088,15 +1088,16 @@ func (g *GameControls) openEscMenu() {
 // Load the resources required for the GameControls
 func (g *GameControls) Load() {
 	g.hud.Load()
-	g.inventory.Load()
-	g.skilltree.load()
-	g.heroStatsPanel.Load()
+
+	// Diablo II's inventory grid, skill tree, character panel and quest log
+	// load when first opened (their Open), not here: Strigoi's kit and
+	// talents replace the first two, and a game that never opens the others
+	// never reads their art from the MPQs (history item 114).
 
 	if g.PartyPanel != nil {
 		g.PartyPanel.Load()
 	}
 
-	g.questLog.Load()
 	g.HelpOverlay.Load()
 
 	g.loadAddButtons()
