@@ -168,9 +168,9 @@ func CreateGame(
 
 	// J2: nothing a villager reads him may be missing from the journal's
 	// writings -- the answer would open an empty page.
-	for _, id := range dialogue.WritingsNamed() {
+	for _, id := range append(dialogue.WritingsNamed(), searchWritings...) {
 		if journalBook.Writing(id) == nil {
-			return nil, fmt.Errorf("dialogue reads %q, which is not in the journal's writings", id)
+			return nil, fmt.Errorf("a talk or a search reads %q, which is not in the journal's writings", id)
 		}
 	}
 
@@ -416,6 +416,9 @@ type Game struct {
 	journalQuiet bool
 	journalFight string
 	journalRows  map[string]bool
+
+	// J2b: Night 1's dead, in the order they were laid (what each carries).
+	fieldDead []string
 
 	// T8: the watch -- minutes stood at the headman's post tonight, the world
 	// clock last frame, and the post itself (the headman's sprite, cached).

@@ -20,6 +20,8 @@ func strigoiHelp() []string {
 		"I opens your kit: wear, eat, and MAKE.   T opens your talents.",
 		"K forages for branches: half an hour, head down.",
 		"X stakes the dead man at your feet.   D digs him a hasty grave.",
+		"U searches the dead man at your feet, for what he carries.",
+		"Q opens your journal: what you have learned, and your tasks.",
 		"Click a villager to talk: 1-9 to answer, Esc to walk away.",
 		"H shows or hides this help.   Esc opens the game menu.",
 	}

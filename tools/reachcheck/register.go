@@ -749,6 +749,9 @@ var Register = []Entry{
 		"Opens the journal at a part and a row: the writing just read to him. Refused as Q is.", ""},
 	{sym(pkgScreen, "Game.whereIs"), BucketWire, VerdictLive,
 		"Where a place's anchor (a villager) stands from him, for the journal's which-way-and-how-far line (Game.JournalRows).", ""},
+	// J2b, searching the dead (24 Sep 2026).
+	{sym(pkgScreen, "Game.Search"), BucketWire, VerdictLive,
+		"U: goes through the dead man at his feet; Night 1's first two carry the amulet (R09) and the Sultan's paper (R10), read through Game.readWriting. Reached from OnKeyDown.", ""},
 	{sym(pkgPlayer, "GameControls.journalViewReport"), BucketObserve, VerdictHarnessOnly,
 		"Reads the open journal's tabs, rows and text for the harness ui state, so a script clicks where they are drawn. Changes nothing.", ""},
 }

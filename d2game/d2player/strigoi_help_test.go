@@ -22,6 +22,7 @@ func TestStrigoiHelpNamesTheKeys(t *testing.T) {
 		forageKey: "K forages",
 		stakeKey:  "X stakes",
 		digKey:    "D digs",
+		searchKey: "U searches",
 	} {
 		letter := string(rune('A' + int(key-d2enum.KeyA)))
 		if !strings.HasPrefix(phrase, letter+" ") || !strings.Contains(all, phrase) {
@@ -29,7 +30,7 @@ func TestStrigoiHelpNamesTheKeys(t *testing.T) {
 		}
 	}
 
-	for _, verb := range []string{"strike", "torch", "kit", "talents", "talk", "Esc"} {
+	for _, verb := range []string{"strike", "torch", "kit", "talents", "talk", "Esc", "Q opens your journal"} {
 		if !strings.Contains(all, verb) {
 			t.Errorf("the help never mentions %q", verb)
 		}

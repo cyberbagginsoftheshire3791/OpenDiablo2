@@ -15,6 +15,7 @@ var baseEvents = []string{
 	"reraised",          // a Downed dead man stood again (raiseTheDead's Downed branch)
 	"staked",            // a stake driven, in a fight or out of one
 	"graved",            // a hasty grave dug
+	"searched",          // a dead man's coat gone through (J2b)
 	"dawn_breakoff",     // first light broke the dead off or laid them down (Game.firstLight)
 	"risen_seen_untold", // a risen man in a fight before the priest's tale
 	"slain",             // anything slain in a fight

@@ -208,6 +208,12 @@ const (
 	RiteAtDawn = "At first light the priest closed %d grave(s) the old way."
 )
 
+// J2b, searching the dead (24 Sep 2026).
+const (
+	SearchNothing = "Nothing on him that I can read."
+	SearchRefused = "Search: %v"
+)
+
 // M4.7 step 2, the hasty grave (23 Sep 2026).
 const (
 	DigDone    = "A hasty grave. Shallow -- it may not hold him."

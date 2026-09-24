@@ -27,6 +27,8 @@ type CorpseHolder interface {
 	CorpseMarks() []CorpseMark
 	Stake() error
 	Dig() error
+	// Search goes through the dead man at his feet (J2b).
+	Search() error
 	// DeadName is what the hover calls one of the dead, or "" (M4.7 Q6a).
 	DeadName(id string) string
 }
@@ -55,6 +57,9 @@ const (
 	stakeKey = d2enum.KeyX
 	// digKey is D; D2's default map leaves it unbound too.
 	digKey = d2enum.KeyD
+	// searchKey is U (J2b); D2's default map leaves it unbound
+	// (key_map.go ResetToDefault).
+	searchKey = d2enum.KeyU
 )
 
 const (

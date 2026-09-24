@@ -458,6 +458,13 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 		return true
 	}
 
+	// J2b: U searches the dead man at his feet.
+	if event.Key() == searchKey && g.corpseHolder != nil && !g.dead() {
+		_ = g.corpseHolder.Search()
+
+		return true
+	}
+
 	// T7: K forages (the game refuses it in a fight, a talk, or the choice).
 	if event.Key() == forageKey && g.forageHolder != nil && !g.dead() {
 		_ = g.forageHolder.Forage()

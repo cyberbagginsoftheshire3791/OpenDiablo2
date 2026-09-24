@@ -155,7 +155,9 @@ const (
 	beltDotY   = 568
 )
 
-const bullets = 8
+// bullets is the help's rows: ten since J2b (U and Q), at y 59 + 20i, the
+// last at 239 -- above the highest of the D2 callouts, at y 355.
+const bullets = 10
 
 // NewHelpOverlay creates a new HelpOverlay instance
 func NewHelpOverlay(

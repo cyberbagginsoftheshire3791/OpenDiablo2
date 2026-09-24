@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 42 playtest scripts.** That count, the harness version below and the
+**The 43 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -355,6 +355,14 @@ this doc fails until it agrees.
   about their dead writes the graves and the churchyard, and from eight
   tiles off the church's place in the village part says which way it lies
   and how far. Screenshots of the psalter and the placed church.
+* `search_test.go` — the forty-third, J2b (24 Sep 2026): U searches the dead
+  man at his feet. The first of Night 1's dead carries a comrade's amulet: ten
+  world minutes, then the journal opens at `w_r09` and the first read pays 5;
+  the second carries the Sultan's paper (`w_r10`, 10, and the task
+  `t_paper` opens); the third carries nothing he can read (no page, no read,
+  the minutes spent); the first again (the control) opens the amulet and pays
+  nothing; U with no body at his feet (the control) is refused and takes no
+  time.
 * `strigoi_game_test.go` — the thirty-ninth: the game launched with NO switches
   builds the village, draws the hero from Strigoi's sheets, uses Strigoi's font
   set and string table, and a first hour reads no Diablo II tile, class-art,

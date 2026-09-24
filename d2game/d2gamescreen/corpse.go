@@ -21,7 +21,10 @@ const (
 	stakeReach   = 1.5  // [DIAL] tiles: "at your feet"
 	stakeMinutes = 5.0  // [DIAL]
 	digMinutes   = 30.0 // [DIAL] a hasty grave (M4.7 note step 2)
-	placedDead   = 4    // [DIAL] Night 1's dead (Q2a PLACEHOLDER)
+
+	// searchMinutes is going through a dead man's coat (J2b) [DIAL].
+	searchMinutes = 10.0
+	placedDead    = 4 // [DIAL] Night 1's dead (Q2a PLACEHOLDER)
 
 	// risingSeedOffset keeps the rising's draws off the spawn tables' stream.
 	risingSeedOffset = 4707
@@ -47,6 +50,7 @@ var (
 	errStakeTurn     = errors.New("not your turn")
 	errStakeSpent    = errors.New("your Action is spent this turn")
 	errStakeNoDowned = errors.New("no fallen dead at your feet")
+	errSearchNoBody  = errors.New("no dead man at your feet")
 )
 
 // walkable reports a whole tile a body can lie on and he can reach -- the
@@ -87,7 +91,9 @@ func (v *Game) placeTheDead() {
 			continue
 		}
 
-		v.corpses.FallHuman(fmt.Sprintf("dead:%d", i+1), tx+0.5, ty+0.5)
+		id := fmt.Sprintf("dead:%d", i+1)
+		v.corpses.FallHuman(id, tx+0.5, ty+0.5)
+		v.fieldDead = append(v.fieldDead, id)
 		placed++
 	}
 }
@@ -433,4 +439,67 @@ func (v *Game) firstLight() {
 	if laid := v.spawns.LayDownDead(); broke > 0 || laid > 0 {
 		v.note("dawn_breakoff")
 	}
+}
+
+// searchWritings are what Night 1's dead carry (J2b), by the order they were
+// laid: the first a comrade's amulet, the second the Sultan's paper. Anyone
+// else carries nothing he can read.
+var searchWritings = []string{"R09", "R10"}
+
+// searchable is a man's body he can go through: lying where it is -- open, in
+// a hasty grave, staked, or a risen man cut down -- and not one that has
+// risen and walked away from where the record still puts it.
+func searchable(b *d2world.Corpse) bool {
+	return b.Class == d2world.CorpseHuman && b.State != d2world.CorpseRisen
+}
+
+// Search goes through the coat of the dead man at his feet (J2b): ten
+// minutes head-down, caught if anything comes. What he finds that can be
+// read opens in his journal (Game.readWriting); anything else is a notice.
+func (v *Game) Search() error {
+	id, err := v.search()
+
+	switch {
+	case err != nil:
+		v.corpseNotice("", d2player.SearchRefused, err)
+	case id == "":
+		v.corpseNotice(d2player.SearchNothing, "", nil)
+	default:
+		v.readWriting(id)
+	}
+
+	return err
+}
+
+func (v *Game) search() (string, error) {
+	if err := v.fieldWorkRefused(); err != nil {
+		return "", err
+	}
+
+	px, py := v.localPlayer.GetPositionF()
+
+	body := v.corpses.Nearest(px, py, stakeReach, func(b *d2world.Corpse) bool { return searchable(b) })
+	if body == nil {
+		return "", errSearchNoBody
+	}
+
+	if err := v.work(searchMinutes); err != nil {
+		return "", err
+	}
+
+	// The world ran while he searched: a body can rise under his hands (the
+	// attack's A2). Then nothing is found, and nothing is paid.
+	if now, ok := v.corpses.Get(body.ID); !ok || !searchable(&now) {
+		return "", errBodyGone
+	}
+
+	v.note("searched")
+
+	for i, dead := range v.fieldDead {
+		if dead == body.ID && i < len(searchWritings) {
+			return searchWritings[i], nil
+		}
+	}
+
+	return "", nil
 }
