@@ -1,9 +1,23 @@
 {
   "animations": {
-    "idle": "idle.png"
+    "idle": "idle.png",
+    "walk": "walk.png",
+    "run": "run.png",
+    "attack": "attack.png",
+    "hit": "hit.png",
+    "block": "block.png",
+    "death": "death.png",
+    "dead": "dead.png"
   },
   "fps": {
-    "idle": 8
+    "idle": 8,
+    "walk": 8,
+    "run": 11,
+    "attack": 10,
+    "hit": 10,
+    "block": 10,
+    "death": 8,
+    "dead": 1
   },
   "height": 100,
   "name": "Janissary"

@@ -1,0 +1,7 @@
+{
+  "directions": 8,
+  "frames_per_direction": 1,
+  "frame_width": 128,
+  "frame_height": 128,
+  "origin_at_bottom": true
+}
