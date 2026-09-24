@@ -1731,8 +1731,18 @@ func (c *Combat) inReach(w Combatant, q Quarry) bool {
 	wx, wy := w.WatcherAt()
 	qx, qy := q.QuarryAt()
 
-	dx := int(math.Abs(math.Floor(wx) - math.Floor(qx)))
-	dy := int(math.Abs(math.Floor(wy) - math.Floor(qy)))
+	return c.Adjacent(wx, wy, qx, qy)
+}
+
+// Adjacent is inReach for two points: whether (ax, ay) and (bx, by), in world
+// tiles, are within the AdjacentTiles dial of each other on the grid. It is
+// what "at his feet" means for an Action taken inside a fight -- the stake
+// through a Downed man -- so that anything the fight counts as beside him is
+// in reach of his hands too. (A Euclidean reach disagreed: a Downed man on the
+// next tile, 1.503 tiles off corner to corner, could be struck and not staked.)
+func (c *Combat) Adjacent(ax, ay, bx, by float64) bool {
+	dx := int(math.Abs(math.Floor(ax) - math.Floor(bx)))
+	dy := int(math.Abs(math.Floor(ay) - math.Floor(by)))
 
 	return dx <= c.dials.AdjacentTiles && dy <= c.dials.AdjacentTiles
 }

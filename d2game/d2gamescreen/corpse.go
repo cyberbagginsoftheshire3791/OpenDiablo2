@@ -240,8 +240,14 @@ func (v *Game) stakeInFight() error {
 
 	px, py := v.localPlayer.GetPositionF()
 
-	body := v.corpses.Nearest(px, py, stakeReach, func(b *d2world.Corpse) bool {
-		return b.State == d2world.CorpseDowned && b.Class == d2world.CorpseHuman
+	// "At his feet" inside a fight is the fight's own reach (Combat.Adjacent):
+	// a Downed man the fight counts as beside him can be staked, wherever in
+	// their tiles the two stand. stakeReach is a Euclidean 1.5, and the
+	// default-game sweep found a Downed man on the next tile 1.503 away --
+	// struck down there, and out of reach of the stake.
+	body := v.corpses.Nearest(px, py, math.Inf(1), func(b *d2world.Corpse) bool {
+		return b.State == d2world.CorpseDowned && b.Class == d2world.CorpseHuman &&
+			v.combat.Adjacent(px, py, b.X, b.Y)
 	})
 	if body == nil {
 		return errStakeNoDowned

@@ -175,6 +175,20 @@ func TestCombatReachIsChebyshevNotEuclidean(t *testing.T) {
 		"a diagonal neighbour is in reach; if this fails the test is Euclidean and the dial is being read as a distance")
 }
 
+// Adjacent is the reach test for points: the next tile in any direction is
+// in reach wherever in the tiles the two stand, and two tiles off is not.
+func TestCombatAdjacentIsTheReachTest(t *testing.T) {
+	c, _, _, _ := newTestCombat(t)
+
+	// On neighbouring tiles, as far apart as the tiles allow: 1.98 by Euclid.
+	require.True(t, c.Adjacent(34.99, 29.5, 33.01, 29.5), "the next tile over is adjacent from either edge")
+	require.True(t, c.Adjacent(34.9, 29.5, 33.4, 29.4), "the default-game sweep's case: 1.503 tiles, next tile")
+	require.True(t, c.Adjacent(10.0, 10.0, 11.99, 11.99), "a diagonal neighbour")
+	require.False(t, c.Adjacent(34.9, 29.5, 32.99, 29.5), "two tiles over is out of reach")
+	require.False(t, c.Adjacent(34.01, 29.5, 32.99, 29.5),
+		"1.02 tiles apart but two tiles over: out of reach (a Euclidean 1.5 would take it)")
+}
+
 // Rounds consume world time (R2 section 2A). A script that steps an hour
 // should see an hour's worth of rounds rather than one.
 func TestCombatRoundsConsumeWorldTime(t *testing.T) {
