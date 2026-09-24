@@ -71,4 +71,5 @@ if (-not $tested) {
 }
 $o = & go run ./tools/strigoihook check-fixtures 2>&1; "check-fixtures exit=$LASTEXITCODE $o" | Out-File $Log -Append
 $o = & go mod tidy -diff 2>&1; "mod tidy -diff exit=$LASTEXITCODE $o" | Out-File $Log -Append
+$o = & go run ./tools/notices -check 2>&1; "notices exit=$LASTEXITCODE $o" | Out-File $Log -Append
 "DONE" | Out-File $Log -Append
