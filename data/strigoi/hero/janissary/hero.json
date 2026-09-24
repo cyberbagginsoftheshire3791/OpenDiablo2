@@ -1,0 +1,10 @@
+{
+  "animations": {
+    "idle": "idle.png"
+  },
+  "fps": {
+    "idle": 8
+  },
+  "height": 100,
+  "name": "Janissary"
+}

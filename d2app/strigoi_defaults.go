@@ -4,14 +4,14 @@ import "strings"
 
 // STRIGOI IS THE GAME (23 Sep 2026). Josh: "I think its time. Our version can
 // officially be Strigoi." With no switches the game is built from its own
-// files: the authored village, the Janissary's sheets (a placeholder until the
-// real art), Strigoi's fonts and Strigoi's words. Diablo II's generated Act 1,
+// files: the authored village, the Janissary's project sheets, Strigoi's fonts
+// and Strigoi's words. Diablo II's generated Act 1,
 // class art, fonts and string tables are still there, behind -classic -- the
 // playtest suite runs that way, so its record stays comparable -- and any
 // one of the four can be named either way on its own.
 const (
 	defaultMap     = "data/strigoi/maps/village.tmj"
-	defaultHero    = "data/strigoi/hero/placeholder/hero.json"
+	defaultHero    = "data/strigoi/hero/janissary/hero.json"
 	defaultFonts   = "data/strigoi/fonts/fonts.json"
 	defaultStrings = "data/strigoi/strings/strings.json"
 

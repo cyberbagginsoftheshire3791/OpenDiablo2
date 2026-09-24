@@ -30,7 +30,7 @@ the cell's height.
 
 Play with a hero: `OpenDiablo2.exe -hero data/strigoi/hero/placeholder/hero.json`.
 
-**`placeholder/` is NOT the real art** — a stick figure in a long coat and a
-tall white cap, drawn by `go run ./tools/heroplaceholder` so the path could
-be proved before the Janissary exists. The real hero is Josh's and GPT's to
-make; replace these sheets, or add a new folder and point `-hero` at it.
+**`placeholder/` is NOT the real art** — it remains as the path's test fixture.
+`janissary/` is the editable project's live art path. Its first checkpoint has
+an eight-direction idle; missing motions currently fall back to that sheet as
+described above while the remaining animations are finished.
