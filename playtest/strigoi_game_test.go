@@ -62,6 +62,58 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		s.call("strigoi_step", map[string]any{"frames": 4})
 	}
 
+	// The HUD's button menu opens Strigoi's panels, as the keys do: its
+	// inventory button is the kit and its skill button the talents. Until
+	// 23 Sep 2026 they opened Diablo II's grid (with OpenDiablo2's test items
+	// in it) and Diablo II's skill tree.
+	miniButton := func(name string) {
+		t.Helper()
+
+		b := sub(sub(uiState(s), "mini_panel_buttons"), name)
+		if len(b) == 0 {
+			t.Fatalf("no mini-panel button %q: %v", name, uiState(s)["mini_panel_buttons"])
+		}
+
+		if !flag(t, b, "visible") {
+			t.Fatalf("the mini-panel's %q button is not drawn: %v", name, b)
+		}
+
+		s.call("strigoi_click", map[string]any{
+			"x": int(mustNum(t, b, "x") + mustNum(t, b, "w")/2), "y": int(mustNum(t, b, "y") + mustNum(t, b, "h")/2),
+			"button": "left",
+		})
+		s.call("strigoi_step", map[string]any{"frames": 4})
+	}
+
+	for _, c := range []struct{ button, strigoi, diablo, key string }{
+		{"inventory", "kit_open", "inventory_open", "i"},
+		{"skills", "talent_open", "skilltree_open", "t"},
+	} {
+		if !flag(t, uiState(s), "mini_panel_open") {
+			miniButton("open_close")
+		}
+
+		if !flag(t, uiState(s), "mini_panel_open") {
+			t.Fatalf("the HUD's menu button did not open the mini-panel: %v", uiState(s)["mini_panel_buttons"])
+		}
+
+		miniButton(c.button)
+
+		ui := uiState(s)
+		if !flag(t, ui, c.strigoi) || flag(t, ui, c.diablo) {
+			t.Fatalf("the mini-panel's %s button opened %s=%v, Diablo II's %s=%v; want Strigoi's",
+				c.button, c.strigoi, ui[c.strigoi], c.diablo, ui[c.diablo])
+		}
+
+		s.call("strigoi_screenshot", map[string]any{"name": "mini-panel-" + c.button})
+		s.call("strigoi_key", map[string]any{"key": c.key}) // closed as the key opens it
+		s.call("strigoi_step", map[string]any{"frames": 4})
+
+		if flag(t, uiState(s), c.strigoi) {
+			t.Fatalf("the %s key did not close what the %s button opened", c.key, c.button)
+		}
+	}
+
 	for i := 0; i < 4; i++ {
 		s.call("strigoi_step_world", map[string]any{"world_minutes": 15.0})
 	}
@@ -72,6 +124,11 @@ func TestStrigoiIsTheGame(t *testing.T) {
 
 	if str(a, "font_set") != "/data/strigoi/fonts/fonts.json" || str(a, "string_set") != "/data/strigoi/strings/strings.json" {
 		t.Fatalf("font set %q, string table %q: want Strigoi's", str(a, "font_set"), str(a, "string_set"))
+	}
+
+	// Diablo II's tables: 20 of its 83 at most (history item 111).
+	if n := mpqIn(a, "data/global/excel"); n == 0 || n > 20 {
+		t.Errorf("data/global/excel: %.0f table(s) from Diablo II's MPQs, want 1..20", n)
 	}
 
 	// The census's area names are what this reads: an area it still reads
@@ -86,6 +143,23 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		if n := mpqIn(a, area); n != 0 {
 			t.Errorf("%s: %.0f file(s) from Diablo II's MPQs, want none", area, n)
 		}
+	}
+
+	// Every word the game asked for is in Strigoi's table: a missing key is
+	// drawn as the key itself ("panelcmini" on the mini-panel's close tooltip
+	// was the first found this way, 23 Sep 2026).
+	if mustNum(t, a, "strings_missing") != 0 {
+		var missing []string
+
+		for _, raw := range asList(a["strings"]) {
+			if k, ok := raw.(map[string]any); !ok {
+				t.Fatalf("a string census row is not an object: %v", raw)
+			} else if k["found"] == false {
+				missing = append(missing, str(k, "key"))
+			}
+		}
+
+		t.Errorf("%.0f key(s) the game asked for are not in Strigoi's string table: %v", mustNum(t, a, "strings_missing"), missing)
 	}
 
 	t.Logf("Strigoi, as launched: %.0f MPQ files, %.0f of ours, %.0f string keys asked (%.0f missing)",

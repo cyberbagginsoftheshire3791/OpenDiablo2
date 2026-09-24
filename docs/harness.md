@@ -778,7 +778,11 @@ named rather than missing.
 `inventory_open`, `skilltree_open`, `hero_stats_open`, `quest_log_open`,
 `party_open`, `help_open`, `escape_menu_open`, `skill_select_open`,
 `left_panel_open`, `right_panel_open`, `free_cam`, `clock` (the controls' own
-accumulated seconds — not the world clock). Read-only. It registers in
+accumulated seconds — not the world clock), and since 23 Sep 2026
+`mini_panel_open` and `mini_panel_buttons` (the HUD button menu's buttons by
+name -- character, inventory, skills, automap, message, quest, menu, party,
+and `open_close` -- each `{x, y, w, h, visible}` in screen pixels, so a script
+clicks where they are drawn). Read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
 register when the game screen is constructed and close on unload.
 

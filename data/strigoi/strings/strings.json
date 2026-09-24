@@ -119,6 +119,7 @@
  "panelstamina": "Stamina: %d / %d",
  "panelexp": "Experience: %u / %u",
  "panelmini": "Open the small panel",
+ "panelcmini": "Close the small panel",
  "RunOn": "Run",
  "minipanelchar": "Character",
  "minipanelinv": "Kit",

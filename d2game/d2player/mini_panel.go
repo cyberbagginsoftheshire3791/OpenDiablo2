@@ -24,6 +24,7 @@ const (
 )
 
 type miniPanelContent struct {
+	name       string // how the harness reports it (miniPanel.buttonsReport)
 	buttonType d2ui.ButtonType
 	onActivate func()
 	tooltip    string
@@ -74,6 +75,7 @@ type miniPanel struct {
 	panelGroup       *d2ui.WidgetGroup
 	groupAlwaysVis   *d2ui.WidgetGroup
 	tooltipGroup     *d2ui.WidgetGroup
+	buttons          map[string]*d2ui.Button // by content name, for the harness
 
 	*d2util.Logger
 }
@@ -141,15 +143,15 @@ func (m *miniPanel) createButtons(actions *miniPanelActions) {
 	// nolint:golint,gomnd // divide by 2 does not need a magic number
 	x, y = screenWidth/2+buttonOffsetX, screenHeight+buttonOffsetY-buttonHeight
 	buttonsFirst := []miniPanelContent{
-		{d2ui.ButtonTypeMinipanelCharacter,
+		{"character", d2ui.ButtonTypeMinipanelCharacter,
 			actions.characterToggle,
 			m.asset.TranslateString("minipanelchar"),
 		},
-		{d2ui.ButtonTypeMinipanelInventory,
+		{"inventory", d2ui.ButtonTypeMinipanelInventory,
 			actions.inventoryToggle,
 			m.asset.TranslateString("minipanelinv"),
 		},
-		{d2ui.ButtonTypeMinipanelSkill,
+		{"skills", d2ui.ButtonTypeMinipanelSkill,
 			actions.skilltreeToggle,
 			m.asset.TranslateString("minipaneltree"),
 		},
@@ -163,7 +165,7 @@ func (m *miniPanel) createButtons(actions *miniPanelActions) {
 	idxOffset := len(buttonsFirst)
 
 	if !m.isSinglePlayer {
-		partyContent := miniPanelContent{d2ui.ButtonTypeMinipanelParty,
+		partyContent := miniPanelContent{"party", d2ui.ButtonTypeMinipanelParty,
 			actions.partyToggle,
 			m.asset.TranslateString("minipanelparty"),
 		}
@@ -175,19 +177,19 @@ func (m *miniPanel) createButtons(actions *miniPanelActions) {
 	}
 
 	buttonsLast := []miniPanelContent{
-		{d2ui.ButtonTypeMinipanelAutomap,
+		{"automap", d2ui.ButtonTypeMinipanelAutomap,
 			actions.automapToggle,
 			m.asset.TranslateString("minipanelautomap"),
 		},
-		{d2ui.ButtonTypeMinipanelMessage,
+		{"message", d2ui.ButtonTypeMinipanelMessage,
 			actions.messageToggle,
 			m.asset.TranslateString("minipanelmessage"),
 		},
-		{d2ui.ButtonTypeMinipanelQuest,
+		{"quest", d2ui.ButtonTypeMinipanelQuest,
 			actions.questToggle,
 			m.asset.TranslateString("minipanelquest"),
 		},
-		{d2ui.ButtonTypeMinipanelMen,
+		{"menu", d2ui.ButtonTypeMinipanelMen,
 			actions.menuToggle,
 			m.asset.TranslateString("minipanelmenubtn"),
 		},
@@ -231,7 +233,38 @@ func (m *miniPanel) createButton(content miniPanelContent, x, y, buttonHeight in
 	btn.SetTooltip(tt)
 	btn.SetRenderPriority(d2ui.RenderPriorityForeground)
 
+	if m.buttons == nil {
+		m.buttons = map[string]*d2ui.Button{}
+	}
+
+	m.buttons[content.name] = btn
+
 	return btn
+}
+
+// buttonsReport is each button's screen rect, and the open/close button's,
+// so a script clicks where they are drawn rather than at a measured guess --
+// and whether they ARE drawn: the panel's buttons hide with the panel (which
+// a panel open on each side also does, the panel still counting as open).
+func (m *miniPanel) buttonsReport() map[string]interface{} {
+	rect := func(b *d2ui.Button, visible bool) map[string]interface{} {
+		x, y := b.GetPosition()
+		w, h := b.GetSize()
+
+		return map[string]interface{}{"x": x, "y": y, "w": w, "h": h, "visible": visible}
+	}
+
+	out := map[string]interface{}{}
+
+	for name, b := range m.buttons {
+		out[name] = rect(b, m.panelGroup != nil && m.panelGroup.GetVisible())
+	}
+
+	if m.menuButton != nil {
+		out["open_close"] = rect(m.menuButton, m.groupAlwaysVis != nil && m.groupAlwaysVis.GetVisible())
+	}
+
+	return out
 }
 
 func (m *miniPanel) onMenuButtonClicked() {

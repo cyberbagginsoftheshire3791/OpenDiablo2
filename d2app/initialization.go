@@ -105,8 +105,8 @@ func (a *App) initLanguage() {
 }
 
 func (a *App) initDataDictionaries() error {
-	// THE TABLES THE GAME READS (23 Sep 2026, M5.3's census): 31 of the 83
-	// Diablo II .txt tables this list used to load. The other 52 filled
+	// THE TABLES THE GAME READS (23 Sep 2026, M5.3's census): 20 of the 83
+	// Diablo II .txt tables this list used to load. 52 of the rest filled
 	// RecordManager fields that nothing outside d2core/d2records ever reads --
 	// LevelWarp, Books, MonProp, MonType, MonMode, ItemRatio, StorePage,
 	// Hireling, Gems, QualityItems, Runes, DifficultyLevels, AutoMap,
@@ -124,20 +124,28 @@ func (a *App) initDataDictionaries() error {
 	// checked: for each loader, the fields it assigns, grepped repo-wide
 	// outside d2records and tests (history item 106).
 	//
-	// The order is the old list's, filtered: ItemTypes reads Item.All, which
-	// Load assembles once Weapons, Armor and Misc are in.
+	// ELEVEN MORE GO (23 Sep 2026, history item 111): ItemTypes, UniqueItems,
+	// MagicPrefix, MagicSuffix, ItemStatCost, Properties, Sets, SetItems,
+	// TreasureClass, RarePrefix, RareSuffix. They fed Diablo II's item
+	// generator (d2core/d2item/diablo2item) its affixes, uniques, sets, stats
+	// and drops, and the one thing the game made with it was OpenDiablo2's
+	// test items in the grid inventory -- gone, since Strigoi's kit is the
+	// inventory. Without them the generator still makes plain items from
+	// Weapons/Armor/Misc (the debug console's spawnitem, the harness's item
+	// spawn); an affix, unique or set code it no longer knows is ignored. How
+	// it was checked: every reader of those fields outside d2records, by grep
+	// (the list in history item 111), and the playtest suite both ways.
+	//
+	// The order is the old list's, filtered.
 	dictPaths := []string{
 		d2resource.LevelType, d2resource.LevelPreset,
 		d2resource.ObjectType, d2resource.ObjectDetails, d2resource.Weapons,
-		d2resource.Armor, d2resource.Misc, d2resource.ItemTypes,
-		d2resource.UniqueItems, d2resource.Missiles, d2resource.SoundSettings,
+		d2resource.Armor, d2resource.Misc,
+		d2resource.Missiles, d2resource.SoundSettings,
 		d2resource.MonStats, d2resource.MonStats2, d2resource.MonPreset,
-		d2resource.MagicPrefix, d2resource.MagicSuffix, d2resource.ItemStatCost,
 		d2resource.Overlays, d2resource.CharStats, d2resource.Experience,
 		d2resource.LevelDetails, d2resource.Inventory, d2resource.Skills,
-		d2resource.Properties, d2resource.SkillDesc, d2resource.Sets,
-		d2resource.SetItems, d2resource.TreasureClass, d2resource.SoundEnvirons,
-		d2resource.RarePrefix, d2resource.RareSuffix,
+		d2resource.SkillDesc, d2resource.SoundEnvirons,
 	}
 
 	a.Info("Initializing asset manager")

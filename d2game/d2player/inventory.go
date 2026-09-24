@@ -5,7 +5,6 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
@@ -143,53 +142,14 @@ func (g *Inventory) Load() {
 	g.goldLabel.SetPosition(invGoldLabelX, invGoldLabelY)
 	g.panelGroup.AddWidget(g.goldLabel)
 
-	// https://github.com/OpenDiablo2/OpenDiablo2/issues/795
-	testInventoryCodes := [][]string{
-		{"kit", "Crimson", "of the Bat", "of Frost"},
-		{"rin", "Steel", "of Shock"},
-		{"jav"},
-		{"buc"},
-	}
-
-	inventoryItems := make([]InventoryItem, 0)
-
-	for idx := range testInventoryCodes {
-		item, itemErr := g.item.NewItem(testInventoryCodes[idx]...)
-		if itemErr != nil {
-			continue
-		}
-
-		item.Identify()
-		inventoryItems = append(inventoryItems, item)
-	}
-
-	// https://github.com/OpenDiablo2/OpenDiablo2/issues/795
-	testEquippedItemCodes := map[d2enum.EquippedSlot][]string{
-		d2enum.EquippedSlotLeftArm:   {"wnd"},
-		d2enum.EquippedSlotRightArm:  {"buc"},
-		d2enum.EquippedSlotHead:      {"crn"},
-		d2enum.EquippedSlotTorso:     {"plt"},
-		d2enum.EquippedSlotLegs:      {"vbt"},
-		d2enum.EquippedSlotBelt:      {"vbl"},
-		d2enum.EquippedSlotGloves:    {"lgl"},
-		d2enum.EquippedSlotLeftHand:  {"rin"},
-		d2enum.EquippedSlotRightHand: {"rin"},
-		d2enum.EquippedSlotNeck:      {"amu"},
-	}
-
-	for slot := range testEquippedItemCodes {
-		item, itemErr := g.item.NewItem(testEquippedItemCodes[slot]...)
-		if itemErr != nil {
-			continue
-		}
-
-		g.grid.ChangeEquippedSlot(slot, item)
-	}
-
-	_, err = g.grid.Add(inventoryItems...)
-	if err != nil {
-		g.Errorf("could not add items to the inventory, err: %v", err.Error())
-	}
+	// OpenDiablo2's test items (its issue #795: a magic kit "of the Bat", a
+	// ring, a javelin, a buckler, and a crown-and-plate outfit on the doll)
+	// are gone. Strigoi's kit is the inventory (T2); this grid is Diablo II's,
+	// and no key or button opens it while the game screen holds the kit (which
+	// it does from the moment the controls are loaded) -- so in the game it is
+	// dead, and it starts empty. Building those
+	// items was the only thing the game did with Diablo II's affix, unique,
+	// set and stat tables (M5.3's census).
 
 	g.moveGoldPanel.Load()
 
@@ -343,7 +303,11 @@ func (g *Inventory) checkEquippedSlotsHover() bool {
 				g.hoverX, g.hoverY = mx, my
 			}
 
-			g.showEquippedItemDescriptionTooltip(slot)
+			// The doll starts empty now (OpenDiablo2's test outfit is gone),
+			// and an empty slot has no description to show.
+			if slot.item != nil {
+				g.showEquippedItemDescriptionTooltip(slot)
+			}
 
 			break
 		}

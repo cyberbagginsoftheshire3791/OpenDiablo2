@@ -79,7 +79,11 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"skilltree_open":  g.skilltree.IsOpen(),
 		"hero_stats_open": g.heroStatsPanel.IsOpen(),
 		"quest_log_open":  g.questLog.IsOpen(),
-		"party_open":      partyOpen,
+
+		// The mini-panel (the HUD's button menu) and where its buttons are.
+		"mini_panel_open":    g.hud != nil && g.hud.miniPanel != nil && g.hud.miniPanel.IsOpen(),
+		"mini_panel_buttons": g.miniPanelButtonsReport(),
+		"party_open":         partyOpen,
 
 		// T1: the refusal or hint the combat panel is showing, so a script can
 		// assert WHY a tactical click did nothing rather than only that it did.
@@ -237,4 +241,14 @@ func (g *GameControls) hoverLabelReport() string {
 	}
 
 	return g.hoverLabel(e)
+}
+
+// miniPanelButtonsReport is the mini-panel's button rects, or nothing before
+// the HUD has one.
+func (g *GameControls) miniPanelButtonsReport() map[string]interface{} {
+	if g.hud == nil || g.hud.miniPanel == nil {
+		return map[string]interface{}{}
+	}
+
+	return g.hud.miniPanel.buttonsReport()
 }

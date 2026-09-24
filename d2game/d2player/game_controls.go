@@ -483,23 +483,13 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 		g.clearScreen()
 		g.updateLayout()
 	case d2enum.ToggleInventoryPanel:
-		// T2: the Strigoi kit replaces the D2 grid when a kit is bound.
-		if g.kitHolder != nil {
-			g.toggleKitPanel()
-		} else {
-			g.toggleInventoryPanel()
-		}
+		g.inventoryAction()
 	case d2enum.TogglePartyPanel:
 		if !g.isSinglePlayer {
 			g.togglePartyPanel()
 		}
 	case d2enum.ToggleSkillTreePanel:
-		// T3: the Strigoi talent tree replaces D2's skill tree.
-		if g.progressHolder != nil {
-			g.toggleTalentPanel()
-		} else {
-			g.toggleSkilltreePanel()
-		}
+		g.skillsAction()
 	case d2enum.ToggleCharacterPanel:
 		g.toggleHeroStatsPanel()
 	case d2enum.ToggleQuestLog:
@@ -1049,6 +1039,33 @@ func (g *GameControls) toggleInventoryPanel() {
 	g.openRightPanel(g.inventory)
 }
 
+// inventoryAction is the inventory key AND the mini-panel's inventory button:
+// Strigoi's kit panel whenever the game screen holds the kit (T2 -- always, in
+// the game; before a loadout is chosen the kit panel simply does not open),
+// Diablo II's grid only with no kit holder at all.
+// The button used to open the grid regardless -- Diablo II's inventory, with
+// OpenDiablo2's test items in it, one click away in the default game (found
+// 23 Sep 2026).
+func (g *GameControls) inventoryAction() {
+	if g.kitHolder != nil {
+		g.toggleKitPanel()
+		return
+	}
+
+	g.toggleInventoryPanel()
+}
+
+// skillsAction is the skill key and the mini-panel's skill button: Strigoi's
+// talent tree when progress is bound (T3), Diablo II's skill tree otherwise.
+func (g *GameControls) skillsAction() {
+	if g.progressHolder != nil {
+		g.toggleTalentPanel()
+		return
+	}
+
+	g.toggleSkilltreePanel()
+}
+
 func (g *GameControls) onCloseInventory() {
 	g.updateLayout()
 }
@@ -1088,8 +1105,8 @@ func (g *GameControls) Load() {
 	miniPanelActions := &miniPanelActions{
 		characterToggle: g.toggleHeroStatsPanel,
 		partyToggle:     g.togglePartyPanel,
-		inventoryToggle: g.toggleInventoryPanel,
-		skilltreeToggle: g.toggleSkilltreePanel,
+		inventoryToggle: g.inventoryAction,
+		skilltreeToggle: g.skillsAction,
 		menuToggle:      g.openEscMenu,
 		questToggle:     g.toggleQuestLog,
 	}
@@ -1349,7 +1366,7 @@ func (g *GameControls) setAddButtons() {
 
 func (g *GameControls) loadAddButtons() {
 	g.hud.addStatsButton.OnActivated(func() { g.toggleHeroStatsPanel() })
-	g.hud.addSkillButton.OnActivated(func() { g.toggleSkilltreePanel() })
+	g.hud.addSkillButton.OnActivated(func() { g.skillsAction() })
 }
 
 func (g *GameControls) commandFreeCam([]string) error {
