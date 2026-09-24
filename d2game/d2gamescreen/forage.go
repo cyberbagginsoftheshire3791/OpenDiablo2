@@ -124,6 +124,7 @@ func (v *Game) forage() (int, error) {
 	}
 
 	v.land.Gathered += n
+	v.note("foraged")
 	v.saveKit()
 
 	return n, nil

@@ -213,3 +213,21 @@ const (
 	DigDone    = "A hasty grave. Shallow -- it may not hold him."
 	DigRefused = "Dig: %v"
 )
+
+// J1: the journal panel and its notice (24 Sep 2026). The entries themselves
+// are data (data/strigoi/journal.json); these are the panel's own words.
+const (
+	JournalTitle       = "My journal"
+	JournalKeys        = "Q or Esc: close    Left/Right: part    Up/Down: entry    or click"
+	JournalEmpty       = "Nothing written here yet."
+	JournalWritten     = "Written in my journal: %s    (Q)"
+	JournalWrittenMore = "Written in my journal: %s, and %d more    (Q)"
+	JournalRefused     = "The journal: %v"
+	JournalUnread      = " *" // ASCII: -classic's Diablo II font has no bullet (measured 24 Sep)
+	JournalMarkOpen    = "[ ] "
+	JournalMarkDone    = "[x] "
+	JournalMarkFailed  = "[-] "
+	JournalStateOpen   = "Still to do."
+	JournalStateDone   = "Done."
+	JournalStateFailed = "Failed."
+)

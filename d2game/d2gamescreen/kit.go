@@ -40,6 +40,9 @@ func (v *Game) bindKit() {
 	// Deferred calls run last-first, so the STANDING binds first and progress
 	// after it: nothing progress does can save the file before the standing is
 	// in hand (review finding: a save then would drop the village block).
+	// J1: the journal reads the standing and progress, so it binds LAST --
+	// deferred FIRST (A9).
+	defer v.bindJournal(extras.Journal)
 	defer v.bindProgress(extras.Progress)
 	defer v.bindStanding(extras.Village)
 	defer v.bindLand(extras.Land)
@@ -191,6 +194,7 @@ func (v *Game) spendBurntTorch() {
 
 	if _, _, ok := v.kit.OffHandTorch(); ok {
 		v.kit.SpendOffHand()
+		v.note("torch_out")
 		v.saveKit()
 	}
 }
@@ -235,7 +239,7 @@ func (v *Game) saveKit() {
 		}
 	}
 
-	if err := d2items.SaveHero(v.kitPath, v.kit, d2items.Extras{Progress: v.progressJSON(), Village: v.standingJSON(), Land: v.landJSON()}); err != nil {
+	if err := d2items.SaveHero(v.kitPath, v.kit, d2items.Extras{Progress: v.progressJSON(), Village: v.standingJSON(), Land: v.landJSON(), Journal: v.journalJSON()}); err != nil {
 		v.Errorf("kit: %v", err)
 	}
 

@@ -135,6 +135,11 @@ func (h *HUD) refreshDeath() {
 		if h.talents != nil {
 			h.talents.open = false
 		}
+
+		// J1 (review B8): nor the journal, whose keys the death screen eats.
+		if h.journal != nil && h.journal.open {
+			h.gameControls.closeJournal()
+		}
 	}
 }
 

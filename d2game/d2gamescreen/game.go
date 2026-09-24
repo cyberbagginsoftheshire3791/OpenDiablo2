@@ -24,6 +24,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2dialogue"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2journal"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
@@ -159,6 +160,12 @@ func CreateGame(
 		return nil, err
 	}
 
+	// J1: the journal, checked against every name the game can report.
+	journalBook, err := loadJournal(asset, dialogue, items, recipes)
+	if err != nil {
+		return nil, err
+	}
+
 	// find the local player and its initial location
 	var startX, startY float64
 
@@ -182,6 +189,7 @@ func CreateGame(
 		talents:              talents,
 		dialogue:             dialogue,
 		recipes:              recipes,
+		journalBook:          journalBook,
 		gameClient:           gameClient,
 		navigator:            navigator,
 		gameControls:         nil,
@@ -391,6 +399,16 @@ type Game struct {
 	// T7: what the land has given him.
 	land land
 
+	// J1: the journal's table, his journal, whether it is open, whether the
+	// next Evaluate is the first (written silently), and the fight the
+	// sampler last saw with the rows noted in it.
+	journalBook  *d2journal.Book
+	journal      *d2journal.Journal
+	journalOpen  bool
+	journalQuiet bool
+	journalFight string
+	journalRows  map[string]bool
+
 	// T8: the watch -- minutes stood at the headman's post tonight, the world
 	// clock last frame, and the post itself (the headman's sprite, cached).
 	watchStood    float64
@@ -533,6 +551,7 @@ func (v *Game) OnUnload() error {
 	d2harness.Unregister(v.gameControls) // the "ui" provider dies with the screen
 	d2harness.Unregister(progressProvider{v})
 	d2harness.Unregister(villageProvider{v})
+	d2harness.Unregister(journalProvider{v}) // B11
 	d2harness.Unregister(v.corpses)
 	d2harness.Unregister(v.rising)
 
@@ -683,6 +702,9 @@ func (v *Game) Advance(elapsed float64) error {
 
 		// T3: what the fights did, and dawn.
 		v.earnExperience()
+
+		// J1: then the journal, after dawn is settled (A8).
+		v.journalAdvance()
 	}
 
 	// The map keeps its ORIGINAL condition: the escape menu still freezes the
@@ -795,6 +817,11 @@ func (v *Game) WorldHeldBy() string {
 	// answer that costs it, not by the minutes he spends reading.
 	if v.talk != nil && !v.talk.Done() {
 		return d2player.WorldHeldByTalk
+	}
+
+	// J1: nor while he reads his journal.
+	if v.journalOpen {
+		return d2player.WorldHeldByJournal
 	}
 
 	// Death screen v0 does NOT hold the world, deliberately. D2's own death
@@ -2049,6 +2076,7 @@ func (v *Game) bindGameControls() error {
 		v.gameControls.SetForageHolder(v)
 		v.gameControls.SetCorpseHolder(v)
 		v.gameControls.SetWorldHolder(v)
+		v.gameControls.SetJournalHolder(v)
 
 		// M4.7 Q2a: Night 1's dead, around where he enters.
 		v.placeTheDead()

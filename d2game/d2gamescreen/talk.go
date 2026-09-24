@@ -133,6 +133,10 @@ func (v *Game) openTalk(speakerID string, x, y float64) error {
 
 	v.talk = talk
 
+	// J1: whom he spoke to, and where the talk began.
+	v.note("talked:" + speakerID)
+	v.note("node:" + talk.NodeID)
+
 	return nil
 }
 
@@ -193,6 +197,11 @@ func (v *Game) Answer(i int) error {
 	}
 
 	v.applyTalk(effects)
+
+	// J1: where the answer led.
+	if !v.talk.Done() {
+		v.note("node:" + v.talk.NodeID)
+	}
 
 	// The minutes an answer costs run the world: he can come out of an hour's
 	// labour dead of thirst or in a fight. Either ends the talk (review
@@ -353,7 +362,7 @@ func (p villageProvider) HarnessState() map[string]interface{} {
 }
 
 func (p villageProvider) HarnessSettableFields() []string {
-	return []string{"rep", "rite_radius", "seen_radius"}
+	return []string{"rep", "rite_radius", "seen_radius", "watch_radius"}
 }
 
 // HarnessSet stands the village at a number, the same test-setup shape as
@@ -362,17 +371,21 @@ func (p villageProvider) HarnessSet(field string, value interface{}) error {
 	v := p.v
 
 	// M4.7 step 4's radii, so a script can stand the church and the watching
-	// village where the map put the bodies.
-	if field == "rite_radius" || field == "seen_radius" {
+	// village where the map put the bodies -- and J1's watch radius, so a
+	// script can break a promised watch wherever the night finds him.
+	if field == "rite_radius" || field == "seen_radius" || field == "watch_radius" {
 		f, ok := value.(float64)
 		if !ok || f <= 0 || v.dialogue == nil {
 			return fmt.Errorf("%s wants a positive number, got %v", field, value)
 		}
 
-		if field == "rite_radius" {
+		switch field {
+		case "rite_radius":
 			v.dialogue.Village.RiteRadius = f
-		} else {
+		case "seen_radius":
 			v.dialogue.Village.SeenRadius = f
+		default:
+			v.dialogue.Village.WatchRadius = f
 		}
 
 		return nil

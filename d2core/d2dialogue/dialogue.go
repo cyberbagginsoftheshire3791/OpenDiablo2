@@ -384,6 +384,64 @@ func (b *Book) SlotsNamed() []string {
 	return out
 }
 
+// FlagsNamed is every flag the table can set -- each choice's "set", and the
+// two the code sets for it (FlagWatch, FlagSleptInside) -- sorted: what the
+// journal's conditions may read (J1). The game adds the flags it marks itself.
+func (b *Book) FlagsNamed() []string {
+	seen := map[string]bool{FlagWatch: true, FlagSleptInside: true}
+
+	for _, n := range b.Nodes {
+		for _, c := range n.Choices {
+			for _, f := range c.Effects.Set {
+				seen[f] = true
+			}
+		}
+	}
+
+	return sortedSet(seen)
+}
+
+// NodeIDs is every node, sorted.
+func (b *Book) NodeIDs() []string {
+	seen := map[string]bool{}
+	for id := range b.Nodes {
+		seen[id] = true
+	}
+
+	return sortedSet(seen)
+}
+
+// SpeakerIDs is every villager, in table order.
+func (b *Book) SpeakerIDs() []string {
+	out := make([]string, 0, len(b.Speakers))
+	for _, s := range b.Speakers {
+		out = append(out, s.ID)
+	}
+
+	return out
+}
+
+// RungIDs is the ladder, bottom first.
+func (b *Book) RungIDs() []string {
+	out := make([]string, 0, len(b.Village.Ladder))
+	for _, r := range b.Village.Ladder {
+		out = append(out, r.ID)
+	}
+
+	return out
+}
+
+func sortedSet(seen map[string]bool) []string {
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+
+	sort.Strings(out)
+
+	return out
+}
+
 // SpeakerFor is the villager a stand-in sprite plays, or nil.
 func (b *Book) SpeakerFor(standIn string) *Speaker { return b.byStand[standIn] }
 

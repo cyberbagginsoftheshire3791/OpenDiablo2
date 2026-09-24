@@ -609,7 +609,7 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 
 			return nil, out, harnessErr("WORLD_HELD",
 				fmt.Sprintf("stepped %d ticks and the world is held by %q -- no number of ticks moves it", out.Ticks, held),
-				"close what holds it (strigoi_key escape closes the menu and walks away from a talk; answer the loadout with strigoi_key 1 or 2), or step frames with strigoi_step")
+				"close what holds it (strigoi_key escape closes the menu or the journal and walks away from a talk; answer the loadout with strigoi_key 1 or 2), or step frames with strigoi_step")
 		}
 
 		// M4.4c-2a: an open player turn freezes the world clock exactly as the

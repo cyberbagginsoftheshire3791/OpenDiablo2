@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -325,6 +326,18 @@ func IsArmourSlot(s Slot) bool { return s == SlotBody || s == SlotHead || s == S
 
 // Has reports an item the catalogue knows.
 func (c *Catalog) Has(id string) bool { _, ok := c.byID[id]; return ok }
+
+// IDs is every item id, sorted: what the journal's {count:item} may name.
+func (c *Catalog) IDs() []string {
+	out := make([]string, 0, len(c.byID))
+	for id := range c.byID {
+		out = append(out, id)
+	}
+
+	sort.Strings(out)
+
+	return out
+}
 
 // Item is a catalogue entry, or nil.
 func (c *Catalog) Item(id string) *Item { return c.byID[id] }

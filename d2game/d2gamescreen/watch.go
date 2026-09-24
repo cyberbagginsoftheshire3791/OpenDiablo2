@@ -118,6 +118,15 @@ func (v *Game) dawnWatch() {
 		return
 	}
 
+	// J1 (A1): kept or broken, from what he did -- not from the move, which
+	// is zero at the floor and at the ceiling. Events, not flags: the watch
+	// is promised again every night, and an event raised again is an edge.
+	if kept {
+		v.note("watch_kept")
+	} else {
+		v.note("watch_broken")
+	}
+
 	// Worded by kept-or-broken, not by the sign of the move: at the floor a
 	// broken watch moves nothing and must not read as kept (review finding).
 	if v.gameControls != nil {

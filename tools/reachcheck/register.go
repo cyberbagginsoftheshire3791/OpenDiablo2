@@ -82,6 +82,9 @@ const (
 	// joining client builds from its host's.
 	pkgAsset  = "d2core/d2asset"
 	pkgMapGen = "d2core/d2map/d2mapgen"
+	// pkgJournal joined at J1 (24 Sep 2026): his diary, which replaces the
+	// quest log.
+	pkgJournal = "d2core/d2journal"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -418,7 +421,7 @@ var Register = []Entry{
 	{sym(pkgPlayer, "GameControls.combatEndTurn"), BucketWire, VerdictLive,
 		"E. Ends the turn -- hold when the Action is unspent, end when it is spent. Reached from OnKeyDown. Without it a turn with an unspent Move waits forever.", ""},
 	{sym(pkgScreen, "Game.WorldHeldBy"), BucketWire, VerdictLive,
-		"Names what holds the world (the escape menu, the loadout choice, a talk, a paced fight) or \"\" while it runs. worldRunning is WorldHeldBy() == \"\", and the ui provider reports it so step_world refuses a hold no number of ticks lifts (history item 121).", ""},
+		"Names what holds the world (the escape menu, the loadout choice, a talk, the journal, a paced fight) or \"\" while it runs. worldRunning is WorldHeldBy() == \"\", and the ui provider reports it so step_world refuses a hold no number of ticks lifts (history item 121).", ""},
 	{sym(pkgPlayer, "GameControls.SetWorldHolder"), BucketWire, VerdictLive,
 		"Game.OnLoad attaches the game screen's WorldHeldBy to the controls, for the ui provider's world_held_by. Without it the field reads \"unknown\" and step_world refuses to step at all.", ""},
 	{sym(pkgScreen, "Game.worldRunning"), BucketWire, VerdictLive,
@@ -550,8 +553,8 @@ var Register = []Entry{
 	// shape; it just leaves this accessor with no Go caller, which is the
 	// truth and is what the row now says. Recorded in state.md before this
 	// text was written, per this file's own rule.
-	{sym(pkgWorld, "Combat.Order"), BucketDefer, VerdictDead,
-		"The activation sequence -- D8 section 9's since step 4. Reported and asserted by playtests; still read by nothing in Go. c-2a did NOT give it a caller: the strike key commits an empty target and Combat.Commit resolves D8 order internally, so the turn UI that DISPLAYS an order is what will want this.", "M4.4c-2b (the squad strip) or the first order readout"},
+	{sym(pkgWorld, "Combat.Order"), BucketWire, VerdictLive,
+		"The activation sequence -- D8 section 9's since step 4. MOVED from defer/dead at J1 (24 Sep 2026): the journal's fight sampler (Game.sampleFight) reads the participants off it to note each kind of enemy he has met. The turn UI that DISPLAYS an order will be its second reader.", ""},
 
 	// THE N-PATH IS HARNESS-DRIVEN, and the register says so rather than
 	// claiming a green (brief §9 objection 3): squad_add/squad_remove are
@@ -711,6 +714,34 @@ var Register = []Entry{
 		"A client builds the world its host built, from the GenerateMap packet (GameClient.handleGenerateMapPacket) -- a local game's client too.", ""},
 	{sym(pkgPlayer, "miniPanel.buttonsReport"), BucketObserve, VerdictHarnessOnly,
 		"Reads the mini-panel's button rects for the harness ui state, so a script clicks where they are drawn. Changes nothing.", ""},
+	// J1, the journal (24 Sep 2026): the drive train from a thing he does to
+	// a line in his diary, and the key that opens it.
+	{sym(pkgJournal, "Load"), BucketWire, VerdictLive,
+		"Validates data/strigoi/journal.json against every flag, rung, event, state and item the game can report; CreateGame refuses a bad table (loadJournal).", ""},
+	{sym(pkgJournal, "Journal.Evaluate"), BucketWire, VerdictLive,
+		"Writes what now holds, once a live frame (Game.journalAdvance, after earnExperience so dawn is settled). If it goes dark nothing is ever written past the first frame.", ""},
+	{sym(pkgJournal, "Journal.Note"), BucketWire, VerdictLive,
+		"Raises an event the conditions read: the stake, the grave, a body rising, first light, a beast met, a talk, a craft, a forage, the torch out, the watch kept or broken (Game.note).", ""},
+	{sym(pkgJournal, "Journal.View"), BucketWire, VerdictLive,
+		"A part's rows as the panel draws them (Game.JournalRows, from GameControls.showJournalPart).", ""},
+	{sym(pkgJournal, "Journal.Save"), BucketWire, VerdictLive,
+		"The sidecar's journal block (Game.journalJSON, in saveKit). Without it a reload forgets everything written.", ""},
+	{sym(pkgJournal, "Journal.Restore"), BucketWire, VerdictLive,
+		"Reads the block back (Game.bindJournal, deferred first in bindKit so it binds last).", ""},
+	{sym(pkgScreen, "Game.sampleFight"), BucketWire, VerdictLive,
+		"Notes each kind of enemy the first frame it stands in a fight with him, and a risen man before the tale -- the only source of beast:<row> and risen_seen_untold.", ""},
+	{sym(pkgScreen, "Game.SetJournalOpen"), BucketWire, VerdictLive,
+		"The panel holds the world while he reads (WorldHeldBy journal) and saves what he has read when he closes it.", ""},
+	{sym(pkgPlayer, "GameControls.SetJournalHolder"), BucketWire, VerdictLive,
+		"bindGameControls attaches the game screen's journal. Without it Q opens Diablo II's quest log.", ""},
+	{sym(pkgPlayer, "GameControls.questAction"), BucketWire, VerdictLive,
+		"The Q key and the mini-panel's quest button open the journal whenever one is bound, Diablo II's quest log only with no holder.", ""},
+	{sym(pkgPlayer, "GameControls.journalKey"), BucketWire, VerdictLive,
+		"The open journal takes every key (A3): Q or Escape close it, the arrows turn parts and rows. Reached from OnKeyDown before every verb.", ""},
+	{sym(pkgPlayer, "GameControls.journalClick"), BucketWire, VerdictLive,
+		"A click on the open journal picks a tab or a row, and nothing reaches the world under it. Reached from OnMouseButtonDown.", ""},
+	{sym(pkgPlayer, "GameControls.journalViewReport"), BucketObserve, VerdictHarnessOnly,
+		"Reads the open journal's tabs, rows and text for the harness ui state, so a script clicks where they are drawn. Changes nothing.", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in

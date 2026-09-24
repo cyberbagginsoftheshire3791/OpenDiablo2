@@ -105,6 +105,11 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"talk_view":   g.talkViewReport(),
 		"hover_label": g.hoverLabelReport(),
 
+		// J1: the journal, as drawn, and its notice line.
+		"journal_open":   g.journalOpen(),
+		"journal_view":   g.journalViewReport(),
+		"journal_notice": g.journalNoticeText(),
+
 		// Death screen v0.
 		"death_open":        g.dead(),
 		"death_lines":       g.deathLinesReport(),
@@ -252,4 +257,63 @@ func (g *GameControls) miniPanelButtonsReport() map[string]interface{} {
 	}
 
 	return g.hud.miniPanel.buttonsReport()
+}
+
+// journalViewReport is the journal as drawn: the part, the tabs and rows
+// where they are clickable, the chosen row, and the text lines.
+func (g *GameControls) journalViewReport() map[string]interface{} {
+	if !g.journalOpen() {
+		return map[string]interface{}{}
+	}
+
+	j := g.hud.journal
+
+	tabs := make([]map[string]interface{}, 0, len(j.parts))
+
+	for i, p := range j.parts {
+		if i >= journalMaxParts {
+			break
+		}
+
+		unread := i < len(j.unread) && j.unread[i]
+		tabs = append(tabs, map[string]interface{}{
+			"id": p.ID, "title": p.Title, "unread": unread,
+			"x": journalTabX(i, len(j.parts)), "y": journalTabY, "w": journalTabW(len(j.parts)), "h": journalTabH,
+		})
+	}
+
+	rows := make([]map[string]interface{}, 0, len(j.rows))
+
+	for k, r := range j.rows {
+		row := map[string]interface{}{"id": r.ID, "title": r.Title, "mark": r.Mark, "unread": r.Unread, "drawn": false}
+
+		if k >= j.top && k < j.top+journalListRows {
+			row["drawn"] = true
+			row["x"], row["y"], row["w"], row["h"] = journalListX, journalListY+(k-j.top)*journalRowH, journalListW, journalRowH
+		}
+
+		rows = append(rows, row)
+	}
+
+	selected := ""
+	if j.sel < len(j.rows) {
+		selected = j.rows[j.sel].ID
+	}
+
+	return map[string]interface{}{
+		"part":     j.parts[j.part].ID,
+		"tabs":     tabs,
+		"rows":     rows,
+		"selected": selected,
+		"text":     append([]string{}, j.text...),
+	}
+}
+
+// journalNoticeText is the notice line while it shows.
+func (g *GameControls) journalNoticeText() string {
+	if g.hud == nil || g.hud.journal == nil {
+		return ""
+	}
+
+	return g.hud.journal.notice
 }

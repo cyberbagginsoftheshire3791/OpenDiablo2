@@ -189,12 +189,34 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		}
 	}
 
-	// Diablo II's quest log and character panel load their art when first
-	// opened (history item 114): none of it was read above, both still open
-	// and close on their keys, and opening each does read its art -- so the
-	// absence above was a measurement.
+	// J1 (24 Sep 2026): Q opens his journal now, not Diablo II's quest log --
+	// so the quest log's art is never read, before Q or after it.
+	const questArt = "/data/global/ui/menu/a1q1.dc6"
+
+	s.call("strigoi_key", map[string]any{"key": "q"})
+	s.call("strigoi_step", map[string]any{"frames": 4})
+
+	if ui := uiState(s); !flag(t, ui, "journal_open") || flag(t, ui, "quest_log_open") {
+		t.Fatalf("Q: journal_open %v, quest_log_open %v; want the journal and not the quest log",
+			flag(t, ui, "journal_open"), flag(t, ui, "quest_log_open"))
+	}
+
+	if censusHas(sub(s.call("strigoi_get_system_state", map[string]any{"system": "assets"}), "state"), questArt) {
+		t.Errorf("Q read %s: Diablo II's quest log was opened behind the journal", questArt)
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "q"})
+	s.call("strigoi_step", map[string]any{"frames": 4})
+
+	if flag(t, uiState(s), "journal_open") {
+		t.Fatal("Q did not close the journal")
+	}
+
+	// Diablo II's character panel loads its art when first opened (history
+	// item 114): none of it was read above, it still opens and closes on its
+	// key, and opening it does read its art -- so the absence above was a
+	// measurement.
 	for _, c := range []struct{ key, open, art string }{
-		{"q", "quest_log_open", "/data/global/ui/menu/a1q1.dc6"},
 		{"c", "hero_stats_open", "/data/global/ui/panel/invchar6.dc6"},
 	} {
 		if censusHas(a, c.art) {

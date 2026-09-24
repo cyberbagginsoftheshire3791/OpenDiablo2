@@ -85,8 +85,10 @@ func (v *Game) noticeDeath() {
 
 	v.died = true
 
-	// A talk does not outlive him.
+	// A talk does not outlive him, nor an open journal's hold on the world
+	// (J1 review B8: the death screen does not hold the world).
 	v.EndTalk()
+	v.journalOpen = false
 	v.death = d2player.Death{Cause: v.deathCause()}
 
 	if v.worldClock != nil {

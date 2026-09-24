@@ -123,6 +123,10 @@ func (v *Game) Stake() error {
 
 	v.corpseNotice(done, d2player.StakeRefused, err)
 
+	if err == nil {
+		v.note("staked")
+	}
+
 	return err
 }
 
@@ -133,6 +137,10 @@ func (v *Game) Stake() error {
 func (v *Game) Dig() error {
 	err := v.dig()
 	v.corpseNotice(d2player.DigDone, d2player.DigRefused, err)
+
+	if err == nil {
+		v.note("graved")
+	}
 
 	return err
 }
@@ -365,6 +373,12 @@ func (v *Game) raiseTheDead(b d2world.Corpse) string {
 
 	member := v.spawns.Raise(b.X, b.Y)
 
+	// J1 (A5): a body rose. It is "reraised" -- a man he cut down standing
+	// again -- only when he rejoins the fight he fell in: a dead man laid down
+	// at first light is Downed too, and stands the next night without anyone
+	// having cut him down (review B2, 24 Sep).
+	rejoined := false
+
 	// A Downed man standing again: the remains of the one who fell are taken
 	// off the map, so the body is never drawn twice (step 3b). Their lay is
 	// a no-op -- he is no longer that member's walker.
@@ -372,12 +386,20 @@ func (v *Game) raiseTheDead(b d2world.Corpse) string {
 		// Back into the fight he fell in, at once -- not as an arrival that
 		// must be noticed and in reach (the step-3b review).
 		if w, ok := v.spawns.Member(member); ok && v.combat != nil {
-			v.combat.Rejoin(old, w)
+			rejoined = v.combat.Rejoin(old, w)
 		}
 
 		if p, ok := v.spawns.ProfileOf(old); ok && p.Dead {
 			v.spawns.Despawn(p.Group)
 		}
+	}
+
+	switch {
+	case member == "":
+	case rejoined:
+		v.note("reraised")
+	default:
+		v.note("rose")
 	}
 
 	return member
@@ -397,13 +419,18 @@ func (v *Game) firstLight() {
 		return
 	}
 
+	broke := 0
+
 	if v.combat != nil {
-		v.combat.BreakOff(func(id string) bool {
+		broke = v.combat.BreakOff(func(id string) bool {
 			p, ok := v.spawns.ProfileOf(id)
 
 			return ok && p.Dead
 		})
 	}
 
-	v.spawns.LayDownDead()
+	// J1 (A7): the dead broke off or lay down -- he saw first light end them.
+	if laid := v.spawns.LayDownDead(); broke > 0 || laid > 0 {
+		v.note("dawn_breakoff")
+	}
 }

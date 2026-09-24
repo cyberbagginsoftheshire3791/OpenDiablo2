@@ -36,6 +36,10 @@ type sidecar struct {
 	// Land is what the country around still holds for him to gather (T7):
 	// S1 §8.3's finite local resources, which do not regenerate in the run.
 	Land json.RawMessage `json:"land,omitempty"`
+
+	// Journal is his diary (J1), raw for the same reason. Optional: without
+	// it the start entries are written again at once.
+	Journal json.RawMessage `json:"journal,omitempty"`
 }
 
 // Extras is what rides in the file beside the kit, raw, so this package
@@ -44,6 +48,7 @@ type Extras struct {
 	Progress json.RawMessage
 	Village  json.RawMessage
 	Land     json.RawMessage
+	Journal  json.RawMessage
 }
 
 // SidecarPath is the kit file for a hero save.
@@ -84,7 +89,7 @@ func LoadHero(path string, c *Catalog) (*Kit, Extras, error) {
 
 	sc.Kit.Bind(c)
 
-	return sc.Kit, Extras{Progress: sc.Progress, Village: sc.Village, Land: sc.Land}, nil
+	return sc.Kit, Extras{Progress: sc.Progress, Village: sc.Village, Land: sc.Land, Journal: sc.Journal}, nil
 }
 
 // SaveHero writes a hero's kit and what rides beside it,
@@ -94,7 +99,7 @@ func SaveHero(path string, k *Kit, x Extras) error {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: x.Progress, Village: x.Village, Land: x.Land}, "", "  ")
+	data, err := json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: x.Progress, Village: x.Village, Land: x.Land, Journal: x.Journal}, "", "  ")
 	if err != nil {
 		return err
 	}

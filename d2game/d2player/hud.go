@@ -168,6 +168,10 @@ type HUD struct {
 	talk       *talkOverlay
 	talkWidget *d2ui.CustomWidget
 
+	// J1: the journal, and its notice line.
+	journal       *journalOverlay
+	journalWidget *d2ui.CustomWidget
+
 	// Death screen v0: over everything.
 	death       *deathOverlay
 	deathWidget *d2ui.CustomWidget
@@ -249,6 +253,7 @@ func NewHUD(
 		talents:           newTalentOverlay(ui),
 		death:             newDeathOverlay(ui),
 		talk:              newTalkOverlay(ui),
+		journal:           newJournalOverlay(ui),
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -394,6 +399,12 @@ func (h *HUD) loadCustomWidgets() {
 	h.talkWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
 	h.panelGroup.AddWidget(h.talkWidget)
 
+	// J1: the journal, over the other panels and under the death screen.
+	h.journalWidget = h.uiManager.NewCustomWidget(h.renderJournal, screenWidth, screenHeight)
+	h.journalWidget.SetPosition(0, 0)
+	h.journalWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.journalWidget)
+
 	// Death screen v0, added last so it draws over every other panel.
 	h.deathWidget = h.uiManager.NewCustomWidget(h.renderDeath, screenWidth, screenHeight)
 	h.deathWidget.SetPosition(0, 0)
@@ -510,6 +521,14 @@ func (h *HUD) updateRunTooltipText() {
 }
 
 func (h *HUD) onToggleRunButton(noButton bool) {
+	// J1 (review B1): the run button is a d2ui widget and takes a click under
+	// the open journal whatever the controls answer; it does nothing there.
+	// (It cannot simply be disabled: it has no disabled face, and drawing it
+	// disabled panics -- measured 24 Sep.)
+	if h.journal != nil && h.journal.open {
+		return
+	}
+
 	if !noButton {
 		h.runButton.Toggle()
 	}
@@ -761,6 +780,11 @@ func (h *HUD) hoveredEntityWhere(mx, my int, keep func(d2interface.MapEntity) bo
 }
 
 func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
+	// J1: nothing under the open journal is hovered.
+	if h.journal != nil && h.journal.open {
+		return
+	}
+
 	entity := h.hoverTarget(h.lastMouseX, h.lastMouseY)
 	if entity == nil {
 		return

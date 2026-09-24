@@ -1,0 +1,1341 @@
+{
+  "parts": [
+    {
+      "id": "days",
+      "title": "Days"
+    },
+    {
+      "id": "self",
+      "title": "Myself"
+    },
+    {
+      "id": "tasks",
+      "title": "Tasks"
+    },
+    {
+      "id": "village",
+      "title": "Village"
+    },
+    {
+      "id": "dead",
+      "title": "The dead"
+    },
+    {
+      "id": "survival",
+      "title": "Survival"
+    }
+  ],
+  "entries": [
+    {
+      "id": "sky_long_days",
+      "part": "days",
+      "title": "The long days",
+      "text": "At this season the sun is long in the sky and the true dark is short, a quarter of the day or less.",
+      "when": {
+        "start": true
+      },
+      "sources": "C4 s1 COMPUTED"
+    },
+    {
+      "id": "sky_stages",
+      "part": "days",
+      "title": "The stages of the dark",
+      "text": "After the sun goes there is a little while of dusk, then a grey while, then the true dark. Before dawn the grey comes back, and that is when they go.",
+      "when": {
+        "state": "night"
+      },
+      "sources": "C4 s1 COMPUTED; last clause the game rule (ADAPTED)"
+    },
+    {
+      "id": "sky_waning",
+      "part": "days",
+      "title": "The waning moon",
+      "text": "The moon rose later again, and thinner. By the sixth night there will be hours with no moon at all.",
+      "when": {
+        "date": "1462-06-18"
+      },
+      "sources": "C2 s2 COMPUTED"
+    },
+    {
+      "id": "b1_taken",
+      "part": "self",
+      "title": "Taken",
+      "text": "I was born a Christian in a village of the Balkans. As a boy I was taken for the Sultan's service, made a Muslim, and set to work in a Turkish household's fields before the drill-yard had me.",
+      "when": {
+        "start": true
+      },
+      "sources": "F1 s1 ATTESTED pipeline; birthplace unnamed (map s6 decision 4 default)"
+    },
+    {
+      "id": "b2_corps",
+      "part": "self",
+      "title": "The corps",
+      "text": "I am a janissary of an orta: raised in barracks, forbidden a wife, paid a few times a year. Obedience, order, endurance. That is what I still own.",
+      "when": {
+        "start": true
+      },
+      "sources": "F1 s1-2 ATTESTED"
+    },
+    {
+      "id": "b3_cut_off",
+      "part": "self",
+      "title": "Cut off",
+      "text": "When the Wallachian's riders came out of the dark for the Sultan's tent, my company was overrun. When the army marched, I was not with it. I did not run. I was left.",
+      "when": {
+        "start": true
+      },
+      "sources": "F1 s1, s6"
+    },
+    {
+      "id": "b4_deserter",
+      "part": "self",
+      "title": "What a deserter gets",
+      "text": "In the barracks they said a man who runs from the corps in war is strangled and put in the water by night. Every day I live here I must be able to say how I came to be left.",
+      "when": {
+        "start": true
+      },
+      "sources": "F1 s1 (popular-web citations: kept as barracks talk, map s5)"
+    },
+    {
+      "id": "b5_no_one",
+      "part": "self",
+      "title": "No one is coming",
+      "text": "The army does not know I live. Every arrow I loose is the last of its kind until I make another.",
+      "when": {
+        "start": true
+      },
+      "sources": "F1 s6; S1 s8.3"
+    },
+    {
+      "id": "b6_kit",
+      "part": "self",
+      "title": "My kit",
+      "text": "A composite bow and few arrows, my kılıç, a knife, my mail and dolama, and the white börk that tells any man at fifty paces what I am.",
+      "when": {
+        "start": true
+      },
+      "sources": "F1 s6; S1 s8.3; E3"
+    },
+    {
+      "id": "b7_crescent",
+      "part": "self",
+      "title": "The crescent",
+      "text": "We looked for the new moon at the end of Şaban and did not see it the first evening. It was seen the next. We began the oruç the day after. I have kept the count since.",
+      "when": {
+        "start": true
+      },
+      "sources": "C5 s0 ESTIMATE: tabular 1 Ramadan 30 May, observed 31 May"
+    },
+    {
+      "id": "b8_crossing",
+      "part": "self",
+      "title": "The crossing",
+      "text": "Early in the month the army crossed the Danube into the Wallachian's country.",
+      "when": {
+        "start": true
+      },
+      "sources": "R1 s5 ATTESTED; C5 about 4 June"
+    },
+    {
+      "id": "b9_emptied",
+      "part": "self",
+      "title": "An emptied country",
+      "text": "We marched through a land emptied before us: the people gone, the herds driven off, the wells fouled. He sent plague-sick men into our camps.",
+      "when": {
+        "start": true
+      },
+      "sources": "R1 s5 ATTESTED as corrected 5 Sep (emptied, not burned)"
+    },
+    {
+      "id": "b10_night_attack",
+      "part": "self",
+      "title": "The night attack",
+      "text": "Three hours after sunset he came for the Sultan's tent, and the killing went on until near dawn. The moon, past full, rose over the fighting after it had begun.",
+      "when": {
+        "start": true
+      },
+      "sources": "R1 s5 ATTESTED; moonrise 23:05, 78% (C2 COMPUTED)"
+    },
+    {
+      "id": "b11_stakes",
+      "part": "self",
+      "title": "The forest of stakes",
+      "text": "Before the city stood a forest of stakes, seventeen stades by seven: some twenty thousand men, women and children. Our own taken men were among them, and Hamza Pasha on the highest.\nThey say the Sultan looked on it and said a man who does such things is worth much.",
+      "when": {
+        "start": true
+      },
+      "sources": "R1 s5 ATTESTED; the Sultan's words 'reportedly' (kept as they-say); map s6 decision 9 default (a)"
+    },
+    {
+      "id": "b13_tribute",
+      "part": "self",
+      "title": "The tribute",
+      "text": "The prince of this country has paid the Sultan no tribute these three years.",
+      "when": {
+        "start": true
+      },
+      "sources": "H7 s0 (unpaid since 1459); not called the cause of the war"
+    },
+    {
+      "id": "b14_made_the_dead",
+      "part": "self",
+      "title": "Who made the dead",
+      "text": "Our army made these dead. We do not know how to quiet them. The villagers do, and they have no reason to teach us.",
+      "when": {
+        "flag": "met_headman"
+      },
+      "sources": "F1 s3 (design framing)"
+    },
+    {
+      "id": "b15_radu",
+      "part": "self",
+      "title": "Rumour of Radu",
+      "text": "At the well they say the Sultan leaves a prince of his own behind: Radu, raised at the Sultan's court, and the boyars are going over to him.",
+      "when": {
+        "all": [
+          {
+            "date": "1462-06-22"
+          },
+          {
+            "event": "node:well"
+          },
+          {
+            "not": {
+              "flag": "gate_closed"
+            }
+          }
+        ]
+      },
+      "sources": "R1 s5 ATTESTED; S1 s3.3 keeps him rumour only (signed); not called brother"
+    },
+    {
+      "id": "b16_army_leaves",
+      "part": "self",
+      "title": "The army leaves",
+      "text": "The dust goes south. The Sultan's army is marching out of this country, and every straggler on these roads follows it or dies here.",
+      "when": {
+        "date": "1462-06-22"
+      },
+      "sources": "R1 s5, 22 June ATTESTED (the army goes south; it is still in Wallachia at Braila on 29 June, so not 'has left')"
+    },
+    {
+      "id": "v_village",
+      "part": "village",
+      "title": "The village",
+      "text": "A few timber houses along the stream, a wooden church by the graves on the high ground, and a ditch and fence thrown up since the army came.",
+      "when": {
+        "start": true
+      },
+      "sources": "village.tmj; G4 PROPOSAL; fence named per map s6 decision 8 default"
+    },
+    {
+      "id": "v_headman",
+      "part": "village",
+      "title": "The headman",
+      "text": "An old man with a hayfork he did not raise. He watches my hands, not my face.",
+      "when": {
+        "flag": "met_headman"
+      },
+      "sources": "dialogue headman_first"
+    },
+    {
+      "id": "v_who_is_left",
+      "part": "village",
+      "title": "Who is left",
+      "text": "Women, old men and children. Their men went with the Wallachian's host or are dead, and some of their sons died by our army.",
+      "when": {
+        "flag": "met_headman"
+      },
+      "sources": "H7 P3 INFERENCE; S1 s2"
+    },
+    {
+      "id": "v_well_woman",
+      "part": "village",
+      "title": "The woman at the well",
+      "text": "A woman at the well saw my cap and put herself between me and the rope. She did not speak.",
+      "when": {
+        "event": "node:well_wary"
+      },
+      "sources": "dialogue well_wary"
+    },
+    {
+      "id": "v_trough",
+      "part": "village",
+      "title": "The trough",
+      "text": "She lets me as far as the trough and no further. 'From the trough, not the bucket.'",
+      "when": {
+        "event": "node:well"
+      },
+      "sources": "dialogue well"
+    },
+    {
+      "id": "v_smith",
+      "part": "village",
+      "title": "The smith",
+      "text": "The smith looked at my blade the way a man looks at a snake. He has nothing for me.",
+      "when": {
+        "event": "node:smith_wary"
+      },
+      "sources": "dialogue smith_wary"
+    },
+    {
+      "id": "v_broken_iron",
+      "part": "village",
+      "title": "Broken iron",
+      "text": "He says our army took his good iron and left him its broken. There is always a bellows to pump, if I want bread.",
+      "when": {
+        "event": "node:smith"
+      },
+      "sources": "dialogue smith"
+    },
+    {
+      "id": "v_priest",
+      "part": "village",
+      "title": "The priest",
+      "text": "He makes the sign of the cross, not at me but because of me.",
+      "when": {
+        "event": "node:priest_wary"
+      },
+      "sources": "dialogue priest_wary"
+    },
+    {
+      "id": "v_stand_start",
+      "part": "village",
+      "title": "Where I stand",
+      "text": "They fear me. They have reason.",
+      "when": {
+        "start": true
+      },
+      "sources": "S1 s8.2 ladder, start below water"
+    },
+    {
+      "id": "v_stand_water",
+      "part": "village",
+      "title": "Water at the well",
+      "text": "They will let me drink, from the trough, at a distance.",
+      "when": {
+        "rung": "water"
+      },
+      "sources": "rung water"
+    },
+    {
+      "id": "v_stand_trade",
+      "part": "village",
+      "title": "Trade at the gate",
+      "text": "The smith will take my labour for bread and iron.",
+      "when": {
+        "rung": "trade"
+      },
+      "sources": "rung trade"
+    },
+    {
+      "id": "v_stand_shelter",
+      "part": "village",
+      "title": "Shelter by night",
+      "text": "They would let me sleep inside the fence by night now, if I asked the headman.",
+      "when": {
+        "rung": "shelter"
+      },
+      "sources": "rung shelter; dialogue headman_shelter"
+    },
+    {
+      "id": "v_stand_hearth",
+      "part": "village",
+      "title": "A place at the hearth",
+      "text": "The priest keeps a place for me at the hearth.",
+      "when": {
+        "rung": "hearth"
+      },
+      "sources": "rung hearth"
+    },
+    {
+      "id": "v_stand_rite",
+      "part": "village",
+      "title": "As far as they trust",
+      "text": "He will close my dead the old way, at first light, if I ask it.",
+      "when": {
+        "rung": "rite"
+      },
+      "sources": "rung rite"
+    },
+    {
+      "id": "v_barred",
+      "part": "village",
+      "title": "Not after dark",
+      "text": "'Not after dark. Nothing good knocks after dark.' The bar did not move.",
+      "when": {
+        "event": "node:night_barred"
+      },
+      "sources": "dialogue night_barred"
+    },
+    {
+      "id": "v_gate_closed",
+      "part": "village",
+      "title": "The gate shut",
+      "text": "I took their bread at sword-point. The gate is shut to me for good.",
+      "when": {
+        "flag": "gate_closed"
+      },
+      "sources": "dialogue headman_threat"
+    },
+    {
+      "id": "v_seen_staking",
+      "part": "village",
+      "title": "Seen at the stake",
+      "text": "They saw me drive the stake. They will not forget it.",
+      "when": {
+        "flag": "seen_staking"
+      },
+      "sources": "hearth.go seen_staking; S1 s8.2"
+    },
+    {
+      "id": "v_apostles_fast",
+      "part": "village",
+      "title": "The Apostles' Fast",
+      "text": "They tell me they are in a fast named for two of their apostles: no meat, eggs or milk; some days not even oil; fish only at the week's end.",
+      "when": {
+        "flag": "met_headman"
+      },
+      "sources": "C3 s3.6 COMPUTED; s4.1 GROUNDED; actual observance UNKNOWN (so 'they tell me')"
+    },
+    {
+      "id": "v_ninth_thursday",
+      "part": "village",
+      "title": "The ninth Thursday",
+      "text": "On the ninth Thursday after their Easter they would not work in the fields. They fear hail on that day.",
+      "when": {
+        "flag": "met_headman"
+      },
+      "sources": "C3 GROUNDED (Pamfile); MEDIUM for Muntenia"
+    },
+    {
+      "id": "v_sunday",
+      "part": "village",
+      "title": "Their Sunday",
+      "text": "Their Sunday. The priest is at his church. They may eat fish today.",
+      "when": {
+        "date": "1462-06-20"
+      },
+      "sources": "C3; not 'Sunday of the Romanian Saints' (1992)"
+    },
+    {
+      "id": "v_rusalii",
+      "part": "village",
+      "title": "The fairies' season",
+      "text": "They have just come through the Rusalii, when no one works for fear of the fairies.",
+      "when": {
+        "event": "node:well"
+      },
+      "sources": "C3 s2.4"
+    },
+    {
+      "id": "v_st_john",
+      "part": "village",
+      "title": "St John's Eve",
+      "text": "The girls talk of the night before St John's: yellow flowers woven into wreaths and thrown on roofs, garlic pulled for cures, fairies abroad. It is not a night of the dead.",
+      "when": {
+        "all": [
+          {
+            "date": "1462-06-22"
+          },
+          {
+            "event": "node:well"
+          },
+          {
+            "not": {
+              "flag": "gate_closed"
+            }
+          }
+        ]
+      },
+      "sources": "C3 GROUNDED (Pamfile 1910; Ghinoiu); garlic a cure here, not a ward"
+    },
+    {
+      "id": "v_strigoi_nights",
+      "part": "village",
+      "title": "The strigoi's nights",
+      "text": "I asked which nights they fear most. St Andrew's eve in winter and St George's eve in spring, they said. Not this week.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "C3 GROUNDED (Murgoci p. 333)"
+    },
+    {
+      "id": "v_st_peter_wolves",
+      "part": "village",
+      "title": "St Peter's wolves",
+      "text": "They say the wolves are St Peter's dogs and eat only what the saint gives them. When they howl together they are praying to him.",
+      "when": {
+        "all": [
+          {
+            "event": "beast:wolves"
+          },
+          {
+            "flag": "met_headman"
+          }
+        ]
+      },
+      "sources": "C3 GROUNDED, MEDIUM (Pamfile 1910)"
+    },
+    {
+      "id": "v_who_is_prince",
+      "part": "village",
+      "title": "Who is prince now?",
+      "text": "The army has gone. If the talk at the well is true and Radu stays, the village asks who is prince now, and whom they owe.",
+      "when": {
+        "all": [
+          {
+            "date": "1462-06-23"
+          },
+          {
+            "flag": "met_headman"
+          },
+          {
+            "not": {
+              "flag": "gate_closed"
+            }
+          }
+        ]
+      },
+      "sources": "H7 P4; Radu rumour only (S1 s3.3)"
+    },
+    {
+      "id": "d_four",
+      "part": "dead",
+      "title": "Four in the field",
+      "text": "Four men lay where I woke. I did not bury them. I did not know yet that in this country the dead do not stay where they fall.",
+      "when": {
+        "start": true
+      },
+      "sources": "M4.7 Q2a PLACEHOLDER"
+    },
+    {
+      "id": "d_man_who_was",
+      "part": "dead",
+      "title": "A man who was a man",
+      "text": "Something walked at me out of the dark and I took it for a straggler. It had a dead man's face. It did not stop when I struck it, and it did not run.",
+      "when": {
+        "event": "risen_seen_untold"
+      },
+      "sources": "M4.7 s7; R1 s1 ATTESTED (the bodily revenant)"
+    },
+    {
+      "id": "d_strigoi",
+      "part": "dead",
+      "title": "The strigoi",
+      "text": "The priest calls them strigoi. He says it is the dead man himself who rises, his own body in the grave, and that he goes home first.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "R1 s1 ATTESTED (Murgoci 1926); 'goes home' is the priest's words, not built"
+    },
+    {
+      "id": "d_wont_do",
+      "part": "dead",
+      "title": "What the dead won't do",
+      "text": "Dogs run from the torch. Men run when enough of them fall. The dead do neither.",
+      "when": {
+        "all": [
+          {
+            "event": "beast:risen"
+          },
+          {
+            "any": [
+              {
+                "event": "beast:dogs"
+              },
+              {
+                "event": "beast:wolves"
+              },
+              {
+                "event": "beast:boar"
+              },
+              {
+                "event": "beast:opportunists"
+              }
+            ]
+          }
+        ]
+      },
+      "sources": "R2 s3 (signed design); N1 s3"
+    },
+    {
+      "id": "d_cut_down",
+      "part": "dead",
+      "title": "Cut down is not ended",
+      "text": "I cut one down and turned my back on it. When I looked again it was standing. A struck-down dead man must be staked before he gets up, and he does not wait long.",
+      "when": {
+        "event": "reraised"
+      },
+      "sources": "R2 s3; the window is a [DIAL]; only 'staked' (fire and beheading not built)"
+    },
+    {
+      "id": "d_lay_down",
+      "part": "dead",
+      "title": "They lay down at dawn",
+      "text": "In the first grey before dawn the dead broke off. The ones still standing lay down where they were, as if a word had been given.",
+      "when": {
+        "event": "dawn_breakoff"
+      },
+      "sources": "R2 s2A; the build's 02:45 break-off"
+    },
+    {
+      "id": "d_cockcrow",
+      "part": "dead",
+      "title": "They go at cockcrow",
+      "text": "The priest says the dead man's night ends at cockcrow. I have seen it: at the first grey they lie down where they stand.",
+      "when": {
+        "all": [
+          {
+            "event": "dawn_breakoff"
+          },
+          {
+            "flag": "heard_tale"
+          }
+        ]
+      },
+      "sources": "M11 s2 ATTESTED HIGH; C3 GROUNDED"
+    },
+    {
+      "id": "d_saturday",
+      "part": "dead",
+      "title": "Only on Saturday",
+      "text": "They say the dead come out every night but Saturday. On Saturday they lie in their graves.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "R1 s3 ATTESTED; C3 GROUNDED (Murgoci, Pamfile)"
+    },
+    {
+      "id": "d_stakes_again",
+      "part": "dead",
+      "title": "The stakes, again",
+      "text": "They stake a dead man to pin him in the earth. The Wallachian's stakes lifted twenty thousand into the air, with no grave and no rite. If the old women are right, no dead in the world are less at rest.",
+      "when": {
+        "all": [
+          {
+            "event": "staked"
+          },
+          {
+            "flag": "heard_tale"
+          }
+        ]
+      },
+      "sources": "R1 s2 ATTESTED plus his own thought, not a fact"
+    },
+    {
+      "id": "d_open_ground",
+      "part": "dead",
+      "title": "Open ground",
+      "text": "No one has told me this in so many words, but I have seen it. The bodies left open get up in the night; the staked ones do not. A shallow grave without the priest holds, mostly.",
+      "when": {
+        "all": [
+          {
+            "event": "rose"
+          },
+          {
+            "event": "staked"
+          }
+        ]
+      },
+      "sources": "R1 s2 ADAPTED: the game's own rule, never 'the villagers say'"
+    },
+    {
+      "id": "d_why_rise",
+      "part": "dead",
+      "title": "Why the dead rise",
+      "text": "They say these rise: a child born with the caul; one who died before baptism; one who lived wickedly or worked spells; a self-slain man; a body a cat has leapt over, or a shadow fallen across before burial. Even one who would not eat garlic.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "R1 s1 ATTESTED (Murgoci's catalogue)"
+    },
+    {
+      "id": "d_forty_days",
+      "part": "dead",
+      "title": "The forty days",
+      "text": "They say a soul does not go to its rest until forty days after death. Years later they dig the dead up to see whether the body has gone to earth.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "R1 s1 ATTESTED"
+    },
+    {
+      "id": "d_unbaptized",
+      "part": "dead",
+      "title": "The unbaptized dead",
+      "text": "The old woman says a child who dies before baptism becomes a moroi in its seventh year. I did not ask what her people think of my dead. I think I know.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "M11 ATTESTED HIGH; extending it to a Muslim's dead is left unsaid"
+    },
+    {
+      "id": "d_new_moon",
+      "part": "dead",
+      "title": "The new moon",
+      "text": "The old woman says their power is greatest at the new moon, and weakens as the moon grows old.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "C3 GROUNDED (Murgoci p. 333)"
+    },
+    {
+      "id": "d_living",
+      "part": "dead",
+      "title": "The living ones",
+      "text": "There are living strigoi too, the old women say, mostly women, whose souls leave their sleeping bodies to steal the milk and the power of cattle.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "R1 s1 ATTESTED; C3 GROUNDED"
+    },
+    {
+      "id": "d_signs",
+      "part": "dead",
+      "title": "Signs above the grave",
+      "text": "They say these are the signs of one: a house where they die one after another; the dead man seen at night; church services that do not stop it; a hole by the stone as wide as a serpent; a white horse that will not step over the grave.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "R1 s1 ATTESTED (Murgoci's tests); detection verbs are Phase 6"
+    },
+    {
+      "id": "d_opened",
+      "part": "dead",
+      "title": "The opened grave",
+      "text": "When they open such a grave, they say, the face is ruddy, it lies turned face-down, and there is blood at the mouth.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "R1 s1 ATTESTED"
+    },
+    {
+      "id": "d_moon_eaters",
+      "part": "dead",
+      "title": "The moon-eaters",
+      "text": "When the moon goes red they say the vârcolaci are eating it, and the whole village beats on fire-shovels to drive them off.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "R1 s4 ATTESTED; no claim he saw the 12 June eclipse"
+    },
+    {
+      "id": "d_stake",
+      "part": "dead",
+      "title": "The stake",
+      "text": "They drive a stake through the heart to pin the dead man in his grave. I have learned to whittle them. There are never enough.",
+      "when": {
+        "any": [
+          {
+            "event": "staked"
+          },
+          {
+            "event": "crafted:whittle-stake"
+          }
+        ]
+      },
+      "sources": "R1 s2-3 ATTESTED"
+    },
+    {
+      "id": "d_watched",
+      "part": "dead",
+      "title": "Watched while staking",
+      "text": "The villagers do not like to see it done. One of them watched me stake a man and would not look at me after.",
+      "when": {
+        "flag": "seen_staking"
+      },
+      "sources": "S1 s8.2 (design)"
+    },
+    {
+      "id": "d_hasty_grave",
+      "part": "dead",
+      "title": "The hasty grave",
+      "text": "A shallow grave dug without rites holds, mostly. The old women have a whole catalogue of precautions because 'mostly' is not enough.",
+      "when": {
+        "event": "graved"
+      },
+      "sources": "S1 s6.2 ADAPTED"
+    },
+    {
+      "id": "d_hearth",
+      "part": "dead",
+      "title": "At the priest's hearth",
+      "text": "The priest let me sit at his fire and told me what walks here. I know them now when I see them.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "M4.7 Q6a"
+    },
+    {
+      "id": "d_rite",
+      "part": "dead",
+      "title": "The rite promised",
+      "text": "The priest has said he will come at first light and say the words over the graves I have dug near his church.",
+      "when": {
+        "flag": "rite_granted"
+      },
+      "sources": "M4.7 Q4a; the built wording (map s6 decision 10 default)"
+    },
+    {
+      "id": "d_precautions",
+      "part": "dead",
+      "title": "Burial precautions",
+      "text": "Where a man is feared, they say, they bury him face-down, with garlic in his mouth, a needle in his heart, or the coffin bound with wild rose.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "R1 s3 ATTESTED; C3 GROUNDED (Marian)"
+    },
+    {
+      "id": "d_stories",
+      "part": "dead",
+      "title": "Stories until cockcrow",
+      "text": "On the worst nights, they say, it is best not to sleep at all, but to tell stories until the cock crows.",
+      "when": {
+        "flag": "heard_tale"
+      },
+      "sources": "C3 GROUNDED; R1 s3"
+    },
+    {
+      "id": "s_dogs",
+      "part": "survival",
+      "title": "Feral dogs",
+      "text": "Dogs whose people are dead or gone. They have learned the taste of the dead and are not afraid of a man. They come in threes and fours at dusk, wherever bodies lie.",
+      "when": {
+        "event": "beast:dogs"
+      },
+      "sources": "N1 s1 INFERENCE"
+    },
+    {
+      "id": "s_wolves",
+      "part": "survival",
+      "title": "Wolves",
+      "text": "Wolves keep off a man as a rule. Here they come deep in the night, drawn from the woods by the dead, and more of them each night.",
+      "when": {
+        "event": "beast:wolves"
+      },
+      "sources": "N1 GROUNDED / INFERENCE"
+    },
+    {
+      "id": "s_boar",
+      "part": "survival",
+      "title": "Wild boar",
+      "text": "A boar alone, or a sow with her young, at the field's edge around dawn and dusk. Cornered, they charge. I set my spear against the rush.",
+      "when": {
+        "event": "beast:boar"
+      },
+      "sources": "N1 GROUNDED; Brace"
+    },
+    {
+      "id": "s_opportunists",
+      "part": "survival",
+      "title": "Men on the road",
+      "text": "Not every shape on the road at night is a beast or a dead man. Some are men, with nothing left to lose, and they want what I carry.",
+      "when": {
+        "event": "beast:opportunists"
+      },
+      "sources": "S1 s9 opportunists; light-drawn in the build"
+    },
+    {
+      "id": "s_draws",
+      "part": "survival",
+      "title": "What draws the beasts",
+      "text": "Every body left in the open calls the dogs and wolves. So do noise and a bright flame. Bury the dead and keep quiet, and there are fewer eyes on the road.",
+      "when": {
+        "any": [
+          {
+            "event": "beast:dogs"
+          },
+          {
+            "event": "beast:wolves"
+          }
+        ]
+      },
+      "sources": "N1 s2; carrion weighting"
+    },
+    {
+      "id": "s_break",
+      "part": "survival",
+      "title": "Beasts break and run",
+      "text": "They want to live. Kill one, or show them fire, and the rest may break.",
+      "when": {
+        "event": "routed"
+      },
+      "sources": "N1 s3; morale"
+    },
+    {
+      "id": "s_peksimet",
+      "part": "survival",
+      "title": "Peksimet",
+      "text": "The last of the army's biscuit. Baked twice, it keeps a year, and it is all the Sultan will feed me now. I have {count:peksimet} left.",
+      "when": {
+        "start": true
+      },
+      "sources": "E2 s2 GROUNDED; the count ruled 24 Sep"
+    },
+    {
+      "id": "s_corps_ate",
+      "part": "survival",
+      "title": "What the corps ate",
+      "text": "In the corps there was bread every day, biscuit, mutton, rice and oil, and pilaf on Fridays. I do not expect to see it again.",
+      "when": {
+        "state": "hungry"
+      },
+      "sources": "E2 GROUNDED"
+    },
+    {
+      "id": "s_hunger",
+      "part": "survival",
+      "title": "Hunger",
+      "text": "An empty belly tires a man sooner. Past that, it starts to eat him.",
+      "when": {
+        "state": "hungry"
+      },
+      "sources": "M4.2 meters"
+    },
+    {
+      "id": "s_thirst",
+      "part": "survival",
+      "title": "Thirst and the heat",
+      "text": "In this heat I drink more by day than by night. A thirsty man frightens more easily.",
+      "when": {
+        "state": "thirsty"
+      },
+      "sources": "M4.2 meters"
+    },
+    {
+      "id": "s_well",
+      "part": "survival",
+      "title": "The well",
+      "text": "Water is not sold here. It is let, or it is not.",
+      "when": {
+        "rung": "water"
+      },
+      "sources": "E1 P2 PROPOSAL; the water rung"
+    },
+    {
+      "id": "s_bread",
+      "part": "survival",
+      "title": "Village bread",
+      "text": "Their bread is wheat or barley. An hour at the smith's bellows buys a meal.",
+      "when": {
+        "event": "node:smith"
+      },
+      "sources": "E2 GROUNDED (no maize)"
+    },
+    {
+      "id": "s_torch",
+      "part": "survival",
+      "title": "The torch",
+      "text": "Pitch and tow on a stick. It throws a small ring of light and makes the dark beyond it blacker. It lasts about an hour. It will not last the night.",
+      "when": {
+        "any": [
+          {
+            "state": "torch_lit"
+          },
+          {
+            "state": "carries_torch"
+          }
+        ]
+      },
+      "sources": "E6 GROUNDED; the game's 60 minutes, written 'about an hour'"
+    },
+    {
+      "id": "s_shield_or_light",
+      "part": "survival",
+      "title": "Shield or light",
+      "text": "One hand for the blade. The other holds the shield or the torch, never both.",
+      "when": {
+        "start": true
+      },
+      "sources": "E3 / R2; the loadouts"
+    },
+    {
+      "id": "s_beacon",
+      "part": "survival",
+      "title": "A flame is a beacon",
+      "text": "In the corps we showed no more light at night than we needed. A flame on a dark road calls everything that can see it, men most of all.",
+      "when": {
+        "all": [
+          {
+            "state": "torch_lit"
+          },
+          {
+            "state": "night"
+          }
+        ]
+      },
+      "sources": "E6 s4 GROUNDED; opportunists are light-drawn"
+    },
+    {
+      "id": "s_from_dark",
+      "part": "survival",
+      "title": "Striking from the dark",
+      "text": "Strike out of the dark into the light and the advantage is mine. Stand in the glare and it is theirs.",
+      "when": {
+        "all": [
+          {
+            "state": "fighting"
+          },
+          {
+            "state": "night"
+          }
+        ]
+      },
+      "sources": "R2 / E6; light advantage"
+    },
+    {
+      "id": "s_spent_torch",
+      "part": "survival",
+      "title": "A spent torch",
+      "text": "A burnt-out torch is ash and a stick. One put out early keeps what it had left.",
+      "when": {
+        "event": "torch_out"
+      },
+      "sources": "the game's burn-out rule"
+    },
+    {
+      "id": "s_hearth",
+      "part": "survival",
+      "title": "The hearth",
+      "text": "The hearth is the one big light, and a man can sit inside it. It is where the fear leaves him.",
+      "when": {
+        "rung": "hearth"
+      },
+      "sources": "E6; R2"
+    },
+    {
+      "id": "s_sabre",
+      "part": "survival",
+      "title": "The sabre",
+      "text": "My sabre is long and only a little curved, with a plain crossguard. It answers a blow when I am ready for one.",
+      "when": {
+        "start": true
+      },
+      "sources": "E3 MEDIUM; kilic"
+    },
+    {
+      "id": "s_arrows",
+      "part": "survival",
+      "title": "The last arrows",
+      "text": "No one here sells Ottoman arrows. Every one I lose is gone, unless I make more. I have {count:arrows} left.",
+      "when": {
+        "start": true
+      },
+      "sources": "E3 PRIMARY; E1 P2; the count ruled 24 Sep"
+    },
+    {
+      "id": "s_mail",
+      "part": "survival",
+      "title": "The mail coat",
+      "text": "Mail turns a cut well, a thrust less well, and a club hardly at all. Every blow it takes costs it rings.",
+      "when": {
+        "start": true
+      },
+      "sources": "E3; light-mail"
+    },
+    {
+      "id": "s_shield",
+      "part": "survival",
+      "title": "The shield",
+      "text": "The kalkan turns blows, but it splinters, and no one here can mend it. It leaves me no hand for a torch.",
+      "when": {
+        "state": "shield"
+      },
+      "sources": "E3; kalkan (the shield loadout)"
+    },
+    {
+      "id": "s_white_cap",
+      "part": "survival",
+      "title": "The white cap",
+      "text": "Anyone at fifty paces knows from the white cap what I am.",
+      "when": {
+        "any": [
+          {
+            "event": "node:well_wary"
+          },
+          {
+            "event": "node:smith_wary"
+          },
+          {
+            "event": "node:headman_first"
+          }
+        ]
+      },
+      "sources": "E3 HIGH"
+    },
+    {
+      "id": "s_gathering",
+      "part": "survival",
+      "title": "Gathering branches",
+      "text": "Half an hour bent in the scrub for an armful of branches, and the land near here has few left to give. A man bent over the brush is a man caught.",
+      "when": {
+        "event": "foraged"
+      },
+      "sources": "forage.go"
+    },
+    {
+      "id": "s_whittling",
+      "part": "survival",
+      "title": "Whittling a stake",
+      "text": "A branch and my knife make a stake in a third of an hour.",
+      "when": {
+        "start": true
+      },
+      "sources": "recipes.json whittle-stake (1 branch, knife, 20 min)"
+    },
+    {
+      "id": "s_fletching",
+      "part": "survival",
+      "title": "Fletching arrows",
+      "text": "For three arrows: a branch, three goose feathers from the well, three iron heads from the smith, and my knife, three quarters of an hour.",
+      "when": {
+        "any": [
+          {
+            "event": "node:well"
+          },
+          {
+            "event": "node:smith"
+          },
+          {
+            "event": "crafted:fletch-arrows"
+          }
+        ]
+      },
+      "sources": "recipes.json fletch-arrows (1 branch, 3 feathers, 3 heads, knife, 45 min)"
+    },
+    {
+      "id": "s_mending",
+      "part": "survival",
+      "title": "Mending mail",
+      "text": "With iron wire and a knife I can close the broken rings myself, in an hour, but only so far. A proper mend needs the smith's anvil and a morning.",
+      "when": {
+        "any": [
+          {
+            "event": "node:smith"
+          },
+          {
+            "event": "crafted:field-mend-mail"
+          }
+        ]
+      },
+      "sources": "recipes.json field-mend-mail (1 wire, knife, 60 min, cap 0.75); the time is invented (E3)"
+    },
+    {
+      "id": "s_no_coin",
+      "part": "survival",
+      "title": "No coin",
+      "text": "No one here trades in coin. What they want is work, or iron.",
+      "when": {
+        "flag": "met_headman"
+      },
+      "sources": "S1 s8.3 signed"
+    },
+    {
+      "id": "s_to_sell",
+      "part": "survival",
+      "title": "What I have to sell",
+      "text": "I have nothing small to trade. What I have is my back, my blade and a night at the ditch.",
+      "when": {
+        "flag": "met_headman"
+      },
+      "sources": "E1 P3"
+    },
+    {
+      "id": "s_day_worth",
+      "part": "survival",
+      "title": "What a day is worth",
+      "text": "The Sultan pays me two or three akçe a day. A peasant's day of work is worth one. The Vlachs call the akçe 'aspru'.",
+      "when": {
+        "event": "node:smith"
+      },
+      "sources": "E1 ATTESTED"
+    },
+    {
+      "id": "s_weariness",
+      "part": "survival",
+      "title": "Weariness",
+      "text": "A tired man cannot answer a blow. More tired still, he goes into every fight already shaking.",
+      "when": {
+        "state": "shaken"
+      },
+      "sources": "M4.2"
+    },
+    {
+      "id": "s_sleep",
+      "part": "survival",
+      "title": "Sleep",
+      "text": "Four hours in the byre by the church wall, boots on.",
+      "when": {
+        "flag": "slept_inside"
+      },
+      "sources": "dialogue headman_shelter"
+    },
+    {
+      "id": "s_neglect",
+      "part": "survival",
+      "title": "Neglect",
+      "text": "Go without food or water long enough and the body gives out, no enemy needed.",
+      "when": {
+        "any": [
+          {
+            "state": "starving"
+          },
+          {
+            "state": "parched"
+          }
+        ]
+      },
+      "sources": "meters"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "t_watch",
+      "title": "Stand the watch",
+      "repeats": true,
+      "open": {
+        "when": {
+          "flag": "watch_promised"
+        },
+        "text": "I told the headman I would stand at the ditch until cockcrow."
+      },
+      "done": {
+        "when": {
+          "event": "watch_kept"
+        },
+        "text": "I stood the watch. The village counts it."
+      },
+      "failed": {
+        "when": {
+          "event": "watch_broken"
+        },
+        "text": "I promised the watch and did not stand it. They count that too."
+      },
+      "sources": "map s4; dialogue headman_watch; watch.go dawnWatch"
+    },
+    {
+      "id": "t_ditch",
+      "title": "Mend the ditch",
+      "open": {
+        "when": {
+          "event": "node:headman_work"
+        },
+        "text": "The ditch fell in where the carts went over it. The headman wants it dug out and the stakes set again."
+      },
+      "done": {
+        "when": {
+          "flag": "ditch_mended"
+        },
+        "text": "I mended the ditch. 'You dig like a man who has dug graves.'"
+      },
+      "failed": {
+        "when": {
+          "flag": "gate_closed"
+        },
+        "text": "The gate is shut to me. Their ditch is theirs to mend now."
+      },
+      "sources": "map s4; dialogue headman_work, headman_thanks"
+    },
+    {
+      "id": "t_tale",
+      "title": "What walks at night",
+      "open": {
+        "when": {
+          "event": "node:priest"
+        },
+        "text": "The priest says I should know what walks in these nights."
+      },
+      "done": {
+        "when": {
+          "flag": "heard_tale"
+        },
+        "text": "I sat at the hearth and heard what walks."
+      },
+      "failed": {
+        "when": {
+          "flag": "gate_closed"
+        },
+        "text": "The gate is shut to me. The priest will not tell me now."
+      },
+      "sources": "map s4; dialogue priest, priest_tale"
+    },
+    {
+      "id": "t_rite",
+      "title": "The rite for my dead",
+      "open": {
+        "when": {
+          "rung": "rite"
+        },
+        "text": "The village trusts me as far as it ever will. The priest may close my dead the old way, if I ask it of him."
+      },
+      "done": {
+        "when": {
+          "flag": "rite_granted"
+        },
+        "text": "The priest will close any man I bury within sight of the church, at first light."
+      },
+      "failed": {
+        "when": {
+          "flag": "gate_closed"
+        },
+        "text": "The gate is shut to me. No priest will close my dead now."
+      },
+      "sources": "map s4; dialogue priest_rite; the built wording (s6 decision 10 default)"
+    },
+    {
+      "id": "t_water",
+      "title": "Water for the well woman",
+      "done": {
+        "when": {
+          "flag": "drew_water"
+        },
+        "text": "I drew water for the woman at the well before I drank."
+      },
+      "sources": "map s4; dialogue well"
+    },
+    {
+      "id": "t_edge",
+      "title": "The army's edge",
+      "done": {
+        "when": {
+          "flag": "showed_smith"
+        },
+        "text": "I showed the smith how the army forges an edge."
+      },
+      "sources": "map s4; dialogue smith"
+    }
+  ],
+  "day_page": {
+    "title": "{weekday}, {day} {month}",
+    "lines": [
+      "The {ramazan} day of Ramazan.",
+      "Their calendar: {feast}. They remember {saint}. Their fast: {fast}.",
+      "{event}"
+    ],
+    "data": "Sunset {sunset} - true dark {dark_start} to {dark_end}\nMoonrise {moonrise}, {lit} lit - moonless dark {moonless}",
+    "events": {
+      "1462-06-17": "The morning after the night attack.",
+      "1462-06-19": "Their Saturday.",
+      "1462-06-20": "Their Sunday. The priest is at his church.",
+      "1462-06-22": "The Sultan's army goes south.",
+      "1462-06-23": "Tonight is the eve of their St John."
+    },
+    "saint_words": {
+      "Mart. Manuel, Sabel and Ismael": "the martyrs Manuel, Sabel and Ismael",
+      "Mart. Leontius": "the martyr Leontius",
+      "Apostle Jude (Thaddeus), brother of the Lord": "the apostle Jude, brother of the Lord",
+      "Hieromart. Methodius of Patara": "Methodius of Patara, bishop and martyr",
+      "Mart. Julian of Tarsus": "the martyr Julian of Tarsus",
+      "Hieromart. Eusebius of Samosata": "Eusebius of Samosata, bishop and martyr",
+      "Mart. Agrippina of Rome": "the martyr Agrippina of Rome"
+    },
+    "fast_words": {
+      "oil and wine, no fish": "oil and wine, but no fish",
+      "xerophagy (no oil or wine)": "dry food only, no oil or wine",
+      "fish, wine, oil": "fish, wine and oil allowed",
+      "oil and wine": "oil and wine allowed"
+    }
+  }
+}

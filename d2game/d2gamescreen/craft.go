@@ -85,6 +85,7 @@ func (v *Game) Craft(id string) error {
 	// he is labouring while it does (T7: caught at the bench is caught).
 	v.spendMinutes(r.Minutes, 0, d2world.ActivityLabour)
 
+	v.note("crafted:" + r.ID)
 	v.saveKit()
 
 	return nil

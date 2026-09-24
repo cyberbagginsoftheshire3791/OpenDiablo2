@@ -152,8 +152,15 @@ func (v *Game) earnExperience() {
 		switch ev.Kind {
 		case "slain":
 			xp += v.talents.SlainXP(ev.Row)
+
+			v.note("slain")
+			if ev.Row != "" {
+				v.note("slain:" + ev.Row)
+			}
 		case "routed":
 			xp += v.talents.RoutedXP(ev.Row)
+
+			v.note("routed")
 		}
 	}
 
@@ -165,6 +172,7 @@ func (v *Game) earnExperience() {
 		if nightSurvived(v.lastStage, stage, day, v.dawnPaidDay, v.alive()) {
 			xp += v.talents.XP.Night
 			v.dawnPaidDay = day
+			v.note("night_survived")
 
 			// T4: a watch he promised the village, kept.
 			v.dawnWatch()

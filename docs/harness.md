@@ -32,7 +32,7 @@ that dies with a transport error prints the tail — the game's last words).
 Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
 hand.
 
-**The 40 playtest scripts.** That count, the harness version below and the
+**The 41 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -226,7 +226,9 @@ this doc fails until it agrees.
   call him the dead. At the hearth the priest tells the tale and grants the
   rite; the next night the risen man carries a bar and the hover names him
   "the dead", and at first light the priest closes the grave. `village` now
-  takes `rite_radius` and `seen_radius` as settable fields.
+  takes `rite_radius` and `seen_radius` as settable fields (and since J1,
+  24 Sep 2026, `watch_radius`, so a script can break a promised watch
+  wherever the night finds him).
 * `downed_test.go` — the thirty-third, M4.7 step 3b (23 Sep 2026): a risen man
   cut down lies Downed, the fight holds, and only a stake keeps him down.
   Three of Night 1's dead are staked by day so one door is left; at night he
@@ -327,6 +329,23 @@ this doc fails until it agrees.
   next morning with the hero kept alive; the night must come and go and the
   spawn tables must run (first run: 288 checks, 73 spawned, 0 failures, 69
   notices). Morning screenshot.
+* `journal_test.go` — the forty-first, J1 (24 Sep 2026): his journal, in place
+  of Diablo II's quest log. The start entries and the 17 June page are
+  written silently; Q opens the journal, holds the world (`world_held_by`
+  `journal`, and `strigoi_step_world` refuses it), shows the page counting
+  the eighteenth of Ramazan, and is modal (K forages nothing under it); the
+  arrows and a tab click turn the parts, and a part turned from is read.
+  Meeting the headman writes him, the ditch is an open task and then done,
+  the water rung writes its line, and Q in a talk opens nothing. A promised
+  watch is open; Night 1's dead rise beside him and the fight's sampler
+  writes "A man who was a man" (before the tale); Q in the fight is refused
+  and says why; first light writes "They lay down at dawn", the 18 June page
+  (the nineteenth) and fails the watch he never stood. Saved and read back,
+  nothing is lost or written twice, silently. The "journal" provider reports
+  what is written, the tasks, pages, events and unread counts; the ui
+  provider adds `journal_open`, `journal_view` (tabs and rows where drawn,
+  the text) and `journal_notice`. `strigoi_game_test.go`'s Q act now opens
+  the journal and never reads the quest log's art.
 * `strigoi_game_test.go` — the thirty-ninth: the game launched with NO switches
   builds the village, draws the hero from Strigoi's sheets, uses Strigoi's font
   set and string table, and a first hour reads no Diablo II tile, class-art,
@@ -378,10 +397,11 @@ WORLD_HELD · INTERNAL`. `CLOCK_FROZEN` (24 Sep 2026, harness 0.12.1) is
 moves it, and the stepper used to spin to its tick cap past the client's
 timeout before saying so. `WORLD_HELD` (harness 0.12.2) is the same refusal
 for the game's own holds, named by the ui provider's `world_held_by`
-(`Game.WorldHeldBy`): `escape_menu`, `talk`, `loadout`. `fight` (a paced
+(`Game.WorldHeldBy`): `escape_menu`, `talk`, `loadout`, and since J1 (24 Sep
+2026) `journal`. `fight` (a paced
 fight) is not refused -- it moves the clock a round at a time, and its open
-turn is `AWAITING_PLAYER`'s. Both are checked every pass; the menu, a talk and
-the loadout choice only begin from input, so in practice they are caught on
+turn is `AWAITING_PLAYER`'s. Both are checked every pass; the menu, a talk,
+the loadout choice and the journal only begin from input, so in practice they are caught on
 the first.
 `GAME_NOT_TICKING` (23 Sep 2026) also writes every goroutine's stack to
 `stall-tick<N>-<time>.txt` in the run directory -- once per stall, however many
@@ -492,7 +512,10 @@ commit its provider registers — `meters` did at M4.2, `spawns` at M4.3b,
 `combat` at M4.5 step 1.
 
 Registered today — **`clock`**, **`light`**, **`meters`**, **`pursuit`**,
-**`spawns`**, **`combat`** and **`ui`**, all while a game screen is live.
+**`spawns`**, **`combat`** and **`ui`**, all while a game screen is live -- and
+the systems the game screen owns and registers once the hero binds, among
+them **`journal`** (J1, 24 Sep 2026; read-only: what is written, the tasks,
+the pages, the events raised, unread counts, `open`).
 
 **`pursuit`** (M4.3a) reports the live chases and their dials; settable
 `arrive_within`, `release`, `repath_tiles`. **`strigoi_click` takes `hold_frames`** (c-2b, 19 Sep 2026), and the tool count
@@ -792,7 +815,8 @@ zero health stops draining and nothing else happens, which is correct and
 named rather than missing.
 
 **`ui`** — the game controls:
-`inventory_open`, `skilltree_open`, `hero_stats_open`, `quest_log_open`,
+`inventory_open`, `skilltree_open`, `hero_stats_open`, `quest_log_open` (Diablo
+II's; since J1 Q opens `journal_open` instead whenever a journal is bound),
 `party_open`, `help_open`, `escape_menu_open`, `skill_select_open`,
 `left_panel_open`, `right_panel_open`, `free_cam`, `clock` (the controls' own
 accumulated seconds — not the world clock), and since 23 Sep 2026
@@ -801,7 +825,7 @@ name -- character, inventory, skills, automap, message, quest, menu, party,
 and `open_close` -- each `{x, y, w, h, visible}` in screen pixels, so a script
 clicks where they are drawn), and since 24 Sep `world_held_by` (what holds the
 world, `Game.WorldHeldBy`: `""` while it runs, `escape_menu`, `loadout`,
-`talk`, `fight`; `"unknown"` if the game screen never attached --
+`talk`, `journal`, `fight`; `"unknown"` if the game screen never attached --
 `strigoi_step_world` refuses all but `""` and `fight` with `WORLD_HELD`).
 Read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`

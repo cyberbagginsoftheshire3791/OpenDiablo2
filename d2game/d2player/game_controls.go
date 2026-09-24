@@ -346,6 +346,9 @@ type GameControls struct {
 	// corpseHolder owns the dead (M4.7).
 	corpseHolder CorpseHolder
 
+	// journalHolder owns his journal (J1).
+	journalHolder JournalHolder
+
 	// squads is the owner the player commands (M4.4c-1): the click handler and
 	// the cycle key select through it, and the selection hit test reads its
 	// model entities. It is the same instance the game screen registered as the
@@ -380,7 +383,7 @@ type SkillResource struct {
 
 // OnKeyRepeat is called to handle repeated key presses
 func (g *GameControls) OnKeyRepeat(event d2interface.KeyEvent) bool {
-	if g.dead() || g.talking() {
+	if g.dead() || g.talking() || g.journalOpen() {
 		return true
 	}
 
@@ -427,6 +430,12 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 	// Death screen v0: a dead man has two keys, Enter and Escape, and nothing
 	// else reaches the game -- not a panel, not a verb.
 	if g.deathKey(event) {
+		return true
+	}
+
+	// J1: the open journal takes every key -- before the talk, the verbs and
+	// Escape (A3).
+	if g.journalKey(event) {
 		return true
 	}
 
@@ -496,7 +505,7 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 	case d2enum.ToggleCharacterPanel:
 		g.toggleHeroStatsPanel()
 	case d2enum.ToggleQuestLog:
-		g.toggleQuestLog()
+		g.questAction()
 	case d2enum.ToggleRunWalk:
 		g.hud.onToggleRunButton(false)
 	case d2enum.HoldRun:
@@ -520,6 +529,12 @@ func (g *GameControls) OnKeyDown(event d2interface.KeyEvent) bool {
 
 // OnKeyUp handles key release
 func (g *GameControls) OnKeyUp(event d2interface.KeyEvent) bool {
+	// J1 (review C6): a key let go under the open journal does nothing --
+	// releasing the run key would otherwise toggle run and walk.
+	if g.journalOpen() {
+		return true
+	}
+
 	gameEvent := g.keyMap.getGameEvent(event.Key())
 
 	if gameEvent == d2enum.HoldRun {
@@ -558,7 +573,7 @@ func truncateFloat64(n float64) float64 {
 
 // OnMouseButtonRepeat handles repeated mouse clicks
 func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
-	if g.dead() || g.talking() {
+	if g.dead() || g.talking() || g.journalOpen() {
 		return true
 	}
 
@@ -687,6 +702,16 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	mx, my := event.X(), event.Y()
 
 	if g.dead() {
+		return true
+	}
+
+	// J1: the open journal is modal -- a click on a tab or a row, and
+	// nothing reaches the world under it (A3).
+	if g.journalOpen() {
+		if event.Button() == d2enum.MouseButtonLeft {
+			g.journalClick(mx, my)
+		}
+
 		return true
 	}
 
@@ -1112,7 +1137,7 @@ func (g *GameControls) Load() {
 		inventoryToggle: g.inventoryAction,
 		skilltreeToggle: g.skillsAction,
 		menuToggle:      g.openEscMenu,
-		questToggle:     g.toggleQuestLog,
+		questToggle:     g.questAction,
 	}
 	g.hud.miniPanel.load(miniPanelActions)
 }
@@ -1123,6 +1148,7 @@ func (g *GameControls) Advance(elapsed float64) error {
 
 	g.mapRenderer.Advance(elapsed)
 	g.hud.Advance(elapsed)
+	g.hud.advanceJournal(elapsed)
 	g.inventory.Advance(elapsed)
 	g.questLog.Advance(elapsed)
 

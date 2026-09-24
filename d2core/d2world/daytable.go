@@ -43,6 +43,10 @@ func dayFor(year, month, day int) (DayEntry, bool) {
 	return DayEntry{}, false
 }
 
+// SliceDays is every row of the day table, in date order: the journal's day
+// pages read the whole slice, not only today (J1).
+func SliceDays() []DayEntry { return append([]DayEntry{}, sliceDayTable...) }
+
 // Today returns the day-table row for the clock's current Julian date. The
 // second result is false outside the slice; the HUD then omits the feast and
 // moon text rather than guessing.
