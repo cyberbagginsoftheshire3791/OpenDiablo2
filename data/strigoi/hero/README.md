@@ -23,6 +23,11 @@ as the creatures in `data/strigoi/creatures/`:
   figure's feet land on its position (the placeholder: 96×128 cells,
   `offset_x` −48, `offset_y` 8, feet 8 px above the cell's bottom centre).
 
+Height, optional: `"height": 90` -- how tall the figure stands in its cell,
+in pixels (feet to the top of the head). The overhead bar, the hover label
+and the click box measure by it; without it they use the whole cell. At most
+the cell's height.
+
 Play with a hero: `OpenDiablo2.exe -hero data/strigoi/hero/placeholder/hero.json`.
 
 **`placeholder/` is NOT the real art** — a stick figure in a long coat and a

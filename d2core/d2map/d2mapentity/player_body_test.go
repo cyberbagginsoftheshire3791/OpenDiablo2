@@ -1,6 +1,7 @@
 package d2mapentity
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -73,8 +74,8 @@ func TestAPNGHeroDrawsEveryMode(t *testing.T) {
 		}
 	}
 
-	if w, h := b.GetSize(); w != 96 || h != 128 {
-		t.Fatalf("frame %dx%d, want 96x128", w, h)
+	if w, h := b.GetSize(); w != 96 || h != 90 {
+		t.Fatalf("size %dx%d, want 96x90 (the cell's width, the manifest's height)", w, h)
 	}
 }
 
@@ -271,3 +272,78 @@ var errFake = fakeErr("refused")
 type fakeErr string
 
 func (e fakeErr) Error() string { return string(e) }
+
+// A hero's height is what the bar and label measure by, and it must fit its
+// cell.
+func TestHeroHeightFitsTheCell(t *testing.T) {
+	dir, err := os.MkdirTemp("", "hero")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	if err := os.MkdirAll(filepath.Join(dir, "h"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	write := func(name, extra string) {
+		manifest := `{"name":"x","animations":{"idle":"/data/strigoi/hero/placeholder/idle.png",` +
+			`"dead":"/data/strigoi/hero/placeholder/dead.png"}` + extra + `}`
+		if err := os.WriteFile(filepath.Join(dir, "h", name), []byte(manifest), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	write("tall.json", `,"height":129`)
+	write("below.json", `,"height":-1`)
+	write("fits.json", `,"height":100`)
+	write("none.json", ``)
+
+	asset, err := d2asset.NewAssetManager(d2util.LogLevelError)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, src := range []string{dir, filepath.Join("..", "..", "..")} {
+		if err := asset.AddSource(src, types.AssetSourceFileSystem); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f := &MapEntityFactory{asset: asset}
+
+	if _, err := f.loadHeroBody("/h/tall.json", "hth", 0); err == nil || !strings.Contains(err.Error(), "taller") {
+		t.Fatalf("a hero taller than his 128 px cell was accepted: %v", err)
+	}
+
+	if _, err := f.loadHeroBody("/h/below.json", "hth", 0); err == nil || !strings.Contains(err.Error(), "below zero") {
+		t.Fatalf("a hero of height -1 was accepted: %v", err)
+	}
+
+	// The height given is the height reported, on every sheet.
+	b, err := f.loadHeroBody("/h/fits.json", "hth", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, mode := range []d2enum.PlayerAnimationMode{d2enum.PlayerAnimationModeTownNeutral, d2enum.PlayerAnimationModeDead} {
+		if err := b.SetMode(mode, "hth"); err != nil {
+			t.Fatal(err)
+		}
+
+		if w, h := b.GetSize(); w != 96 || h != 100 {
+			t.Fatalf("%v: %dx%d, want 96x100", mode, w, h)
+		}
+	}
+
+	// No height: the whole cell, as before.
+	b, err = f.loadHeroBody("/h/none.json", "hth", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, h := b.GetSize(); h != 128 {
+		t.Fatalf("no height given: %d, want the 128 px cell", h)
+	}
+}

@@ -71,6 +71,12 @@ type heroManifest struct {
 	Name       string             `json:"name"`
 	Animations HeroArt            `json:"animations"`
 	FPS        map[string]float64 `json:"fps,omitempty"`
+
+	// Height is how tall the figure stands in its cell, in pixels: what the
+	// overhead bar, the hover label and the pick box measure by. Without it
+	// they use the whole cell, and a cell drawn with headroom floats the bar
+	// above the head. Optional; at most the cell's height.
+	Height int `json:"height,omitempty"`
 }
 
 // heroMotions are the HeroArt keys, in load order.
@@ -249,7 +255,36 @@ func (f *MapEntityFactory) loadHeroBody(p, weaponClass string, direction int) (*
 		}
 	}
 
-	return newPNGBody(sheets, lengths, weaponClass, direction)
+	body, err := newPNGBody(sheets, lengths, weaponClass, direction)
+	if err != nil {
+		return nil, err
+	}
+
+	if m.Height < 0 {
+		return nil, fmt.Errorf("hero manifest %s: height %d is below zero", p, m.Height)
+	}
+
+	// Every sheet's cell, not only the one he stands in: GetSize reports
+	// the height whatever sheet is playing.
+	for _, s := range []struct{ name, sheet string }{
+		{"idle", m.Animations.Idle}, {"walk", m.Animations.Walk}, {"run", m.Animations.Run},
+		{"attack", m.Animations.Attack}, {"hit", m.Animations.Hit}, {"block", m.Animations.Block},
+		{"death", m.Animations.Death}, {"dead", m.Animations.Dead},
+	} {
+		anim := sheets[s.name]
+		if anim == nil {
+			continue
+		}
+
+		if _, cellH := anim.GetCurrentFrameSize(); m.Height > cellH {
+			return nil, fmt.Errorf("hero manifest %s: height %d is taller than the %s sheet's %d px cell",
+				p, m.Height, s.name, cellH)
+		}
+	}
+
+	body.height = m.Height
+
+	return body, nil
 }
 
 // ---- the PNG body -------------------------------------------------------------------------
@@ -259,6 +294,7 @@ func (f *MapEntityFactory) loadHeroBody(p, weaponClass string, direction int) (*
 type pngBody struct {
 	sheets      map[string]d2interface.Animation
 	lengths     map[string]float64 // seconds to play each sheet once
+	height      int                // the figure's height in its cell (0: the cell's)
 	sheet       string             // which sheet is drawing
 	anim        d2interface.Animation
 	mode        string // the PlayerAnimationMode asked for, as the composite reports it
@@ -361,7 +397,17 @@ func (b *pngBody) GetDirection() int      { return b.direction }
 func (b *pngBody) GetPlayedCount() int    { return b.anim.GetPlayedCount() }
 func (b *pngBody) GetCurrentFrame() int   { return b.anim.GetCurrentFrame() }
 func (b *pngBody) GetFrameCount() int     { return b.anim.GetFrameCount() }
-func (b *pngBody) GetSize() (w, h int)    { return b.anim.GetCurrentFrameSize() }
+
+// GetSize is the frame's width and the figure's height (the manifest's
+// height, when it gives one; else the frame's).
+func (b *pngBody) GetSize() (w, h int) {
+	w, h = b.anim.GetCurrentFrameSize()
+	if b.height > 0 {
+		h = b.height
+	}
+
+	return w, h
+}
 
 func (b *pngBody) SetDirection(direction int) {
 	b.direction = direction

@@ -266,6 +266,9 @@ func main() {
 		// Quicker than the one-second default for the motions that should
 		// snap; the walk and idle keep it.
 		"fps": map[string]float64{"attack": 10, "hit": 10, "death": 8},
+		// The stick figure stands from its feet (y 120) to the cap's top
+		// (about y 31): the bar and label sit over the cap, not the cell.
+		"height": 90,
 	}, "", "  ")
 
 	if err := os.WriteFile(filepath.Join(dir, "hero.json"), append(hero, '\n'), 0o640); err != nil {
