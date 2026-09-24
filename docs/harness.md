@@ -685,7 +685,9 @@ them and will carry the fight past its own start.
 **`clock`** (M4.1, `d2core/d2world`): `world_minutes` since the epoch,
 `minute_of_day`, `time_of_day`, `date` + `year`/`month`/`day` in the Julian
 calendar, `weekday`, `day_index`, `stage` (dawn/day/dusk/night), `rate` (world
-minutes per simulated second — day and night differ), `moon`, `frozen`.
+minutes per simulated second — day and night differ), `max_rate` (the fastest
+rate at any stage; `strigoi_step_world` sizes its batches by it), `moon`,
+`frozen`.
 Settable: `frozen` (D7's hearth time-freeze; nothing but the harness sets it
 until houses exist) and `moon`. **The time itself is not settable** — the
 clock is stepped, never set (P3 §4.5), so `set_system_field clock.world_minutes`
@@ -904,8 +906,11 @@ session, actions), `harness_obs.go` (observation), `harness_providers.go`,
   settable meters are for.
 - **The measurement is taken against the clock's own elapsed minutes, not the
   hours the script asked for.** `strigoi_step_world` overshoots its target by
-  a fraction of a tick, so a script that assumes it got exactly four hours is
-  wrong by a hair every time. Read `world_minutes` before and after and divide.
+  up to its last batch (under 10 ticks at the fastest rate: 0.67 world minutes
+  at the default 1/60 s tick; before history item 117 a step
+  that crossed dawn overshot by up to half again, as its batches were sized at
+  the night's slower rate), so a script that assumes it got exactly four hours
+  is wrong by a hair every time. Read `world_minutes` before and after and divide.
   Measured, seed 1462, over 4.01 night hours: food 87.98, water 81.98, fatigue
   14.02 — each on its dial. The Reaction goes at 75 fatigue, Shaken at 90, and
   at 80 when thirsty. Neglect took 166 → 156 health over 2.54 starving,

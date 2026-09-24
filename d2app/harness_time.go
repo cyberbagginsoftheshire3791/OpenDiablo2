@@ -615,7 +615,20 @@ func (a *App) harnessStepWorldMinutes(worldMinutes float64) (*mcp.CallToolResult
 				"a frozen clock cannot be stepped in world minutes; release it with strigoi_set_system_field clock.frozen=false")
 		}
 
-		batch := int(remaining/(rate*dt)*fudge) + 1
+		// Sized at the clock's FASTEST rate, not the one in force: the rate
+		// is the stage's (the night runs at 2.5 world minutes a second, dawn
+		// and day at 4), and a batch sized at the night's rate that crossed
+		// dawn overshot the target by up to half again -- 60 minutes from
+		// 02:00 stepped 67 (history item 117). At the fastest rate a batch
+		// can only fall short, and the next pass covers the rest.
+		maxRate, ok := harnessClockField("max_rate")
+		if !ok || maxRate < rate {
+			return nil, out, harnessErr("INTERNAL",
+				fmt.Sprintf("the clock reports max_rate %v (ok=%v) against rate %v", maxRate, ok, rate),
+				"the clock provider's max_rate was renamed or is wrong -- step_world sizes its batches by it")
+		}
+
+		batch := int(remaining/(maxRate*dt)*fudge) + 1
 		if batch < minBatch {
 			batch = minBatch
 		}

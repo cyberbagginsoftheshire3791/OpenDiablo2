@@ -263,4 +263,11 @@ func TestClockHarnessStateIsEncodable(t *testing.T) {
 	if math.Abs(state["world_minutes"].(float64)-c.WorldMinutes()) > 1e-9 {
 		t.Fatal("world_minutes disagrees with the clock")
 	}
+
+	// max_rate is the fastest the clock ever runs, whatever the stage: the
+	// harness's step_world sizes its batches by it so a batch never
+	// overshoots across dawn (history item 117).
+	if got, ok := state["max_rate"].(float64); !ok || got != 4 {
+		t.Fatalf("max_rate %v, want the day's 4 (the night runs at 2.5)", state["max_rate"])
+	}
 }

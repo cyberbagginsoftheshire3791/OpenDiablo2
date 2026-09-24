@@ -464,7 +464,12 @@ func TestSquadsOnScreen(t *testing.T) {
 	//
 	// Clear the field first: night one has been running for hours by now and
 	// the tables have had their own chances to fire, so the baseline has to be
-	// a known one. Despawning takes those groups' bars with them.
+	// a known one. Despawning takes those groups' bars with them. The chance
+	// goes to 0 first: the night's own checks keep rolling, and one that fell
+	// in the frames below put a fresh group on the cleared field (history item
+	// 117, when step_world's batching changed and moved the checks by a tick).
+	s.call("strigoi_set_system_field", map[string]any{"system": "spawns", "field": "chance", "value": 0})
+
 	for _, g := range asList(spawnsState(s)["group_list"]) {
 		if row, ok := g.(map[string]any); ok {
 			s.call("strigoi_set_system_field", map[string]any{
@@ -476,7 +481,7 @@ func TestSquadsOnScreen(t *testing.T) {
 	s.call("strigoi_step", map[string]any{"frames": 5})
 
 	if got := num(spawnsState(s), "groups"); got != 0 {
-		t.Fatalf("act 7: the field did not clear -- %.0f group(s) still live", got)
+		t.Fatalf("act 7: the field did not clear -- %.0f group(s) still live: %v", got, spawnsState(s)["group_list"])
 	}
 
 	enemyBefore := enemyBars(t, uiState(s))

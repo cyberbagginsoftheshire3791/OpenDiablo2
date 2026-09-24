@@ -261,12 +261,7 @@ func (v *Game) applyTalk(e d2dialogue.Effects) {
 // out). stance, when set, is what he is doing for those minutes; it is put
 // back afterwards unless the fight has since set its own.
 func (v *Game) spendMinutes(minutes, rest float64, stance d2world.Activity) {
-	if minutes <= 0 || v.worldClock == nil {
-		return
-	}
-
-	rate := v.worldClock.Rate()
-	if rate <= 0 {
+	if minutes <= 0 || v.worldClock == nil || v.worldClock.Rate() <= 0 {
 		return
 	}
 
@@ -297,7 +292,17 @@ func (v *Game) spendMinutes(minutes, rest float64, stance d2world.Activity) {
 	}
 
 	for left := minutes; left > 0 && v.alive() && !v.inFight(); {
+		// The rate is read each step: it is the stage's (the night runs
+		// slower), so a sleep or a labour that crosses dawn or nightfall pays
+		// each step at the rate in force when it is taken -- exactly step
+		// minutes -- not at the rate it began with (history item 117).
 		step := math.Min(spendStepMinutes, left)
+
+		rate := v.worldClock.Rate()
+		if rate <= 0 {
+			return
+		}
+
 		v.advanceWorld(step / rate)
 		left -= step
 

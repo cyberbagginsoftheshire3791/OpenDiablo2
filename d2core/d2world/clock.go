@@ -351,6 +351,7 @@ func (c *Clock) HarnessState() map[string]interface{} {
 		"day_index":     c.DayIndex(),
 		"stage":         c.Stage().String(),
 		"rate":          c.Rate(),
+		"max_rate":      math.Max(c.dials.DayRate, c.dials.NightRate),
 		"moon":          c.Moon(),
 		"frozen":        c.frozen,
 	}

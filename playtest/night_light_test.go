@@ -156,9 +156,25 @@ func TestNightAndLight(t *testing.T) {
 		t.Fatalf("after the torch dies: radius %v, want the floor %v", got, floorRadius)
 	}
 
-	// 10. the day comes back, and with it the light. Step to the next noon.
+	// 10. the day comes back, and with it the light. Step to 02:00, then an
+	//     hour across dawn -- the night runs at 2.5 world minutes a second and
+	//     dawn at 4, and the stepper once sized its batches at the rate it
+	//     started with and stepped 67 minutes for 60 (history item 117) --
+	//     then on to the next noon.
 	clock = sub(s.call("strigoi_get_system_state", map[string]any{"system": "clock"}), "state")
-	toNoon := (24*60 - num(clock, "minute_of_day")) + 12*60
+	s.call("strigoi_step_world", map[string]any{"world_minutes": math.Mod(2*60-num(clock, "minute_of_day")+24*60, 24*60)})
+
+	acrossDawn := s.call("strigoi_step_world", map[string]any{"world_minutes": 60})
+	if got := mustNum(t, acrossDawn, "world_minutes"); got < 60-1e-9 || got > 61 {
+		t.Fatalf("an hour stepped across dawn gave %.2f world minutes, want 60 (within a minute)", got)
+	}
+
+	clock = sub(s.call("strigoi_get_system_state", map[string]any{"system": "clock"}), "state")
+	if str(clock, "stage") != "dawn" {
+		t.Fatalf("an hour from 02:00: stage %s at %s, want dawn", str(clock, "stage"), str(clock, "time_of_day"))
+	}
+
+	toNoon := 12*60 - num(clock, "minute_of_day")
 	s.call("strigoi_step_world", map[string]any{"world_minutes": toNoon})
 
 	clock = sub(s.call("strigoi_get_system_state", map[string]any{"system": "clock"}), "state")
