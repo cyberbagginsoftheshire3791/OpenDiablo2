@@ -36,7 +36,17 @@ func TestTalk(t *testing.T) {
 	headman := villager(t, s, "Warriv")
 
 	// --- 1: the role ------------------------------------------------------------
+	// On the default game's village he stands off the first screen: walk
+	// toward him until he is on it (act 2 walks away again anyway).
 	hx, hy := screenOf(t, s, headman)
+	if hx < 0 || hy < 0 || hx >= 800 || hy >= 600 {
+		walkNear(t, s, headman)
+		hx, hy = screenOf(t, s, headman)
+
+		if hx < 0 || hy < 0 || hx >= 800 || hy >= 600 {
+			t.Fatalf("act 1: walked to the headman and he is still off the screen at %d,%d", hx, hy)
+		}
+	}
 	s.call("strigoi_move_cursor", map[string]any{"x": hx, "y": hy})
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
@@ -231,8 +241,11 @@ func villager(t *testing.T, s *session, name string) string {
 			continue
 		}
 
+		// By his label ("Warriv" under -classic) or by who stands in for him
+		// (name_key): on the default game Strigoi's words label him "The
+		// headman", and the stand-in is still Warriv.
 		e := s.call("strigoi_get_entity", map[string]any{"handle": str(row, "handle")})
-		if str(sub(e, "state"), "name") == name {
+		if st := sub(e, "state"); str(st, "name") == name || str(st, "name_key") == name {
 			return str(row, "handle")
 		}
 	}

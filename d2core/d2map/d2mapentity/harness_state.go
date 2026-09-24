@@ -65,6 +65,7 @@ func (p *Player) HarnessState() map[string]interface{} {
 func (v *NPC) HarnessState() map[string]interface{} {
 	state := map[string]interface{}{
 		"name":        v.name,
+		"name_key":    v.NameKey(), // who stands in for him ("Warriv"), whatever his label says
 		"has_paths":   v.HasPaths,
 		"paths":       len(v.Paths),
 		"path_index":  v.path,

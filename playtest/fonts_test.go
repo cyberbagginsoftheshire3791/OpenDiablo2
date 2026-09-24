@@ -44,7 +44,7 @@ func TestStrigoiFonts(t *testing.T) {
 		s.call("strigoi_screenshot", map[string]any{"name": name + "-kit"})
 	}
 
-	shipped := start(t)
+	shipped := startWith(t, "-classic") // the control is Diablo II's, whatever the sweep
 	day(shipped, "fonts-d2")
 
 	if mpq, fontSet := fontFiles(shipped); mpq == 0 || fontSet != "" {

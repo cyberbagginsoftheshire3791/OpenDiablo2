@@ -27,7 +27,7 @@ import (
 // exactly the assertion that missed this, and re-running it on 1462 would have
 // gone on passing forever.
 func TestWorldgenAlwaysGeneratesAWorld(t *testing.T) {
-	s := start(t)
+	s := startWith(t, "-classic") // the generator's own proof: Diablo II's generated world
 
 	s.call("strigoi_pause", map[string]any{})
 

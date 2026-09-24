@@ -68,7 +68,7 @@ func TestStrigoiWords(t *testing.T) {
 		}
 	}
 
-	shipped := start(t)
+	shipped := startWith(t, "-classic") // the control is Diablo II's, whatever the sweep
 	day(shipped, "words-d2", "Warriv")
 
 	if a := census(shipped); lng(a) == 0 || str(a, "string_set") != "" {

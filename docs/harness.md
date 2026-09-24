@@ -295,6 +295,33 @@ this doc fails until it agrees.
   and `-classic` is Diablo II's generated Act 1, class art, fonts and words. The
   launcher's `start(t)` passes **`-classic`**, so every script written against
   Act 1 keeps its world; `startWith(t, flags...)` passes only what it is given.
+* **The default-game SWEEP: `STRIGOI_PLAYTEST_GAME=default`** makes `start(t)`
+  launch the default game instead, so the whole suite can be run to see which
+  of the loop's proofs hold on the village. Its failures are findings, not a red
+  suite. Scripts whose subject IS Diablo II's game (the generator, the `-map`
+  path, the fonts and words controls) ask for `-classic` explicitly. Villagers
+  are found by label OR by `name_key` (the stand-in's monstats NameString,
+  reported in the npc state), so "Warriv" finds "The headman". First sweep,
+  23 Sep 2026: 46 of 61 passed as they stood. Of the 15 failures:
+  - Five had Diablo II's game as their subject and now ask for it: the
+    authored-map, fonts, words, Strigoi-game and worldgen scripts.
+  - Five looked for a villager by his Diablo II label: census, craft, hearth,
+    watch, and talk (which also walks toward the headman first).
+  - One, `TestTheDownedDead`, found two real bugs, both now fixed:
+    - A tactical walk dropped a straight leg longer than the move, so a
+      body more than three tiles off across open ground never moved.
+      `truncateRoute` now cuts the leg short, and short of a tile another
+      body holds.
+    - A Downed man on the next tile, 1.503 tiles off, could be struck but not
+      staked. The fight's stake now uses `Combat.Adjacent`.
+  - Four are geometry:
+    - Sight: the palisade and houses hide him, so `TestTheDeadWalk` act 3 and
+      `TestSpawns` act 7 never see a notice at the distances their Act 1
+      scripts chose.
+    - `TestSurvive`: a pack at a forced chance arrives the frame he wakes.
+    - `TestSquadsOnScreen`: the bar's crimson fill (luma 77) against the
+      placeholder village ground (luma about 100) differs by 24, under the D5
+      floor of 30. This is an art note for the ground tiles.
 * `strigoi_night_test.go` — the fortieth: a first day and night on the DEFAULT game
   (the village): talk with "The headman", a forage, then world time until the
   next morning with the hero kept alive; the night must come and go and the

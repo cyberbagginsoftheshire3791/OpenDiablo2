@@ -49,7 +49,9 @@ func TestAuthoredMap(t *testing.T) {
 
 	m := parseShippedVillage(t)
 
-	s := start(t)
+	// -classic, explicitly: the -map path is proved against Diablo II's words
+	// (the stand-ins' labels) and falls back to its generated Act 1.
+	s := startWith(t, "-classic")
 
 	// --- act 1: the village is built --------------------------------------------
 	// Asked without the leading slash, as the -map flag would be typed.

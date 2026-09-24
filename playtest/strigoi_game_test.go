@@ -24,7 +24,7 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		return num(m, "mpq")
 	}
 
-	classic := start(t) // -classic
+	classic := startWith(t, "-classic") // explicitly: STRIGOI_PLAYTEST_GAME=default changes start
 	classic.call("strigoi_pause", map[string]any{})
 	classic.call("strigoi_start_game", map[string]any{
 		"hero_name": "Classic", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,

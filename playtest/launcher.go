@@ -56,6 +56,14 @@ func start(t *testing.T) *session {
 	// generated Act 1, class art, fonts and words, and keep them so their
 	// record stays comparable. Strigoi's own defaults have their own script
 	// (strigoi_game_test.go), launched with no switches at all.
+	//
+	// STRIGOI_PLAYTEST_GAME=default runs every script on the default game
+	// instead: a SWEEP, to see which of the loop's proofs hold where the
+	// game now lives. Its failures are findings, not a red suite.
+	if os.Getenv("STRIGOI_PLAYTEST_GAME") == "default" {
+		return startWith(t)
+	}
+
 	return startWith(t, "-classic")
 }
 
