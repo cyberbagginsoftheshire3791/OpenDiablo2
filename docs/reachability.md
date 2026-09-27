@@ -219,13 +219,17 @@ deferral written only in a commit message is a deferral that has been lost.
   reading the number cannot tell.
 
 * **The world save's restore seams have no caller yet (M4.6 B1, 26 Sep
-  2026).** `d2rand.Restore`, `d2rand.RestoreReader` and
-  `MapEngine.RestoreRand` put a stream back where a saved game left it; B1
-  built and unit-tested them and nothing in the game calls them. They live
-  outside `d2core/d2world` and `d2game/d2gamescreen`, so the register cannot
-  hold them. **M4.6 B2 and B4** (the snapshots and the load) are their
-  callers; until then a green restore test is evidence about the stream, not
-  about the game.
+  2026).** `d2rand.Restore`, `d2rand.RestoreReader`, `d2rand.Stream.Restore`
+  (added by B1's review, 27 Sep: the one call that replaces a system's rand
+  and its count together) and `MapEngine.RestoreRand` put a stream back where
+  a saved game left it; B1 built and unit-tested them and nothing in the game
+  calls them. They live outside `d2core/d2world` and `d2game/d2gamescreen`, so
+  the register cannot hold them. **M4.6 B2 and B4** (the snapshots and the
+  load) are their callers; until then a green restore test is evidence about
+  the stream, not about the game. `MapEntityFactory.WorldRand` and
+  `StampFactory.WorldRand` (same review) are read-only views of the RNG the
+  engine hands each factory, called only by `d2mapengine`'s restore test; they
+  are how that test sees the hand-off, and nothing in the game needs them.
 
 The rule for this section: **if the gate cannot express it, write it here on
 the day you defer it, and name the milestone that picks it up.**

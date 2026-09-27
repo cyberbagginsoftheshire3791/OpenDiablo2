@@ -2,7 +2,6 @@ package d2world
 
 import (
 	"fmt"
-	"math/rand"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 )
@@ -55,8 +54,7 @@ type Rising struct {
 	corpses *Corpses
 	band    func() int
 	stage   func() Stage
-	rng     *rand.Rand
-	rngSrc  *d2rand.Source // rng's counted source (M4.6 B1)
+	rng     *d2rand.Stream // counted (M4.6 B1)
 
 	pressure  float64
 	lastBand  int
@@ -97,15 +95,12 @@ func (r *Rising) SetFirstLight(fn func()) { r.firstLight = fn }
 // band a session opens in is not rolled for a second time (T3's lesson: seed
 // the last-seen value from the clock, never from zero).
 func NewRising(corpses *Corpses, band func() int, stage func() Stage, seed int64, dials RisingDials) *Rising {
-	rng, rngSrc := d2rand.New(seed)
-
 	r := &Rising{
 		dials:    dials,
 		corpses:  corpses,
 		band:     band,
 		stage:    stage,
-		rng:      rng,
-		rngSrc:   rngSrc,
+		rng:      d2rand.NewStream(seed),
 		pressure: dials.Pressure,
 	}
 
@@ -287,7 +282,7 @@ func (r *Rising) HarnessState() map[string]interface{} {
 		// is its partner, the stage that decides whether the next frame is a
 		// dawn (a resume that got it wrong would pay, or skip, a dawn).
 		"last_stage": r.lastStage.String(),
-		"rng":        r.rngSrc.Report(),
+		"rng":        r.rng.Report(),
 	}
 }
 

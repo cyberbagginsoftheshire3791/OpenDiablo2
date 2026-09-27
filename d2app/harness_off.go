@@ -30,6 +30,8 @@ func (a *App) harnessNoteScreen(_ string) {}
 
 func (a *App) harnessNoteGame(_ *d2client.GameClient, _ *d2gamescreen.Game) {}
 
+func (a *App) harnessGameBegins() {}
+
 func (a *App) harnessInputService(real d2interface.InputService) d2interface.InputService {
 	return real
 }

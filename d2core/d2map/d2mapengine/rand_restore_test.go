@@ -1,10 +1,14 @@
 package d2mapengine
 
 import (
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapstamp"
 )
 
 // worldDraws takes k values from the engine's world RNG, through the two
@@ -72,4 +76,58 @@ func TestRandSeedFollowsTheStream(t *testing.T) {
 	fresh.seed = 55
 	assert.Equal(t, int64(55), fresh.RandSeed(), "before first use it is the seed first use will take")
 	assert.Zero(t, fresh.RandDraws())
+}
+
+// withFactories is an engine as the game builds one: with the entity and stamp
+// factories it hands the world RNG to. Zero-value factories are enough; the
+// hand-off is a field.
+func withFactories() *MapEngine {
+	return &MapEngine{
+		MapEntityFactory: &d2mapentity.MapEntityFactory{},
+		StampFactory:     &d2mapstamp.StampFactory{},
+	}
+}
+
+// stdlibAfter is the value a PLAIN stdlib stream at seed hands out after draws
+// values -- the reference, so a counter and a restore that are wrong together
+// cannot agree with themselves.
+func stdlibAfter(seed int64, draws uint64) int64 {
+	r := rand.New(rand.NewSource(seed)) // nolint:gosec // test
+
+	for i := uint64(0); i < draws; i++ {
+		r.Int63()
+	}
+
+	return r.Int63()
+}
+
+// M4.6 B1 review, C4: after a restore, the FACTORIES draw from the restored
+// stream. Every entity the game builds rolls its behaviour seed and equipment
+// through the entity factory's copy of the world RNG, and every stamp through
+// the stamp factory's; an engine that swapped its own stream but left theirs
+// would resume a world whose next wolf rolls from the old, uncounted stream.
+func TestRestoreRandHandsTheStreamToTheFactories(t *testing.T) {
+	a := withFactories()
+	a.SetSeed(1462)
+	worldDraws(a, 37)
+
+	seed, draws := a.RandSeed(), a.RandDraws()
+
+	b := withFactories()
+	b.SetSeed(99) // the factories now hold the 99 stream
+	require.Same(t, b.Rand(), b.MapEntityFactory.WorldRand())
+
+	b.RestoreRand(seed, draws)
+
+	require.Same(t, b.Rand(), b.MapEntityFactory.WorldRand(), "the entity factory draws the restored stream")
+	require.Same(t, b.Rand(), b.StampFactory.WorldRand(), "and so does the stamp factory")
+
+	// A draw through the factory is the uninterrupted stream's next value, and
+	// the engine counts it.
+	assert.Equal(t, stdlibAfter(seed, draws), b.MapEntityFactory.WorldRand().Int63(),
+		"the entity factory's next roll is the one the saved world would have made")
+	assert.Equal(t, draws+1, b.RandDraws(), "a factory's draw is a counted world draw")
+
+	assert.Equal(t, stdlibAfter(seed, draws+1), b.StampFactory.WorldRand().Int63())
+	assert.Equal(t, draws+2, b.RandDraws())
 }

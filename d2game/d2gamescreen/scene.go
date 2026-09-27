@@ -2,6 +2,8 @@ package d2gamescreen
 
 import (
 	"sort"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 )
 
 // The "scene" harness provider (M4.6 B1): the game screen's own bookkeeping,
@@ -26,7 +28,11 @@ import (
 //   - bodies: every monster's health, by entity id -- the only place a wolf's
 //     wounds live (npc_body.go).
 //   - world_rng: the map engine's world RNG, seed and draws. The draws are the
-//     digest's rng part, which is a hash; this is the same number, readable.
+//     digest's rng part, which is a hash; this is the same number, readable
+//     -- the same counter read twice, so agreeing with the digest proves the
+//     two read one number, not that the number is right. The count is checked
+//     against the stream itself in d2mapengine's unit tests, and across two
+//     launches by TestTownWalkDeterministic.
 //
 // Read-only, like "progress": a settable field here would be a harness path
 // into the screen's bookkeeping that the game never takes.
@@ -64,12 +70,12 @@ func (p sceneProvider) HarnessState() map[string]interface{} {
 		})
 	}
 
-	world := map[string]interface{}{"seed": int64(0), "draws": uint64(0)}
+	// The same shape as every stream's report: present, seed, seed_str (the
+	// exact seed -- a wall-clock one does not survive a float64 reader) and
+	// draws; absent when there is no engine, never a zero that reads as one.
+	world := d2rand.Absent()
 	if v.gameClient != nil && v.gameClient.MapEngine != nil {
-		world = map[string]interface{}{
-			"seed":  v.gameClient.MapEngine.RandSeed(),
-			"draws": v.gameClient.MapEngine.RandDraws(),
-		}
+		world = d2rand.ReportOf(v.gameClient.MapEngine.RandSeed(), v.gameClient.MapEngine.RandDraws())
 	}
 
 	return map[string]interface{}{

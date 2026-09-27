@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"math/rand"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -382,5 +384,146 @@ func TestReaderRestores(t *testing.T) {
 				t.Fatalf("seed %d: restoring one byte short of %d still matched", seed, b)
 			}
 		}
+	}
+}
+
+// --- M4.6 B1 review ------------------------------------------------------------
+
+// C8: a Stream holds the rand and its source as one value, so a Restore
+// replaces both. Judged against the plain stdlib stream, never against another
+// counted one: after a Restore, what the stream draws AND what it reports must
+// both be the uninterrupted stream's.
+func TestStreamRestoreReplacesRandAndSourceTogether(t *testing.T) {
+	for _, seed := range testSeeds {
+		st := NewStream(99)
+		next(st.Rand, 5) // a different stream, drawn from, before the restore
+
+		const at = 40
+
+		st.Restore(seed, at)
+
+		if st.Seeded() != seed || st.Draws() != at {
+			t.Fatalf("seed %d: restored at %d, reports seed %d draws %d", seed, at, st.Seeded(), st.Draws())
+		}
+
+		// Through the promoted methods, as a system draws.
+		got := []uint64{uint64(st.Int63()), st.Uint64(), uint64(st.Int63())}
+		if want := reference(seed, at, 3); !equal(got, want) {
+			t.Fatalf("seed %d: restore then draw = %v, the uninterrupted stream = %v", seed, got, want)
+		}
+
+		if r := st.Report(); r["draws"] != uint64(at+3) || r["seed"] != seed {
+			t.Fatalf("seed %d: three draws after a restore at %d must report %d: %v", seed, at, at+3, r)
+		}
+	}
+}
+
+// C8: a stream that does not exist says so. A zero seed and a zero count read
+// like a real stream at its start, which a save would write and a load would
+// restore.
+func TestAbsentStreamReportsAbsent(t *testing.T) {
+	var (
+		st  *Stream
+		src *Source
+	)
+
+	for name, r := range map[string]map[string]interface{}{"stream": st.Report(), "source": src.Report()} {
+		if r["present"] != false {
+			t.Fatalf("a nil %s must report present=false: %v", name, r)
+		}
+
+		for _, k := range []string{"seed", "seed_str", "draws"} {
+			if _, ok := r[k]; ok {
+				t.Fatalf("a nil %s must report no %s at all, got %v", name, k, r)
+			}
+		}
+	}
+
+	if r := NewStream(1462).Report(); r["present"] != true || r["seed_str"] != "1462" {
+		t.Fatalf("a live stream is present and names its seed: %v", r)
+	}
+}
+
+// C9: a wall-clock seed (UnixNano) is past 2^53, where float64 stops holding
+// every integer. A reader that decodes JSON into float64 -- every playtest's
+// mustNum -- reads a DIFFERENT seed from "seed"; seed_str is exact.
+func TestSeedStrSurvivesAFloat64Decoder(t *testing.T) {
+	for _, seed := range []int64{1<<53 + 1, 1790000000123456789, -(1<<62 + 3)} {
+		b, err := json.Marshal(NewStream(seed).Report())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var asFloat map[string]interface{}
+		if err := json.Unmarshal(b, &asFloat); err != nil {
+			t.Fatal(err)
+		}
+
+		// The control: this seed does not survive float64, so the test is
+		// about something.
+		if f := asFloat["seed"].(float64); int64(f) == seed {
+			t.Fatalf("seed %d survived float64 -- pick one that does not", seed)
+		}
+
+		str, _ := asFloat["seed_str"].(string)
+		if got, err := strconv.ParseInt(str, 10, 64); err != nil || got != seed {
+			t.Fatalf("seed_str %q must parse back to %d exactly (%v)", str, seed, err)
+		}
+
+		// And the world file's way: decode numbers as int64.
+		dec := json.NewDecoder(bytes.NewReader(b))
+		dec.UseNumber()
+
+		var asNumber map[string]interface{}
+		if err := dec.Decode(&asNumber); err != nil {
+			t.Fatal(err)
+		}
+
+		if got, err := asNumber["seed"].(json.Number).Int64(); err != nil || got != seed {
+			t.Fatalf("decoded with UseNumber, seed must be %d exactly, got %d (%v)", seed, got, err)
+		}
+	}
+}
+
+// notSource64 is a rand.Source that is not a rand.Source64.
+type notSource64 struct{ rand.Source }
+
+// C7: a source that is not a Source64 stops the game. The old fallback -- wrap
+// it in a *rand.Rand -- builds each Uint64 from two Int63 calls, so every
+// counted draw would advance the generator two steps and Restore, which skips
+// one per draw, would restore the wrong stream.
+func TestANonSource64Panics(t *testing.T) {
+	if got := source64(rand.NewSource(1462)); got == nil { // nolint:gosec // test
+		t.Fatal("a stdlib source must pass")
+	}
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("a source that is not a Source64 must panic, not be wrapped")
+		}
+
+		if msg, _ := r.(string); !strings.Contains(msg, "Source64") {
+			t.Fatalf("the panic must say why: %v", r)
+		}
+	}()
+
+	source64(notSource64{rand.NewSource(1462)}) // nolint:gosec // test
+}
+
+// C7, the reason: the fallback wrapped a source that is NOT a Source64 in a
+// *rand.Rand, and such a *rand.Rand builds each Uint64 from two Int63 steps, so
+// a count of one per draw is wrong through it. If this ever fails the stdlib
+// changed and source64's panic should be re-read.
+func TestARandAsASourceTakesTwoStepsPerUint64(t *testing.T) {
+	wrapped := rand.New(notSource64{rand.NewSource(1462)}) // nolint:gosec // test
+	wrapped.Uint64()
+
+	plain := rand.New(rand.NewSource(1462)) // nolint:gosec // test
+	plain.Int63()
+	plain.Int63()
+
+	if wrapped.Int63() != plain.Int63() {
+		t.Fatal("rand.Rand.Uint64 no longer takes two Int63 steps; re-check source64's reasoning")
 	}
 }

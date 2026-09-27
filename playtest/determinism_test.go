@@ -13,6 +13,12 @@ type determinismRun struct {
 	direction      [2]float64
 	digests        [3]string // A: after load · B: after the walk · C: after 600 idle ticks
 	parts          [3]map[string]any
+
+	// M4.6 B1 review (C2): the world stream's count and the uuid stream's
+	// bytes at each checkpoint, as numbers -- the digest compares them only as
+	// hashes, and a mismatch there names the part, not the count.
+	worldDraws [3]float64
+	uuidBytes  [3]float64
 }
 
 // TestTownWalkDeterministic is the M3.3 proof (P3 spec §3.3, §5.2): the same
@@ -39,6 +45,24 @@ func TestTownWalkDeterministic(t *testing.T) {
 	}
 
 	names := [3]string{"A after load", "B after walk", "C after 600 idle ticks"}
+
+	// M4.6 B1 review (C2): the world stream's count, compared across the two
+	// launches as a NUMBER at each checkpoint. Independent of act 6c's check,
+	// which reads the count twice in one process: here two processes that took
+	// the same steps must have drawn the same number of values, and a count
+	// that moves with anything but the simulation (a wall-clock consumer, a
+	// presentation draw on the world stream) reads differently. The count's
+	// agreement with the stream itself is d2mapengine's unit tests' job.
+	for i := 0; i < 3; i++ {
+		if first.worldDraws[i] != second.worldDraws[i] || first.uuidBytes[i] != second.uuidBytes[i] {
+			t.Fatalf("checkpoint %s: world draws %.0f vs %.0f, uuid bytes %.0f vs %.0f -- the same steps drew "+
+				"different amounts", names[i], first.worldDraws[i], second.worldDraws[i],
+				first.uuidBytes[i], second.uuidBytes[i])
+		}
+
+		t.Logf("checkpoint %s: %.0f world draw(s), %.0f uuid byte(s) in both launches",
+			names[i], first.worldDraws[i], first.uuidBytes[i])
+	}
 
 	for i := 0; i < 3; i++ {
 		if first.digests[i] == second.digests[i] {
@@ -83,7 +107,22 @@ func deterministicRun(t *testing.T, seed int64) determinismRun {
 
 	run.spawnX, run.spawnY = pair(game, "spawn_tile")
 
+	// M4.6 B1 review (B1): the fresh-launch path, pinned. start_game seeded
+	// the uuid stream FOR THIS GAME, from byte 0; the provider says so, and
+	// says the seed exactly. ("load last save" does neither -- it continues
+	// the dead game's stream -- and that is B4b's, docs/m4.6-world-save-notes.md.)
+	uuidState := sub(s.call("strigoi_get_system_state", map[string]any{"system": "uuid"}), "state")
+	if !flag(t, uuidState, "seeded_for_this_game") || mustNum(t, uuidState, "bytes_at_game_start") != 0 ||
+		mustStr(t, uuidState, "seed_str") != "1462" {
+		t.Fatalf("a seeded start_game seeds the uuid stream for its own game from byte 0: %v", uuidState)
+	}
+
+	if b := mustNum(t, uuidState, "bytes"); b <= 0 || math.Mod(b, 16) != 0 {
+		t.Fatalf("the new game's ids are whole v4 uuids read from the stream (16 bytes each): %.0f byte(s)", b)
+	}
+
 	run.digests[0], run.parts[0] = digest(s)
+	run.worldDraws[0], run.uuidBytes[0] = streamCounts(t, s)
 
 	// The walk: adaptive direction (the seeded map is fixed, so both runs
 	// choose the same one — asserted by the caller), stepped, never wall-clock.
@@ -113,17 +152,40 @@ func deterministicRun(t *testing.T, seed int64) determinismRun {
 	}
 
 	run.digests[1], run.parts[1] = digest(s)
+	run.worldDraws[1], run.uuidBytes[1] = streamCounts(t, s)
 
 	// Idle under NPC behaviour: 600 stepped ticks exercise the per-entity
 	// RNGs (idle repetitions, waypoint walking).
 	s.call("strigoi_step", map[string]any{"frames": 600})
 
 	run.digests[2], run.parts[2] = digest(s)
+	run.worldDraws[2], run.uuidBytes[2] = streamCounts(t, s)
+
+	if run.worldDraws[0] <= 0 || run.worldDraws[1] < run.worldDraws[0] || run.worldDraws[2] < run.worldDraws[1] {
+		t.Fatalf("the world stream is drawn by the map and never runs backwards: %v", run.worldDraws)
+	}
 
 	// This process's game is done; the second launch needs the port.
 	s.stop()
 
 	return run
+}
+
+// streamCounts reads the world stream's draw count (scene.world_rng, seeded
+// 1462) and the uuid stream's byte count.
+func streamCounts(t *testing.T, s *session) (worldDraws, uuidBytes float64) {
+	t.Helper()
+
+	scene := sub(s.call("strigoi_get_system_state", map[string]any{"system": "scene"}), "state")
+	world := saveBlock(t, scene, "world_rng")
+
+	if mustStr(t, world, "seed_str") != "1462" {
+		t.Fatalf("the world stream is seeded 1462: %v", world)
+	}
+
+	uuidState := sub(s.call("strigoi_get_system_state", map[string]any{"system": "uuid"}), "state")
+
+	return mustNum(t, world, "draws"), mustNum(t, uuidState, "bytes")
 }
 
 func digest(s *session) (string, map[string]any) {

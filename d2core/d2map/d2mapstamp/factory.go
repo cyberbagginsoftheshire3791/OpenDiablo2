@@ -46,6 +46,12 @@ func (f *StampFactory) SetRand(r *rand.Rand) {
 	f.rng = r
 }
 
+// WorldRand is the RNG SetRand handed the factory (nil before), read-only
+// (M4.6 B1 review, C4: the restore test's view of the hand-off).
+func (f *StampFactory) WorldRand() *rand.Rand {
+	return f.rng
+}
+
 func (f *StampFactory) randFloat64() float64 {
 	if f.rng != nil {
 		return f.rng.Float64()

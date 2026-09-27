@@ -80,7 +80,7 @@ func TestSpawnsReportWhereTheirStreamStands(t *testing.T) {
 	assert.Greater(t, draws, uint64(state["rolls"].(int)),
 		"a forced arrival draws its pack size on top of one roll per eligible row")
 
-	assertStreamAt(t, s.rng, 1462, draws)
+	assertStreamAt(t, s.rng.Rand, 1462, draws)
 }
 
 // At a chance of zero nothing spawns, so the only draws are the rolls -- one
@@ -159,7 +159,7 @@ func TestCombatReportsWhereItsStreamStands(t *testing.T) {
 	require.Positive(t, draws, "four rounds of blows must have rolled")
 	assert.Equal(t, state["encounters"].(int)+1, state["next_id"].(int), "the next encounter's number")
 
-	assertStreamAt(t, f.c.rng, 1462, draws)
+	assertStreamAt(t, f.c.rng.Rand, 1462, draws)
 }
 
 func TestRisingReportsItsStreamAndLastStage(t *testing.T) {
@@ -189,7 +189,7 @@ func TestRisingReportsItsStreamAndLastStage(t *testing.T) {
 	assert.Equal(t, StageNight.String(), state["last_stage"])
 	assert.Equal(t, 0, state["band"], "band is the band last rolled")
 
-	assertStreamAt(t, r.rng, 1462, draws)
+	assertStreamAt(t, r.rng.Rand, 1462, draws)
 }
 
 func TestLightReportsNextID(t *testing.T) {
@@ -263,4 +263,134 @@ func TestCorpsesReportTheirMapsAndDownedAt(t *testing.T) {
 
 	_, err := json.Marshal(state)
 	require.NoError(t, err)
+}
+
+// groupReport finds one group's block in a spawns report by id.
+func groupReport(t *testing.T, state map[string]interface{}, id string) map[string]interface{} {
+	t.Helper()
+
+	for _, g := range state["group_list"].([]map[string]interface{}) {
+		if g["group"] == id {
+			return g
+		}
+	}
+
+	t.Fatalf("no group %q in the report", id)
+
+	return nil
+}
+
+// M4.6 B1 review, B2: a group reports every member it was born with, by id,
+// and a death does not take one off the list. Combat's withdraw unwatches the
+// dead (so his notice row goes) but never shortens g.members, and the save must
+// carry the pack as the game holds it. C14 rides along: born_where is a copy.
+func TestSpawnsReportEveryMemberEvenTheDead(t *testing.T) {
+	s, clock, notice, _, _ := newTestSpawns(t)
+
+	advanceClockToStage(t, clock, StageNight)
+	require.NoError(t, s.HarnessSet("chance", 100.0))
+
+	for i := 0; i < 6 && s.Groups() == 0; i++ {
+		s.Advance(s.dials.CheckMinutes)
+	}
+
+	require.Positive(t, s.Groups(), "a certainty at night must place a group")
+
+	gid := s.HarnessState()["group_list"].([]map[string]interface{})[0]["group"].(string)
+
+	// The test's answer comes from the group itself, not from the report.
+	want := make([]string, 0, len(s.groups[gid].members))
+	for _, m := range s.groups[gid].members {
+		want = append(want, m.WatcherID())
+	}
+
+	require.NotEmpty(t, want)
+
+	g := groupReport(t, s.HarnessState(), gid)
+	assert.Equal(t, want, g["member_ids"], "every member, in the order placed")
+	assert.Len(t, g["notice"], len(want), "all alive: one notice row each")
+
+	// What Combat.withdraw does to a member that dies.
+	notice.Unwatch(want[0])
+
+	g = groupReport(t, s.HarnessState(), gid)
+	assert.Equal(t, want, g["member_ids"], "the dead member is still a member of his pack")
+	assert.Equal(t, len(want), g["members"])
+
+	rows := g["notice"].([]map[string]interface{})
+	assert.Len(t, rows, len(want)-1, "but his notice row is gone")
+
+	for _, row := range rows {
+		assert.NotEqual(t, want[0], row["watcher"])
+	}
+
+	// Copies: a reader can move neither a member nor a birthplace.
+	g["member_ids"].([]string)[0] = "intruder"
+	assert.Equal(t, want[0], s.groups[gid].members[0].WatcherID())
+	assert.Equal(t, want, groupReport(t, s.HarnessState(), gid)["member_ids"])
+
+	born := g["born_where"].([][2]float64)
+	require.NotEmpty(t, born)
+
+	first := born[0]
+	born[0] = [2]float64{-1, -1}
+	assert.Equal(t, first, groupReport(t, s.HarnessState(), gid)["born_where"].([][2]float64)[0],
+		"born_where is a copy")
+
+	_, err := json.Marshal(s.HarnessState())
+	require.NoError(t, err)
+}
+
+// fakeDeployer places squad models with made-up ids.
+type fakeDeployer struct{ n int }
+
+func (d *fakeDeployer) Deploy(_, _ float64) (id string, maxHealth int, ok bool) {
+	d.n++
+
+	return "m:" + itoa(d.n), 50, true
+}
+
+func (d *fakeDeployer) Recall(string) bool { return true }
+
+// M4.6 B1 review, C5: the squads report the number the next squad will take,
+// which recalling a squad does not give back.
+func TestSquadsReportNextSquadID(t *testing.T) {
+	clock := NewClock(DefaultClockDials())
+	t.Cleanup(clock.Close)
+
+	sq := NewSquads(clock, DefaultMeterDials(), &fakeDeployer{})
+	t.Cleanup(sq.Close)
+
+	assert.Equal(t, 2, sq.HarnessState()["next_squad_id"], "s:1 is born with the owner")
+
+	require.NoError(t, sq.HarnessSet("squad_add", map[string]interface{}{}))
+	assert.Equal(t, 3, sq.HarnessState()["next_squad_id"], "s:2 spent 2")
+
+	require.NoError(t, sq.HarnessSet("squad_remove", "s:2"))
+	assert.Equal(t, 3, sq.HarnessState()["next_squad_id"], "recalling s:2 does not give its number back")
+
+	require.NoError(t, sq.HarnessSet("squad_add", map[string]interface{}{}))
+	assert.Equal(t, 4, sq.HarnessState()["next_squad_id"])
+
+	ids := []string{}
+	for _, row := range sq.HarnessState()["squads"].([]map[string]interface{}) {
+		ids = append(ids, row["squad"].(string))
+	}
+
+	assert.Equal(t, []string{"s:1", "s:3"}, ids, "the new squad took the reported number")
+}
+
+// M4.6 B1 review, C8: a provider built with no stream reports the stream as
+// absent, never as a real-looking stream at draw 0 of seed 0.
+func TestAbsentStreamReportsAbsent(t *testing.T) {
+	s := &Spawns{}
+	block := s.HarnessState()["rng"].(map[string]interface{})
+
+	assert.Equal(t, false, block["present"])
+	assert.NotContains(t, block, "seed")
+	assert.NotContains(t, block, "draws")
+
+	live, _, _, _, _ := newTestSpawns(t)
+	assert.Equal(t, true, live.HarnessState()["rng"].(map[string]interface{})["present"])
+	assert.Equal(t, "1462", live.HarnessState()["rng"].(map[string]interface{})["seed_str"])
 }

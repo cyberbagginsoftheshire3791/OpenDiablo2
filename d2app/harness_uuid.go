@@ -3,6 +3,7 @@
 package d2app
 
 import (
+	"strconv"
 	"sync"
 
 	"github.com/google/uuid"
@@ -23,23 +24,46 @@ import (
 //
 // It is PROCESS state, not game state: the reader outlives a game, and a
 // second seeded start_game replaces it. The provider is registered once, the
-// first time a start_game seeds or unseeds the stream, and lives with the
-// process.
+// first time a start_game seeds or unseeds the stream or a game begins, and
+// lives with the process.
+//
+// ONLY start_game RESEEDS IT (M4.6 B1 review, B1). Every other way into a
+// game -- the death screen's "load last save" (App.ReloadGame, which ends in
+// ToCreateGame), a menu's new game -- inherits the stream exactly where the
+// last game left it: a seeded process continues from the dead game's byte
+// count, and the new game's player id (the connection's uuid) and every
+// entity id come from there, not from the start of the seed. Such a game is
+// deterministic for one script in one process and matches no fresh launch.
+// The provider says which kind of game this is: seeded_for_this_game is true
+// only when start_game seeded the stream for the game now running, and
+// bytes_at_game_start is where the stream stood when that game began (0 for a
+// fresh seed). Restoring the stream on a load is burst B4b's
+// (docs/m4.6-world-save-notes.md).
 
 // nolint:gochecknoglobals // the uuid package's reader is process-global too
 var harnessUUID struct {
 	mu   sync.Mutex
 	r    *d2rand.Reader
 	once sync.Once
+
+	games      uint64 // games this process has begun (ToCreateGame calls)
+	seededFor  uint64 // the game start_game last seeded the stream for; 0 = none
+	startBytes uint64 // the stream's byte count when the current game began
+}
+
+func harnessRegisterUUID() {
+	harnessUUID.once.Do(func() { d2harness.Register(harnessUUIDProvider{}) })
 }
 
 // harnessSeedUUID seeds the uuid stream (seed != 0) or hands it back to
-// crypto/rand (seed == 0).
+// crypto/rand (seed == 0), for the game start_game is about to begin.
 func harnessSeedUUID(seed int64) {
-	harnessUUID.once.Do(func() { d2harness.Register(harnessUUIDProvider{}) })
+	harnessRegisterUUID()
 
 	harnessUUID.mu.Lock()
 	defer harnessUUID.mu.Unlock()
+
+	harnessUUID.seededFor = harnessUUID.games + 1 // ToCreateGame follows
 
 	if seed == 0 {
 		harnessUUID.r = nil
@@ -54,6 +78,25 @@ func harnessSeedUUID(seed int64) {
 	uuid.SetRand(harnessUUID.r)
 }
 
+// harnessUUIDGameBegins marks a new game, before it draws a single id.
+func harnessUUIDGameBegins() {
+	harnessRegisterUUID()
+
+	harnessUUID.mu.Lock()
+	defer harnessUUID.mu.Unlock()
+
+	harnessUUID.games++
+	harnessUUID.startBytes = 0
+
+	if harnessUUID.r != nil {
+		harnessUUID.startBytes = harnessUUID.r.Bytes()
+	}
+}
+
+// harnessGameBegins is ToCreateGame's first line in a harness build: every
+// game, whichever way it was entered, is counted before it draws an id.
+func (a *App) harnessGameBegins() { harnessUUIDGameBegins() }
+
 // harnessUUIDProvider reports where the uuid stream stands.
 type harnessUUIDProvider struct{}
 
@@ -62,18 +105,33 @@ func (harnessUUIDProvider) HarnessName() string { return "uuid" }
 func (harnessUUIDProvider) HarnessState() map[string]interface{} {
 	harnessUUID.mu.Lock()
 	r := harnessUUID.r
+	games, seededFor, startBytes := harnessUUID.games, harnessUUID.seededFor, harnessUUID.startBytes
 	harnessUUID.mu.Unlock()
 
+	state := map[string]interface{}{
+		// Which game this is, and whether start_game seeded the stream FOR it.
+		// A reload's game is games = seeded_game + 1 and not seeded for.
+		"games":                games,
+		"seeded_game":          seededFor,
+		"seeded_for_this_game": r != nil && games > 0 && seededFor == games,
+		"bytes_at_game_start":  startBytes,
+	}
+
 	if r == nil {
-		return map[string]interface{}{"seeded": false, "seed": int64(0), "bytes": uint64(0), "uuids": uint64(0)}
+		state["seeded"], state["seed"], state["seed_str"] = false, int64(0), "0"
+		state["bytes"], state["uuids"] = uint64(0), uint64(0)
+
+		return state
 	}
 
 	bytes := r.Bytes()
+	seed := r.Seeded()
 
-	return map[string]interface{}{
-		"seeded": true,
-		"seed":   r.Seeded(),
-		"bytes":  bytes,
-		"uuids":  bytes / 16, // a v4 uuid reads 16 bytes
-	}
+	state["seeded"] = true
+	state["seed"] = seed
+	state["seed_str"] = strconv.FormatInt(seed, 10) // exact past 2^53 (d2rand.ReportOf)
+	state["bytes"] = bytes
+	state["uuids"] = bytes / 16 // a v4 uuid reads 16 bytes
+
+	return state
 }

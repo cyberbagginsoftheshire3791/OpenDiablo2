@@ -32,8 +32,10 @@
 package d2rand
 
 import (
+	"fmt"
 	"io"
 	"math/rand"
+	"strconv"
 	"sync"
 )
 
@@ -114,26 +116,118 @@ func (s *Source) Seeded() int64 { return s.seed }
 func (s *Source) Draws() uint64 { return s.draws }
 
 // Report is the stream's position in the shape every harness provider uses:
-// {"seed": .., "draws": ..}. A nil source reports nothing drawn from seed 0,
-// so a provider built without a stream still encodes.
+// {"present": true, "seed": .., "seed_str": "..", "draws": ..}. A nil source
+// reports {"present": false} and NO seed or draws -- never a zero that reads
+// like a stream at draw 0 of seed 0, which a save would write and a load
+// would restore as if it were real.
 func (s *Source) Report() map[string]interface{} {
 	if s == nil {
-		return map[string]interface{}{"seed": int64(0), "draws": uint64(0)}
+		return Absent()
 	}
 
-	return map[string]interface{}{"seed": s.seed, "draws": s.draws}
+	return ReportOf(s.seed, s.draws)
+}
+
+// ReportOf is the report of a stream at (seed, draws), for a stream whose
+// position is read some other way (the map engine's RandSeed/RandDraws).
+//
+// THE SEED IS ALSO WRITTEN AS A DECIMAL STRING, seed_str, and that is the one
+// a reader of JSON must use. A wall-clock seed (UnixNano, ~1.8e18) is far past
+// 2^53, where float64 stops holding every integer; the playtests decode JSON
+// into float64, so "seed" read that way is a DIFFERENT seed, and a stream
+// restored from it is a different stream from its first draw. seed_str
+// survives any decoder. The world file (M4.6) decodes seeds as int64.
+func ReportOf(seed int64, draws uint64) map[string]interface{} {
+	return map[string]interface{}{
+		"present":  true,
+		"seed":     seed,
+		"seed_str": strconv.FormatInt(seed, 10),
+		"draws":    draws,
+	}
+}
+
+// Absent is the report of a stream that does not exist.
+func Absent() map[string]interface{} {
+	return map[string]interface{}{"present": false}
 }
 
 func newSource64(seed int64) rand.Source64 {
-	src, ok := rand.NewSource(seed).(rand.Source64) // nolint:gosec // gameplay RNG, seeded for reproducibility
+	return source64(rand.NewSource(seed)) // nolint:gosec // gameplay RNG, seeded for reproducibility
+}
+
+// source64 insists that src is a Source64, and PANICS if it is not.
+//
+// rand.NewSource's result implements Source64 in every supported Go. The
+// fallback the map engine's wrapper carried -- wrap it in a *rand.Rand, which
+// is a Source64 -- would have broken the count silently: a *rand.Rand used as
+// a source builds its Uint64 from TWO Int63 calls, so every counted draw
+// would advance the generator two steps while Restore skips one, and a
+// restored stream would be wrong from its first value. A stdlib that stopped
+// returning a Source64 must stop the game, not skew it.
+func source64(src rand.Source) rand.Source64 {
+	s64, ok := src.(rand.Source64)
 	if !ok {
-		// rand.NewSource's result implements Source64 in every supported Go;
-		// this fallback only defends against a future stdlib change (the map
-		// engine's wrapper carried the same one).
-		src = rand.New(rand.NewSource(seed)) // nolint:gosec // as above
+		panic(fmt.Sprintf("d2rand: %T is not a rand.Source64; a counted stream cannot be restored from it", src))
 	}
 
-	return src
+	return s64
+}
+
+// Stream is a counted stream held as ONE value: the *rand.Rand a system
+// draws from and the Source under it (M4.6 B1 review, C8).
+//
+// A system that kept the two in separate fields had to replace both on a
+// restore, and a restore that replaced one would leave the other describing a
+// stream nothing draws from: a report of (seed, draws) for a source no roll
+// uses, or rolls from a rand whose count no report reads. Restore replaces
+// them together inside the one value every holder points at.
+//
+// The *rand.Rand is embedded, so a system draws exactly as it did
+// (rng.Float64(), rng.Intn(n), rng.Shuffle(..)). HOLD THE *Stream, NEVER ITS
+// Rand: a *rand.Rand taken out of it keeps drawing from the old source after
+// a Restore, and no report counts those draws.
+//
+// Not safe for concurrent use, like the *rand.Rand it holds.
+type Stream struct {
+	*rand.Rand
+	src *Source
+}
+
+// NewStream returns a counted stream seeded with seed, at draw 0.
+func NewStream(seed int64) *Stream {
+	st := &Stream{}
+	st.use(NewSource(seed))
+
+	return st
+}
+
+// Restore puts the stream where a saved game left it: seeded with seed and
+// advanced past its first draws values (see the package func Restore). The
+// rand and its source are replaced together.
+func (st *Stream) Restore(seed int64, draws uint64) {
+	st.use(Restore(seed, draws))
+}
+
+func (st *Stream) use(src *Source) {
+	st.src = src
+	st.Rand = rand.New(src) // nolint:gosec // gameplay RNG, seeded for reproducibility
+}
+
+// Seeded is the seed the stream was last seeded or restored with.
+func (st *Stream) Seeded() int64 { return st.src.Seeded() }
+
+// Draws is how many values have been drawn since then (counting the ones a
+// Restore skipped).
+func (st *Stream) Draws() uint64 { return st.src.Draws() }
+
+// Report is the stream's position (Source.Report); a nil stream reports that
+// it is absent.
+func (st *Stream) Report() map[string]interface{} {
+	if st == nil {
+		return Absent()
+	}
+
+	return st.src.Report()
 }
 
 // Reader is a seeded byte stream -- an io.Reader over a *rand.Rand's Read --

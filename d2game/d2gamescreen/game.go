@@ -366,11 +366,58 @@ func CreateGame(
 
 	game.escapeMenu.OnLoad()
 
-	if err := inputManager.BindHandler(game.escapeMenu); err != nil {
+	return game.bindOrRelease(inputManager)
+}
+
+// bindOrRelease is CreateGame's last step, and its only failure after the
+// world is built. A failure there used to return with every provider the
+// construction registered still registered -- corpses, rising and scene here,
+// and the clock, light, spawns, pursuit, meters and combat in their
+// constructors -- and with no screen to unload them, they stayed for the life
+// of the process (M4.6 B1 review, C10). So it releases the world first.
+func (v *Game) bindOrRelease(inputManager d2interface.InputManager) (*Game, error) {
+	if err := inputManager.BindHandler(v.escapeMenu); err != nil {
+		v.releaseWorld()
+
 		return nil, errors.New("failed to add gameplay screen as event handler")
 	}
 
-	return game, nil
+	return v, nil
+}
+
+// releaseWorld unregisters the providers CreateGame registered and closes the
+// world systems it built, which unregister their own. OnUnload calls it, and
+// so does CreateGame's failure path. Nil-safe: every Close is guarded and an
+// Unregister of a provider never registered is a no-op.
+func (v *Game) releaseWorld() {
+	d2harness.Unregister(v.corpses)
+	d2harness.Unregister(v.rising)
+	d2harness.Unregister(sceneProvider{v}) // M4.6 B1
+
+	// The world's systems die with it too (M4.1).
+	if v.worldClock != nil {
+		v.worldClock.Close()
+	}
+
+	if v.light != nil {
+		v.light.Close()
+	}
+
+	if v.spawns != nil {
+		v.spawns.Close()
+	}
+
+	if v.pursuit != nil {
+		v.pursuit.Close()
+	}
+
+	if v.squads != nil {
+		v.squads.Close() // the registered "meters" provider; s:1's meters does not register
+	}
+
+	if v.combat != nil {
+		v.combat.Close()
+	}
 }
 
 // Game represents the Gameplay screen
@@ -571,34 +618,11 @@ func (v *Game) OnUnload() error {
 	d2harness.Unregister(progressProvider{v})
 	d2harness.Unregister(villageProvider{v})
 	d2harness.Unregister(journalProvider{v}) // B11
-	d2harness.Unregister(v.corpses)
-	d2harness.Unregister(v.rising)
-	d2harness.Unregister(sceneProvider{v}) // M4.6 B1
 
-	// The world's systems die with it too (M4.1).
-	if v.worldClock != nil {
-		v.worldClock.Close()
-	}
-
-	if v.light != nil {
-		v.light.Close()
-	}
-
-	if v.spawns != nil {
-		v.spawns.Close()
-	}
-
-	if v.pursuit != nil {
-		v.pursuit.Close()
-	}
-
-	if v.squads != nil {
-		v.squads.Close() // the registered "meters" provider; s:1's meters does not register
-	}
-
-	if v.combat != nil {
-		v.combat.Close()
-	}
+	// Before anything below can fail and return early: an OnUnload that
+	// stopped at an unbind error must not leave this screen's providers to
+	// shadow the next game's (M4.6 B1 review, C10).
+	v.releaseWorld()
 
 	// The bodies go with the screen: they are keyed by entity ids that mean
 	// nothing on the next map.

@@ -571,6 +571,11 @@ func (s *Squads) HarnessState() map[string]interface{} {
 	state["squad_count"] = len(s.squads)
 	state["selected"] = s.selected
 
+	// M4.6 B1 review (C5): the number the next squad will take. The save
+	// carries it; a resume that restored the squads but not this would give
+	// a new squad a recalled squad's id (removeSquad does not give it back).
+	state["next_squad_id"] = s.nextID
+
 	return state
 }
 

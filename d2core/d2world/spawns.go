@@ -3,7 +3,6 @@ package d2world
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"sort"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
@@ -54,11 +53,11 @@ type Spawns struct {
 	// is what every build before the hardening burst did.
 	chases Chases
 
-	// rng is the tables' stream and rngSrc its counted source: the provider
-	// reports where the stream stands (seed, draws), which is what the world
-	// save writes and restores (M4.6 B1).
-	rng    *rand.Rand
-	rngSrc *d2rand.Source
+	// rng is the tables' stream, counted: the provider reports where it
+	// stands (seed, draws), which is what the world save writes and restores
+	// (M4.6 B1). One value, so a restore replaces the rand and its count
+	// together (d2rand.Stream).
+	rng *d2rand.Stream
 
 	groups  map[string]*group
 	nextID  int
@@ -416,8 +415,6 @@ type group struct {
 // same reason the A* never ranges a map.
 func NewSpawns(clock *Clock, notice *Notice, spawner Spawner, chases Chases, illum Illumination,
 	seed int64, dials SpawnDials) *Spawns {
-	rng, rngSrc := d2rand.New(seed)
-
 	s := &Spawns{
 		dials:   dials,
 		clock:   clock,
@@ -425,8 +422,7 @@ func NewSpawns(clock *Clock, notice *Notice, spawner Spawner, chases Chases, ill
 		illum:   illum,
 		spawner: spawner,
 		chases:  chases,
-		rng:     rng,
-		rngSrc:  rngSrc,
+		rng:     d2rand.NewStream(seed),
 		groups:  make(map[string]*group),
 		nextID:  1,
 	}
@@ -1203,6 +1199,23 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 		seen := make([]map[string]interface{}, 0, len(g.members))
 		aware := 0
 
+		// member_ids is EVERY member the group was born with, dead or alive,
+		// in the order they were placed (M4.6 B1 review, B2). A death
+		// unwatches its member (Combat.withdraw) and so drops its notice row,
+		// but g.members is never shortened, and the game reads the dead in
+		// it: spent() is "no member still watched" over the whole list, a
+		// dead man's profile still names his pack, and a despawn takes
+		// every member off the map. The notice rows alone would hide him
+		// the moment he died, and a save that wrote only what it could see
+		// would resume a pack one member short. A copy, like every list here.
+		memberIDs := make([]string, 0, len(g.members))
+
+		for _, m := range g.members {
+			if m != nil {
+				memberIDs = append(memberIDs, m.WatcherID())
+			}
+		}
+
 		for _, m := range g.members {
 			row, ok := byWatcher[m.WatcherID()]
 			if !ok {
@@ -1221,13 +1234,14 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 			"row":        g.row,
 			"code":       g.code,
 			"members":    len(g.members),
+			"member_ids": memberIDs,
 			"spawned":    g.spawned,
 			"morale":     g.morale,
 			"routing":    s.routingOf(g),
 			"born_at":    g.bornAt,
 			"born_stage": g.stage.String(),
 			"born_band":  g.band,
-			"born_where": g.bornWhere,
+			"born_where": append([][2]float64{}, g.bornWhere...), // a copy: a reader cannot move a birthplace
 			"weight":     g.weight,
 			"aware":      aware,
 			"notice":     seen,
@@ -1289,7 +1303,7 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 		// where the stream stands, the next group's number, and how far the
 		// clock has run toward the next table check. Without since_check a
 		// resumed night checks on a different minute than the saved one.
-		"rng":                 s.rngSrc.Report(),
+		"rng":                 s.rng.Report(),
 		"next_id":             s.nextID,
 		"since_check_minutes": s.sinceCk,
 	}

@@ -304,6 +304,34 @@ func TestCombatRout(t *testing.T) {
 
 	t.Logf("act C PASS: %s released and still released a frame on -- strigoi_pursue called nowhere", dead)
 
+	// M4.6 B1 review (B2): and he is still one of his pack. The death
+	// unwatched him, so the pack's notice rows no longer name him; the
+	// pack's member_ids -- what the world save carries -- still do, beside
+	// every member that went into the fight. A provider that listed only the
+	// watched would resume this pack one member short.
+	pack := groupNamed(t, s, groupID)
+	if pack == nil {
+		t.Fatalf("act C (M4.6 B1): %s must still be on the provider", groupID)
+	}
+
+	ids := memberIDs(t, pack)
+
+	for _, id := range append([]string{dead}, packIDs...) {
+		if !hasString(ids, id) {
+			t.Fatalf("act C (M4.6 B1): %s fought for %s and is not in its member_ids %v", id, groupID, ids)
+		}
+	}
+
+	for _, w := range noticeWatchers(t, pack) {
+		if w == dead || !hasString(ids, w) {
+			t.Fatalf("act C (M4.6 B1): %s's notice row for %s: the dead are unwatched and the watched are members "+
+				"(member_ids %v, dead %s)", groupID, w, ids, dead)
+		}
+	}
+
+	t.Logf("act C (M4.6 B1) PASS: %s lists %d member(s) %v, the dead %s among them, and %d notice row(s)",
+		groupID, len(ids), ids, dead, len(noticeWatchers(t, pack)))
+
 	// --- act F: the rout ending is labelled, and it is not a kill ------------
 	//
 	// THE MOST IMPORTANT ASSERTION IN THE STEP. A fight the player survived

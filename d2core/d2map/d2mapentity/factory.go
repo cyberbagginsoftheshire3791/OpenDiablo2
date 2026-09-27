@@ -59,6 +59,13 @@ func (f *MapEntityFactory) SetRand(r *rand.Rand) {
 	f.rng = r
 }
 
+// WorldRand is the RNG SetRand handed the factory (nil before), read-only. It
+// is how the map engine's restore test sees that a restored world stream
+// reached the factory that rolls every new entity (M4.6 B1 review, C4).
+func (f *MapEntityFactory) WorldRand() *rand.Rand {
+	return f.rng
+}
+
 func (f *MapEntityFactory) randIntn(n int) int {
 	if f.rng != nil {
 		return f.rng.Intn(n)

@@ -601,11 +601,21 @@ the pages, the events raised, unread counts, `open`) and **`scene`** (M4.6 B1,
 **M4.6 B1 put every value the world save will carry on a provider before
 anything saves it** (the save plan's rule: observability before
 serialisation). Each gameplay RNG reports where it stands as
-`rng: {seed, draws}` -- `spawns`, `combat`, and `rising` (seeded at the run's
-seed + 4707) -- counted by `d2common/d2rand`, whose `Restore(seed, draws)` puts
-a stream back exactly there. Beside them: `spawns.next_id` and
+`rng: {present, seed, seed_str, draws}` -- `spawns`, `combat`, and `rising`
+(seeded at the run's seed + 4707) -- counted by `d2common/d2rand`, whose
+`Restore(seed, draws)` puts a stream back exactly there. Each system holds its
+stream as one `d2rand.Stream` (the rand and its counted source together), so a
+restore cannot replace one half. **Read `seed_str`, not `seed`, to get a seed
+back:** a wall-clock seed (UnixNano, ~1.8e18) is past 2^53, and a script's
+`mustNum` decodes JSON as float64, which reads a different seed. A stream that
+does not exist reports `{present: false}` and no seed or draws -- never a zero
+that reads like a real stream at draw 0. Beside them: `spawns.next_id` and
 `since_check_minutes` (the clock toward the next table check), `combat.next_id`,
-`light.next_id`, `rising.last_stage` (its `band` is the band last rolled), each
+`light.next_id`, `meters.next_squad_id` (recalling a squad does not give its
+number back), each group's `member_ids` (every member it was born with, in
+the order placed, DEAD ONES INCLUDED: a death unwatches its member, so the
+group's `notice` rows drop him, but the pack's list is never shortened), each
+group's `born_where` (a copy), `rising.last_stage` (its `band` is the band last rolled), each
 notice row's `minutes_since_check`, each chase's `solved_at_x`/`solved_at_y`/
 `solved_distance`, each body's `downed_at` and the corpse registry's
 `risen_as`/`walker`/`last` maps, and each entity's `target` and `waypoints`
@@ -615,16 +625,41 @@ notice row's `minutes_since_check`, each chase's `solved_at_x`/`solved_at_y`/
 is on `village`), `spawner_arrival` (it turns the next pack's bearing),
 `bodies` (every monster's `health`/`max_health` by id), and `world_rng` --
 the map engine's stream, whose `draws` is the number the digest's `rng` part
-hashes. The harness's own **`uuid`** provider (registered by the first
-`start_game`; process state, not game state) reports the seeded uuid stream
-that makes entity ids reproducible: `seeded`, `seed`, `bytes` and `uuids`. It
-is counted in bytes, not draws, because that stream reads through
-`rand.Rand.Read`, which keeps unread bytes where no draw counter can see them
-(`d2rand.Reader`; its bytes are the old reader's exactly, so no id moved).
-`TestSpawns` act 6c (and the chase after act 7), `TestRising` and
-`TestCombatResolver` assert these against numbers the scripts chose; the
-first two-launch `TestTownWalkDeterministic` with the `uuid` count in the
-digest agreed at all three checkpoints (26-27 Sep 2026).
+hashes. (That agreement is one counter read twice, not a check of the count:
+`TestTownWalkDeterministic` compares the count across two launches, and
+d2mapengine's unit tests judge it against a plain stdlib stream, through the
+entity and stamp factories that draw it.) The harness's own **`uuid`**
+provider (registered by the first `start_game` or the first game to begin;
+process state, not game state) reports the seeded uuid stream that makes
+entity ids reproducible: `seeded`, `seed`/`seed_str`, `bytes` and `uuids`, and
+since the B1 review `games` (games this process has begun), `seeded_game`,
+`seeded_for_this_game` and `bytes_at_game_start`. It is counted in bytes, not
+draws, because that stream reads through `rand.Rand.Read`, which keeps unread
+bytes where no draw counter can see them (`d2rand.Reader`; its bytes are the
+old reader's exactly, so no id moved). `TestSpawns` act 6c (and the chase
+after act 7), `TestRising` and `TestCombatResolver` assert these against
+numbers the scripts chose; the first two-launch `TestTownWalkDeterministic`
+with the `uuid` count in the digest agreed at all three checkpoints (26-27 Sep
+2026).
+
+**ONLY `start_game` SEEDS A GAME (a known limitation, owned by M4.6 burst
+B4b).** `start_game` sets the server's one-shot seed and reseeds the uuid
+stream, and then the game begins. Every other way into a game skips both --
+above all the death screen's **"load last save"** (`App.ReloadGame` ->
+`ToCreateGame`, `d2app/reload.go`). A reloaded game, in a process that was
+seeded: (1) takes a **wall-clock server seed** -- the override was consumed by
+the first game (`d2server.takeNextGameSeed` is one-shot) -- so the world,
+spawn, combat and rising streams (all seeded from `gameClient.Seed`) start
+somewhere no script chose; (2) **continues the uuid stream from the dead
+game's byte count**, so its player id (the connection's uuid) and every entity
+id are the seed's later ids, never its first; (3) therefore matches no fresh
+launch. The `uuid` provider shows it: on the reloaded game
+`seeded_for_this_game` is false, `games` is `seeded_game + 1`, and
+`bytes_at_game_start` is the dead game's count. `TestTownWalkDeterministic`
+pins the fresh-launch half (seeded for this game, from byte 0, whole uuids),
+and `d2app`'s `TestUUIDStreamOnAFreshLaunchAndOnAReload` pins both halves as
+they are today. Restoring the streams on a load is B4b's; see
+`docs/m4.6-world-save-notes.md`.
 
 **`pursuit`** (M4.3a) reports the live chases and their dials; settable
 `arrive_within`, `release`, `repath_tiles`. **`strigoi_click` takes `hold_frames`** (c-2b, 19 Sep 2026), and the tool count

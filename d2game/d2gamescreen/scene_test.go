@@ -2,11 +2,13 @@ package d2gamescreen
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
@@ -46,8 +48,8 @@ func TestSceneReportsTheScreensBookkeeping(t *testing.T) {
 		{"id": "wolf", "health": 40, "max_health": 181},
 	}, state["bodies"], "every monster's health, in id order")
 
-	assert.Equal(t, map[string]interface{}{"seed": int64(0), "draws": uint64(0)}, state["world_rng"],
-		"no client, no world stream -- reported as nothing drawn, not omitted")
+	assert.Equal(t, map[string]interface{}{"present": false}, state["world_rng"],
+		"no client, no world stream -- reported as absent, not as a stream at draw 0 of seed 0")
 
 	// A copy: a reader cannot reorder the dead through the provider.
 	state["field_dead"].([]string)[0] = "intruder"
@@ -68,7 +70,7 @@ func TestSceneReportsTheWorldStream(t *testing.T) {
 
 	v := &Game{gameClient: &d2client.GameClient{MapEngine: engine}}
 
-	assert.Equal(t, map[string]interface{}{"seed": int64(1462), "draws": uint64(3)},
+	assert.Equal(t, map[string]interface{}{"present": true, "seed": int64(1462), "seed_str": "1462", "draws": uint64(3)},
 		sceneProvider{v}.HarnessState()["world_rng"])
 }
 
@@ -88,4 +90,99 @@ func TestSceneUnregistersByValue(t *testing.T) {
 
 	_, ok = d2harness.Lookup("scene")
 	assert.False(t, ok, "a fresh value of the same screen unregisters it")
+}
+
+// --- M4.6 B1 review, C10: the providers go with the screen ---------------------
+
+var errStop = errors.New("stop here")
+
+// unbindFails is a terminal whose Unbind errors, so OnUnload returns at its
+// first unbind -- which is how the test sees what OnUnload let go of BEFORE
+// anything in it could fail.
+type unbindFails struct{ d2interface.Terminal }
+
+func (unbindFails) Unbind(...string) error { return errStop }
+
+// binds is an input manager whose BindHandler answers err.
+type binds struct {
+	d2interface.InputManager
+	err error
+}
+
+func (b binds) BindHandler(d2interface.InputEventHandler) error { return b.err }
+
+// registered reports whether this exact provider value is registered. By
+// identity, not by name: another test's "scene" must not answer for this one.
+func registered(p d2harness.Provider) bool {
+	for _, q := range d2harness.Providers() {
+		if q == p {
+			return true
+		}
+	}
+
+	return false
+}
+
+// screenWithAWorld is a game screen holding the providers CreateGame registers
+// itself (corpses, rising, scene) and one a world system registers in its
+// constructor (the clock), all registered.
+func screenWithAWorld(t *testing.T) (*Game, []d2harness.Provider) {
+	t.Helper()
+
+	clock := d2world.NewClock(d2world.DefaultClockDials())
+	corpses := d2world.NewCorpses(nil, nil)
+	rising := d2world.NewRising(corpses, func() int { return -1 }, clock.Stage, 1462, d2world.DefaultRisingDials())
+
+	v := &Game{worldClock: clock, corpses: corpses, rising: rising}
+
+	d2harness.Register(corpses)
+	d2harness.Register(rising)
+	d2harness.Register(sceneProvider{v})
+
+	t.Cleanup(v.releaseWorld)
+
+	providers := []d2harness.Provider{sceneProvider{v}, corpses, rising, clock}
+	for _, p := range providers {
+		require.True(t, registered(p), "%s must start registered", p.HarnessName())
+	}
+
+	return v, providers
+}
+
+// OnUnload lets go of every provider the screen registered, and does it before
+// the first thing that can fail and return early. Before this test, deleting
+// the scene's Unregister stayed green.
+func TestOnUnloadUnregistersTheScreensProviders(t *testing.T) {
+	v, providers := screenWithAWorld(t)
+	v.terminal = unbindFails{}
+
+	require.ErrorIs(t, v.OnUnload(), errStop, "OnUnload stops at its first unbind")
+
+	for _, p := range providers {
+		assert.False(t, registered(p), "%q outlived its screen", p.HarnessName())
+	}
+}
+
+// CreateGame's one failure after the world is built releases the world, and
+// its success keeps it.
+func TestCreateGameFailureReleasesItsProviders(t *testing.T) {
+	v, providers := screenWithAWorld(t)
+
+	game, err := v.bindOrRelease(binds{err: errStop})
+	require.Error(t, err)
+	require.Nil(t, game)
+
+	for _, p := range providers {
+		assert.False(t, registered(p), "a failed CreateGame left %q registered", p.HarnessName())
+	}
+
+	w, kept := screenWithAWorld(t)
+
+	game, err = w.bindOrRelease(binds{})
+	require.NoError(t, err)
+	require.Same(t, w, game)
+
+	for _, p := range kept {
+		assert.True(t, registered(p), "a successful CreateGame keeps %q", p.HarnessName())
+	}
 }
