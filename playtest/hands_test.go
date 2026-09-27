@@ -1319,3 +1319,150 @@ func TestTheHandsRightClickIsTheTorch(t *testing.T) {
 	t.Logf("(c, d) in a fight the right button lit and spent the Action; spent, it was refused as L was (commits_refused %.0f -> %.0f -> %.0f)",
 		refused, afterL, afterRight)
 }
+
+// --- held buttons and the combat panel (the tables burst's review, 27 Sep) ---
+
+// TestTheHandsHeldRightIsOneTorch is the review's B2, the right half: a HELD
+// right button in Strigoi's game is one torch verb, as a key is -- the press
+// lights or douses and the repeats do nothing. OnMouseButtonRepeat's right
+// branch is -classic's cast of the right skill, and the one thing between a
+// held right button and Strigoi's nil RightSkill is its `&& g.asset.Classic()`.
+// Two verbs douse what one lit, so the light alone cannot tell one verb from
+// three: ui.torch_verbs counts them.
+//
+// Negative controls (27 Sep 2026, logged in the review-fix report): delete
+// that `&& g.asset.Classic()` and this fails -- the game falls over on the nil
+// RightSkill a quarter-second into the hold; make the held right button call
+// combatTorch on its repeats and it fails with three verbs, not one.
+func TestTheHandsHeldRightIsOneTorch(t *testing.T) {
+	s, _, _, _, _ := handsStartOn(t, startWith(t)) // Strigoi's game explicitly: -classic's held right casts
+
+	p := s.call("strigoi_get_player", map[string]any{})
+	sx, sy := pair(p, "screen")
+
+	if sx == 0 && sy == 0 {
+		t.Fatal("strigoi_get_player reported no screen position; the hold would miss the ground beside him")
+	}
+
+	for i, want := range []bool{true, false} {
+		verbs := mustNum(t, uiState(s), "torch_verbs")
+
+		// 40 frames: the 0.25 s repeat threshold is crossed twice.
+		s.call("strigoi_click", map[string]any{"x": int(sx) - 70, "y": int(sy) - 10, "button": "right", "hold_frames": 40})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+
+		got := mustNum(t, uiState(s), "torch_verbs")
+		if got != verbs+1 || flag(t, lightState(s), "carried_lit") != want {
+			t.Fatalf("hold %d: a held right button must be ONE torch verb (torch_verbs %.0f -> %.0f) leaving the torch lit=%v: %v",
+				i+1, verbs, got, want, lightState(s))
+		}
+	}
+
+	t.Logf("two 40-frame holds of the right button: one verb each, lit then doused")
+}
+
+// TestTheHandsHeldShiftDoesNothing is the review's B2, the left half: a HELD
+// shift-click on open ground does nothing in Strigoi's game -- no walk, no
+// cast, no light -- as a tapped one does (TestTheHandsRightClickIsTheTorch
+// act e). OnMouseButtonRepeat's shift branch is -classic's cast of the left
+// skill, and the one thing between it and Strigoi's nil LeftSkill is its
+// `case g.asset.Classic()`. Shift is held down across the whole hold
+// (strigoi_key down/up), so every repeat carries it.
+//
+// Negative control (27 Sep 2026, logged in the review-fix report): make that
+// case true whatever the game and this fails -- the game falls over on the
+// nil LeftSkill a quarter-second into the hold.
+func TestTheHandsHeldShiftDoesNothing(t *testing.T) {
+	s, _, _, _, _ := handsStartOn(t, startWith(t))
+
+	before := s.call("strigoi_get_player", map[string]any{})
+	bx, by := num(before, "x"), num(before, "y")
+	sx, sy := pair(before, "screen")
+
+	if sx == 0 && sy == 0 {
+		t.Fatal("strigoi_get_player reported no screen position; the hold would miss the ground beside him")
+	}
+
+	verbs := mustNum(t, uiState(s), "torch_verbs")
+	hold := map[string]any{"x": int(sx) - 120, "y": int(sy) + 40, "button": "left", "hold_frames": 40}
+
+	s.call("strigoi_key", map[string]any{"key": "shift", "action": "down"})
+	s.call("strigoi_click", hold)
+	s.call("strigoi_key", map[string]any{"key": "shift", "action": "up"})
+	s.call("strigoi_step", map[string]any{"frames": 60})
+
+	after := s.call("strigoi_get_player", map[string]any{})
+	if math.Abs(num(after, "x")-bx) > 0.01 || math.Abs(num(after, "y")-by) > 0.01 ||
+		mustNum(t, uiState(s), "torch_verbs") != verbs || flag(t, lightState(s), "carried_lit") {
+		t.Fatalf("a held shift-click must do nothing: he went %.2f,%.2f -> %.2f,%.2f, torch_verbs %.0f -> %.0f, light %v",
+			bx, by, num(after, "x"), num(after, "y"), verbs, mustNum(t, uiState(s), "torch_verbs"), lightState(s))
+	}
+
+	// The control: the same hold without shift walks him, so the hold landed
+	// on ground he can walk to.
+	s.call("strigoi_click", hold)
+	s.call("strigoi_step", map[string]any{"frames": 180})
+
+	p := s.call("strigoi_get_player", map[string]any{})
+	if math.Abs(num(p, "x")-bx)+math.Abs(num(p, "y")-by) < 0.5 {
+		t.Fatalf("control: the same hold without shift did not walk him (%.2f,%.2f), so the shift hold proved nothing",
+			num(p, "x"), num(p, "y"))
+	}
+
+	t.Logf("a 40-frame shift hold moved nothing and lit nothing; the same hold without shift walked him %.2f,%.2f -> %.2f,%.2f",
+		bx, by, num(p, "x"), num(p, "y"))
+}
+
+// TestTheHandsRightClickOnThePanelIsThePanels is Josh's ruling on the
+// review's C1 (27 Sep 2026): a right-click on the combat panel, or on any
+// on-screen UI, is swallowed exactly as a left-click there is -- it neither
+// lights nor douses the torch nor spends the Action. (L stays the torch
+// wherever the cursor is.) The control: the same right-click on open ground
+// beside him lights the torch and spends the Action, so the fight was live
+// and the button was the torch.
+//
+// Negative control (27 Sep 2026, logged in the review-fix report): take the
+// combat panel back out of isInActiveMenusRect and this fails -- the
+// right-click on the panel lights the torch and spends the Action.
+func TestTheHandsRightClickOnThePanelIsThePanels(t *testing.T) {
+	s, _, playerHandle, px, py := handsStartOn(t, startWith(t))
+
+	stepToNight(t, s)
+	s.call("strigoi_set_system_field", map[string]any{"system": "combat", "field": "player_control", "value": "human"})
+
+	enemy := spawnNPC(t, s, "zombie1", px+1, py)
+	s.call("strigoi_watch", map[string]any{"watcher": enemy, "target": playerHandle})
+
+	openTurn(t, s)
+
+	if flag(t, combatState(s), "action_spent") || flag(t, lightState(s), "carried_lit") {
+		t.Fatalf("a fresh turn has an unspent Action and an unlit torch: combat %v, light %v", combatState(s), lightState(s))
+	}
+
+	verbs := mustNum(t, uiState(s), "torch_verbs")
+	refused := mustNum(t, combatState(s), "commits_refused")
+
+	// The middle of the combat panel (tactical_overlay.go: x 180-620, y 450-532).
+	s.call("strigoi_click", map[string]any{"x": 400, "y": 491, "button": "right"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if flag(t, lightState(s), "carried_lit") || flag(t, combatState(s), "action_spent") ||
+		mustNum(t, uiState(s), "torch_verbs") != verbs || mustNum(t, combatState(s), "commits_refused") != refused {
+		t.Fatalf("a right-click on the combat panel must do nothing to the fight: light %v, combat %v, torch_verbs %.0f -> %.0f",
+			lightState(s), combatState(s), verbs, mustNum(t, uiState(s), "torch_verbs"))
+	}
+
+	// The control, beside him.
+	p := s.call("strigoi_get_player", map[string]any{})
+	sx, sy := pair(p, "screen")
+
+	s.call("strigoi_click", map[string]any{"x": int(sx) - 70, "y": int(sy) - 10, "button": "right"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if !flag(t, lightState(s), "carried_lit") || !flag(t, combatState(s), "action_spent") {
+		t.Fatalf("control: a right-click beside him must light the torch and spend the Action: light %v, combat %v",
+			lightState(s), combatState(s))
+	}
+
+	t.Logf("in a fight a right-click on the panel did nothing; the same button beside him lit the torch and spent the Action")
+}

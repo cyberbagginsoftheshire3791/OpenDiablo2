@@ -1,6 +1,7 @@
 package d2hero
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,6 +55,11 @@ func TestBodyIsTheManifestsWithTheAmazonsDefaults(t *testing.T) {
 		{"negative", `{"max_health":-1,"max_stamina":50}`, BodyStats{240, 84, 20}},
 		{"not a number", `{"max_health":"240"}`, BodyStats{240, 84, 20}},
 		{"not json", `max_health: 300`, BodyStats{240, 84, 20}},
+		// A key Body does not read is ignored HERE, though d2mapentity's
+		// strict read refuses the manifest for it and draws the composite:
+		// the body is still the manifest's (Body's comment, corrected by the
+		// tables burst's review, 27 Sep 2026).
+		{"unknown key", `{"max_health":300,"max_helth":1}`, BodyStats{300, 84, 20}},
 	} {
 		if got := Body(heroAssets(t, c.manifest)); got != c.want {
 			t.Errorf("%s: body %+v, want %+v", c.name, got, c.want)
@@ -145,6 +151,61 @@ func TestAnOldSavesSkillsAreLeftOutOfStrigoisGame(t *testing.T) {
 
 	if len(state.Skills) != 0 {
 		t.Fatalf("skills %v; want none in Strigoi's game", state.Skills)
+	}
+}
+
+// ...and saving him in Strigoi's game writes them back unchanged, so a later
+// -classic load of the same file still has them: Strigoi's game leaves his
+// skills out, it does not delete them (the tables burst's review, 27 Sep
+// 2026 -- until then the first save in Strigoi's game wrote "skills": {}).
+// A hero with skills of his own (-classic's) saves those, not the kept ones.
+//
+// Negative control (27 Sep 2026): make Save write the state as it is in
+// memory and this fails -- the file's skills are empty after the save.
+func TestAnOldSavesSkillsSurviveStrigoisSave(t *testing.T) {
+	save := filepath.Join(t.TempDir(), "0.od2")
+
+	old := `{"heroName":"Old","heroType":6,"act":1,"stats":{"level":1,"health":240,"maxHealth":240},` +
+		`"skills":{"0":{"skillId":0,"skillPoints":1},"6":{"skillId":6,"skillPoints":3}},"leftSkill":0,"rightSkill":6}`
+	if err := os.WriteFile(save, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	f := &HeroStateFactory{asset: heroAssets(t, `{}`)}
+
+	state := f.LoadHeroState(save)
+	if state == nil || len(state.Skills) != 0 {
+		t.Fatalf("the old save loaded as %+v; want him without skills in memory", state)
+	}
+
+	if err := f.Save(state); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(save)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var onDisk struct {
+		Skills     map[int]*shallowHeroSkill `json:"skills"`
+		RightSkill int                       `json:"rightSkill"`
+	}
+
+	if err := json.Unmarshal(data, &onDisk); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(onDisk.Skills) != 2 || onDisk.Skills[0] == nil || onDisk.Skills[0].SkillPoints != 1 ||
+		onDisk.Skills[6] == nil || onDisk.Skills[6].SkillPoints != 3 || onDisk.RightSkill != 6 {
+		t.Fatalf("after Strigoi's save the file holds skills %v (right %d); want the old save's two, unchanged:\n%s",
+			onDisk.Skills, onDisk.RightSkill, data)
+	}
+
+	// A hero with skills of his own saves his own.
+	state.Skills = map[int]*HeroSkill{9: {Shallow: &shallowHeroSkill{SkillID: 9, SkillPoints: 1}}}
+	if disk := state.onDisk(); len(disk.Skills) != 1 || disk.Skills[9] == nil {
+		t.Fatalf("a hero with his own skills saves %v", disk.Skills)
 	}
 }
 

@@ -66,15 +66,16 @@ func NewInventory(asset *d2asset.AssetManager,
 
 // Inventory represents the inventory
 type Inventory struct {
-	// loaded: Load has run. The panel loads its art the first time it is
-	// opened, not with the HUD -- Diablo II's panels that Strigoi has replaced
-	// or not yet used are never opened in most games, and their sprites were
-	// read from the MPQs at every start (M5.3's census, history item 114).
+	// loaded: Load has built the panel. The panel loads its art the first
+	// time it is opened, not with the HUD -- Diablo II's panels that Strigoi
+	// has replaced or not yet used are never opened in most games, and their
+	// sprites were read from the MPQs at every start (M5.3's census, history
+	// item 114).
 	loaded bool
 
 	// recordKey is the grid's layout in inventory.txt, read by Load; grid
-	// is nil until then, and stays nil if the layout cannot be read (the
-	// panel then does not open).
+	// is nil until then, and stays nil while the layout cannot be read (the
+	// panel then does not open, and the next Open reads it again).
 	recordKey string
 	logLevel  d2util.LogLevel
 
@@ -116,19 +117,28 @@ func (g *Inventory) Load() {
 		return
 	}
 
+	// The grid's layout loads with the grid, the first time it is opened --
+	// and FIRST: a grid without its layout does not open (Open), so nothing
+	// below is built and loaded stays false, and the next Open reads
+	// inventory.txt again, as EnsureRecords' contract says a failed table is
+	// (the tables burst's review, B3, 27 Sep 2026: loaded was set before the
+	// read, and one failed read closed the grid for the rest of the game).
+	if err := g.asset.EnsureRecords(d2resource.Inventory); err != nil {
+		g.Errorf("the grid cannot open: its layout did not load: %v", err)
+		return
+	}
+
+	record := g.asset.Records.Layout.Inventory[g.recordKey]
+	if record == nil {
+		g.Errorf("the grid cannot open: inventory.txt has no %q layout", g.recordKey)
+		return
+	}
+
 	g.loaded = true
+	g.grid = NewItemGrid(g.asset, g.uiManager, g.logLevel, record)
+	g.originX = record.Panel.Left
 
 	var err error
-
-	// The grid's layout loads with the grid, the first time it is opened.
-	if err = g.asset.EnsureRecords(d2resource.Inventory); err != nil {
-		g.Error(err.Error())
-	} else if record := g.asset.Records.Layout.Inventory[g.recordKey]; record == nil {
-		g.Errorf("inventory.txt has no %q layout", g.recordKey)
-	} else {
-		g.grid = NewItemGrid(g.asset, g.uiManager, g.logLevel, record)
-		g.originX = record.Panel.Left
-	}
 
 	g.panelGroup = g.uiManager.NewWidgetGroup(d2ui.RenderPriorityInventory)
 

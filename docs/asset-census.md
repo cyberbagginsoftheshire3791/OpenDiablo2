@@ -56,14 +56,18 @@ screen, the character list, then the same hour.
 | the tables burst: ten tables are Diablo II's game's alone, and so is its skill-icon sheet (below) | `tables-burst` | **53** |
 
 **A friend's launch, menus included: 80 MPQ files, 47 of them sprites**
-(measured at `4e303446`; 78 since the cast tables left boot -- re-derived,
-not re-measured, as that probe never casts). They
-are the menus and their buttons, the Diablo II logo, the new-hero screen's
-amazon, the loading screen, the cursors, the HUD, the help overlay's pieces
-and the four villager stand-ins. The other 33 were 16 tables, now 4 (villagers,
-sounds; the hero, starting gear, HUD layout and levels went in the tables burst), 5 palettes, 7 sounds and music,
-4 villager `.cof`s and `animdata.d2`. The sprite list, with sizes and override
-paths, is the project's `claude/art-needs-2026-09-24.md`.
+(measured at `4e303446`). Re-derived since, not re-measured -- that probe was
+not re-run: **78** once the cast tables left boot (it never casts: missiles
+and overlay, 16 tables to 14), and **67, 46 of them sprites,** since the
+tables burst (the ten tables its boot read, 14 to 4, and the HUD's skill-icon
+sheet, `ui/spells/skillicon.dc6`: 78 - 10 - 1). The sprites are the menus and
+their buttons, the Diablo II logo, the new-hero screen's amazon, the loading
+screen, the cursors, the HUD, the help overlay's pieces and the four villager
+stand-ins. The other 21 are the 4 tables left (monstats and monstats2 for the
+villagers, sounds and soundenviron; the hero, his starting gear, the HUD's
+layout, the skills and the levels went in the tables burst), 5 palettes, 7
+sounds and music, 4 villager `.cof`s and `animdata.d2`. The sprite list, with
+sizes and override paths, is the project's `claude/art-needs-2026-09-24.md`.
 
 ## Measured: the tables burst (27 Sep 2026, M5.3)
 

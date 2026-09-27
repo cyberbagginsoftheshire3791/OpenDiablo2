@@ -118,6 +118,7 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"world_held_by":     g.worldHeldByReport(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
 		"hand_icons":        g.handIconsReport(),
+		"torch_verbs":       g.torchVerbs,
 		"left_panel_open":   g.isLeftPanelOpen(),
 		"right_panel_open":  g.isRightPanelOpen(),
 		"free_cam":          g.FreeCam,

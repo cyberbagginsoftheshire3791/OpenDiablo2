@@ -20,4 +20,12 @@ type HeroState struct {
 	RightSkill int                            `json:"rightSkill"`
 	Gold       int                            `json:"Gold"`
 	Difficulty d2enum.DifficultyType          `json:"difficulty"`
+
+	// savedSkills are an old save's Diablo II skills, read in Strigoi's game
+	// -- which has no skill table to hydrate them with, and whose hero has no
+	// skills -- and kept out of the hero it plays. They are written back
+	// unchanged when he is saved, so a later -classic load of the same file
+	// still has them (HeroStateFactory.loadSkills and Save; the tables
+	// burst's review, 27 Sep 2026). Not serialised as itself.
+	savedSkills map[int]*HeroSkill
 }

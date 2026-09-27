@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/robertkrimen/otto"
 
@@ -57,6 +58,7 @@ func SetPort(p string) {
 var (
 	errPlayerAlreadyExists = errors.New("player already exists")
 	errServerFull          = errors.New("server full") // Server currently at maximum TCP connections
+	errOtherGame           = errors.New("the client launched the other game")
 )
 
 // GameServer manages a copy of the map and entities as well as manages packet routing and connections.
@@ -81,6 +83,10 @@ type GameServer struct {
 	// the process-wide report can change under a live server (the harness's
 	// start_game, a client's own build), this cannot.
 	hostMap, hostSHA string
+
+	// castsRefused counts the Diablo II casts a Strigoi host has refused to
+	// rebroadcast (OnPacketReceived); the first is logged.
+	castsRefused atomic.Int64
 
 	*d2util.Logger
 }
@@ -145,7 +151,12 @@ func NewGameServer(asset *d2asset.AssetManager,
 		return nil, err
 	}
 
-	mapGen.GenerateAct1Overworld()
+	// A world that cannot be built refuses the game, with the reason, rather
+	// than taking the process down (the tables burst's review, B3).
+	if err := mapGen.GenerateAct1Overworld(); err != nil {
+		return nil, err
+	}
+
 	gameServer.hostMap, gameServer.hostSHA = d2mapgen.HostMap()
 
 	gameServer.mapEngines = append(gameServer.mapEngines, mapEngine)
@@ -344,6 +355,16 @@ func (g *GameServer) registerConnection(b []byte, conn net.Conn) (ClientConnecti
 		g.Errorf("Failed to unmarshal PlayerConnectionRequest: %s\n", err)
 	}
 
+	// A client of the other game is refused, and told why: Strigoi's game and
+	// -classic load different tables, and a cast one sends is a nil record in
+	// the other (the tables burst's review, B1, 27 Sep 2026).
+	if reason := joinRefusal(g.asset.Classic(), packet.Classic); reason != "" {
+		g.Errorf("refused the join of %s: %s", packet.ID, reason)
+		g.refuseJoin(conn, reason)
+
+		return client, errOtherGame
+	}
+
 	// check to see if the player is already registered
 	if _, ok := g.connections[packet.ID]; ok {
 		g.Errorf("%v", errPlayerAlreadyExists)
@@ -357,6 +378,40 @@ func (g *GameServer) registerConnection(b []byte, conn net.Conn) (ClientConnecti
 	g.OnClientConnected(client)
 
 	return client, nil
+}
+
+// joinRefusal is why a host of one game refuses a client of the other, or ""
+// when they are the same game. Written for the player who launched the wrong
+// one: it says which flag to change.
+func joinRefusal(hostClassic, clientClassic bool) string {
+	switch {
+	case hostClassic == clientClassic:
+		return ""
+	case hostClassic:
+		return "this host is playing Diablo II's game (-classic) and you launched Strigoi's: launch with -classic to join it"
+	default:
+		return "this host is playing Strigoi's game and you launched Diablo II's (-classic): launch without -classic to join it"
+	}
+}
+
+// refuseJoin tells a client its join is refused, and why (JoinRefused). The
+// caller closes the connection.
+func (g *GameServer) refuseJoin(conn net.Conn, reason string) {
+	refused, err := d2netpacket.CreateJoinRefusedPacket(reason)
+	if err != nil {
+		g.Errorf("JoinRefusedPacket: %v", err)
+		return
+	}
+
+	data, err := d2netpacket.MarshalPacket(refused)
+	if err != nil {
+		g.Errorf("MarshalPacket: %v", err)
+		return
+	}
+
+	if _, err := conn.Write(data); err != nil {
+		g.Warningf("could not tell a refused client why: %v", err)
+	}
 }
 
 // OnClientConnected initializes the given ClientConnection. It sends the
@@ -509,7 +564,22 @@ func (g *GameServer) OnPacketReceived(client ClientConnection, packet d2netpacke
 		playerState.Y = movePacket.DestY
 
 		g.sendPacketToClients(packet)
-	case d2netpackettype.CastSkill, d2netpackettype.SpawnItem:
+	case d2netpackettype.CastSkill:
+		// Diablo II's cast is -classic's. A Strigoi host rebroadcasts none:
+		// its clients load no skill table, and a cast they were sent was a nil
+		// record dereferenced on the host's own client (the tables burst's
+		// review, B1, 27 Sep 2026). Refused, not an error; the first is logged.
+		if !g.asset.Classic() {
+			if g.castsRefused.Add(1) == 1 {
+				g.Warningf("refused a Diablo II cast from %s: this host plays Strigoi's game, which has none (further refusals are not logged)",
+					client.GetUniqueID())
+			}
+
+			return nil
+		}
+
+		g.sendPacketToClients(packet)
+	case d2netpackettype.SpawnItem:
 		g.sendPacketToClients(packet)
 	case d2netpackettype.SavePlayer:
 		savePacket, err := d2netpacket.UnmarshalSavePlayer(packet.PacketData)

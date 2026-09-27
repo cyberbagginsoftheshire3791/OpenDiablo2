@@ -16,7 +16,7 @@ func strigoiHelp() []string {
 	return []string{
 		"Click the ground to walk -- in a fight, your Move (2 tiles).",
 		"F or click an enemy to strike -- in a fight, your Action. E ends your turn.",
-		"L lights or douses the torch in your off hand.",
+		"L or the right button lights or douses the torch in your off hand.",
 		"I opens your kit: wear, eat, and MAKE.   T opens your talents.",
 		"K forages for branches: half an hour, head down.",
 		"X stakes the dead man at your feet.   D digs him a hasty grave.",

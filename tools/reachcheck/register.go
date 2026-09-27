@@ -90,6 +90,12 @@ const (
 	// authored map's sound environment and name instead of levels.txt.
 	pkgHero      = "d2core/d2hero"
 	pkgMapEngine = "d2core/d2map/d2mapengine"
+	// pkgClient, pkgServer and pkgAudio joined at the tables burst's review
+	// (27 Sep 2026): a host refusing the other game's join and cast, the
+	// refused client going back to the menu, and the village's sound read.
+	pkgClient = "d2networking/d2client"
+	pkgServer = "d2networking/d2server"
+	pkgAudio  = "d2core/d2audio"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -728,6 +734,17 @@ var Register = []Entry{
 		"What the game plays on the village instead of levels.txt's row: Game.Advance sets the sound environment from it once a second.", ""},
 	{sym(pkgPlayer, "HUD.renderHand"), BucketWire, VerdictLive,
 		"The HUD's two skill icons are his two hands in Strigoi's game -- the letters of the keys their verbs are on (F, L) until the art lands; renderLeftSkill and renderRightSkill draw them.", ""},
+	// The tables burst's review (27 Sep 2026).
+	{sym(pkgServer, "joinRefusal"), BucketWire, VerdictLive,
+		"A host refuses a client of the other game (-classic or not), naming the flag to change: GameServer.registerConnection asks it of every join. Without it a -classic client's cast reached a Strigoi host's own client as a nil skill record.", ""},
+	{sym(pkgClient, "GameClient.JoinRefused"), BucketWire, VerdictLive,
+		"The host's refusal, read every frame by Game.Advance, which takes the player back to the main menu with it. Without the read a refused client sits on a world that never comes.", ""},
+	{sym(pkgHero, "HeroState.onDisk"), BucketWire, VerdictLive,
+		"An old save's Diablo II skills, kept out of Strigoi's game, go back into the file when he is saved (HeroStateFactory.Save), so a later -classic load still has them.", ""},
+	{sym(pkgPlayer, "heroExperience"), BucketWire, VerdictLive,
+		"The HUD's experience bar and its tooltip read Strigoi's own progression in his game (HUD.experience), not Diablo II's 0 / 0.", ""},
+	{sym(pkgAudio, "SoundEnvironment.Current"), BucketObserve, VerdictHarnessOnly,
+		"Reads the sound environment playing and its song, for the village provider (village.sound_env, village.music); changes nothing.", ""},
 	{sym(pkgMapGen, "MapGenerator.GenerateHostWorld"), BucketWire, VerdictLive,
 		"A client builds the world its host built, from the GenerateMap packet (GameClient.handleGenerateMapPacket) -- a local game's client too.", ""},
 	{sym(pkgPlayer, "miniPanel.buttonsReport"), BucketObserve, VerdictHarnessOnly,

@@ -31,6 +31,7 @@ const (
 	SpawnItem                                            // Sent by server
 	SavePlayer                                           // Sent by the client, saves the player
 	ServerFull                                           // Sent by server when server has reached max connections
+	JoinRefused                                          // Sent by server when it refuses a join: the client launched the other game (-classic or not)
 
 	UnknownPacketType = 666
 )
@@ -50,6 +51,7 @@ func (n NetPacketType) String() string {
 		SpawnItem:                       "SpawnItem",
 		SavePlayer:                      "SavePlayer",
 		ServerFull:                      "ServerFull",
+		JoinRefused:                     "JoinRefused",
 	}
 
 	return strings[n]

@@ -160,12 +160,22 @@ so the whole register is roughly ten minutes serial and about three at
   the register's shape; neither needs the `deadcode` binary.
 * **It says nothing about whether reachable code is correct**, only about
   whether it is reached.
-* **It does not check unexported functions, package-level functions, struct
-  fields, or any package outside `d2core/d2world` and `d2game/d2gamescreen`.**
-  The register was seeded from the exported method sets of `Game`, `Clock`,
-  `Light`, `Meters`, `Pursuit`, `Notice` and `Spawns`, and `go run
-  ./tools/reachcheck -list` prints what it holds now. Counts are not written
-  down here on purpose; a number in prose is a number that goes stale.
+* **It checks only the symbols the register names, and never a struct
+  field.** The register was seeded from the exported method sets of `Game`,
+  `Clock`, `Light`, `Meters`, `Pursuit`, `Notice` and `Spawns` in
+  `d2core/d2world` and `d2game/d2gamescreen`; it has since grown rows in the
+  player's controls and HUD (`d2game/d2player`, unexported handlers such as
+  `GameControls.combatTorch` included), the asset manager, the map generator
+  and engine, the hero, the journal, and -- with the tables burst's review
+  (27 Sep 2026) -- the network server and client and the sound environment:
+  `joinRefusal` (a host refuses the other game's join), `GameClient.JoinRefused`
+  (the refused client goes back to the menu), `HeroState.onDisk` (an old
+  save's skills written back), `heroExperience` (the HUD reads Strigoi's
+  experience) as `wire`, and `SoundEnvironment.Current` (the village's sound,
+  read by the harness) as `observe`. Unexported methods and plain functions
+  are checked when a row names them. `go run ./tools/reachcheck -list` prints
+  what it holds now. Counts are not written down here on purpose; a number in
+  prose is a number that goes stale.
 
 ## Deferrals the register cannot carry
 

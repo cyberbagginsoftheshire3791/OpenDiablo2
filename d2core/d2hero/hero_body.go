@@ -98,9 +98,19 @@ func heroManifestPath() string {
 // Body is the hero's body in Strigoi's game: the three fields of the hero
 // manifest, each one left out taken from defaultBody. A manifest that cannot
 // be read, or whose three are not numbers or are negative, gives defaultBody
-// whole -- d2mapentity's strict read of the same file refuses it, draws the
-// composite instead and says why (HeroArtReport), so the mistake is not
-// silent.
+// whole -- and d2mapentity's strict read of the same file refuses it too,
+// draws the composite instead and says why (HeroArtReport), so the mistake is
+// not silent.
+//
+// THE TWO READS DO NOT ALWAYS AGREE. The strict read also refuses a manifest
+// for a key it does not know, a second value after the first, or a bad fps
+// (d2mapentity.parseHeroManifest); Body reads only its three keys and ignores
+// the rest. So a manifest refused for a typo draws the composite hero while
+// its max_health, max_stamina and stamina_run_drain STILL apply -- the body is
+// the manifest's even when the sheets are not. (Corrected by the tables
+// burst's review, 27 Sep 2026: this comment said such a manifest gave
+// defaultBody. TestBodyIsTheManifestsWithTheAmazonsDefaults' "unknown key"
+// case pins it.)
 func Body(asset *d2asset.AssetManager) BodyStats {
 	var b BodyStats
 

@@ -441,6 +441,7 @@ type Game struct {
 	// Death screen v0: who navigates away, whether he has died, how, and his
 	// kit-and-progress file as it was when he entered.
 	navigator            d2interface.Navigator
+	joinRefusalShown     bool // Advance has sent the player back to the main menu with the host's refusal
 	died                 bool
 	death                d2player.Death
 	heroAtEntry          heroSnapshot
@@ -672,6 +673,19 @@ func (v *Game) Render(screen d2interface.Surface) {
 // Advance runs the update logic on the Gameplay screen
 // nolint:gocyclo // not need to change
 func (v *Game) Advance(elapsed float64) error {
+	// A host that refused this join -- the client launched the other game,
+	// -classic or not -- sends the player back to the main menu with its
+	// reason, once (the tables burst's review, B1, 27 Sep 2026). Nothing
+	// else of a refused game is advanced: it has no world.
+	if reason := v.gameClient.JoinRefused(); reason != "" {
+		if !v.joinRefusalShown {
+			v.joinRefusalShown = true
+			v.navigator.ToMainMenu("The host refused this game: " + reason)
+		}
+
+		return nil
+	}
+
 	v.soundEngine.Advance(elapsed)
 
 	// The world pauses under the escape menu (ruled 12 Sep 2026). At 344da610

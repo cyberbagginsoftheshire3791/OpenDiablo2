@@ -132,13 +132,25 @@ this doc fails until it agrees.
   clock with it; F strikes and leaves the turn open (executing the Action is not
   finishing the turn), E ends it, a Move plus the Action auto-ends it; L lights,
   burns and douses a torch and spends the Action in a fight; the pace lines land
-  in the log ring and agree with the combat provider's `pace{}` block. A ninth
-  act (M5.3's tables burst, 26 Sep 2026; Josh's ruling of 25 Sep):
-  `TestTheHandsRightClickIsTheTorch` -- the right mouse button is the same
-  torch verb as L (lights and douses out of a fight, lights and spends the
-  Action in one, and with the Action spent is refused exactly as L is, one
-  more `commits_refused` each), and a shift-click does nothing (no walk, no
-  cast, no light; the same click without shift walks him, the control).
+  in the log ring and agree with the combat provider's `pace{}` block. Four
+  more test functions in the same file, each launching its own Strigoi game
+  (not acts of the eight): `TestTheHandsRightClickIsTheTorch` (M5.3's tables
+  burst, 26 Sep 2026; Josh's ruling of 25 Sep) -- the right mouse button is
+  the same torch verb as L (lights and douses out of a fight, lights and
+  spends the Action in one, and with the Action spent is refused exactly as L
+  is, one more `commits_refused` each), and a shift-click does nothing (no
+  walk, no cast, no light; the same click without shift walks him, the
+  control). And three from the tables burst's review (27 Sep 2026):
+  `TestTheHandsHeldRightIsOneTorch` -- a 40-frame HELD right button is one
+  torch verb (`ui.torch_verbs` +1, lit; a second hold douses), never
+  Diablo II's cast of a right skill he does not have;
+  `TestTheHandsHeldShiftDoesNothing` -- a 40-frame held left click with shift
+  held down across it (`strigoi_key` shift `down`/`up`) moves nothing and
+  lights nothing, and the same hold without shift walks him (the control);
+  `TestTheHandsRightClickOnThePanelIsThePanels` -- in a fight, a right-click
+  on the combat panel neither lights the torch nor spends the Action (Josh's
+  ruling on the review's C1: swallowed as a left-click there is), and the
+  same button beside him does both (the control).
 * `unaided_test.go` — M4.4c-2a's closeout script, the eighteenth, and the only
   one that measures the GAME rather than a world a script arranged. With nothing
   spawned, nothing watched and no dial touched, it walks a full day–night cycle
@@ -442,7 +454,12 @@ this doc fails until it agrees.
   first hour, at most four tables are, the right button lights his torch and
   casts nothing (no missile, overlay or skill table, no skill-icon sheet), the
   HUD's two skill icons draw his hands' keys (`ui.hand_icons`: F and L); and
-  its `-classic` control loads all ten and its right-click still casts.
+  its `-classic` control loads all ten and its right-click still casts. Since
+  the burst's review (27 Sep 2026): exactly four tables, not "at most", and
+  the village sounds as its map says -- `village.sound_env` 1 (village.tmj's
+  own property, not levels.txt) playing `act1/town1.wav`
+  (`village.music`, as sounds.txt names the file under `data/global/music`). `death_test.go` checks the ten are still unread after
+  its death reload, in Strigoi's game.
 * `words_test.go` — the thirty-eighth, M5.3 (23 Sep 2026): every label answered
   from Strigoi's own string table (`-strings data/strigoi/strings/strings.json`).
   Control: as shipped, Diablo II's string tables come from the MPQs. With
@@ -920,7 +937,14 @@ and `open_close` -- each `{x, y, w, h, visible}` in screen pixels, so a script
 clicks where they are drawn), and since 24 Sep `world_held_by` (what holds the
 world, `Game.WorldHeldBy`: `""` while it runs, `escape_menu`, `loadout`,
 `talk`, `journal`, `fight`; `"unknown"` if the game screen never attached --
-`strigoi_step_world` refuses all but `""` and `fight` with `WORLD_HELD`).
+`strigoi_step_world` refuses all but `""` and `fight` with `WORLD_HELD`),
+and since 27 Sep (the tables burst's review) `hand_icons` (the HUD's two
+skill icons: his hands' keys, F and L) and `torch_verbs` (how many torch verbs
+-- a light, a relight, a douse, from L or the right button -- have done
+something this game: two douse what one lit, so a script that must tell one
+verb from three counts them). The `village` provider gained `sound_env` (the
+sound environment the game set from the map he stands on) and `music` (the
+file of the song that environment started, `""` when none) the same day.
 Read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
 register when the game screen is constructed and close on unload.

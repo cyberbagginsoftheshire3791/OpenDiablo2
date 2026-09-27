@@ -53,6 +53,22 @@ func (s *SoundEnvironment) SetEnv(environmentIdx int) {
 	}
 }
 
+// Current reports the sound environment playing -- its soundenviron.txt row
+// -- and the file of the song it started ("" when none plays). Read-only, for
+// the harness: the village's environment comes from its map (the tables
+// burst's review, B4, 27 Sep 2026: nothing asserted the game fed it in).
+func (s *SoundEnvironment) Current() (env int, music string) {
+	if s.environment != nil {
+		env = s.environment.Index
+	}
+
+	if s.bgm != nil && s.bgm.entry != nil {
+		music = s.bgm.entry.FileName
+	}
+
+	return env, music
+}
+
 // Advance advances the sound engine and plays sounds when necessary
 func (s *SoundEnvironment) Advance(elapsed float64) {
 	s.eventTimer -= elapsed

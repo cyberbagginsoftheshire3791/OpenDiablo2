@@ -194,7 +194,9 @@ func (met *MapEngineTest) loadRegionByIndex(n, levelPreset, fileIndex int) {
 
 	if n == 0 {
 		met.mapEngine.SetSeed(time.Now().UnixNano())
-		met.mapGen.GenerateAct1Overworld()
+		if err := met.mapGen.GenerateAct1Overworld(); err != nil {
+			met.Error(err.Error())
+		}
 	} else {
 		met.mapEngine = d2mapengine.CreateMapEngine(met.logLevel, met.asset) // necessary for map name update
 		met.mapEngine.SetSeed(time.Now().UnixNano())

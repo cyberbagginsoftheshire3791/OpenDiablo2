@@ -129,7 +129,10 @@ const harnessHoldFramesMax = 600
 //
 // The modifiers stay a one-poll tap, as they are for a tap click: a held
 // shift-click is a different question (a repeating cast) and it needs its own
-// assertion before it gets a verb.
+// assertion before it gets a verb. A script that needs one holds the key
+// itself around the click -- strigoi_key shift down, the held click,
+// strigoi_key shift up -- as TestTheHandsHeldShiftDoesNothing does (the
+// tables burst's review, 27 Sep 2026).
 //
 // stepFrame runs one frame with the button down. PAUSED, it must be a real
 // tick (dt of simulated time), not a wait for the next frame: a paused frame

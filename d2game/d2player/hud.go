@@ -719,14 +719,14 @@ func (h *HUD) renderExperienceBar(target d2interface.Surface) {
 	target.PushTranslation(experienceBarOffsetX, experienceBarOffsetY)
 	defer target.Pop()
 
-	// NextLevelExp is 0 in Strigoi's game, which does not load experience.txt
-	// (M5.3's tables burst): Diablo II's bar has nothing to fill toward, and
-	// Experience is never written anyway.
-	if h.hero.Stats.NextLevelExp <= 0 {
+	// Strigoi's own progression in his game (heroExperience); Diablo II's
+	// under -classic, whose NextLevelExp is experience.txt's.
+	xp, next := h.experience()
+	if next <= 0 {
 		return
 	}
 
-	expPercent := float64(h.hero.Stats.Experience) / float64(h.hero.Stats.NextLevelExp)
+	expPercent := float64(xp) / float64(next)
 
 	target.DrawRect(int(expPercent*expBarWidth), 2, d2util.Color(whiteAlpha100))
 }
@@ -766,6 +766,39 @@ func (h *HUD) setStaminaTooltipText() {
 	h.staminaTooltip.SetText(strPanelStamina)
 }
 
+// experience is what the HUD's experience bar and its tooltip show
+// (heroExperience).
+func (h *HUD) experience() (xp, next int) {
+	var holder ProgressHolder
+	if h.gameControls != nil {
+		holder = h.gameControls.progressHolder
+	}
+
+	return heroExperience(h.asset.Classic(), holder, h.hero.Stats.Experience, h.hero.Stats.NextLevelExp)
+}
+
+// heroExperience is the experience the HUD shows: in Strigoi's game his own
+// progression (d2progress, the talent panel's numbers) -- his experience and
+// the total his next level needs, or at the top level his own total, a full
+// bar -- and under -classic Diablo II's (d2Exp, and d2Next from
+// experience.txt). Strigoi's game does not load experience.txt and never
+// writes Diablo II's experience, so its tooltip read "0 / 0" until the tables
+// burst's review (27 Sep 2026).
+func heroExperience(classic bool, holder ProgressHolder, d2Exp, d2Next int) (xp, next int) {
+	if !classic && holder != nil {
+		if p, tree := holder.Progress(); p != nil && tree != nil {
+			next = tree.NextAt(p.XP)
+			if next < 0 {
+				next = p.XP
+			}
+
+			return p.XP, next
+		}
+	}
+
+	return d2Exp, d2Next
+}
+
 func (h *HUD) setExperienceTooltipText() {
 	// Create and format Experience string from string lookup table.
 	fmtExp := h.asset.TranslateString("panelexp")
@@ -776,7 +809,8 @@ func (h *HUD) setExperienceTooltipText() {
 	// an unsigned integer.
 	fmtExp = strings.ReplaceAll(fmtExp, "%u", "%d")
 
-	expCurr, expMax := uint(h.hero.Stats.Experience), uint(h.hero.Stats.NextLevelExp)
+	xp, next := h.experience()
+	expCurr, expMax := uint(xp), uint(next)
 	strPanelExp := fmt.Sprintf(fmtExp, expCurr, expMax)
 
 	h.experienceTooltip.SetText(strPanelExp)

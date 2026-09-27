@@ -1,6 +1,7 @@
 package d2mapengine
 
 import (
+	"fmt"
 	"image"
 	"math/rand"
 	"strings"
@@ -99,18 +100,23 @@ func (m *MapEngine) GetStartingPosition() (x, y int) {
 // The level type's record -- its DT1 tile sets -- comes from lvltypes.txt,
 // which loads here, with the generated world, not at boot (M5.3's tables
 // burst; d2resource.GeneratedWorldRecords).
-func (m *MapEngine) ResetMap(levelType d2enum.RegionIdType, width, height int) {
+//
+// A level type it cannot build is an error the caller refuses the map on, not
+// a Fatalf: that killed the whole process -- a friend's game, or the harness
+// and every script in it -- over one table (the tables burst's review, B3,
+// 27 Sep 2026).
+func (m *MapEngine) ResetMap(levelType d2enum.RegionIdType, width, height int) error {
 	m.resetState(width, height)
 
 	// Saying why beats the index panic a missing table would be a line on,
 	// as the generator does for its own tables.
 	if err := m.asset.EnsureRecords(d2resource.LevelType); err != nil {
-		m.Fatalf("cannot build level type %d: lvltypes.txt did not load: %v", levelType, err)
+		return fmt.Errorf("cannot build level type %d: lvltypes.txt did not load: %w", levelType, err)
 	}
 
 	types := m.asset.Records.Level.Types
 	if int(levelType) < 0 || int(levelType) >= len(types) || types[levelType] == nil {
-		m.Fatalf("cannot build level type %d: lvltypes.txt has no such row", levelType)
+		return fmt.Errorf("cannot build level type %d: lvltypes.txt has no such row", levelType)
 	}
 
 	m.levelType = *types[levelType]
@@ -118,6 +124,8 @@ func (m *MapEngine) ResetMap(levelType d2enum.RegionIdType, width, height int) {
 	for idx := range m.levelType.Files {
 		m.addDT1(m.levelType.Files[idx])
 	}
+
+	return nil
 }
 
 // ResetAuthoredMap is ResetMap for an authored (Tiled) map, M5.4: the same
@@ -440,11 +448,22 @@ func (m *MapEngine) TileExists(tileX, tileY int) bool {
 	return false
 }
 
-// GenerateMap clears the map and places the specified stamp.
+// GenerateMap clears the map and places the specified stamp. A stamp or level
+// type that cannot be built is refused with the reason logged, and the map
+// is left empty.
 func (m *MapEngine) GenerateMap(regionType d2enum.RegionIdType, levelPreset, fileIndex int) {
 	region := m.LoadStamp(regionType, levelPreset, fileIndex)
+	if region == nil {
+		m.Errorf("cannot generate region %d preset %d: its stamp did not load", regionType, levelPreset)
+		return
+	}
+
 	regionSize := region.Size()
-	m.ResetMap(regionType, regionSize.Width, regionSize.Height)
+	if err := m.ResetMap(regionType, regionSize.Width, regionSize.Height); err != nil {
+		m.Error(err.Error())
+		return
+	}
+
 	m.PlaceStamp(region, 0, 0)
 }
 

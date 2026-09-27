@@ -347,6 +347,13 @@ func (p villageProvider) HarnessState() map[string]interface{} {
 	v := p.v
 	state := map[string]interface{}{"bound": v.standing != nil}
 
+	// What the village sounds like: the sound environment the game set from
+	// the map it stands on (Game.Advance: an authored map says its own,
+	// village.tmj's sound_env) and the song that environment started.
+	env, music := v.soundEnv.Current()
+	state["sound_env"] = env
+	state["music"] = music
+
 	if v.standing == nil {
 		return state
 	}

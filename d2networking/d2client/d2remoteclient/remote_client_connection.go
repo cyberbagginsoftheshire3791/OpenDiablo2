@@ -79,7 +79,10 @@ func (r *RemoteClientConnection) Open(connectionString, saveFilePath string) err
 
 	gameState := r.heroState.LoadHeroState(saveFilePath)
 
-	packet, err := d2netpacket.CreatePlayerConnectionRequestPacket(r.GetUniqueID(), gameState)
+	// The game this client launched travels with the request, so a host of
+	// the other game can refuse the join instead of letting its casts reach a
+	// client that has no record of them (the JoinRefused packet).
+	packet, err := d2netpacket.CreatePlayerConnectionRequestPacket(r.GetUniqueID(), gameState, r.asset.Classic())
 	if err != nil {
 		r.Errorf("PlayerConnectionRequestPacket: %v", err)
 	}
@@ -214,6 +217,8 @@ func (r *RemoteClientConnection) decodeToPacket(
 		p, err = d2netpacket.UnmarshalPlayerDisconnectionRequest([]byte(data))
 	case d2netpackettype.ServerClosed:
 		p, err = d2netpacket.UnmarshalServerClosed([]byte(data))
+	case d2netpackettype.JoinRefused:
+		p, err = d2netpacket.UnmarshalJoinRefused([]byte(data))
 	default:
 		err = fmt.Errorf("RemoteClientConnection: unrecognized packet type: %v", t)
 	}

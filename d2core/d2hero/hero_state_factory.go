@@ -236,14 +236,22 @@ func (f *HeroStateFactory) LoadHeroState(filePath string) *HeroState {
 //
 // Strigoi's game has no Diablo II skills and does not load their tables
 // (CreateHeroSkillsState), so a save's skills -- every hero made before the
-// tables burst carries ~30 -- are left out of the hero it plays; the file on
-// disk is untouched until he is saved. -classic hydrates them, and gives a
-// hero that has none (one made or saved by Strigoi's game) his class's
-// skills, exactly as a new -classic hero gets them: its HUD and its casts read
-// a left and a right skill, and a hero without them could not be drawn.
+// tables burst carries ~30 -- are left out of the hero it plays, and kept
+// aside (savedSkills) so that saving him writes them back unchanged: a later
+// -classic load of the same file still has them (Save).
+//
+// -classic hydrates them, and gives a hero that has none (one made or saved
+// by Strigoi's game) his class's skills, exactly as a new -classic hero gets
+// them. That is for the SAVE and what the server sends other clients
+// (AddPlayer): the hero drawn in the game is built by NewPlayer, which makes
+// his class's skills afresh from the records and ignores the ones loaded
+// here (d2mapentity.MapEntityFactory.NewPlayer). The review of 27 Sep 2026
+// corrected the comment that said a hero without them "could not be drawn".
 func (f *HeroStateFactory) loadSkills(result *HeroState) {
 	if !f.asset.Classic() {
+		result.savedSkills = result.Skills
 		result.Skills = map[int]*HeroSkill{}
+
 		return
 	}
 
@@ -297,6 +305,20 @@ func (f *HeroStateFactory) getFirstFreeFileName() string {
 	}
 }
 
+// onDisk is the state as its file holds it: an old save's Diablo II skills,
+// kept out of Strigoi's game (savedSkills), go back into the file unchanged
+// while the hero has none of his own.
+func (s *HeroState) onDisk() *HeroState {
+	if len(s.Skills) > 0 || len(s.savedSkills) == 0 {
+		return s
+	}
+
+	out := *s
+	out.Skills = s.savedSkills
+
+	return &out
+}
+
 // Save saves the player state to a file
 func (f *HeroStateFactory) Save(state *HeroState) error {
 	if state.FilePath == "" {
@@ -307,7 +329,7 @@ func (f *HeroStateFactory) Save(state *HeroState) error {
 		return err
 	}
 
-	fileJSON, _ := json.MarshalIndent(state, "", "   ")
+	fileJSON, _ := json.MarshalIndent(state.onDisk(), "", "   ")
 	if err := ioutil.WriteFile(state.FilePath, fileJSON, writefilePermission); err != nil {
 		return err
 	}

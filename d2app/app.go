@@ -233,7 +233,7 @@ func (a *App) parseArguments() {
 	showHelp := flag.Bool("h", false, "Show help")
 	// Strigoi's own four are the default (strigoi_defaults.go); "diablo" names
 	// Diablo II's for any one, -classic for all of them.
-	classic := flag.Bool("classic", false, "Diablo II's generated Act 1, class art, fonts and words (each of -map, -hero, -fonts, -strings can still name Strigoi's)")
+	classic := flag.Bool("classic", false, classicFlagHelp)
 	a.Options.strings = flag.String("strings", "", "the string table every label is answered from (default "+defaultStrings+"; diablo = Diablo II's)")
 	a.Options.fontSet = flag.String("fonts", "", "the font set every word is drawn in (default "+defaultFonts+"; diablo = Diablo II's)")
 	heroArt := flag.String("hero", "", "the hero's PNG manifest (default "+defaultHero+"; diablo = Diablo II's class art)")

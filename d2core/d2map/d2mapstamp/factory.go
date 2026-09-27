@@ -1,6 +1,7 @@
 package d2mapstamp
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 
@@ -67,7 +68,10 @@ func (f *StampFactory) randFloat64() float64 {
 // not generate wilderness for what it got. The filter lives here rather than
 // being written twice, because two copies of "which files count" would drift.
 func (f *StampFactory) PresetFileNames(levelPreset int) []string {
-	f.ensureTables()
+	if err := f.ensureTables(); err != nil {
+		f.Error(err.Error())
+		return nil
+	}
 
 	var names []string
 
@@ -81,7 +85,10 @@ func (f *StampFactory) PresetFileNames(levelPreset int) []string {
 }
 
 func (f *StampFactory) LoadStamp(levelType d2enum.RegionIdType, levelPreset, fileIndex int) *Stamp {
-	f.ensureTables()
+	if err := f.ensureTables(); err != nil {
+		f.Error(err.Error())
+		return nil
+	}
 
 	stamp := &Stamp{
 		factory:     f,
@@ -134,9 +141,14 @@ func (f *StampFactory) LoadStamp(levelType d2enum.RegionIdType, levelPreset, fil
 
 // ensureTables loads the presets, monster and object tables a stamp reads,
 // if nothing has yet: they load with the generated world, not at boot
-// (d2resource.GeneratedWorldRecords).
-func (f *StampFactory) ensureTables() {
+// (d2resource.GeneratedWorldRecords). A failure is the caller's to refuse
+// the stamp on -- LoadStamp's nil, as it already was for a stamp whose tiles
+// or DS1 would not read -- not a Fatalf that took the whole process with it
+// (the tables burst's review, B3, 27 Sep 2026).
+func (f *StampFactory) ensureTables() error {
 	if err := f.asset.EnsureRecords(d2resource.GeneratedWorldRecords...); err != nil {
-		f.Fatalf("cannot stamp Diablo II's map presets: their tables did not load: %v", err)
+		return fmt.Errorf("cannot stamp Diablo II's map presets: their tables did not load: %w", err)
 	}
+
+	return nil
 }

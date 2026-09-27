@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 
@@ -53,6 +54,17 @@ type GameClient struct {
 	// (d2mapgen.GenerateHostWorld), or nil. Written by the packet goroutine.
 	mapMismatch   error
 	mapMismatchMu sync.Mutex
+
+	// joinRefused is why the host refused this client's join (the
+	// JoinRefused packet: it launched the other game), or "". Written by the
+	// packet goroutine, read by the game screen, which goes back to the main
+	// menu with it (JoinRefused).
+	joinRefused   string
+	joinRefusedMu sync.Mutex
+
+	// castsDropped counts the casts of a skill this game has no record of
+	// (handleCastSkillPacket); the first is logged.
+	castsDropped atomic.Int64
 
 	// SaveFilePath is the hero save this client opened. Strigoi keeps its own
 	// per-hero data (the kit, T2) in a sidecar beside it, so it must know which
@@ -184,6 +196,10 @@ func (g *GameClient) OnPacketReceived(packet d2netpacket.NetPacket) error {
 	case d2netpackettype.ServerFull:
 		g.Infof("Server is full") // need to be verified
 		os.Exit(0)
+	case d2netpackettype.JoinRefused:
+		if err := g.handleJoinRefusedPacket(packet); err != nil {
+			return err
+		}
 	default:
 		g.Fatalf("Invalid packet type: %d", packet.PacketType)
 	}
@@ -308,6 +324,24 @@ func (g *GameClient) handleCastSkillPacket(packet d2netpacket.NetPacket) error {
 		return err
 	}
 
+	// A cast of a skill this game has no record of is dropped, before
+	// anything is loaded or dereferenced for it. Strigoi's game loads no
+	// skill table, so every Diablo II cast is such a skill there -- and one
+	// reached the host's own client from a -classic client and took the host
+	// down on its nil record (the tables burst's review, B1, 27 Sep 2026).
+	// The host refuses both the join and the cast now (GameServer); this is
+	// the client not trusting that. The first drop is logged, the rest
+	// counted.
+	skillRecord := g.asset.Records.Skill.Details[playerCast.SkillID]
+	if skillRecord == nil {
+		if g.castsDropped.Add(1) == 1 {
+			g.Warningf("dropped a cast of skill %d by %s: this game has no record of it (Strigoi's game has no Diablo II skills; further drops are not logged)",
+				playerCast.SkillID, playerCast.SourceEntityID)
+		}
+
+		return nil
+	}
+
 	// Diablo II's missiles and cast overlays load on the first cast, not at
 	// boot (d2resource.CastRecords): a game that never casts never reads them.
 	if err := g.asset.EnsureRecords(d2resource.CastRecords...); err != nil {
@@ -322,8 +356,6 @@ func (g *GameClient) handleCastSkillPacket(packet d2netpacket.NetPacket) error {
 
 	direction := player.Position.DirectionTo(*d2vector.NewVector(castX, castY))
 	player.SetDirection(direction)
-
-	skillRecord := g.asset.Records.Skill.Details[playerCast.SkillID]
 
 	missileEntities, err := g.createMissileEntities(skillRecord, player, castX, castY)
 	if err != nil {
@@ -493,6 +525,39 @@ func (g *GameClient) handlePlayerDisconnectionPacket(packet d2netpacket.NetPacke
 // IsSinglePlayer returns a bool for whether the game is a single-player game
 func (g *GameClient) IsSinglePlayer() bool {
 	return g.connectionType == d2clientconnectiontype.Local
+}
+
+// handleJoinRefusedPacket keeps the host's reason for refusing this client's
+// join and says it loudly; the game screen takes the player back to the main
+// menu with it (JoinRefused).
+func (g *GameClient) handleJoinRefusedPacket(packet d2netpacket.NetPacket) error {
+	refused, err := d2netpacket.UnmarshalJoinRefused(packet.PacketData)
+	if err != nil {
+		return err
+	}
+
+	reason := refused.Reason
+	if reason == "" {
+		reason = "the host refused this game"
+	}
+
+	g.Errorf("THE HOST REFUSED THIS JOIN: %s", reason)
+
+	g.joinRefusedMu.Lock()
+	g.joinRefused = reason
+	g.joinRefusedMu.Unlock()
+
+	return nil
+}
+
+// JoinRefused is why the host refused this client's join, or "" when it has
+// not: a host refuses a client that launched the other game (-classic, or
+// not). The game screen reads it every frame (Game.Advance).
+func (g *GameClient) JoinRefused() string {
+	g.joinRefusedMu.Lock()
+	defer g.joinRefusedMu.Unlock()
+
+	return g.joinRefused
 }
 
 // MapMismatch reports why the world this client built is not the one its host

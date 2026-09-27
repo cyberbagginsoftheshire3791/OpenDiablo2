@@ -24,6 +24,17 @@ type launchChoice struct {
 	Map, Hero, Fonts, Strings string
 }
 
+// classicFlagHelp is -classic's line in -h. It is more than the four
+// settings below: since M5.3's tables burst (26 Sep 2026) -classic is also
+// Diablo II's rules and the tables they read -- the hero's body from
+// charstats.txt, his items, the experience table, the level tables, and the
+// right button casting his right skill (shift-click the left) -- where
+// Strigoi's game has its own and the right button is the torch. The help said
+// only the four until the tables burst's review (27 Sep 2026).
+const classicFlagHelp = "Diablo II's game: its generated Act 1, class art, fonts and words (each of -map, -hero, -fonts, -strings can still name Strigoi's), " +
+	"and its rules and tables -- the hero's body and items, experience, the level tables, and skills cast with the right button and shift-click " +
+	"(in Strigoi's game the right button is the torch)"
+
 // resolveLaunch picks each of the four: Strigoi's own by default, Diablo II's
 // with classic; a flag given explicitly wins either way, and its value
 // "diablo" (or "" -- and, as the harness has always said them, "generated"

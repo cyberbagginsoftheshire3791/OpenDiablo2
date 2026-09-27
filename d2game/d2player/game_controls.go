@@ -325,6 +325,13 @@ type GameControls struct {
 	// of sticks, and one torch is what makes the rationing bite.
 	torchesCarried int
 
+	// torchVerbs counts the torch verbs that did something -- a light, a
+	// relight or a douse, from L or the right button (combatTorch). Read by
+	// the harness (ui.torch_verbs): a held right button must be ONE verb,
+	// and two verbs douse a torch that one lit, so the light's state alone
+	// cannot tell one from three (the tables burst's review, B2).
+	torchVerbs int
+
 	// kitHolder is the game screen's owner of the hero's gear (T2).
 	kitHolder KitHolder
 
@@ -805,12 +812,6 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 			return true
 		}
 
-		// A click on the combat panel is a click on the panel, not on the
-		// tile behind it.
-		if g.inTacticalPanel(mx, my) {
-			return true
-		}
-
 		// Shift-click is Diablo II's cast of the left skill, and only
 		// -classic's: in Strigoi's game it does nothing -- no cast, no walk,
 		// and the sheet stays as it was (Josh, 25 Sep 2026).
@@ -1005,10 +1006,13 @@ func (g *GameControls) combatTorch() {
 			g.torchesCarried--
 		}
 
+		g.torchVerbs++
+
 		return
 	}
 
 	carried.Lit = choice == d2world.CommitLight
+	g.torchVerbs++
 }
 
 // combatEndTurn is E, and it is one key with two verbs behind it: hold ends a
@@ -1274,6 +1278,16 @@ func (g *GameControls) isInActiveMenusRect(px, py int) bool {
 	}
 
 	if g.overKitPanel(px, py) || g.overTalentPanel(px, py) {
+		return true
+	}
+
+	// The combat panel, while it shows: a click on it is a click on the
+	// panel, not on the tile or the enemy behind it -- either button, so a
+	// right-click there neither lights nor douses the torch nor spends the
+	// Action (Josh's ruling on the review's C1, 27 Sep 2026; until then only
+	// the left button checked it, AFTER the enemy under the cursor). L
+	// stays the torch wherever the cursor is.
+	if g.inTacticalPanel(px, py) {
 		return true
 	}
 

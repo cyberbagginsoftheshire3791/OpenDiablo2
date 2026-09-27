@@ -4,6 +4,7 @@ package d2mapgen
 // is experiemental, and mapgen will likely change dramatically in the future.
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -34,8 +35,12 @@ const (
 	autoFileIndex = -1
 )
 
-// GenerateAct1Overworld generates the map and entities for the first town and surrounding area.
-func (g *MapGenerator) GenerateAct1Overworld() {
+// GenerateAct1Overworld generates the map and entities for the first town and
+// surrounding area. It fails only when Diablo II's generated world cannot be
+// built (its tables did not load): the caller refuses the game with the
+// reason, where a Fatalf used to take the process down (the tables burst's
+// review, B3, 27 Sep 2026).
+func (g *MapGenerator) GenerateAct1Overworld() error {
 	// The world RNG derives from the engine seed (P3 E4). The old
 	// rand.Seed(g.engine.Seed()) had been a silent no-op since Go 1.24, so
 	// stamp placement was unseeded and the server's and client's wilderness
@@ -50,7 +55,7 @@ func (g *MapGenerator) GenerateAct1Overworld() {
 		recordAuthored(p, sha, err)
 
 		if err == nil {
-			return
+			return nil
 		}
 
 		g.Errorf("authored map refused, generating the Act 1 world instead: %v", err)
@@ -62,22 +67,26 @@ func (g *MapGenerator) GenerateAct1Overworld() {
 		g.rng = g.engine.Rand()
 	}
 
-	g.generateAct1World()
+	return g.generateAct1World()
 }
 
 // generateAct1World builds Diablo II's generated Act 1: a town layout and the
 // wilderness around it, drawn from the world RNG (g.rng, set by the caller).
-func (g *MapGenerator) generateAct1World() {
+func (g *MapGenerator) generateAct1World() error {
 	// The generated world's own tables load now, not at boot (records_lazy.go).
 	// Without them there is no world to build, and saying why beats the
-	// index panic a missing preset would be further in.
+	// index panic a missing preset would be further in. Every table the
+	// stamps and the level type read below is among them, so past this line
+	// none of their loads can fail.
 	if err := g.asset.EnsureRecords(d2resource.GeneratedWorldRecords...); err != nil {
-		g.Fatalf("cannot build Diablo II's generated world: its tables did not load: %v", err)
+		return fmt.Errorf("cannot build Diablo II's generated world: its tables did not load: %w", err)
 	}
 
 	wilderness1Details := g.asset.Records.GetLevelDetails(wildernessDetailsRecordID)
 
-	g.engine.ResetMap(d2enum.RegionAct1Town, mapWidth, mapHeight)
+	if err := g.engine.ResetMap(d2enum.RegionAct1Town, mapWidth, mapHeight); err != nil {
+		return fmt.Errorf("cannot build Diablo II's generated world: %w", err)
+	}
 	mapWidth := g.engine.Size().Width
 	mapHeight := g.engine.Size().Height
 
@@ -124,6 +133,8 @@ func (g *MapGenerator) generateAct1World() {
 		// wilderness should degrade to a small world, not to a dead process.
 		g.engine.PlaceStamp(townStamp, mapWidth-townSize.Width, mapHeight-townSize.Height)
 	}
+
+	return nil
 }
 
 // townPresetsWithWilderness are the Act 1 town layouts this generator can

@@ -126,7 +126,9 @@ func HostMap() (path, sha string) {
 func (g *MapGenerator) GenerateHostWorld(hostMap, hostSHA string) error {
 	switch hostWorldBranch(authoredMapPath(), hostMap) {
 	case byTheSetting:
-		g.GenerateAct1Overworld()
+		if err := g.GenerateAct1Overworld(); err != nil {
+			return fmt.Errorf("this client could not build the host's world: %w", err)
+		}
 
 		if hostMap == "" {
 			return nil
@@ -140,7 +142,10 @@ func (g *MapGenerator) GenerateHostWorld(hostMap, hostSHA string) error {
 		// refused, which reseeded it (GenerateAct1Overworld): from the seed.
 		g.engine.ReseedRand(g.engine.Seed())
 		g.rng = g.engine.Rand()
-		g.generateAct1World()
+
+		if err := g.generateAct1World(); err != nil {
+			return fmt.Errorf("this client could not build the host's world: %w", err)
+		}
 
 		return nil
 	}
@@ -151,7 +156,10 @@ func (g *MapGenerator) GenerateHostWorld(hostMap, hostSHA string) error {
 	if err != nil {
 		g.engine.ReseedRand(g.engine.Seed())
 		g.rng = g.engine.Rand()
-		g.generateAct1World()
+
+		if genErr := g.generateAct1World(); genErr != nil {
+			return fmt.Errorf("the host's map %s could not be built here (%v), nor the generated world: %w", hostMap, err, genErr)
+		}
 
 		return fmt.Errorf("the host's map %s could not be built here, so this is not the host's world: %w", hostMap, err)
 	}

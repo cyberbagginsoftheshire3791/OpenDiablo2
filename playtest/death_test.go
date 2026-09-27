@@ -5,6 +5,7 @@ package playtest
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -147,6 +148,18 @@ func TestDeath(t *testing.T) {
 
 	if got := mustNum(t, progressState(s), "xp"); got != 0 {
 		t.Fatalf("act 5: the level earned after his last save is gone; he has %.0f experience", got)
+	}
+
+	// And the reload is still Strigoi's game: none of the ten Diablo II tables
+	// its boot does not read was read to rebuild him (M5.3's tables burst; the
+	// review, 27 Sep 2026). Under the -classic sweep they are loaded at boot.
+	if os.Getenv("STRIGOI_PLAYTEST_GAME") == "" {
+		a := sub(s.call("strigoi_get_system_state", map[string]any{"system": "assets"}), "state")
+		for _, table := range diabloGameTables {
+			if censusHas(a, table) {
+				t.Errorf("act 5: %s was read by the time he stood up again; it is Diablo II's game's, not Strigoi's", table)
+			}
+		}
 	}
 
 	t.Logf("died with a level he had not saved; reloaded alive, level 1, file as he entered")

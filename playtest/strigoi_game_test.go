@@ -136,6 +136,19 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		s.call("strigoi_step_world", map[string]any{"world_minutes": 15.0})
 	}
 
+	// THE VILLAGE'S SOUND IS ITS OWN (M5.3's tables burst; the review's B4,
+	// 27 Sep 2026): village.tmj says sound_env 1, the game sets it from the
+	// map -- not from levels.txt, which Strigoi's game does not load -- and
+	// that environment's song plays: Diablo II's Act 1 town music (sounds.txt
+	// names it act1/town1.wav, under data/global/music) until Strigoi has its
+	// own. Nothing asserted this until the review.
+	village := sub(s.call("strigoi_get_system_state", map[string]any{"system": "village"}), "state")
+	music := strings.ToLower(strings.ReplaceAll(str(village, "music"), `\`, "/"))
+
+	if env := mustNum(t, village, "sound_env"); env != 1 || music != "act1/town1.wav" {
+		t.Errorf("in the village the sound environment is %.0f playing %q; want 1, the map's own, playing act1/town1.wav", env, music)
+	}
+
 	s.call("strigoi_screenshot", map[string]any{"name": "strigoi"})
 
 	a := sub(s.call("strigoi_get_system_state", map[string]any{"system": "assets"}), "state")
@@ -144,14 +157,16 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		t.Fatalf("font set %q, string table %q: want Strigoi's", str(a, "font_set"), str(a, "string_set"))
 	}
 
-	// Diablo II's tables: 4 of its 83 at most (history items 111, 113, 116,
-	// and M5.3's tables burst) -- the generated world's six load only when one
-	// is built, the missiles and cast overlays only when a -classic skill is
-	// cast, and ten are Diablo II's game's alone: the hero's body is his
-	// manifest's, his loadout his kit, his right hand the torch, the village's
-	// sound and name its own.
-	if n := mpqIn(a, "data/global/excel"); n == 0 || n > 4 {
-		t.Errorf("data/global/excel: %.0f table(s) from Diablo II's MPQs, want 1..4", n)
+	// Diablo II's tables: exactly 4 of its 83 (history items 111, 113, 116,
+	// and M5.3's tables burst) -- sounds, soundenviron, monstats, monstats2.
+	// The generated world's six load only when one is built, the missiles and
+	// cast overlays only when a -classic skill is cast, and ten are Diablo
+	// II's game's alone: the hero's body is his manifest's, his loadout his
+	// kit, his right hand the torch, the village's sound and name its own.
+	// Exact since the review (27 Sep 2026): a bound of "at most 4" could not
+	// see a table that left by accident.
+	if n := mpqIn(a, "data/global/excel"); n != 4 {
+		t.Errorf("data/global/excel: %.0f table(s) from Diablo II's MPQs, want exactly 4", n)
 	}
 
 	for _, table := range diabloGameTables {

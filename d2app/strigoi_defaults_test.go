@@ -2,7 +2,10 @@
 
 package d2app
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestStrigoiIsTheDefault(t *testing.T) {
 	own := launchChoice{Map: defaultMap, Hero: defaultHero, Fonts: defaultFonts, Strings: defaultStrings}
@@ -27,6 +30,21 @@ func TestStrigoiIsTheDefault(t *testing.T) {
 	} {
 		if got := resolveLaunch(c.classic, c.given); got != c.want {
 			t.Errorf("%s: %+v, want %+v", name, got, c.want)
+		}
+	}
+}
+
+// -classic's help says what the flag has meant since the tables burst: not
+// only Diablo II's map, art, fonts and words but its rules and tables -- and
+// that the right button casts there, where Strigoi's is the torch (the
+// review, 27 Sep 2026).
+//
+// Negative control (27 Sep 2026): give the flag its old help ("Diablo II's
+// generated Act 1, class art, fonts and words ...") and this fails.
+func TestClassicHelpSaysItIsDiabloIIsRules(t *testing.T) {
+	for _, want := range []string{"generated Act 1", "rules and tables", "experience", "right button", "torch"} {
+		if !strings.Contains(classicFlagHelp, want) {
+			t.Errorf("-classic's help never says %q: %s", want, classicFlagHelp)
 		}
 	}
 }
