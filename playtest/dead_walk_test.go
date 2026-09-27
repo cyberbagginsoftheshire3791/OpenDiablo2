@@ -51,8 +51,8 @@ func TestTheDeadWalk(t *testing.T) {
 	bx, by := num(body, "x"), num(body, "y")
 
 	// --- 1: they rise, and nothing has found him ------------------------------------------------
-	// The camp's walls allow about fifteen tiles; the notice radius is taken
-	// down until act 3 so the distance is not what the control rests on.
+	// The notice radius is taken down until act 3 so the distance is not what
+	// the control rests on.
 	noticeRadius := mustNum(t, spawnsState(s), "notice_radius")
 	setField(s, "spawns", "notice_radius", 0.05)
 	walkAwayFrom(t, s, bx, by, 8)
@@ -74,6 +74,14 @@ func TestTheDeadWalk(t *testing.T) {
 	if flag(t, combatState(s), "fighting") {
 		t.Fatal("act 1: nothing has found him yet")
 	}
+
+	// Act 1's walk leaves him wherever the map let him go. On the village
+	// (the suite's game since 26 Sep) that is outside the east fence, and the
+	// one risen man inside the notice radius there is behind a house: the
+	// village is shelter (Josh, 24 Sep), and sight is not this script's
+	// subject. So he walks back to where the first body's place can see him
+	// while the radius is still too small for anything to notice him.
+	standInSightOf(t, s, bx, by, 8)
 
 	// --- 2: still standing before first light -----------------------------------------------------
 	for i := 0; i < 400; i++ {
@@ -107,7 +115,9 @@ func TestTheDeadWalk(t *testing.T) {
 
 	fight := combatState(s)
 	if !flag(t, fight, "fighting") {
-		t.Fatalf("act 3: at the bodies' place, the dead find him: %v", fight)
+		p := s.call("strigoi_get_player", map[string]any{})
+		t.Fatalf("act 3: at the bodies' place, the dead find him: %v\nplayer at %.1f,%.1f; notice_list=%v",
+			fight, num(p, "x"), num(p, "y"), spawnsState(s)["notice_list"])
 	}
 
 	if flag(t, fight, "surprised") {
@@ -213,6 +223,52 @@ func risenGroups(s *session) int {
 	}
 
 	return n
+}
+
+// standInSightOf walks the player toward (x, y) until he is within near tiles
+// AND the sight ray FROM (x, y) to him is clear -- the direction the notice
+// model casts, watcher to target -- then stops him where he stands. There is
+// no stop verb: re-targeting his own tile is the stop, and the check after it
+// proves he stopped rather than assuming it.
+func standInSightOf(t *testing.T, s *session, x, y, near float64) {
+	t.Helper()
+
+	// find_path's from_x/from_y are omitempty: a zero would silently cast the
+	// ray from the player to himself, which is always clear.
+	if x == 0 || y == 0 {
+		t.Fatalf("standInSightOf(%.1f,%.1f): a zero coordinate cannot be sent as the ray's origin", x, y)
+	}
+
+	s.call("strigoi_move_player_to", map[string]any{"x": x, "y": y})
+
+	for i := 0; i < 300; i++ {
+		p := s.call("strigoi_get_player", map[string]any{})
+		px, py := mustNum(t, p, "x"), mustNum(t, p, "y")
+
+		if math.Hypot(px-x, py-y) <= near &&
+			flag(t, s.call("strigoi_find_path", map[string]any{"from_x": x, "from_y": y, "to_x": px, "to_y": py}), "straight_line_clear") {
+			s.call("strigoi_move_player_to", map[string]any{"x": px, "y": py})
+			s.call("strigoi_step", map[string]any{"frames": 30})
+
+			a := s.call("strigoi_get_player", map[string]any{})
+			s.call("strigoi_step", map[string]any{"frames": 30})
+			b := s.call("strigoi_get_player", map[string]any{})
+
+			if math.Hypot(mustNum(t, b, "x")-mustNum(t, a, "x"), mustNum(t, b, "y")-mustNum(t, a, "y")) > 0.05 {
+				t.Fatalf("stood in sight of %.1f,%.1f at %.1f,%.1f but he is still walking (%.2f,%.2f -> %.2f,%.2f)",
+					x, y, px, py, num(a, "x"), num(a, "y"), num(b, "x"), num(b, "y"))
+			}
+
+			t.Logf("stands at %.1f,%.1f (the line was cleared at %.1f,%.1f), %.1f tiles from %.1f,%.1f", num(b, "x"), num(b, "y"),
+				px, py, math.Hypot(num(b, "x")-x, num(b, "y")-y), x, y)
+
+			return
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 6})
+	}
+
+	t.Fatalf("walked toward %.1f,%.1f and never stood within %.0f tiles on a clear line", x, y, near)
 }
 
 // walkAwayFrom walks him at least min tiles from a point, in whichever

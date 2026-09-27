@@ -34,7 +34,16 @@ const (
 	// unlit-night spread to 0.28 over the 0.25 threshold. Dimmed and shrunk,
 	// the whole ensemble sits back inside the envelope -- the shipped test is
 	// the gate, and it is green.
-	overheadBarFill   = 0xaa1e1eff // crimson (170,30,30), L=77
+	//
+	// DEEPENED 26 Sep 2026 (Josh, "deeper crimson", by the same method): the
+	// village's placeholder road reads L~100 against Act 1's daylight ground's
+	// L~25, and crimson (170,30,30), L 76.7, cleared the first by only 23.3 on
+	// the strip mean -- below the D5 floor 30. The fill has to sit between the
+	// two grounds; (140,25,25), L 63.3, is the maximin candidate: 38.1 over
+	// Act 1's day ground, 36.6 over the village road, ~60 over night, and a
+	// lower-luminance fill only helps the night spread. Measured on the saved
+	// frames 20260924-161034 (Act 1) and 20260924-165104 (village).
+	overheadBarFill   = 0x8c1919ff // deep crimson (140,25,25), L=63
 	overheadBarTrack  = 0x282828ff // dark track (40,40,40)
 	overheadBarFrame  = 0x0a0a0aff // near-black 1px frame
 	overheadBarSelect = 0x7d5a28ff // dim amber (125,90,40), L=85, the selected squad's outline [DIAL]

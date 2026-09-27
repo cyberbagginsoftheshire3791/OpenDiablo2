@@ -11,19 +11,24 @@
 // run in CI (no MPQs there — Constitution, Article V).
 //
 // Set STRIGOI_HARNESS_ADDR (e.g. 127.0.0.1:6670) to attach to a game you
-// started by hand instead of building + launching one.
+// started by hand instead of building + launching one. Launched games run in
+// parallel (see startWith); go test -parallel N sets how many at once.
 package playtest
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,7 +36,6 @@ import (
 )
 
 const (
-	defaultAddr    = "127.0.0.1:6670"
 	connectTimeout = 90 * time.Second
 	callTimeout    = 60 * time.Second
 )
@@ -40,6 +44,7 @@ type session struct {
 	t        *testing.T
 	sess     *mcp.ClientSession
 	cmd      *exec.Cmd
+	exited   chan struct{} // closed when the launched game's process has exited
 	attached bool
 	stopped  bool
 	RunBase  string
@@ -47,29 +52,67 @@ type session struct {
 	logFile  *os.File
 }
 
-// start builds and launches the harness build (or attaches to a running one)
-// and returns a connected session. It registers cleanup on t.
+// start launches Strigoi -- the game with no switches, the authored village,
+// the Janissary, Strigoi's fonts and words -- and returns a connected session.
+//
+// THE SUITE TESTS STRIGOI (Josh, 25 Sep 2026). Until then start passed
+// -classic and every script proved itself on Diablo II's generated Act 1,
+// while the game that ships was covered only by a second, slower sweep.
+// STRIGOI_PLAYTEST_GAME=classic now runs every script on Act 1 instead: the
+// sweep is the other way round. A script whose subject only exists in Act 1
+// (the generator, the font and word controls) says so and calls
+// startWith(t, "-classic") itself.
 func start(t *testing.T) *session {
 	t.Helper()
 
-	// -classic: the suite's scripts were written against Diablo II's
-	// generated Act 1, class art, fonts and words, and keep them so their
-	// record stays comparable. Strigoi's own defaults have their own script
-	// (strigoi_game_test.go), launched with no switches at all.
-	//
-	// STRIGOI_PLAYTEST_GAME=default runs every script on the default game
-	// instead: a SWEEP, to see which of the loop's proofs hold where the
-	// game now lives. Its failures are findings, not a red suite.
-	if os.Getenv("STRIGOI_PLAYTEST_GAME") == "default" {
-		return startWith(t)
+	return startGame(t)
+}
+
+// startGame is start with extra flags for the game, still honouring
+// STRIGOI_PLAYTEST_GAME. Any value but "" or "classic" fails the script: the
+// retired "default" (the old sweep) would otherwise silently run Strigoi.
+func startGame(t *testing.T, extra ...string) *session {
+	t.Helper()
+
+	switch game := os.Getenv("STRIGOI_PLAYTEST_GAME"); game {
+	case "":
+		return startWith(t, extra...)
+	case "classic":
+		return startWith(t, append([]string{"-classic"}, extra...)...)
+	default:
+		t.Fatalf("STRIGOI_PLAYTEST_GAME=%q: use \"classic\" or leave it unset (Strigoi is the default since 26 Sep 2026)", game)
+		return nil
+	}
+}
+
+// freePort returns a loopback port nothing is listening on right now, for a
+// script that needs its game server on a REAL port (TestDeath: the reload's
+// PortFree wait is vacuous under -server-port 0).
+func freePort(t *testing.T) string {
+	t.Helper()
+
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("finding a free port: %v", err)
 	}
 
-	return startWith(t, "-classic")
+	defer l.Close()
+
+	return strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
 }
 
 // startWith is start with extra command-line flags for the game (-fonts ...).
 // An attached session was launched by someone else, so it cannot take them:
 // the script is skipped rather than run against the wrong game.
+//
+// EVERY LAUNCHED SCRIPT RUNS IN PARALLEL (26 Sep 2026). Each game is its own
+// process with its own harness port, game-server port, %APPDATA% (so its
+// hero saves and config) and run directory, and the world is stepped rather
+// than wall-clocked, so four games sharing the laptop report the same numbers
+// one would. t.Parallel is taken here, once per test, so a new script is
+// parallel without remembering to be. go test's -parallel sets the width;
+// STRIGOI_PLAYTEST_SERIAL=1, an attached game, or keepSerial(t) keeps a
+// script to itself.
 func startWith(t *testing.T, flags ...string) *session {
 	t.Helper()
 
@@ -83,53 +126,52 @@ func startWith(t *testing.T, flags ...string) *session {
 
 		s.attached = true
 	} else {
-		addr = defaultAddr
+		goParallel(t)
 
 		repoRoot, err := filepath.Abs("..")
 		if err != nil {
 			t.Fatalf("repo root: %v", err)
 		}
 
-		exe := filepath.Join(os.TempDir(), "strigoi-harness", "od2-harness")
-		if runtime.GOOS == "windows" {
-			exe += ".exe"
+		exe, err := harnessBinary(repoRoot)
+		if err != nil {
+			t.Fatalf("%v", err)
 		}
 
-		if err := os.MkdirAll(filepath.Dir(exe), 0o750); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
-
-		build := exec.Command("go", "build", "-tags", "harness", "-o", exe, ".")
-		build.Dir = repoRoot
-
-		if out, err := build.CombinedOutput(); err != nil {
-			t.Fatalf("go build -tags harness failed: %v\n%s", err, out)
-		}
-
-		// The application loads loose project assets beside the executable. The
-		// harness binary lives in a temp directory, so mirror only Strigoi's own
-		// data there; without this, tests silently fall back to D2 art.
-		if err := copyTree(
-			filepath.Join(repoRoot, "data", "strigoi"),
-			filepath.Join(filepath.Dir(exe), "data", "strigoi"),
-		); err != nil {
-			t.Fatalf("copying Strigoi assets beside harness: %v", err)
+		home, err := testHome(t)
+		if err != nil {
+			t.Fatalf("a private %%APPDATA%% for this test: %v", err)
 		}
 
 		// Run artifacts land beside the repo, not in it (Article V), where the
 		// device bridge can still reach them: <Projects>/strigoi-harness-runs.
+		// Each test's harness runs go under pt/<test>, so parallel games never
+		// share a run directory.
 		s.RunBase = filepath.Join(filepath.Dir(repoRoot), "strigoi-harness-runs")
+		name := safeName(t.Name())
+		out := filepath.Join(s.RunBase, "pt", name)
 
-		s.cmd = exec.Command(exe, append([]string{"-harness", "-harness-addr", addr, "-harness-out", s.RunBase, "-l", "4"}, flags...)...)
+		if err := os.MkdirAll(out, 0o750); err != nil {
+			t.Fatalf("run dir: %v", err)
+		}
+
+		seq := launchSeq.Add(1)
+		addrFile := filepath.Join(home, fmt.Sprintf("harness-addr-%d.txt", seq))
+
+		args := []string{
+			"-harness", "-harness-addr", "127.0.0.1:0", "-harness-addr-file", addrFile,
+			"-harness-out", out, "-server-port", "0", "-harness-timeout", "30s", "-l", "4",
+		}
+		s.cmd = exec.Command(exe, append(args, flags...)...)
 		s.cmd.Dir = repoRoot
+		// os.UserConfigDir is %APPDATA% on Windows: the hero saves
+		// (OpenDiablo2\Saves) and config.json follow it, so this test's heroes
+		// are its own. The last entry wins when a key repeats.
+		s.cmd.Env = append(os.Environ(), "APPDATA="+home, "XDG_CONFIG_HOME="+home)
 
 		// Keep the game's own output: a script that dies with a transport
 		// error usually died because the game panicked, and the panic is here.
-		if err := os.MkdirAll(s.RunBase, 0o750); err != nil {
-			t.Fatalf("run base: %v", err)
-		}
-
-		s.LogPath = filepath.Join(s.RunBase, "game-"+time.Now().Format("20060102-150405")+".log")
+		s.LogPath = filepath.Join(s.RunBase, fmt.Sprintf("game-%s-%s.log", time.Now().Format("20060102-150405.000"), name))
 
 		if f, err := os.Create(s.LogPath); err == nil {
 			s.logFile = f
@@ -138,10 +180,27 @@ func startWith(t *testing.T, flags ...string) *session {
 		}
 
 		if err := s.cmd.Start(); err != nil {
+			if s.logFile != nil {
+				_ = s.logFile.Close()
+			}
+
 			t.Fatalf("launching the game: %v", err)
 		}
 
+		s.exited = make(chan struct{})
+
+		go func(cmd *exec.Cmd, done chan struct{}) {
+			_ = cmd.Wait()
+			close(done)
+		}(s.cmd, s.exited)
+
 		t.Logf("game output -> %s", s.LogPath)
+
+		addr, err = s.waitForAddr(addrFile)
+		if err != nil {
+			s.kill()
+			t.Fatalf("%v\n--- game output (tail) ---\n%s", err, s.gameTail(40))
+		}
 	}
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "strigoi-playtest", Version: "0.1.0"}, nil)
@@ -161,7 +220,15 @@ func startWith(t *testing.T, flags ...string) *session {
 
 		if time.Now().After(deadline) {
 			s.kill()
-			t.Fatalf("could not connect to %s within %v: %v", endpoint, connectTimeout, err)
+			t.Fatalf("could not connect to %s within %v: %v\n--- game output (tail) ---\n%s", endpoint, connectTimeout, err, s.gameTail(40))
+		}
+
+		if s.exited != nil {
+			select {
+			case <-s.exited:
+				t.Fatalf("the game exited before the harness session connected\n--- game output (tail) ---\n%s", s.gameTail(40))
+			default:
+			}
 		}
 
 		time.Sleep(500 * time.Millisecond)
@@ -170,6 +237,181 @@ func startWith(t *testing.T, flags ...string) *session {
 	t.Cleanup(s.stop)
 
 	return s
+}
+
+// waitForAddr waits for the game to say which port its harness bound
+// (-harness-addr-file). A game that exits first is reported at once rather
+// than after the connect timeout.
+func (s *session) waitForAddr(path string) (string, error) {
+	deadline := time.Now().Add(connectTimeout)
+
+	for {
+		if data, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+			return strings.TrimSpace(string(data)), nil
+		}
+
+		select {
+		case <-s.exited:
+			return "", fmt.Errorf("the game exited before its harness was listening")
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("the game's harness did not report an address within %v (%s)", connectTimeout, path)
+		}
+	}
+}
+
+var (
+	buildOnce sync.Once
+	buildDir  string
+	builtExe  string
+	buildErr  error
+
+	launchSeq atomic.Int64
+
+	homeMu sync.Mutex
+	homes  = map[*testing.T]string{}
+
+	serialMu   sync.Mutex
+	serialOnly = map[*testing.T]bool{}
+	parallelOn = map[*testing.T]bool{}
+)
+
+// harnessBinary builds the harness game ONCE per go test run and mirrors
+// Strigoi's own data beside it. The build used to run inside every launch:
+// sixty-odd builds a suite, and with games running in parallel a rebuild
+// would overwrite an exe another test is running from. The asset copy is
+// therefore also a snapshot: art that changes mid-suite does not reach it.
+//
+// A failed build fails every test with the build's own output, not with a
+// transport error from a game that never started.
+func harnessBinary(repoRoot string) (string, error) {
+	buildOnce.Do(func() {
+		parent := filepath.Join(os.TempDir(), "strigoi-harness")
+		if err := os.MkdirAll(parent, 0o750); err != nil {
+			buildErr = fmt.Errorf("mkdir: %w", err)
+			return
+		}
+
+		dir, err := os.MkdirTemp(parent, "run-")
+		if err != nil {
+			buildErr = fmt.Errorf("build dir: %w", err)
+			return
+		}
+
+		exe := filepath.Join(dir, "od2-harness")
+		if runtime.GOOS == "windows" {
+			exe += ".exe"
+		}
+
+		build := exec.Command("go", "build", "-tags", "harness", "-o", exe, ".")
+		build.Dir = repoRoot
+
+		if out, err := build.CombinedOutput(); err != nil {
+			buildErr = fmt.Errorf("go build -tags harness failed: %v\n%s", err, out)
+			return
+		}
+
+		// The application loads loose project assets beside the executable. The
+		// harness binary lives in a temp directory, so mirror only Strigoi's own
+		// data there; without this, tests silently fall back to D2 art.
+		if err := copyTree(
+			filepath.Join(repoRoot, "data", "strigoi"),
+			filepath.Join(dir, "data", "strigoi"),
+		); err != nil {
+			buildErr = fmt.Errorf("copying Strigoi assets beside harness: %w", err)
+			return
+		}
+
+		buildDir, builtExe = dir, exe
+	})
+
+	return builtExe, buildErr
+}
+
+// testHome is this test's private %APPDATA%, shared by every game the test
+// launches (a script that relaunches still finds its own saves). The player's
+// config.json is copied in so the MPQ path and window settings are his.
+func testHome(t *testing.T) (string, error) {
+	homeMu.Lock()
+	defer homeMu.Unlock()
+
+	if home, ok := homes[t]; ok {
+		return home, nil
+	}
+
+	parent := filepath.Join(os.TempDir(), "strigoi-harness")
+	if err := os.MkdirAll(parent, 0o750); err != nil {
+		return "", err
+	}
+
+	home, err := os.MkdirTemp(parent, "home-"+safeName(t.Name())+"-")
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(filepath.Join(home, "OpenDiablo2"), 0o750); err != nil {
+		return "", err
+	}
+
+	if real, err := os.UserConfigDir(); err == nil {
+		if data, err := os.ReadFile(filepath.Join(real, "OpenDiablo2", "config.json")); err == nil {
+			if err := os.WriteFile(filepath.Join(home, "OpenDiablo2", "config.json"), data, 0o600); err != nil {
+				return "", err
+			}
+		}
+	}
+
+	homes[t] = home
+
+	// Registered before the session's own cleanup, so it runs after the game
+	// is stopped. Best effort: Windows can hold a file a moment after exit.
+	t.Cleanup(func() {
+		homeMu.Lock()
+		delete(homes, t)
+		homeMu.Unlock()
+
+		_ = os.RemoveAll(home)
+	})
+
+	return home, nil
+}
+
+// keepSerial keeps a script out of the parallel phase -- for a script whose
+// subject is the whole desktop (minimized_test minimizes every window).
+// Call it before start.
+func keepSerial(t *testing.T) {
+	serialMu.Lock()
+	defer serialMu.Unlock()
+
+	serialOnly[t] = true
+}
+
+func goParallel(t *testing.T) {
+	serialMu.Lock()
+	skip := serialOnly[t] || parallelOn[t] || os.Getenv("STRIGOI_PLAYTEST_SERIAL") == "1"
+	parallelOn[t] = true
+	// Unlock BEFORE t.Parallel: it pauses this test until every sequential test
+	// has finished, and a lock held across that pause is one the next test to
+	// start can never take (it did, 26 Sep, on the first parallel run).
+	serialMu.Unlock()
+
+	if !skip {
+		t.Parallel()
+	}
+}
+
+// safeName makes a test name usable in a file name.
+func safeName(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, name)
 }
 
 func copyTree(source, target string) error {
@@ -193,7 +435,8 @@ func copyTree(source, target string) error {
 			return err
 		}
 
-		return os.WriteFile(destination, data, info.Mode())
+		// Files copied out of the module cache are read-only; the copy must not be.
+		return os.WriteFile(destination, data, info.Mode()|0o200)
 	})
 }
 
@@ -218,22 +461,24 @@ func (s *session) stop() {
 	s.kill()
 }
 
+// kill waits up to five seconds for the game to leave on its own, then kills
+// it, and closes its log. The process is waited on exactly once, by the
+// goroutine startWith started; a second Wait would return at once and make a
+// live game look exited.
 func (s *session) kill() {
-	if s.cmd == nil || s.cmd.Process == nil {
+	if s.cmd == nil || s.cmd.Process == nil || s.exited == nil {
 		return
 	}
 
-	done := make(chan struct{})
-
-	go func() {
-		_, _ = s.cmd.Process.Wait()
-		close(done)
-	}()
-
 	select {
-	case <-done:
+	case <-s.exited:
 	case <-time.After(5 * time.Second):
 		_ = s.cmd.Process.Kill()
+
+		select {
+		case <-s.exited:
+		case <-time.After(5 * time.Second):
+		}
 	}
 
 	if s.logFile != nil {

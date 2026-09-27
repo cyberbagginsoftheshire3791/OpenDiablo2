@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	mrand "math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -103,13 +104,41 @@ func (a *App) harnessServe() {
 	mux.Handle("/mcp", handler)
 
 	server := &http.Server{
-		Addr:              *harness.addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	if err := server.ListenAndServe(); err != nil {
+	// Bind first, then say where: with -harness-addr 127.0.0.1:0 the OS picks
+	// the port, and only the listener knows which one it picked.
+	ln, err := net.Listen("tcp", *harness.addr)
+	if err != nil {
+		a.Errorf("harness: cannot listen on %s: %v", *harness.addr, err)
+		return
+	}
+
+	bound := ln.Addr().String()
+	a.Infof("harness: MCP server on http://%s/mcp", bound)
+
+	if harness.addrFile != nil && *harness.addrFile != "" {
+		harnessWriteAddrFile(a, *harness.addrFile, bound)
+	}
+
+	if err := server.Serve(ln); err != nil {
 		a.Errorf("harness: server stopped: %v", err)
+	}
+}
+
+// harnessWriteAddrFile writes the bound address where the launcher is polling,
+// through a temp file and a rename so a reader never sees half an address.
+func harnessWriteAddrFile(a *App, path, addr string) {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(addr), 0o640); err != nil {
+		a.Errorf("harness: cannot write the address file %q: %v", path, err)
+		return
+	}
+
+	if err := os.Rename(tmp, path); err != nil {
+		a.Errorf("harness: cannot publish the address file %q: %v", path, err)
 	}
 }
 

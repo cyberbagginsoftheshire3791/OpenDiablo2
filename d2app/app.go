@@ -44,6 +44,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
+	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2server"
 	"github.com/OpenDiablo2/OpenDiablo2/d2script"
 )
 
@@ -231,6 +232,7 @@ func (a *App) parseArguments() {
 	a.Options.fontSet = flag.String("fonts", "", "the font set every word is drawn in (default "+defaultFonts+"; diablo = Diablo II's)")
 	heroArt := flag.String("hero", "", "the hero's PNG manifest (default "+defaultHero+"; diablo = Diablo II's class art)")
 	authoredMap := flag.String("map", "", "the authored Tiled map played on (default "+defaultMap+"; diablo = Diablo II's generated Act 1)")
+	serverPort := flag.String("server-port", "6669", "the port a local game's server listens on for other players (0 = any free port, which is how the playtest harness runs several games at once)")
 
 	flag.Usage = func() {
 		fmt.Printf("usage: %s [<flags>]\n\nFlags:\n", os.Args[0])
@@ -254,6 +256,8 @@ func (a *App) parseArguments() {
 	})
 
 	launch := resolveLaunch(*classic, given)
+
+	d2server.SetPort(*serverPort)
 
 	d2mapgen.SetAuthoredMap(launch.Map)
 	d2mapentity.SetHeroArt(launch.Hero)

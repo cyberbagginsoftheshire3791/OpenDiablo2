@@ -24,6 +24,8 @@ func TestMinimizedTick(t *testing.T) {
 		t.Skip("windows only")
 	}
 
+	keepSerial(t) // it minimizes every window on the desktop, other games' included
+
 	s := start(t)
 
 	before := s.call("strigoi_ping", map[string]any{})

@@ -24,7 +24,7 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		return num(m, "mpq")
 	}
 
-	classic := startWith(t, "-classic") // explicitly: STRIGOI_PLAYTEST_GAME=default changes start
+	classic := startWith(t, "-classic") // explicitly: this script's control is Diablo II's game, whatever start does
 	classic.call("strigoi_pause", map[string]any{})
 	classic.call("strigoi_start_game", map[string]any{
 		"hero_name": "Classic", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,

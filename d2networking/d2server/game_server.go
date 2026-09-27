@@ -26,11 +26,33 @@ import (
 const logPrefix = "Game Server"
 
 const (
-	port                   = "6669"
+	defaultPort            = "6669"
 	chunkSize          int = 4096 // nolint:deadcode,unused,varcheck // WIP
 	subtilesPerTile        = 5
 	middleOfTileOffset     = 3
 )
+
+// listenPort is the port a local game's server listens on for other players.
+// A single-player game talks to its own server in-process (LocalClientConnection
+// calls it directly), so the listener only serves remote players -- which is
+// why "0" (any free port) works for a game nobody joins, and why the playtest
+// harness can run several games at once (-server-port 0, 26 Sep 2026). Remote
+// clients still dial 6669 (d2remoteclient), so the default does not move.
+//
+// A FAILED BIND STILL KILLS A SINGLE-PLAYER GAME (Start returns the error and
+// the local open fails), which is why a reload waits on PortFree for the last
+// game's server to let go (d2app/reload.go). Port 0 cannot fail to bind, so
+// under it that wait is vacuous; TestDeath's reload therefore runs on a
+// specific free port of its own, to keep the wait under test.
+var listenPort = defaultPort
+
+// SetPort sets the port the next game server binds. Empty keeps the default.
+// Called once, from flag parsing, before any game exists.
+func SetPort(p string) {
+	if p != "" {
+		listenPort = p
+	}
+}
 
 var (
 	errPlayerAlreadyExists = errors.New("player already exists")
@@ -142,7 +164,7 @@ func NewGameServer(asset *d2asset.AssetManager,
 // PortFree reports whether a local game server could bind its port now --
 // false while a previous game's server still holds it.
 func PortFree() bool {
-	l, err := net.Listen("tcp4", "127.0.0.1:"+port)
+	l, err := net.Listen("tcp4", "127.0.0.1:"+listenPort)
 	if err != nil {
 		return false
 	}
@@ -153,9 +175,9 @@ func PortFree() bool {
 // Start essentially starts all of the game server go routines as well as begins listening for connection. This will
 // return an error if it is unable to bind to a socket.
 func (g *GameServer) Start() error {
-	listenerAddress := "127.0.0.1:" + port
+	listenerAddress := "127.0.0.1:" + listenPort
 	if g.networkServer {
-		listenerAddress = "0.0.0.0:" + port
+		listenerAddress = "0.0.0.0:" + listenPort
 	}
 
 	g.Infof("Starting Game Server @ %s\n", listenerAddress)

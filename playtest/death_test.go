@@ -22,7 +22,10 @@ import (
 //     ruling): his .od2 is only written when he leaves alive.
 //  5. Enter loads the last save: a living hero, no screen, no level.
 func TestDeath(t *testing.T) {
-	s := start(t)
+	// Its game server on a REAL port: act 5's reload waits on PortFree for the
+	// dying game's server to let go, and under the launcher's -server-port 0
+	// that wait could never be exercised (26 Sep review).
+	s := startGame(t, "-server-port", freePort(t))
 	s.call("strigoi_pause", map[string]any{})
 
 	game := s.call("strigoi_start_game", map[string]any{
@@ -121,6 +124,22 @@ func TestDeath(t *testing.T) {
 
 	if !alive {
 		t.Fatalf("act 5: Enter loads the last save, and he stands up in it; the last read was %s", last)
+	}
+
+	// An alive player means the new game exists, not that it has registered its
+	// providers: under load the ui provider came a few frames later and this
+	// act read UNKNOWN_SYSTEM (26 Sep, the loaded full check).
+	uiErr := "not read"
+	for i := 0; i < 120; i++ {
+		if uiErr = s.callErr("strigoi_get_system_state", map[string]any{"system": "ui"}); uiErr == "" {
+			break
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 6})
+	}
+
+	if uiErr != "" {
+		t.Fatalf("act 5: the reloaded game never registered its ui provider: %s", uiErr)
 	}
 
 	if flag(t, uiState(s), "death_open") {

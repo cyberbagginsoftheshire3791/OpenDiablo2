@@ -51,3 +51,8 @@ rh.ini
 # Python bytecode cache from the docs/sky day-table tooling (M4.4a).
 __pycache__/
 *.pyc
+
+# Codex (GPT) session drop -- local to Josh's laptop, never the repo (24 Sep 2026)
+.agents/
+.codex/
+AGENTS.md

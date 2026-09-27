@@ -26,11 +26,63 @@ Manual: `claude mcp add --transport http strigoi http://127.0.0.1:6670/mcp`.
 
     go test -tags playtest ./playtest/... -v -count=1
 
-Scripts build + launch the harness binary themselves and keep the game's own
-stdout/stderr in `<Projects>\strigoi-harness-runs\game-<stamp>.log` (a script
-that dies with a transport error prints the tail — the game's last words).
-Set `STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by
-hand.
+Scripts build the harness binary ONCE per `go test` run (`harnessBinary`,
+into `%TEMP%\strigoi-harness\run-*`, removed by `TestMain`) and launch it per
+script, keeping the game's own stdout/stderr in
+`<Projects>\strigoi-harness-runs\game-<stamp>-<Test>.log` (a script that dies
+with a transport error prints the tail — the game's last words). Set
+`STRIGOI_HARNESS_ADDR=127.0.0.1:6670` to attach to a game you started by hand.
+
+**THE SUITE RUNS IN PARALLEL AND TESTS STRIGOI (26 Sep 2026, Josh's three
+rulings of 25 Sep).** Use the runner, not a bare `go test`:
+
+    strigoi-harness-runs\run-suite.ps1 [-Parallel 6] [-Run <regex>] [-Game classic]
+
+* **Strigoi is the game.** `start(t)` launches the game with no switches: the
+  village, the Janissary, Strigoi's fonts and words.
+  `STRIGOI_PLAYTEST_GAME=classic` (the runner's `-Game classic`,
+  `sweep-classic.ps1`) runs every script on Diablo II's Act 1 instead — the
+  sweep, now the other way round and opt-in. A script whose subject only exists
+  in Act 1 (the generator, the font and word controls, the authored-map
+  fallback) calls `startWith(t, "-classic")` itself and says why.
+* **Every launched script is parallel.** `startWith` takes `t.Parallel()` once
+  per test, so a new script is parallel without remembering to be;
+  `STRIGOI_PLAYTEST_SERIAL=1`, an attached game, or `keepSerial(t)` (the
+  minimized script, which minimizes every window) keeps one to itself. Each
+  game is its own process with its OWN harness port (`-harness-addr
+  127.0.0.1:0` plus `-harness-addr-file`: the game writes the port the OS gave
+  it and the launcher reads it back), its own game-server port
+  (`-server-port 0`: a single-player game talks to its server in-process, so
+  the listener only serves remote players), its own `%APPDATA%` (a per-test
+  temp dir with the player's `config.json` copied in — the hero saves and the
+  kit follow it, so no script reads another's save), and its own run dir
+  (`strigoi-harness-runs\pt\<Test>\<stamp>-<pid>`). The world is stepped, not
+  wall-clocked, so games sharing the laptop report what one game alone would
+  -- **but the harness's deadlines are wall clock**, and load can miss them:
+  the first full check (the suite at 6 beside the reach register's four
+  deadcode jobs, 26 Sep, `suite-20260926-211631`) stalled four games in their
+  first seconds (`GAME_NOT_TICKING` on `start_game`, the 5 s tool timeout)
+  and raced one reload (`TestDeath`, the ui provider not yet registered).
+  So: scripts launch with **`-harness-timeout 30s`** (the default stays 5 s
+  for a person driving one game), `TestDeath` waits for the reloaded game's
+  providers, and **`all.ps1` runs the gate and the register side by side
+  and THEN the suite alone**.
+* **Measured on the laptop (Core Ultra 7 258V), 26 Sep, at `a690dfc4` +
+  the burst:** 64 pass / 0 fail / 1 opt-in skip at every width; wall time
+  **2 workers 770 s, 4 workers 430 s, 6 workers 328 s** (sequential was
+  1,549 s, plus a separate ~60-minute village sweep). The critical path is
+  `TestTheDeadWalk` (~170 s), so widths past 6 buy little. The runner's
+  default is 4; `all.ps1` uses 6, with nothing else running.
+* **Every run keeps its own log**, `suite-<yyyyMMdd-HHmmss>-<head>.txt`, never
+  overwritten (the last 30 are kept; `suite-latest.txt` names the newest), and
+  ends with `SUMMARY pass= fail= skip= stalls= wall_s= parallel=` and
+  `SUITE-VERDICT=`.
+* **A rerun-pass is never green** (Josh, 25 Sep). A failed test is rerun once,
+  alone; if it passes it is logged `FLAKY` and the run is still RED, and every
+  FLAKY line is owed a row in `docs/bugs.md` naming the log. **The rerun is
+  refused if the tree changed since the run began** (`RERUN-REFUSED`): the
+  first run under the new rule reported a real failure as FLAKY because an edit
+  landed between the run and its rerun, which then tested other code.
 
 **The 43 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
@@ -294,13 +346,12 @@ this doc fails until it agrees.
   from an MPQ. Screenshots of both menus and both kit panels.
 * **Since 23 Sep 2026 the game with no switches is Strigoi's own** (the village,
   the Janissary's sheets, Strigoi's fonts and words; `d2app/strigoi_defaults.go`),
-  and `-classic` is Diablo II's generated Act 1, class art, fonts and words. The
-  launcher's `start(t)` passes **`-classic`**, so every script written against
-  Act 1 keeps its world; `startWith(t, flags...)` passes only what it is given.
-* **The default-game SWEEP: `STRIGOI_PLAYTEST_GAME=default`** makes `start(t)`
-  launch the default game instead, so the whole suite can be run to see which
-  of the loop's proofs hold on the village. Its failures are findings, not a red
-  suite. Scripts whose subject IS Diablo II's game (the generator, the `-map`
+  and `-classic` is Diablo II's generated Act 1, class art, fonts and words.
+  *[26 Sep 2026: the launcher's `start(t)` no longer passes `-classic` — the
+  suite tests Strigoi; see the parallel-suite paragraph at the top.]*
+* **The default-game SWEEP** (history, 23-25 Sep: `STRIGOI_PLAYTEST_GAME=default`
+  made `start(t)` launch the village, and its failures were findings rather
+  than a red suite). Scripts whose subject IS Diablo II's game (the generator, the `-map`
   path, the fonts and words controls) ask for `-classic` explicitly. Villagers
   are found by label OR by `name_key` (the stand-in's monstats NameString,
   reported in the npc state), so "Warriv" finds "The headman". First sweep,
@@ -317,13 +368,25 @@ this doc fails until it agrees.
     - A Downed man on the next tile, 1.503 tiles off, could be struck but not
       staked. The fight's stake now uses `Combat.Adjacent`.
   - Four are geometry:
-    - Sight: the palisade and houses hide him, so `TestTheDeadWalk` act 3 and
+    - Sight: a BUILDING hides him, so `TestTheDeadWalk` act 3 and
       `TestSpawns` act 7 never see a notice at the distances their Act 1
-      scripts chose.
+      scripts chose. *[26 Sep: corrected — on the village the fence and the
+      ditch are authored NOT to block sight (`blocks_sight:false`); the houses,
+      the smithy, the church and trees do. For the dead walk, the one risen man
+      inside the radius is behind the peasant house; for the spawns act, the
+      smithy stands on the line. FIXED 26 Sep by moving the scripts, not the
+      rule: `standInSightOf` walks him to a clear line (dead walk: before act
+      2, while the radius is 0.05; spawns act 7: into the open, nothing calls
+      pursue).]*
     - `TestSurvive`: a pack at a forced chance arrives the frame he wakes.
     - `TestSquadsOnScreen`: the bar's crimson fill (luma 77) against the
       placeholder village ground (luma about 100) differs by 24, under the D5
-      floor of 30. This is an art note for the ground tiles.
+      floor of 30. *[26 Sep, FIXED by Josh's "deeper crimson": re-chosen by
+      the 11 Sep method against both grounds — (140,25,25), L 63, clears Act
+      1's day ground by 38.1 and the village road by 36.6; the background is
+      now the MEAN of a strip above the bar, not one pixel (one road pixel
+      swung it by +/-10); and the dark frame's ceiling is 0.25 of the day
+      frame's, not L 10 (the village's moonless road reads 12.5).]*
 * `strigoi_night_test.go` — the fortieth: a first day and night on the DEFAULT game
   (the village): talk with "The headman", a forage, then world time until the
   next morning with the hero kept alive; the night must come and go and the
@@ -433,7 +496,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.12.3)
+## The tools (37; harness 0.12.4)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added

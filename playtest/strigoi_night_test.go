@@ -9,8 +9,8 @@ import (
 // TestStrigoiFirstNight: a first day and night on the DEFAULT game -- the
 // village, Strigoi's hero, fonts and words -- as a player gets it. The loop
 // (talk, forage, the tables, the dead) was built and proved on Diablo II's
-// Act 1, where the rest of the suite still runs (-classic); this is its first
-// night where it now lives. The hero is kept alive (meters topped up) so the
+// Act 1; this was its first night where it now lives (since 26 Sep 2026 the
+// whole suite runs here, and this script is the one that plays a night through). The hero is kept alive (meters topped up) so the
 // night runs its whole length.
 func TestStrigoiFirstNight(t *testing.T) {
 	s := startWith(t) // no switches: Strigoi

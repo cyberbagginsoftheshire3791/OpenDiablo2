@@ -33,11 +33,13 @@ const harnessDoc = "docs/harness.md"
 // launch with switches of its own (23 Sep 2026) -- which is what builds and
 // launches the harness binary. The shell form of the same count is
 //
-//	git grep -l --untracked -E '\bstart(With)?\(' -- 'playtest/*_test.go' | wc -l
+//	git grep -l --untracked -E '\bstart(With|Game)?\(' -- 'playtest/*_test.go' | wc -l
 //
 // and this regexp is that -E pattern. Nothing shells out to git: the test must
 // work in a tree that is not a checkout.
-var playtestStart = regexp.MustCompile(`\bstart(With)?\(`)
+// startGame (26 Sep 2026) is the third launcher entry point: start with extra
+// flags that still honours STRIGOI_PLAYTEST_GAME.
+var playtestStart = regexp.MustCompile(`\bstart(With|Game)?\(`)
 
 // harnessVersionRe reads the constant rather than a doc comment or a changelog
 // entry, so the version the server reports is the version this gate compares.

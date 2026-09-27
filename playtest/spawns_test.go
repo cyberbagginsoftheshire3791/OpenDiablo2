@@ -419,6 +419,16 @@ func TestSpawns(t *testing.T) {
 
 	for i := 0; i < 10 && len(awareList(spawnsState(s))) == 0; i++ {
 		s.call("strigoi_step_world", map[string]any{"world_minutes": 6})
+
+		// On the village the arrival stands outside the fence and a building
+		// can stand on the line (seed 1462: the smithy hides his start tile
+		// from the dogs). Sight is acts 2-4's subject, not this one's, so he
+		// steps into the open. He WALKS; nothing below calls strigoi_pursue.
+		if len(awareList(spawnsState(s))) == 0 {
+			if x, y, ok := firstArrival(spawnsState(s)); ok {
+				standInSightOf(t, s, x, y, 40)
+			}
+		}
 	}
 
 	aware := awareList(spawnsState(s))
@@ -578,6 +588,25 @@ func groupByID(t *testing.T, state map[string]any, id string) map[string]any {
 	t.Fatalf("no group %q in %v", id, groups)
 
 	return nil
+}
+
+// firstArrival is the birthplace of the first member of the first live group
+// (group_list[k].born_where[0]), in world tiles.
+func firstArrival(state map[string]any) (x, y float64, ok bool) {
+	for _, raw := range asList(state["group_list"]) {
+		grp, _ := raw.(map[string]any)
+
+		for _, w := range asList(grp["born_where"]) {
+			if at, _ := w.([]any); len(at) == 2 {
+				x, _ = at[0].(float64)
+				y, _ = at[1].(float64)
+
+				return x, y, true
+			}
+		}
+	}
+
+	return 0, 0, false
 }
 
 // awareList pulls the ids of every watcher currently aware of its target.

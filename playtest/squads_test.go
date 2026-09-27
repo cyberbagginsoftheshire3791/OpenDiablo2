@@ -53,14 +53,28 @@ const (
 	// pre-dawn moonlit frame this act used to be taken on reads L 12.0, and the
 	// deliberately dark frame reads L 3.0. 20 and 10 separate all three.
 	squadDaylightBgMin = 20.0 // luminance: day 25.3 passes, the old dawn frame (12.0) does not
-	squadDarkBgMax     = 10.0 // luminance: night 3.0 passes, a dawn frame (12.0) does not
-	squadMetersGapMin  = 10.0 // the two squads' water starts ~35 points apart
+	// 26 Sep 2026: the dark frame's ceiling is a FRACTION of this script's own
+	// daylight frame, not a luminance. 10.0 was right for Act 1's ground and
+	// wrong for the village, whose moonless road reads L 12.5 beside a day of
+	// 99.9. Measured ratios: Act 1 night 3.0/25.3 = 0.12, Act 1 dawn
+	// 12.0/25.3 = 0.47, village night 12.5/99.9 = 0.125. 0.25 passes both
+	// nights and still fails the dawn frame -- and on Act 1 it is TIGHTER than
+	// 10 was (6.3).
+	squadDarkBgRatioMax = 0.25
+	// ...AND an absolute ceiling, because a ratio alone loosens it on bright
+	// ground (review, 26 Sep): 0.25 of the village's day strip is L 25, as bright
+	// as Act 1's DAYLIGHT. 15 passes both measured nights (Act 1 3.0, village
+	// 12.5) and fails anything as bright as a day frame on either ground. The
+	// Act 1 figures above were taken with the old one-pixel sampler; the strip
+	// mean reads Act 1's day at 25.2, so the ratios stand.
+	squadDarkBgMax    = 15.0
+	squadMetersGapMin = 10.0 // the two squads' water starts ~35 points apart
 )
 
 func TestSquadsOnScreen(t *testing.T) {
 	const (
 		waterDrain    = 2.25 // [DIAL] S15, hardcoded so this script says so if it moves
-		contrastFloor = 30.0 // §0 part 2: crimson clears 50.8 by day, 73.7 at night
+		contrastFloor = 30.0 // §0 part 2; 26 Sep: deep crimson (L 63) clears Act 1's day ground by 38.1, the village road by 36.6
 		tolerance     = 1.0
 	)
 
@@ -450,6 +464,11 @@ func TestSquadsOnScreen(t *testing.T) {
 			"it is not dark, so the two frames are one case twice", darkBg, squadDarkBgMax)
 	}
 
+	if darkBg > squadDarkBgRatioMax*dayBg {
+		t.Fatalf("act 6b: the deliberately dark frame's background is L %.1f, over %.2f of the daylight "+
+			"frame's L %.1f -- it is not dark, so the two frames are one case twice", darkBg, squadDarkBgRatioMax, dayBg)
+	}
+
 	t.Logf("act 6: the bar's fill cleared the contrast floor on a frame of background L %.1f "+
 		"AND one of L %.1f", dayBg, darkBg)
 
@@ -826,8 +845,13 @@ func assertBarContrast(t *testing.T, frame string, img image.Image, b *bar, floo
 
 	// The fill sits at the left of the bar; sample its centre.
 	fillL = lumAt(img, b.x+b.w/4, b.y+b.h/2)
-	// The background: a few pixels above the bar, clear of the frame and cues.
-	bgL = lumAt(img, b.x+b.w/2, b.y-6)
+	// The background: the MEAN of a strip above the bar (rows y-10..y-5, the
+	// bar's width), clear of the frame (y-1) and the selection ring (y-2).
+	// Until 26 Sep this was one pixel at (x+w/2, y-6), and on the village's
+	// road one pixel swung the reading by +/-10 around the strip's 99.9 -- the
+	// check passed or failed on which grain of road it landed on. The mean is
+	// the harder number there (23.3 against the old fill, not 29.7).
+	bgL = stripLum(img, b.x, b.y-10, b.w, 6)
 
 	if diff := math.Abs(fillL - bgL); diff < floor {
 		t.Fatalf("%s: the bar's fill (L %.1f) and its surroundings (L %.1f) differ by only %.1f, "+
@@ -835,6 +859,29 @@ func assertBarContrast(t *testing.T, frame string, img image.Image, b *bar, floo
 	}
 
 	return fillL, bgL
+}
+
+// stripLum is the mean luminance of a w x h strip at (x, y), clipped to the image.
+func stripLum(img image.Image, x, y, w, h int) float64 {
+	sum, n := 0.0, 0
+	r := img.Bounds()
+
+	for yy := y; yy < y+h; yy++ {
+		for xx := x; xx < x+w; xx++ {
+			if xx < r.Min.X || yy < r.Min.Y || xx >= r.Max.X || yy >= r.Max.Y {
+				continue
+			}
+
+			sum += lumAt(img, xx, yy)
+			n++
+		}
+	}
+
+	if n == 0 {
+		return 0
+	}
+
+	return sum / float64(n)
 }
 
 // assertNoWalk fails unless the player is where he was and has no path: the

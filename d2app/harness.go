@@ -35,9 +35,8 @@ import (
 )
 
 const (
-	harnessVersion     = "0.12.3"         // 24 Sep: a paused held click ticks dt per frame (BUG-7); step_world refuses CLOCK_FROZEN / WORLD_HELD
+	harnessVersion     = "0.12.4"         // 26 Sep: -harness-addr-file reports the bound address (port 0 = any free port), -harness-timeout; games run side by side
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
-	harnessToolTimeout = 5 * time.Second  // [DIAL] P3 §3.2
 	harnessQueueDepth  = 64
 	harnessRingCap     = 5000
 	harnessQuitDelay   = 300 * time.Millisecond
@@ -119,10 +118,21 @@ func (r *harnessRing) since(cursor int, pattern *regexp.Regexp, limit int) (out 
 	return out, next, r.dropped
 }
 
+// harnessToolTimeout is how long a tool call waits for the game loop to take
+// and finish its request before answering GAME_NOT_TICKING. [DIAL] P3 §3.2.
+// Five seconds is right for a person driving one game; it is WALL CLOCK, and
+// under load a game's first frames can take longer -- the 26 Sep full check
+// (gate + six games + the reach register at once) stalled four games in their
+// first seconds on it. -harness-timeout sets it; the playtest launcher passes 30s.
+// Set once in harnessStart, before the server goroutine exists.
+var harnessToolTimeout = 5 * time.Second
+
 type harnessState struct {
-	enabled *bool
-	addr    *string
-	outFlag *string
+	enabled  *bool
+	addr     *string
+	addrFile *string
+	outFlag  *string
+	timeout  *time.Duration
 
 	app    *App
 	runDir string
@@ -190,6 +200,8 @@ func (a *App) harnessRegisterFlags() {
 	harness.enabled = flag.Bool("harness", false, "start the playtest-harness MCP server (loopback only)")
 	harness.addr = flag.String("harness-addr", harnessDefaultAddr, "harness listen address (must be loopback)")
 	harness.outFlag = flag.String("harness-out", "", "harness output directory (default: %LOCALAPPDATA%\\Strigoi\\harness\\runs)")
+	harness.timeout = flag.Duration("harness-timeout", harnessToolTimeout, "how long a tool call waits for the game loop before GAME_NOT_TICKING (wall clock; raise it for a loaded machine)")
+	harness.addrFile = flag.String("harness-addr-file", "", "write the address the harness actually bound to this file once it is listening (with -harness-addr 127.0.0.1:0 the OS picks the port; the playtest launcher reads it back)")
 }
 
 func (a *App) harnessStart() {
@@ -207,6 +219,10 @@ func (a *App) harnessStart() {
 		return
 	}
 
+	if harness.timeout != nil && *harness.timeout > 0 {
+		harnessToolTimeout = *harness.timeout
+	}
+
 	base := *harness.outFlag
 	if base == "" {
 		// Reuse the one place the root is derived (logfile.go), so the harness
@@ -214,7 +230,9 @@ func (a *App) harnessStart() {
 		base = filepath.Join(d2logfile.DataDir(), "harness", "runs")
 	}
 
-	harness.runDir = filepath.Join(base, time.Now().Format("20060102-150405"))
+	// The pid keeps two games started in the same second apart (the playtest
+	// suite runs games in parallel, 26 Sep 2026).
+	harness.runDir = filepath.Join(base, fmt.Sprintf("%s-%d", time.Now().Format("20060102-150405"), os.Getpid()))
 	if err := os.MkdirAll(harness.runDir, 0o750); err != nil {
 		a.Errorf("harness: cannot create run dir %q: %v", harness.runDir, err)
 		return
@@ -222,7 +240,7 @@ func (a *App) harnessStart() {
 
 	go a.harnessServe() // harness_tools.go
 
-	a.Infof("harness: MCP server on http://%s/mcp · run dir %s", *harness.addr, harness.runDir)
+	a.Infof("harness: run dir %s", harness.runDir)
 }
 
 func (a *App) harnessDrainUpdate() {
@@ -282,7 +300,7 @@ func (a *App) harnessNoteGame(c *d2client.GameClient, g *d2gamescreen.Game) {
 	harness.screenHint = "game"
 }
 
-var errGameNotTicking = fmt.Errorf("GAME_NOT_TICKING: the game loop did not service the request within %v — is the process alive and unblocked?", harnessToolTimeout)
+var errGameNotTicking = fmt.Errorf("GAME_NOT_TICKING: the game loop did not service the request in time — is the process alive and unblocked?")
 
 func harnessRunOn(q chan harnessCmd, fn func()) error {
 	c := harnessCmd{fn: fn, done: make(chan struct{})}
@@ -324,7 +342,7 @@ func harnessNotTicking(before int64) error {
 
 	log.Printf("harness: GAME_NOT_TICKING -- %d update ticks ran during the wait; every goroutine's stack is in %s", ticked, file)
 
-	return fmt.Errorf("%w (%d update ticks ran during the wait; stacks in %s)", errGameNotTicking, ticked, file)
+	return fmt.Errorf("%w (waited %v; %d update ticks ran during the wait; stacks in %s)", errGameNotTicking, harnessToolTimeout, ticked, file)
 }
 
 // harnessStall remembers the last stack dump, so a loop stuck on one tick
