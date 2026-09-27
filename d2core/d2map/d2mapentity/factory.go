@@ -128,7 +128,16 @@ func (f *MapEntityFactory) NewCreature(x, y int, name string, paths CreatureAnim
 		animations[mode] = animation
 	}
 
-	return newCreature(x, y, name, animations, direction)
+	creature, err := newCreature(x, y, name, animations, direction)
+	if err != nil {
+		return nil, err
+	}
+
+	// setMode only ever lands on a mode that loaded (a missing one falls back
+	// to idle), so the map needs no fallback of its own.
+	creature.sheets = definitions
+
+	return creature, nil
 }
 
 // NewPlayer creates a new player entity and returns a pointer to it.

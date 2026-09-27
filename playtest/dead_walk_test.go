@@ -4,6 +4,7 @@ package playtest
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -137,6 +138,8 @@ func TestTheDeadWalk(t *testing.T) {
 		if str(row, "profile") != "risen" || num(row, "speed") != 0 {
 			t.Fatalf("act 3: every enemy is the risen row at speed 0: %v", row)
 		}
+
+		drawnAsStrigoi(t, s, row)
 	}
 
 	if enemies == 0 {
@@ -210,6 +213,33 @@ func TestTheDeadWalk(t *testing.T) {
 	}
 
 	t.Logf("four rose, came for him at 02:15, lay down Downed at first light (%d in the fight), stood again the next night at odds 0, and a fifth came from the edge", enemies)
+}
+
+// drawnAsStrigoi is M5.1b: a risen man in the fight is drawn from the
+// bestiary's strigoi -- the sheet the game reports for him is one of
+// data/strigoi/creatures/strigoi's, and the game loads it as 96-pixel frames in
+// eight directions -- and he fights at the numbers the dead had before the art
+// changed: the men's max health, 84.
+func drawnAsStrigoi(t *testing.T, s *session, participant map[string]any) {
+	t.Helper()
+
+	e := s.call("strigoi_get_entity", map[string]any{"handle": handleFor(t, s, str(participant, "id"))})
+	sheet := str(sub(e, "state"), "sheet")
+
+	t.Logf("act 3: risen %s drawn from %q, max_health %v", str(participant, "id"), sheet, participant["max_health"])
+
+	if !strings.HasPrefix(sheet, "/data/strigoi/creatures/strigoi/") {
+		t.Fatalf("act 3: a risen man is drawn from %q, not the strigoi's sheets: %v", sheet, e)
+	}
+
+	if got := mustNum(t, participant, "max_health"); got != 84 {
+		t.Fatalf("act 3: a risen man keeps the men's max health 84: %v", participant)
+	}
+
+	sprite := s.call("strigoi_describe_sprite", map[string]any{"path": sheet})
+	if num(sprite, "directions") != 8 || num(sprite, "max_w") != 96 || num(sprite, "max_h") != 96 {
+		t.Fatalf("act 3: the strigoi's %s is not the 8-direction 96-pixel sheet: %v", sheet, sprite)
+	}
 }
 
 // risenGroups counts the risen row's groups on the map.

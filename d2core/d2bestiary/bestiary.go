@@ -9,7 +9,11 @@ import (
 )
 
 // Entry is one authored creature. StandIn names the inherited monstats record
-// used for movement and other values Strigoi has not authored yet.
+// used for the values Strigoi has not authored yet.
+//
+// Speed is how fast it walks, in the map engine's movement units (the unit of
+// monstats' Velocity, which the stand-in supplied before M5.1b). Absent or
+// zero, the stand-in's SpeedBase is used -- see SpeedOr.
 type Entry struct {
 	ID         string       `json:"id"`
 	Name       string       `json:"name"`
@@ -17,6 +21,17 @@ type Entry struct {
 	StandIn    string       `json:"stand_in"`
 	Animations AnimationSet `json:"animations"`
 	MaxHealth  int          `json:"max_health"`
+	Speed      float64      `json:"speed,omitempty"`
+}
+
+// SpeedOr is the creature's walking speed: its authored Speed, or standIn --
+// the stand-in record's SpeedBase -- when none is authored.
+func (e Entry) SpeedOr(standIn float64) float64 {
+	if e.Speed > 0 {
+		return e.Speed
+	}
+
+	return standIn
 }
 
 // AnimationSet names the independently sized sprite sheet for each mode.
@@ -83,6 +98,9 @@ func Load(data []byte) (*Catalog, error) {
 		}
 		if entry.MaxHealth <= 0 {
 			return nil, fmt.Errorf("creature %q max_health must be positive", entry.ID)
+		}
+		if entry.Speed < 0 {
+			return nil, fmt.Errorf("creature %q speed must not be negative", entry.ID)
 		}
 		if _, exists := catalog.byID[entry.ID]; exists {
 			return nil, fmt.Errorf("duplicate creature id %q", entry.ID)

@@ -35,16 +35,16 @@ func TestRisenNeverTabled(t *testing.T) {
 	}
 }
 
-// Raise stands ONE of the dead up exactly where the body lay, drawn as a man
-// (Q5a), watching the target; it fights last, never routs, and the cap does
-// not count it.
+// Raise stands ONE of the dead up exactly where the body lay, drawn as its own
+// row -- the bestiary's strigoi (M5.1b; Q5a drew him as a man) -- watching the
+// target; it fights last, never routs, and the cap does not count it.
 func TestRaiseStandsOneWhereTheBodyLay(t *testing.T) {
 	s, _, notice, spawner, _ := newTestSpawns(t)
 
 	id := s.Raise(12.5, 30.5)
 	require.NotEmpty(t, id)
 
-	assert.Equal(t, "opportunists", spawner.lastKind, "a risen man is drawn as a man")
+	assert.Equal(t, RisenRow, spawner.lastKind, "the dead are drawn as their own row, the strigoi")
 	assert.Equal(t, 1, spawner.lastCount)
 	assert.Zero(t, spawner.lastMin)
 	assert.Zero(t, spawner.lastMax, "where the body lay, not a ring around it")

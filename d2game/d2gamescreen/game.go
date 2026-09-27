@@ -1642,7 +1642,7 @@ func (g *gameSpawner) Spawn(kind, code string, count int, aroundX, aroundY,
 			if err != nil {
 				continue
 			}
-			creature.SetSpeed(float64(monstat.SpeedBase))
+			creature.SetSpeed(creatureEntry.SpeedOr(float64(monstat.SpeedBase)))
 			entity = creature
 			maxHealth = creatureEntry.MaxHealth
 		} else {
@@ -2245,7 +2245,7 @@ func (v *Game) commandSpawnMon(args []string) error {
 			return nil
 		}
 
-		creature.SetSpeed(float64(monstat.SpeedBase))
+		creature.SetSpeed(entry.SpeedOr(float64(monstat.SpeedBase)))
 		v.gameClient.MapEngine.AddEntity(creature)
 		v.adoptNPCBody(creature.ID(), entry.MaxHealth)
 		return nil

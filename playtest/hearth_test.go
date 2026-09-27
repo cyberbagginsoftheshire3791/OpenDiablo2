@@ -90,8 +90,10 @@ func TestTheHearth(t *testing.T) {
 		t.Fatalf("act 2: before the tale the dead carry no bar: %d enemy bars", n)
 	}
 
-	if got := hoverAt(t, s, num(door, "x"), num(door, "y")); got == "the dead" || got == "" {
-		t.Fatalf("act 2: before the tale he looks like a man: hover %q", got)
+	// What his body was: the men's name, not the strigoi's -- the art is the
+	// dead's since M5.1b, the name is not until the hearth (R2 §1).
+	if got := hoverAt(t, s, num(door, "x"), num(door, "y")); got != "Opportunist" {
+		t.Fatalf("act 2: before the tale he is called what his body was, a man: hover %q", got)
 	}
 
 	throughTheNight(t, s)

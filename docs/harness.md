@@ -150,7 +150,11 @@ this doc fails until it agrees.
 * `creature_art_test.go` — the nineteenth: the ordinary in-game command path
   creates the first Strigoi creature from its shipped PNG, exposes its creature
   and animation state through the harness, and captures the same rendered frame
-  used for the art readability review.
+  used for the art readability review. Since M5.1b (27 Sep 2026) each creature's
+  script also asserts the sheet it is drawn from (its own idle sheet, not a
+  name that happens to match) and its authored bestiary speed, and the
+  strigoi -- the risen dead's art, named for the men until the hearth -- has
+  its own, `TestStrigoiStillInGame`.
 * `tactical_test.go` — the twentieth, T1 (23 Sep 2026): the tactical layer
   in a real launch at the SHIPPED combat dials. The fight opens while the enemy
   is still out of reach and the enemy stops; the world is held for the player's
@@ -268,14 +272,18 @@ this doc fails until it agrees.
   `rising.p` to 0 so Night 1's dead stay down, and since step 5 `rising.edge_floor`
   to 0 so the edge floor's wanderer stays away too. `dead_walk_test.go` act 6
   (step 5): at odds 0, in the third deep-night band a fifth, nameless dead man
-  stands up at the edge of the night, with a body.
+  stands up at the edge of the night, with a body. Since M5.1b (27 Sep 2026)
+  act 3 also asserts every risen man in the fight is drawn from the strigoi's
+  own sheets (the `sheet` his entity reports, which `strigoi_describe_sprite`
+  loads as eight directions of 96-pixel frames) at the men's max health, 84.
 * `hearth_test.go` — the thirty-second, M4.7 step 4 (23 Sep 2026): the priest's
   rite, the hearth unlock, and a staking seen. By day with the village
   "watching" (`village.seen_radius` wide) a stake costs standing 5 and marks
   `seen_staking`; a second costs nothing more. The controls: a hasty grave
   dug before the rite is granted is still hasty after first light, and a
-  risen man before the priest's tale carries no bar and the hover does not
-  call him the dead. At the hearth the priest tells the tale and grants the
+  risen man before the priest's tale carries no bar and the hover calls him
+  what his body was -- "Opportunist", the men's name, even drawn as the
+  strigoi since M5.1b -- not the dead. At the hearth the priest tells the tale and grants the
   rite; the next night the risen man carries a bar and the hover names him
   "the dead", and at first light the priest closes the grave. `village` now
   takes `rite_radius` and `seen_radius` as settable fields (and since J1,
@@ -918,7 +926,10 @@ skill ids, and `body` -- `composite` (Diablo II's class art) or `png` (a
 Strigoi hero, M5.3) -- with, for a PNG hero, `body_sheet`: which of its sheets
 the current mode resolved to (idle, walk, attack, hit, death, dead ...,
 fallbacks included). `NPC`: name, monstat (+ id), has_paths, paths, path_index, action,
-repetitions, done, animation_mode, direction, path_len, speed.
+repetitions, done, animation_mode, direction, path_len, speed. `Creature` (a
+bestiary creature, PNG): creature (its name), animation_mode, direction,
+moving, world_x/world_y, and since M5.1b `sheet` -- the sheet the current mode
+is drawn from, idle's when the mode has none of its own -- and `speed`.
 
 ## Input — two layers
 

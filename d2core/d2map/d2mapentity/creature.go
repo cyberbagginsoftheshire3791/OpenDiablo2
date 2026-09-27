@@ -36,6 +36,10 @@ type Creature struct {
 	heldMode   creatureMode
 	finished   func()
 	corpse     bool
+
+	// sheets is the path each mode was loaded from (M5.1b), so the harness
+	// can say which art a creature is drawn from rather than only its name.
+	sheets map[creatureMode]string
 }
 
 var _ d2interface.MapEntity = (*Creature)(nil)
@@ -223,7 +227,10 @@ func (c *Creature) finishAction() {
 	c.StopMoving()
 }
 
-// HarnessState exposes the same facts scripts use to inspect inherited NPCs.
+// HarnessState exposes the same facts scripts use to inspect inherited NPCs,
+// and since M5.1b the sheet the current mode is drawn from (a mode with no
+// sheet of its own falls back to idle, and reports idle's) and the speed it
+// walks at.
 func (c *Creature) HarnessState() map[string]interface{} {
 	x, y := c.GetPositionF()
 	return map[string]interface{}{
@@ -231,6 +238,8 @@ func (c *Creature) HarnessState() map[string]interface{} {
 		"creature":       c.name,
 		"direction":      c.direction,
 		"moving":         c.IsMoving(),
+		"sheet":          c.sheets[c.mode],
+		"speed":          c.Speed,
 		"world_x":        x,
 		"world_y":        y,
 	}
