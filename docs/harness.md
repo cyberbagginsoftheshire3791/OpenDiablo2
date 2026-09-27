@@ -687,8 +687,10 @@ the pages, the events raised, unread counts, `open`) and **`scene`** (M4.6 B1,
 **M4.6 B1 put every value the world save will carry on a provider before
 anything saves it** (the save plan's rule: observability before
 serialisation). Each gameplay RNG reports where it stands as
-`rng: {present, seed, seed_str, draws}` -- `spawns`, `combat`, and `rising`
-(seeded at the run's seed + 4707) -- counted by `d2common/d2rand`, whose
+`rng: {present, seed, seed_str, draws}` -- `spawns`, `combat`, and `rising`,
+each on its own seed `d2rand.Derive(seed, name)` of the run's seed (M4.6 B2a,
+C6: four different streams; the map engine's keeps the run's seed itself) --
+counted by `d2common/d2rand`, whose
 `Restore(seed, draws)` puts a stream back exactly there. Each system holds its
 stream as one `d2rand.Stream` (the rand and its counted source together), so a
 restore cannot replace one half. **Read `seed_str`, not `seed`, to get a seed

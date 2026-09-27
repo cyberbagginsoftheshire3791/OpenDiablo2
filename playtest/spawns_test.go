@@ -9,6 +9,8 @@ import (
 	"math"
 	"strconv"
 	"testing"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 )
 
 // TestSpawns is M4.3b's Constitution VI.2 script: the ninth.
@@ -765,38 +767,47 @@ func checkArrivals(t *testing.T, s *session, before arrivalMark) {
 func saveFieldsAct(t *testing.T, s *session, seer string) {
 	t.Helper()
 
-	// --- the seeds: the number the test chose, from every stream ----------
+	// --- the seeds: the number the test chose, and one stream each ---------
+	//
+	// C6 (M4.6 B2a): the world stream runs on the run's seed itself, and the
+	// spawn tables, combat and the rising each on a stream DERIVED from it
+	// (d2rand.Derive) -- four different streams, where three used to share
+	// one sequence and a restore that swapped two could not be seen.
 	const seed = 1462
 
 	spawns := spawnsState(s)
 	scene := systemState(s, "scene")
 	rising := systemState(s, "rising")
 
-	for name, got := range map[string]float64{
-		"spawns.rng":      mustNum(t, saveBlock(t, spawns, "rng"), "seed"),
-		"combat.rng":      mustNum(t, saveBlock(t, combatState(s), "rng"), "seed"),
-		"scene.world_rng": mustNum(t, saveBlock(t, scene, "world_rng"), "seed"),
-		"rising.rng":      mustNum(t, saveBlock(t, rising, "rng"), "seed") - 4707, // risingSeedOffset
-	} {
-		if got != seed {
-			t.Fatalf("act 6c: %s must be seeded from the run's seed %d, reports %.0f", name, seed, got)
-		}
-	}
-
-	// And exactly, as a string: a wall-clock seed does not survive the float64
-	// every read above goes through (review C9), so a save reads seed_str.
-	for name, want := range map[string]struct {
+	streams := map[string]struct {
 		block map[string]any
 		seed  int64
 	}{
-		"spawns.rng":      {saveBlock(t, spawns, "rng"), seed},
-		"combat.rng":      {saveBlock(t, combatState(s), "rng"), seed},
+		"spawns.rng":      {saveBlock(t, spawns, "rng"), d2rand.Derive(seed, d2rand.StreamSpawns)},
+		"combat.rng":      {saveBlock(t, combatState(s), "rng"), d2rand.Derive(seed, d2rand.StreamCombat)},
 		"scene.world_rng": {saveBlock(t, scene, "world_rng"), seed},
-		"rising.rng":      {saveBlock(t, rising, "rng"), seed + 4707},
-	} {
+		"rising.rng":      {saveBlock(t, rising, "rng"), d2rand.Derive(seed, d2rand.StreamRising)},
+	}
+
+	distinct := map[int64]string{}
+
+	for name, want := range streams {
+		// Exactly, as a string: a wall-clock seed does not survive the float64
+		// every mustNum goes through (review C9), so a save reads seed_str.
+		// These four are below 2^31, so the float reads exactly too.
+		if got := mustNum(t, want.block, "seed"); got != float64(want.seed) {
+			t.Fatalf("act 6c: %s must be seeded %d from the run's seed %d, reports %.0f", name, want.seed, seed, got)
+		}
+
 		if !flag(t, want.block, "present") || mustStr(t, want.block, "seed_str") != strconv.FormatInt(want.seed, 10) {
 			t.Fatalf("act 6c: %s must be present with seed_str %q: %v", name, strconv.FormatInt(want.seed, 10), want.block)
 		}
+
+		if other, dup := distinct[want.seed]; dup {
+			t.Fatalf("act 6c: %s and %s run on one seed %d; every stream has its own", name, other, want.seed)
+		}
+
+		distinct[want.seed] = name
 	}
 
 	// --- the world stream: the scene reports the digest's number ----------
@@ -906,8 +917,10 @@ func saveFieldsAct(t *testing.T, s *session, seer string) {
 	setField(s, "spawns", "chance", chance)
 	setField(s, "spawns", "check_minutes", checkMinutes)
 
-	t.Logf("act 6c PASS: seeds 1462 (+4707 rising); world draws %.0f hash to the digest's rng part; "+
-		"since_check moved %.4f in %.4f stepped; %.0f roll(s) drew %.0f", draws, stepped, stepped, rolls, drawn)
+	t.Logf("act 6c PASS: world seed 1462, spawns %d, combat %d, rising %d (derived); world draws %.0f hash to "+
+		"the digest's rng part; since_check moved %.4f in %.4f stepped; %.0f roll(s) drew %.0f",
+		streams["spawns.rng"].seed, streams["combat.rng"].seed, streams["rising.rng"].seed,
+		draws, stepped, stepped, rolls, drawn)
 
 	// --- one torch, one id -------------------------------------------------
 	lit := mustNum(t, lightState(s), "next_id")
