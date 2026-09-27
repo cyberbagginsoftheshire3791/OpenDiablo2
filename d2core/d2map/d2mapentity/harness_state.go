@@ -7,6 +7,25 @@ package d2mapentity
 // and free of presentation noise (no animation frame counters, no wall time):
 // whatever appears here is asserted identical across seeded launches.
 
+// harnessMotion adds where the entity is walking (M4.6 B1): the point it is
+// stepping toward now and the waypoints still ahead of it, in world tiles.
+// path_len alone cannot tell two walks of the same length apart, and the
+// world save carries both -- so a resume that dropped one is visible here
+// before it is visible as a wolf walking the wrong way.
+func (m *mapEntity) harnessMotion(state map[string]interface{}) {
+	t := m.Target.World()
+	state["target"] = [2]float64{t.X(), t.Y()}
+
+	waypoints := make([][2]float64, 0, len(m.path))
+
+	for i := range m.path {
+		w := m.path[i].World()
+		waypoints = append(waypoints, [2]float64{w.X(), w.Y()})
+	}
+
+	state["waypoints"] = waypoints
+}
+
 // HarnessState reports the player's observable simulation state.
 func (p *Player) HarnessState() map[string]interface{} {
 	state := map[string]interface{}{
@@ -22,6 +41,8 @@ func (p *Player) HarnessState() map[string]interface{} {
 		"path_len":       len(p.path),
 		"speed":          p.Speed,
 	}
+
+	p.harnessMotion(state)
 
 	if p.Stats != nil {
 		state["level"] = p.Stats.Level
@@ -75,6 +96,8 @@ func (v *NPC) HarnessState() map[string]interface{} {
 		"path_len":    len(v.mapEntity.path),
 		"speed":       v.Speed,
 	}
+
+	v.harnessMotion(state)
 
 	if v.monstatRecord != nil {
 		state["monstat"] = v.monstatRecord.Key

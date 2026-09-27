@@ -321,6 +321,14 @@ func (p *Pursuit) HarnessState() map[string]interface{} {
 			"arrived":           c.arrived,
 			"following":         c.hunter.Following(),
 			"repath_tiles_dial": p.dials.RepathTiles,
+
+			// M4.6 B1: what the re-path tests read -- where the quarry
+			// stood and how far the hunter was at the last solve.
+			// quarry_moved above is derived from the first; these are the
+			// state itself, which is what a save carries.
+			"solved_at_x":     c.solvedAtX,
+			"solved_at_y":     c.solvedAtY,
+			"solved_distance": c.solvedDistance,
 		})
 	}
 

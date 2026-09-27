@@ -2,7 +2,8 @@ package d2world
 
 import (
 	"fmt"
-	"math/rand"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 )
 
 // M4.7 step 2 (23 Sep 2026): the rising roll. S1 §6.3: each open body of a
@@ -53,7 +54,7 @@ type Rising struct {
 	corpses *Corpses
 	band    func() int
 	stage   func() Stage
-	rng     *rand.Rand
+	rng     *d2rand.Stream // counted (M4.6 B1)
 
 	pressure  float64
 	lastBand  int
@@ -104,7 +105,7 @@ func NewRising(corpses *Corpses, band func() int, stage func() Stage, seed int64
 		corpses:  corpses,
 		band:     band,
 		stage:    stage,
-		rng:      rand.New(rand.NewSource(seed)), // nolint:gosec // gameplay RNG, seeded for reproducibility
+		rng:      d2rand.NewStream(seed),
 		pressure: dials.Pressure,
 	}
 
@@ -281,6 +282,12 @@ func (r *Rising) HarnessState() map[string]interface{} {
 		"chance": r.Chance(), "band": r.lastBand, "rolls": r.rolls, "risen": r.risen,
 		"stood_again": r.stoodAgain, "downed_minutes": r.dials.DownedMinutes,
 		"edge_floor": r.dials.EdgeFloor, "wandered": r.wandered,
+
+		// M4.6 B1. "band" above is lastBand, the band last rolled; last_stage
+		// is its partner, the stage that decides whether the next frame is a
+		// dawn (a resume that got it wrong would pay, or skip, a dawn).
+		"last_stage": r.lastStage.String(),
+		"rng":        r.rng.Report(),
 	}
 }
 

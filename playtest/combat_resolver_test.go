@@ -3,6 +3,7 @@
 package playtest
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
@@ -64,11 +65,21 @@ func TestCombatResolver(t *testing.T) {
 	dog := spawnNPC(t, s, "fallen1", spot[0], spot[1])
 	dogID := entityID(t, s, dog)
 
+	// M4.6 B1: no fight yet, so no roll yet, and the first encounter is e:1.
+	if before := combatState(s); mustNum(t, saveBlock(t, before, "rng"), "draws") != 0 || mustNum(t, before, "next_id") != 1 {
+		t.Fatalf("act 1: before the first fight combat has drawn nothing and numbered nothing: rng %v next_id %v",
+			before["rng"], before["next_id"])
+	}
+
 	s.call("strigoi_watch", map[string]any{"watcher": dog, "target": playerHandle})
 
 	fightNow(t, s)
 
 	combat := combatState(s)
+
+	if got, want := mustStr(t, combat, "encounter"), fmt.Sprintf("e:%.0f", mustNum(t, combat, "next_id")-1); got != want {
+		t.Fatalf("act 1 (M4.6 B1): the running encounter is %q, so next_id must be one past it (%q)", got, want)
+	}
 
 	if got := num(combat, "round"); got != 1 {
 		t.Fatalf("act 1: opening the fight frame by frame must catch it on round 1; round=%.0f", got)
@@ -121,6 +132,12 @@ func TestCombatResolver(t *testing.T) {
 	combat, rows = stepToNewRound(t, s)
 	if len(rows) == 0 {
 		t.Fatalf("act 2: a resolved round must report at least one blow: %v", combat)
+	}
+
+	// M4.6 B1: a blow rolls a d100 and its damage, so a round of blows has
+	// moved the combat stream -- by at least one draw per blow.
+	if d := mustNum(t, saveBlock(t, combat, "rng"), "draws"); d < float64(len(rows)) {
+		t.Fatalf("act 2: %d blow(s) resolved and the combat stream reports %.0f draw(s)", len(rows), d)
 	}
 
 	dials := sub(combat, "dials")
@@ -372,6 +389,11 @@ func TestCombatResolver(t *testing.T) {
 
 	if flag(t, combat, "fighting") {
 		t.Fatalf("act 5: a dead player is not in a fight: %v", combat)
+	}
+
+	// M4.6 B1: one number per encounter, the next one unspent.
+	if n, e := mustNum(t, combat, "next_id"), mustNum(t, combat, "encounters"); n != e+1 {
+		t.Fatalf("act 5: %.0f encounter(s) started, so next_id must be %.0f; reports %.0f", e, e+1, n)
 	}
 
 	t.Logf("act 5 PASS: the GAME killed the player in ~%d world minutes with the harness silent on every "+

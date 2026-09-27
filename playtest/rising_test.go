@@ -45,6 +45,11 @@ func TestRising(t *testing.T) {
 	bodies := asList(c["bodies"])
 	staked, buried := bodies[0].(map[string]any), bodies[1].(map[string]any)
 
+	// M4.6 B1: no band has turned, so the rising's stream is untouched.
+	if d := mustNum(t, saveBlock(t, risingState(s), "rng"), "draws"); d != 0 {
+		t.Fatalf("before any band the rising has drawn nothing: %.0f", d)
+	}
+
 	// --- 1: a stake and a grave ------------------------------------------------------------
 	s.call("strigoi_key", map[string]any{"key": "k"})
 	s.call("strigoi_step", map[string]any{"frames": 2})
@@ -106,6 +111,14 @@ func TestRising(t *testing.T) {
 		t.Fatalf("act 2: pressure -0.01 for the rite, +0.02 for each of two open at dawn: %.4f", got)
 	}
 
+	// M4.6 B1: THE TEST LAID THE DOORS, SO IT KNOWS THE DRAWS. Every door
+	// draws once per band whether or not it rises: two left open and one in a
+	// hasty grave (the staked one is no door), three bands -- nine, exactly.
+	// A counter that missed a draw, or counted one twice, reads otherwise.
+	if d := mustNum(t, saveBlock(t, r, "rng"), "draws"); d != 9 {
+		t.Fatalf("act 2: three doors, three bands, nine draws; the rising reports %.0f", d)
+	}
+
 	// --- 3: odds certain ------------------------------------------------------------------------
 	setField(s, "rising", "p", 1.0)
 	setField(s, "rising", "hasty_weight", 0.0)
@@ -157,6 +170,56 @@ func TestRising(t *testing.T) {
 
 	if r := risingState(s); mustNum(t, r, "rolls") != 6 || math.Abs(mustNum(t, r, "pressure")-0.03) > 1e-6 {
 		t.Fatalf("act 3: three more rolls, and no man open at the dawn count to move the pressure: %v", r)
+	}
+
+	// M4.6 B1: the band that turned under his spade drew for three doors (two
+	// open, one grave); the two rose, and a risen man is no door, so the next
+	// two bands drew for the grave alone. 9 + 3 + 1 + 1.
+	if d := mustNum(t, saveBlock(t, risingState(s), "rng"), "draws"); d != 14 {
+		t.Fatalf("act 3: 3 + 1 + 1 draws on top of act 2's nine; the rising reports %.0f", d)
+	}
+
+	// And the corpse registry's three maps tie each Downed body to the man it
+	// walked as: nobody walks now (walker empty), each of the two bodies
+	// remembers its last walker, and that walker's risen_as leads back to the
+	// same body. risen_as is EVERY member a body has walked as, not one per
+	// body: the first run of this act found dead:3 -- the man risen under his
+	// spade, beside him -- had walked as ten, cut down and standing again on
+	// his Downed window all night. So every risen_as entry must name one of
+	// the two bodies, and there are at least two.
+	c = corpsesState(s)
+	risenAs, walker, last := saveBlock(t, c, "risen_as"), c["walker"], saveBlock(t, c, "last")
+
+	if w, _ := walker.(map[string]any); w == nil || len(w) != 0 || len(last) != 2 || len(risenAs) < 2 {
+		t.Fatalf("act 3: two walked and both lie down: risen_as %v walker %v last %v", risenAs, walker, last)
+	}
+
+	for member, body := range risenAs {
+		if id, _ := body.(string); last[id] == nil {
+			t.Fatalf("act 3: %s walked as %v, which is none of the bodies that rose (%v)", member, body, last)
+		}
+	}
+
+	t.Logf("act 3 (M4.6 B1): the two bodies walked as %d member(s) between them; last %v", len(risenAs), last)
+
+	now := worldMinutes(t, s)
+
+	for _, raw := range asList(c["bodies"]) {
+		b, _ := raw.(map[string]any)
+		if mustStr(t, b, "state") != "downed" {
+			continue
+		}
+
+		id := mustStr(t, b, "id")
+		member, _ := last[id].(string)
+
+		if back, _ := risenAs[member].(string); member == "" || back != id {
+			t.Fatalf("act 3: Downed body %s: last %q, and risen_as leads back to %q", id, member, risenAs[member])
+		}
+
+		if at := mustNum(t, b, "downed_at"); at <= 0 || at > now {
+			t.Fatalf("act 3: Downed body %s went down at minute %.2f, now %.2f", id, at, now)
+		}
 	}
 
 	t.Logf("one staked, one buried, two left open: nothing at odds 0 (pressure 0.03), both up at odds 1 (one under his spade) and down again at first light")

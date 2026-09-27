@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	mrand "math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -19,7 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -384,10 +382,10 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 
 			if seed != 0 {
 				d2server.SetNextGameSeed(seed)
-				uuid.SetRand(mrand.New(mrand.NewSource(seed)))
+				harnessSeedUUID(seed) // counted (M4.6 B1; harness_uuid.go)
 			} else {
 				d2server.SetNextGameSeed(0)
-				uuid.SetRand(nil)
+				harnessSeedUUID(0)
 			}
 
 			if hasHero {

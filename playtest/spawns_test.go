@@ -3,7 +3,11 @@
 package playtest
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"math"
+	"strconv"
 	"testing"
 )
 
@@ -30,6 +34,20 @@ import (
 //  5. the tables move with the clock and with the carrion count;
 //  6. a forced arrival really arrives, carries morale both directions, and
 //     can be taken back out again.
+//
+// M4.6 B1 (26 Sep 2026) rides along, because this script already forces the
+// arrivals and steps the tables the world save's fields describe. Act 6c reads
+// every field B1 added -- each stream's seed against the run's, the scene's
+// world draws beside the digest's rng part (one number read two ways, which is
+// not a check of the count -- see the act), the tables' clock toward their next check
+// against the minutes stepped, one draw per roll at a chance of zero, a forced
+// arrival moving the spawner's arrival count, the next group number and the
+// stream by amounts the other numbers bound, one light id per torch, the
+// screen's bookkeeping against the systems it shadows -- and after act 7 the
+// chase reports its last solve. The review of B1 added act 6's member ids (a
+// group names every member), values rather than types for the walkers'
+// targets and the chase's solve, and the walk at the end, whose destination
+// the script chooses.
 func TestSpawns(t *testing.T) {
 	s := start(t)
 
@@ -351,6 +369,24 @@ func TestSpawns(t *testing.T) {
 		t.Fatalf("act 6: every group must carry a notice block per ask 6, got %v", group["notice"])
 	}
 
+	// M4.6 B1 review (B2): the group names its members. A fresh arrival is all
+	// alive and all watched, so its member ids are exactly the watchers of its
+	// notice rows: one row each, no stranger, nobody missing. (TestCombatRout
+	// act C is the other half: a member that dies stays on the list.)
+	ids := memberIDs(t, group)
+	watchers := noticeWatchers(t, group)
+
+	if len(watchers) != len(ids) {
+		t.Fatalf("act 6: %s has %d member id(s) %v and %d notice row(s) %v -- a fresh pack is watched whole",
+			groupID, len(ids), ids, len(watchers), watchers)
+	}
+
+	for _, w := range watchers {
+		if !hasString(ids, w) {
+			t.Fatalf("act 6: %s's notice row for %s names no member of it: member_ids %v", groupID, w, ids)
+		}
+	}
+
 	if flag(t, group, "routing") {
 		t.Fatalf("act 6: a fresh group must not already be routing, morale %.0f", num(group, "morale"))
 	}
@@ -399,6 +435,9 @@ func TestSpawns(t *testing.T) {
 	t.Logf("act 6b PASS: despawn took watchers %d -> %d and the second despawn was refused",
 		watchingBefore, int(num(after, "notice_watching")))
 
+	// --- act 6c (M4.6 B1): the save's fields are reported, and move -------
+	saveFieldsAct(t, s, seer)
+
 	// --- act 7: awareness must START A CHASE, with nobody asking -----------
 	//
 	// THIS IS THE ACT THE MILESTONE SHIPPED WITHOUT, and an audit found the
@@ -446,6 +485,10 @@ func TestSpawns(t *testing.T) {
 
 	t.Logf("act 7 PASS: %d aware -> %.0f chase(s) started with nothing calling strigoi_pursue",
 		len(aware), num(chases, "chases"))
+
+	checkChaseSolves(t, s) // M4.6 B1
+
+	checkWalkTarget(t, s) // M4.6 B1 review, C3
 
 	t.Logf("M4.3b: %d table check(s), %d roll(s), %d spawned, %d failure(s); "+
 		"%d notice check(s), %d notice(s)",
@@ -622,4 +665,653 @@ func awareList(state map[string]any) []string {
 	}
 
 	return out
+}
+
+// --- M4.6 B1: the save's fields, observed ------------------------------------
+//
+// The world save (M4.6) writes, for every stream, a seed and a draw count, and
+// for every system the counters and clocks it cannot resume without. Burst B1
+// puts each of them on a provider BEFORE anything saves it, and these helpers
+// are where the script proves they are there and move when they should. Every
+// assertion compares a number the test chose -- a seed, a chance of zero, a
+// number of minutes, one torch -- or a number a second system reports, against
+// what the provider says. A field that is present but never moves is a field a
+// broken save would not disturb.
+
+// saveBlock reads a nested object strictly: an absent block is a failure that
+// names what IS there, never an empty map every read then passes on.
+func saveBlock(t *testing.T, m map[string]any, key string) map[string]any {
+	t.Helper()
+
+	v, ok := m[key].(map[string]any)
+	if !ok {
+		t.Fatalf("block %q is absent or not an object (%T) -- present: %v", key, m[key], keysOf(m))
+	}
+
+	return v
+}
+
+func systemState(s *session, name string) map[string]any {
+	return sub(s.call("strigoi_get_system_state", map[string]any{"system": name}), "state")
+}
+
+// arrivalMark is what act 6c reads before a forced arrival.
+type arrivalMark struct {
+	arrival, nextID, failures, draws, rolls float64
+}
+
+func markArrivals(t *testing.T, s *session) arrivalMark {
+	t.Helper()
+
+	spawns := spawnsState(s)
+
+	return arrivalMark{
+		arrival:  mustNum(t, systemState(s, "scene"), "spawner_arrival"),
+		nextID:   mustNum(t, spawns, "next_id"),
+		failures: mustNum(t, spawns, "spawn_failures"),
+		draws:    mustNum(t, saveBlock(t, spawns, "rng"), "draws"),
+		rolls:    mustNum(t, spawns, "rolls"),
+	}
+}
+
+// checkArrivals: across a forced arrival, the spawner's arrival count, the
+// tables' next group number and the stream's draw count all move, and by
+// amounts the other numbers bound. Each group the tables adopt spends one
+// group number and one arrival; an arrival that placed nobody spends an
+// arrival and counts a failure instead. The stream draws one value per roll,
+// plus a pack size for every arrival whose row has a range.
+func checkArrivals(t *testing.T, s *session, before arrivalMark) {
+	t.Helper()
+
+	after := markArrivals(t, s)
+
+	groups := after.nextID - before.nextID
+	arrivals := after.arrival - before.arrival
+	failures := after.failures - before.failures
+
+	if groups < 1 {
+		t.Fatalf("act 6c: a forced arrival must spend a group number; next_id %.0f -> %.0f", before.nextID, after.nextID)
+	}
+
+	if arrivals < groups || arrivals > groups+failures {
+		t.Fatalf("act 6c: %.0f group(s) and %.0f failure(s) must mean %.0f..%.0f arrival(s); "+
+			"the spawner reports %.0f", groups, failures, groups, groups+failures, arrivals)
+	}
+
+	if draws, rolls := after.draws-before.draws, after.rolls-before.rolls; draws < rolls || rolls < 1 {
+		t.Fatalf("act 6c: %.0f roll(s) must draw at least %.0f value(s); the stream moved %.0f",
+			rolls, rolls, draws)
+	}
+
+	scene := systemState(s, "scene")
+	if n, known := len(asList(scene["bodies"])), mustNum(t, combatState(s), "bodies_known"); float64(n) != known || n == 0 {
+		t.Fatalf("act 6c: the arrival's bodies must be on the scene, one per body combat knows; "+
+			"scene lists %d, combat knows %.0f", n, known)
+	}
+
+	for _, raw := range asList(scene["bodies"]) {
+		b, _ := raw.(map[string]any)
+		if h, m := mustNum(t, b, "health"), mustNum(t, b, "max_health"); m < 1 || h > m {
+			t.Fatalf("act 6c: a body reads %.0f of %.0f health: %v", h, m, b)
+		}
+	}
+
+	t.Logf("act 6c PASS: %.0f group(s), %.0f arrival(s), %.0f failure(s); %.0f draw(s) for %.0f roll(s); "+
+		"%d bodies with their health on the scene",
+		groups, arrivals, failures, after.draws-before.draws, after.rolls-before.rolls, len(asList(scene["bodies"])))
+}
+
+// saveFieldsAct is act 6c: every field B1 added, present and moving.
+func saveFieldsAct(t *testing.T, s *session, seer string) {
+	t.Helper()
+
+	// --- the seeds: the number the test chose, from every stream ----------
+	const seed = 1462
+
+	spawns := spawnsState(s)
+	scene := systemState(s, "scene")
+	rising := systemState(s, "rising")
+
+	for name, got := range map[string]float64{
+		"spawns.rng":      mustNum(t, saveBlock(t, spawns, "rng"), "seed"),
+		"combat.rng":      mustNum(t, saveBlock(t, combatState(s), "rng"), "seed"),
+		"scene.world_rng": mustNum(t, saveBlock(t, scene, "world_rng"), "seed"),
+		"rising.rng":      mustNum(t, saveBlock(t, rising, "rng"), "seed") - 4707, // risingSeedOffset
+	} {
+		if got != seed {
+			t.Fatalf("act 6c: %s must be seeded from the run's seed %d, reports %.0f", name, seed, got)
+		}
+	}
+
+	// And exactly, as a string: a wall-clock seed does not survive the float64
+	// every read above goes through (review C9), so a save reads seed_str.
+	for name, want := range map[string]struct {
+		block map[string]any
+		seed  int64
+	}{
+		"spawns.rng":      {saveBlock(t, spawns, "rng"), seed},
+		"combat.rng":      {saveBlock(t, combatState(s), "rng"), seed},
+		"scene.world_rng": {saveBlock(t, scene, "world_rng"), seed},
+		"rising.rng":      {saveBlock(t, rising, "rng"), seed + 4707},
+	} {
+		if !flag(t, want.block, "present") || mustStr(t, want.block, "seed_str") != strconv.FormatInt(want.seed, 10) {
+			t.Fatalf("act 6c: %s must be present with seed_str %q: %v", name, strconv.FormatInt(want.seed, 10), want.block)
+		}
+	}
+
+	// --- the world stream: the scene reports the digest's number ----------
+	//
+	// The digest's rng part is sha256("world_draws=N"), a hash no script can
+	// read a number from, and the scene reports N readably. Hashing the scene's
+	// N must give the digest's part exactly. THIS DOES NOT CHECK THE COUNT
+	// (review C2): both read MapEngine.RandDraws, so a miscount agrees with
+	// itself here. It checks only that the readable number is the hashed one.
+	// The count is checked against the stream itself by d2mapengine's unit
+	// tests (TestRestoreRand*: draws through the engine and its factories,
+	// judged against a plain stdlib stream), and across two fresh launches at
+	// the same steps by TestTownWalkDeterministic.
+	draws := mustNum(t, saveBlock(t, systemState(s, "scene"), "world_rng"), "draws")
+	sum := sha256.Sum256([]byte(fmt.Sprintf("world_draws=%d", int64(draws))))
+
+	if part := str(sub(s.call("strigoi_get_state_digest", map[string]any{}), "parts"), "rng"); part != hex.EncodeToString(sum[:]) {
+		t.Fatalf("act 6c: the scene reports %.0f world draws, but the digest's rng part is not their hash (%.12s)",
+			draws, part)
+	}
+
+	// --- the tables' clock toward the next check -------------------------
+	chance, checkMinutes := mustNum(t, spawns, "chance"), mustNum(t, spawns, "check_minutes")
+
+	setField(s, "spawns", "chance", 0)
+	setField(s, "spawns", "check_minutes", 1000)
+
+	before, clockBefore := spawnsState(s), mustNum(t, clockState(s), "world_minutes")
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 7})
+	after, clockAfter := spawnsState(s), mustNum(t, clockState(s), "world_minutes")
+
+	stepped := clockAfter - clockBefore
+	if stepped < 7 {
+		t.Fatalf("act 6c: step_world 7 moved the clock %.3f world minutes", stepped)
+	}
+
+	if moved := mustNum(t, after, "since_check_minutes") - mustNum(t, before, "since_check_minutes"); math.Abs(moved-stepped) > 1e-6 {
+		t.Fatalf("act 6c: the clock ran %.6f world minutes and since_check_minutes moved %.6f", stepped, moved)
+	}
+
+	if mustNum(t, after, "checks") != mustNum(t, before, "checks") ||
+		mustNum(t, saveBlock(t, after, "rng"), "draws") != mustNum(t, saveBlock(t, before, "rng"), "draws") {
+		t.Fatalf("act 6c: short of a 1000-minute check nothing is checked or drawn; checks %.0f -> %.0f, draws %.0f -> %.0f",
+			num(before, "checks"), num(after, "checks"),
+			num(saveBlock(t, before, "rng"), "draws"), num(saveBlock(t, after, "rng"), "draws"))
+	}
+
+	// --- at a chance of zero, one draw per roll, no more and no fewer ------
+	setField(s, "spawns", "check_minutes", 1)
+
+	before = spawnsState(s)
+	arrivalBefore := mustNum(t, systemState(s, "scene"), "spawner_arrival")
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 5})
+	after = spawnsState(s)
+
+	rolls := mustNum(t, after, "rolls") - mustNum(t, before, "rolls")
+	drawn := mustNum(t, saveBlock(t, after, "rng"), "draws") - mustNum(t, saveBlock(t, before, "rng"), "draws")
+
+	if mustNum(t, after, "checks") <= mustNum(t, before, "checks") || rolls < 1 {
+		t.Fatalf("act 6c: five minutes of one-minute checks at night must roll; checks %.0f -> %.0f, rolls +%.0f",
+			num(before, "checks"), num(after, "checks"), rolls)
+	}
+
+	if drawn != rolls {
+		t.Fatalf("act 6c: at a chance of zero every draw is a roll: %.0f roll(s), %.0f draw(s)", rolls, drawn)
+	}
+
+	if mustNum(t, after, "next_id") != mustNum(t, before, "next_id") ||
+		mustNum(t, systemState(s, "scene"), "spawner_arrival") != arrivalBefore {
+		t.Fatalf("act 6c: nothing arrived, so no group number and no arrival may be spent")
+	}
+
+	if since := mustNum(t, after, "since_check_minutes"); since < 0 || since >= 1 {
+		t.Fatalf("act 6c: with one-minute checks the tables are never a minute from the last: %.4f", since)
+	}
+
+	// --- a forced arrival: the arrival count, the group number, the stream --
+	//
+	// ITS OWN ARRIVAL, NOT ACT 6'S. The first run of this act read across act
+	// 6's loop and failed on its premise: that loop only steps while no group
+	// is alive, and on seed 1462 two were already out after act 5, so nothing
+	// arrived and next_id sat at 3. Here the arrival is forced and waited for,
+	// under a raised cap so a full map cannot starve it, and sent home after.
+	maxGroups := mustNum(t, after, "max_groups")
+
+	setField(s, "spawns", "max_groups", mustNum(t, after, "groups")+4)
+	setField(s, "spawns", "chance", 100)
+
+	mark := markArrivals(t, s)
+
+	for i := 0; i < 10 && mustNum(t, spawnsState(s), "next_id") == mark.nextID; i++ {
+		s.call("strigoi_step_world", map[string]any{"world_minutes": 1})
+	}
+
+	checkArrivals(t, s, mark)
+
+	for _, raw := range asList(spawnsState(s)["group_list"]) {
+		g, _ := raw.(map[string]any)
+
+		var n float64
+		if _, err := fmt.Sscanf(str(g, "group"), "g:%f", &n); err == nil && n >= mark.nextID {
+			setField(s, "spawns", "despawn", str(g, "group"))
+		}
+	}
+
+	setField(s, "spawns", "max_groups", maxGroups)
+	setField(s, "spawns", "chance", chance)
+	setField(s, "spawns", "check_minutes", checkMinutes)
+
+	t.Logf("act 6c PASS: seeds 1462 (+4707 rising); world draws %.0f hash to the digest's rng part; "+
+		"since_check moved %.4f in %.4f stepped; %.0f roll(s) drew %.0f", draws, stepped, stepped, rolls, drawn)
+
+	// --- one torch, one id -------------------------------------------------
+	lit := mustNum(t, lightState(s), "next_id")
+
+	setField(s, "light", "carried_source", "torch")
+
+	if got := mustNum(t, lightState(s), "next_id"); got != lit+1 {
+		t.Fatalf("act 6c: lighting one torch spends one light id: %.0f -> %.0f", lit, got)
+	}
+
+	setField(s, "light", "carried_source", "")
+
+	if got := mustNum(t, lightState(s), "next_id"); got != lit+1 {
+		t.Fatalf("act 6c: putting it out gives no id back: %.0f", got)
+	}
+
+	// --- the scene agrees with the systems it shadows ---------------------
+	scene = systemState(s, "scene")
+	clock := clockState(s)
+
+	if got, want := mustStr(t, scene, "last_stage"), mustStr(t, clock, "stage"); got != want {
+		t.Fatalf("act 6c: the screen's last_stage %q must be the clock's stage %q after a frame", got, want)
+	}
+
+	if got, want := mustStr(t, systemState(s, "rising"), "last_stage"), mustStr(t, clock, "stage"); got != want {
+		t.Fatalf("act 6c: the rising's last_stage %q must be the clock's stage %q", got, want)
+	}
+
+	if paid, day := mustNum(t, scene, "dawn_paid_day"), mustNum(t, clock, "day_index"); paid < 0 || paid > day {
+		t.Fatalf("act 6c: the dawn paid for (%.0f) cannot be later than today (%.0f)", paid, day)
+	}
+
+	flag(t, scene, "watch_clock_set")
+	mustNum(t, scene, "watch_clock")
+
+	// Night 1's dead, in the order they were laid: each is a man's body the
+	// corpse registry holds, and the registry holds them in the same order.
+	laid := asList(scene["field_dead"])
+	if len(laid) == 0 {
+		t.Fatalf("act 6c: Night 1's dead are laid at the first dawn; field_dead is empty")
+	}
+
+	corpses := corpsesState(s)
+	order := map[string]int{}
+
+	for i, raw := range asList(corpses["bodies"]) {
+		b, _ := raw.(map[string]any)
+		order[mustStr(t, b, "id")] = i
+		mustNum(t, b, "downed_at")
+	}
+
+	last := -1
+
+	for _, raw := range laid {
+		id, _ := raw.(string)
+
+		at, ok := order[id]
+		if !ok || at <= last {
+			t.Fatalf("act 6c: field_dead %v must be bodies the registry holds, in the order they fell", laid)
+		}
+
+		last = at
+	}
+
+	for _, key := range []string{"risen_as", "walker", "last"} {
+		if _, ok := corpses[key].(map[string]any); !ok {
+			t.Fatalf("act 6c: corpses must report %q as an object, got %T", key, corpses[key])
+		}
+	}
+
+	// --- every watch says when it next looks ------------------------------
+	reEvaluate := mustNum(t, spawnsState(s), "notice_re_evaluate_minutes")
+
+	// NOT A LOOP OVER NOTHING (review C3), and the first run under the review
+	// found it was one: by here every pack has been sent home and nothing is
+	// watched, so the loop below passed on an empty list. So the act watches
+	// one of its own -- with the radius shrunk so it cannot see the player,
+	// which means it notices nothing and starts no chase for act 7 to find --
+	// and times its look against the clock.
+	radius := mustNum(t, spawnsState(s), "notice_radius")
+	setField(s, "spawns", "notice_radius", 0.1)
+
+	pp := s.call("strigoi_get_player", map[string]any{})
+	spot := clearNeighbour(t, s, num(pp, "x"), num(pp, "y"))
+	looker := spawnNPC(t, s, "fallen1", spot[0], spot[1])
+
+	s.call("strigoi_watch", map[string]any{"watcher": looker, "target": "p:1"})
+
+	row := noticeRowFor(t, s, looker)
+	if flag(t, row, "noticed") || mustNum(t, row, "minutes_since_check") != 0 {
+		t.Fatalf("act 6c: a watch looks the moment it starts (minutes_since_check 0) and at reach 0.1 sees nothing: %v", row)
+	}
+
+	before6c := worldMinutes(t, s)
+	s.call("strigoi_step_world", map[string]any{"world_minutes": reEvaluate / 4})
+	stepped6c := worldMinutes(t, s) - before6c
+
+	row = noticeRowFor(t, s, looker)
+	if since := mustNum(t, row, "minutes_since_check"); stepped6c < reEvaluate && math.Abs(since-stepped6c) > 1e-6 {
+		t.Fatalf("act 6c: %.6f world minutes after its look, a watch must say %.6f since its check; says %.6f",
+			stepped6c, stepped6c, since)
+	}
+
+	// And past one re-evaluation, so the count the loop below bounds has
+	// started again: a report of the minutes since it last SAW (which keeps
+	// growing for a watch that never sees) would be past the bound here.
+	s.call("strigoi_step_world", map[string]any{"world_minutes": reEvaluate})
+
+	notices := asList(spawnsState(s)["notice_list"])
+	if len(notices) == 0 {
+		t.Fatalf("act 6c: a watch was just started, so notice_list cannot be empty")
+	}
+
+	defer func() {
+		s.call("strigoi_watch", map[string]any{"watcher": looker, "release": true})
+		setField(s, "spawns", "notice_radius", radius)
+	}()
+
+	for _, raw := range notices {
+		row, _ := raw.(map[string]any)
+		if m := mustNum(t, row, "minutes_since_check"); m < 0 || m >= reEvaluate {
+			t.Fatalf("act 6c: a watch is always within one re-evaluation (%.2f) of its last look: %v", reEvaluate, row)
+		}
+	}
+
+	// --- entities say where they are walking -------------------------------
+	//
+	// Values, not types (review C3): every point is two finite numbers, and the
+	// waypoints are as many as path_len, which the entity counts separately.
+	// What each point IS is asserted at the end of the script, on a walk whose
+	// destination the script chooses (checkWalkTarget).
+	for _, handle := range []string{"p:1", seer} {
+		state := sub(s.call("strigoi_get_entity", map[string]any{"handle": handle}), "state")
+
+		motionPoint(t, handle+" target", state["target"])
+
+		waypoints, ok := state["waypoints"].([]any)
+		if !ok {
+			t.Fatalf("act 6c: %s must report its waypoints, got %v", handle, state["waypoints"])
+		}
+
+		if n := mustNum(t, state, "path_len"); float64(len(waypoints)) != n {
+			t.Fatalf("act 6c: %s reports %d waypoint(s) and path_len %.0f -- one list", handle, len(waypoints), n)
+		}
+
+		for i, w := range waypoints {
+			motionPoint(t, fmt.Sprintf("%s waypoint %d", handle, i), w)
+		}
+	}
+
+	t.Logf("act 6c PASS: light ids, the scene's stage and dawn, %d laid dead in fall order, every watch's "+
+		"next look, and the walkers' targets are all reported", len(laid))
+}
+
+// checkChaseSolves: the chase act 7 started reports its last solve -- where
+// the quarry stood and how far the hunter was -- which is what the re-path
+// rule reads and what a resumed chase needs.
+func checkChaseSolves(t *testing.T, s *session) {
+	t.Helper()
+
+	rows := asList(systemState(s, "pursuit")["chase_list"])
+	if len(rows) == 0 {
+		t.Fatalf("after act 7 (M4.6 B1): a chase must be running to report its solve")
+	}
+
+	for _, raw := range rows {
+		row, _ := raw.(map[string]any)
+
+		// Values, not presence (review C3): quarry_moved is the provider's own
+		// distance from where the quarry stands now to where it stood at the
+		// solve, so the solve point the save would carry must be exactly that
+		// far from the quarry. A zero, a swapped x and y, or a stale point
+		// reads otherwise.
+		sx, sy := mustNum(t, row, "solved_at_x"), mustNum(t, row, "solved_at_y")
+		qx, qy := mustNum(t, row, "quarry_x"), mustNum(t, row, "quarry_y")
+
+		if moved := mustNum(t, row, "quarry_moved"); math.Abs(math.Hypot(qx-sx, qy-sy)-moved) > 1e-6 {
+			t.Fatalf("after act 7 (M4.6 B1): the solve point (%.3f,%.3f) is %.4f from the quarry at (%.3f,%.3f), "+
+				"and quarry_moved says %.4f: %v", sx, sy, math.Hypot(qx-sx, qy-sy), qx, qy, moved, row)
+		}
+
+		if mustNum(t, row, "solves") >= 1 && mustNum(t, row, "solved_distance") <= 0 {
+			t.Fatalf("after act 7 (M4.6 B1): a chase that solved from a distance reports solved_distance %.3f: %v",
+				num(row, "solved_distance"), row)
+		}
+	}
+
+	t.Logf("after act 7 (M4.6 B1) PASS: %d chase(s) report where and how far they last solved", len(rows))
+}
+
+// --- M4.6 B1 review ----------------------------------------------------------
+
+// memberIDs reads a group's member_ids strictly: a list of distinct non-empty
+// strings, as many as the group reports members -- and as it was spawned,
+// because a pack's list is never shortened (a death unwatches, it does not
+// remove).
+func memberIDs(t *testing.T, group map[string]any) []string {
+	t.Helper()
+
+	raw, ok := group["member_ids"].([]any)
+	if !ok {
+		t.Fatalf("group %s must report member_ids as a list, got %T -- present: %v",
+			str(group, "group"), group["member_ids"], keysOf(group))
+	}
+
+	ids := make([]string, 0, len(raw))
+
+	for _, v := range raw {
+		id, _ := v.(string)
+		if id == "" || hasString(ids, id) {
+			t.Fatalf("group %s: member_ids %v holds an empty or repeated id", str(group, "group"), raw)
+		}
+
+		ids = append(ids, id)
+	}
+
+	if n, spawned := mustNum(t, group, "members"), mustNum(t, group, "spawned"); float64(len(ids)) != n || n != spawned {
+		t.Fatalf("group %s: %d member id(s), members %.0f, spawned %.0f -- one list, never shortened",
+			str(group, "group"), len(ids), n, spawned)
+	}
+
+	return ids
+}
+
+// noticeWatchers is the watcher of each of a group's notice rows.
+func noticeWatchers(t *testing.T, group map[string]any) []string {
+	t.Helper()
+
+	out := []string{}
+
+	for _, raw := range asList(group["notice"]) {
+		row, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("group %s: a notice row is %T", str(group, "group"), raw)
+		}
+
+		out = append(out, mustStr(t, row, "watcher"))
+	}
+
+	return out
+}
+
+func hasString(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+
+	return false
+}
+
+// motionPoint reads one [x, y] of an entity's motion strictly: two finite
+// numbers, in world tiles.
+func motionPoint(t *testing.T, what string, v any) (x, y float64) {
+	t.Helper()
+
+	pt, _ := v.([]any)
+	if len(pt) != 2 {
+		t.Fatalf("%s must be [x, y], got %v", what, v)
+	}
+
+	x, okX := pt[0].(float64)
+	y, okY := pt[1].(float64)
+
+	if !okX || !okY || math.IsNaN(x) || math.IsNaN(y) || math.IsInf(x, 0) || math.IsInf(y, 0) {
+		t.Fatalf("%s must be two finite numbers, got %v", what, v)
+	}
+
+	return x, y
+}
+
+// checkWalkTarget (review C3): an entity's target and waypoints are VALUES a
+// script can predict, on a walk whose destination it chooses. Every frame of
+// the walk: the waypoints are as many as path_len, the target is ahead of him
+// while any are left, and the walk's last point (its last waypoint, or its
+// target when none are left) is the destination. Arrived, he stands on his
+// target with nothing ahead. At the end of the script, so the walk moves
+// nothing an act reads.
+//
+// THE DESTINATION IS CHOSEN SO THE PATH HAS WAYPOINTS, and the second run of
+// this check is why. It first walked four tiles in a straight line, which the
+// pathfinder answers with the destination as the target and NO waypoints --
+// so a build that reported every waypoint list empty passed it (the dropped-
+// waypoints negative control, 27 Sep). So it asks strigoi_find_path for a
+// reachable point whose route bends (three or more points), walks there, and
+// fails unless some frame of some walk had a waypoint ahead to check.
+func checkWalkTarget(t *testing.T, s *session) {
+	t.Helper()
+
+	p := s.call("strigoi_get_player", map[string]any{})
+	px0, py0 := num(p, "x"), num(p, "y")
+
+	type goal struct{ x, y float64 }
+
+	var goals []goal
+
+	for _, r := range []float64{5, 7, 4, 9} {
+		for i := 0; i < 16 && len(goals) < 6; i++ {
+			a := 2 * math.Pi * float64(i) / 16
+			x, y := px0+math.Cos(a)*r, py0+math.Sin(a)*r
+
+			route := s.call("strigoi_find_path", map[string]any{"to_x": x, "to_y": y})
+			if flag(t, route, "reachable") && mustNum(t, route, "waypoint_count") >= 3 {
+				goals = append(goals, goal{x, y})
+			}
+		}
+	}
+
+	if len(goals) == 0 {
+		t.Fatalf("walk (M4.6 B1 review): no reachable point 4-9 tiles from (%.2f,%.2f) has a route that bends", px0, py0)
+	}
+
+	sawWaypoints, arrived := 0, false
+
+	for _, g := range goals {
+		s.call("strigoi_move_player_to", map[string]any{"x": g.x, "y": g.y})
+
+		frames, mostAhead := 0, 0
+
+		for i := 0; i < 240; i++ {
+			s.call("strigoi_step", map[string]any{"frames": 1})
+
+			ent := s.call("strigoi_get_entity", map[string]any{"handle": "p:1"})
+			state := sub(ent, "state")
+			tx, ty := motionPoint(t, "p:1 target", state["target"])
+			px, py := num(ent, "x"), num(ent, "y")
+			pathLen := mustNum(t, state, "path_len")
+
+			if pathLen == 0 && math.Hypot(tx-px, ty-py) <= 0.01 {
+				if frames > 0 || i >= 20 {
+					break // standing: arrived, or never started
+				}
+
+				continue // the move has not reached him yet
+			}
+
+			frames++
+
+			waypoints := asList(state["waypoints"])
+			if float64(len(waypoints)) != pathLen {
+				t.Fatalf("walk (M4.6 B1 review) frame %d: %d waypoint(s) and path_len %.0f -- one list",
+					i, len(waypoints), pathLen)
+			}
+
+			lastX, lastY := tx, ty
+
+			if len(waypoints) > 0 {
+				mostAhead = max(mostAhead, len(waypoints))
+
+				if math.Hypot(tx-px, ty-py) <= 0.01 {
+					t.Fatalf("walk (M4.6 B1 review) frame %d: %d waypoint(s) ahead and his target (%.3f,%.3f) "+
+						"is where he stands -- the target is the point he steps toward", i, len(waypoints), tx, ty)
+				}
+
+				for k, w := range waypoints {
+					motionPoint(t, fmt.Sprintf("p:1 waypoint %d", k), w)
+				}
+
+				lastX, lastY = motionPoint(t, "p:1 last waypoint", waypoints[len(waypoints)-1])
+			}
+
+			if dist := math.Hypot(lastX-g.x, lastY-g.y); dist > 1.5 {
+				t.Fatalf("walk (M4.6 B1 review) frame %d: sent to (%.2f,%.2f), the walk ends at (%.2f,%.2f), "+
+					"%.2f tiles off; target %v waypoints %v", i, g.x, g.y, lastX, lastY, dist, state["target"], waypoints)
+			}
+		}
+
+		if mostAhead > 0 {
+			sawWaypoints++
+		}
+
+		res := s.call("strigoi_move_player_to", map[string]any{"x": g.x, "y": g.y, "wait": true, "max_ticks": 900})
+		if str(res, "outcome") != "arrived" {
+			t.Logf("walk (M4.6 B1 review): to (%.2f,%.2f) ended %q after %d walking frame(s)", g.x, g.y,
+				str(res, "outcome"), frames)
+
+			continue
+		}
+
+		ent := s.call("strigoi_get_entity", map[string]any{"handle": "p:1"})
+		state := sub(ent, "state")
+		ax, ay := motionPoint(t, "p:1 target (arrived)", state["target"])
+
+		if math.Hypot(ax-num(ent, "x"), ay-num(ent, "y")) > 0.01 || len(asList(state["waypoints"])) != 0 ||
+			mustNum(t, state, "path_len") != 0 {
+			t.Fatalf("walk (M4.6 B1 review): arrived at (%.2f,%.2f), he must stand on his target with nothing "+
+				"ahead; target (%.2f,%.2f) waypoints %v", num(ent, "x"), num(ent, "y"), ax, ay, state["waypoints"])
+		}
+
+		arrived = true
+
+		t.Logf("walk (M4.6 B1 review): to (%.2f,%.2f), %d walking frame(s) with up to %d waypoint(s) ahead, "+
+			"every one ending at the destination; arrived on his target", g.x, g.y, frames, mostAhead)
+
+		if sawWaypoints > 0 {
+			break
+		}
+	}
+
+	if sawWaypoints == 0 || !arrived {
+		t.Fatalf("walk (M4.6 B1 review): of %d walk(s), %d had a waypoint ahead and arrived=%t -- both halves "+
+			"must have been checked", len(goals), sawWaypoints, arrived)
+	}
+
+	t.Logf("walk (M4.6 B1 review) PASS: waypoints checked on %d walk(s), and an arrival", sawWaypoints)
 }

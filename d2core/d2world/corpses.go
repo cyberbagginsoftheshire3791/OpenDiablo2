@@ -325,6 +325,7 @@ func (c *Corpses) HarnessState() map[string]interface{} {
 		bodies = append(bodies, map[string]interface{}{
 			"id": b.ID, "row": b.Row, "class": string(b.Class), "state": string(b.State), "x": b.X, "y": b.Y,
 			"was": b.Was, "walks_as": c.walker[b.ID],
+			"downed_at": b.DownedAt, // M4.6 B1: a Downed man's window runs from here
 		})
 		counts[string(b.State)+"_"+string(b.Class)]++
 	}
@@ -337,11 +338,30 @@ func (c *Corpses) HarnessState() map[string]interface{} {
 	sort.Strings(keys)
 
 	state := map[string]interface{}{"bodies": bodies, "open": c.Open(), "total": len(c.order)}
+
+	// M4.6 B1: the three maps that tie a body to the members it walked as.
+	// A risen man cut down finds his body through risen_as; walker is who
+	// he walks as now, last who he walked as last. Copies, so a reader
+	// cannot reach the registry; encoding/json writes a map's keys sorted,
+	// so the digest sees one order.
+	state["risen_as"] = copyStrings(c.risenAs)
+	state["walker"] = copyStrings(c.walker)
+	state["last"] = copyStrings(c.last)
 	for _, k := range keys {
 		state[k] = counts[k]
 	}
 
 	return state
+}
+
+func copyStrings(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+
+	for k, v := range m {
+		out[k] = v
+	}
+
+	return out
 }
 
 // HarnessSettableFields: none. Bodies fall and close through the game.

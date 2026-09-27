@@ -3,8 +3,8 @@ package d2world
 import (
 	"fmt"
 	"math"
-	"math/rand"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 )
 
@@ -75,7 +75,9 @@ type Combat struct {
 	// a pack actually moved on its turn rather than waiting to be reached.
 	stepsOrdered int
 
-	rng *rand.Rand
+	// rng is every roll's stream, counted and reported so the world save
+	// can resume the fight's dice where they stood (M4.6 B1; d2rand.Stream).
+	rng *d2rand.Stream
 
 	encounter *encounter
 	nextID    int
@@ -671,7 +673,7 @@ func NewCombat(clock *Clock, notice *Notice, fitness FitnessSource, illum Illumi
 		animator: animator,
 		morale:   morale,
 		chases:   chases,
-		rng:      rand.New(rand.NewSource(seed)), // nolint:gosec // gameplay RNG, seeded for reproducibility
+		rng:      d2rand.NewStream(seed),
 		nextID:   1,
 	}
 
@@ -1848,6 +1850,10 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"has_morale":       c.morale != nil,
 		"has_chases":       c.chases != nil,
 		"bodies_known":     0,
+
+		// M4.6 B1: the stream's position and the next encounter's number.
+		"rng":     c.rng.Report(),
+		"next_id": c.nextID,
 
 		// The resolver's facts about the LAST encounter, reported whether or
 		// not one is running: a fight that begins and ends inside one step is
