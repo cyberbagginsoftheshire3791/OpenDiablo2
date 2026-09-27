@@ -1,6 +1,10 @@
 package d2asset
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
+)
 
 // TABLES THAT LOAD WHEN THEY ARE NEEDED (23 Sep 2026, history item 113).
 // Boot loads the tables every game reads (d2app's initDataDictionaries). A
@@ -64,6 +68,24 @@ func (am *AssetManager) RecordsLoaded(path string) bool {
 	defer am.recordsLoaded.mu.Unlock()
 
 	return am.recordsLoaded.done[path]
+}
+
+// LevelDetails is levels.txt's record for the level id, or nil when there is
+// none or the table is not loaded. It reads under the lock EnsureRecords
+// writes under: since the tables burst the table loads lazily, with the
+// generated world, on whichever goroutine builds it first -- the game
+// server's among them -- so a game screen reading the RecordManager's map
+// directly could race that load (BUG-23). Read the level record through this,
+// never through Records.Level.Details. It waits while a table is loading.
+func (am *AssetManager) LevelDetails(id int) *d2records.LevelDetailRecord {
+	am.recordsLoaded.mu.Lock()
+	defer am.recordsLoaded.mu.Unlock()
+
+	if am.Records == nil {
+		return nil
+	}
+
+	return am.Records.Level.Details[id]
 }
 
 // loadRecords is LoadRecords with the lock held.

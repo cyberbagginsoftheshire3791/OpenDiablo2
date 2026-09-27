@@ -226,3 +226,31 @@ rule:
 Composites try `.png` first, then `.dcc`, then `.dc6`, so **a creature with our
 art uses our art and everything else still falls back to D2's.** Replacing one
 monster does not wait on replacing all of them.
+
+---
+
+## 6. The HUD's hands — two icons, drop-in
+
+Not a creature, but the same loader. The two icons beside the globes are his
+two hands (the left button the blade, the right the torch). Until their art
+lands each draws the letter of its key (F, L). The art drops in with no code:
+
+| hand | file | size | frames |
+|---|---|---|---|
+| blade (left) | `data/strigoi/ui/hands/blade.png` | 48×48 | 1 — no manifest |
+| torch (right) | `data/strigoi/ui/hands/torch.png` + `torch.png.json` | 96×48 | 2 — **unlit, then lit**; the frame follows the carried torch |
+
+The torch's manifest is the creatures' format, one row of two cells:
+
+```json
+{"directions": 1, "frames_per_direction": 2}
+```
+
+Each frame is drawn with its bottom-left corner where Diablo II's skill icon
+sat, so the art fills its 48×48 cell exactly; no offsets, no `origin_at_bottom`.
+Art that is there and does not fit — another size, a torch with one frame or no
+manifest — is reported in the log (`hand art refused`) and the letter is drawn:
+a wrong size would draw over the globes. The harness's `ui` state says which
+each hand drew: `hand_icons` is `{"left": "F" | "art:blade", "right": "L" |
+"art:torch", "right_frame": 0 | 1}`. Only Strigoi's game draws them; `-classic`
+draws Diablo II's skill icons. Every file gets its `CREDITS.md` line (§4).

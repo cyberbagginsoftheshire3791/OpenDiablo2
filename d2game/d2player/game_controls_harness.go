@@ -83,6 +83,7 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		// The mini-panel (the HUD's button menu) and where its buttons are.
 		"mini_panel_open":    g.hud != nil && g.hud.miniPanel != nil && g.hud.miniPanel.IsOpen(),
 		"mini_panel_buttons": g.miniPanelButtonsReport(),
+		"run_button":         g.runButtonReport(),
 		"party_open":         partyOpen,
 
 		// T1: the refusal or hint the combat panel is showing, so a script can
@@ -275,6 +276,19 @@ func (g *GameControls) miniPanelButtonsReport() map[string]interface{} {
 	return g.hud.miniPanel.buttonsReport()
 }
 
+// runButtonReport is where the HUD's run button is drawn, {x, y, w, h}, so a
+// script clicks it where a player would.
+func (g *GameControls) runButtonReport() map[string]interface{} {
+	if g.hud == nil || g.hud.runButton == nil {
+		return map[string]interface{}{}
+	}
+
+	x, y := g.hud.runButton.GetPosition()
+	w, h := g.hud.runButton.GetSize()
+
+	return map[string]interface{}{"x": x, "y": y, "w": w, "h": h}
+}
+
 // journalViewReport is the journal as drawn: the part, the tabs and rows
 // where they are clickable, the chosen row, and the text lines.
 func (g *GameControls) journalViewReport() map[string]interface{} {
@@ -335,10 +349,11 @@ func (g *GameControls) journalNoticeText() string {
 }
 
 // handIconsReport is what the HUD's two skill icons last drew in Strigoi's
-// game -- the letter of the key each hand's verb is on (hud_hands.go) -- as
-// {left, right}; both "" under -classic, which draws Diablo II's icons.
+// game -- the letter of the key each hand's verb is on, or "art:blade" /
+// "art:torch" when the art is there (hud_hands.go) -- as {left, right,
+// right_frame}; both "" under -classic, which draws Diablo II's icons.
 func (g *GameControls) handIconsReport() map[string]interface{} {
-	left, right := g.hud.HandsReport()
+	left, right, rightFrame := g.hud.HandsReport()
 
-	return map[string]interface{}{"left": left, "right": right}
+	return map[string]interface{}{"left": left, "right": right, "right_frame": rightFrame}
 }

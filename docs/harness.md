@@ -1041,7 +1041,11 @@ world, `Game.WorldHeldBy`: `""` while it runs, `escape_menu`, `loadout`,
 `talk`, `journal`, `fight`; `"unknown"` if the game screen never attached --
 `strigoi_step_world` refuses all but `""` and `fight` with `WORLD_HELD`),
 and since 27 Sep (the tables burst's review) `hand_icons` (the HUD's two
-skill icons: his hands' keys, F and L) and `torch_verbs` (how many torch verbs
+skill icons as last drawn: his hands' keys, F and L -- or, since the polish
+burst, `art:blade` / `art:torch` when `data/strigoi/ui/hands` has the art, with
+`right_frame` the torch art's frame, 0 unlit and 1 lit; docs/art-spec.md §6),
+`run_button` (the HUD's run button, `{x, y, w, h}`, since the polish burst)
+and `torch_verbs` (how many torch verbs
 -- a light, a relight, a douse, from L or the right button -- have done
 something this game: two douse what one lit, so a script that must tell one
 verb from three counts them), and `tactical_lines` (the combat panel's five

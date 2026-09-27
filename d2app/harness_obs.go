@@ -500,7 +500,7 @@ func (a *App) harnessAddObservationTools(srv *mcp.Server) {
 			// levels.txt (loaded with that world).
 			if _, name, ok := engine.AuthoredRegion(); ok {
 				out.LevelName = name
-			} else if rec := a.asset.Records.Level.Details[out.Region]; rec != nil {
+			} else if rec := a.asset.LevelDetails(out.Region); rec != nil { // locked: BUG-23
 				out.LevelName = rec.LevelDisplayName
 			}
 

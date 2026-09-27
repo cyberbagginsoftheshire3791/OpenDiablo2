@@ -96,6 +96,9 @@ const (
 	pkgClient = "d2networking/d2client"
 	pkgServer = "d2networking/d2server"
 	pkgAudio  = "d2core/d2audio"
+	// pkgApp joined at the polish burst (27 Sep 2026): the one place a game
+	// is started, and what it does when the game screen cannot be built.
+	pkgApp = "d2app"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -795,6 +798,17 @@ var Register = []Entry{
 		"U: goes through the dead man at his feet; Night 1's first two carry the amulet (R09) and the Sultan's paper (R10), read through Game.readWriting. Reached from OnKeyDown.", ""},
 	{sym(pkgPlayer, "GameControls.journalViewReport"), BucketObserve, VerdictHarnessOnly,
 		"Reads the open journal's tabs, rows and text for the harness ui state, so a script clicks where they are drawn. Changes nothing.", ""},
+	// The polish burst (27 Sep 2026).
+	{sym(pkgApp, "startGame"), BucketWire, VerdictLive,
+		"Every game starts through it (App.ToCreateGame): a CreateGame that fails closes the client and sends the player to the main menu with the reason, never a nil screen (BUG-25).", ""},
+	{sym(pkgAsset, "AssetManager.LevelDetails"), BucketWire, VerdictLive,
+		"levels.txt's row, read under the lock the lazy load writes under: Game.Advance's region check once a second (BUG-23). If it goes dark a reader has gone back to the RecordManager's map.", ""},
+	{sym(pkgPlayer, "HUD.talkHoldsTheHUD"), BucketWire, VerdictLive,
+		"An open talk closes and disables the HUD's mini-panel and the run button refuses, as under the journal; the talk's end gives them back (refreshTalk, every frame).", ""},
+	{sym(pkgPlayer, "handArt"), BucketWire, VerdictLive,
+		"The hands' icon art drops in: data/strigoi/ui/hands/blade.png and torch.png are drawn in place of the key letters when they are there and fit (HUD.loadHands).", ""},
+	{sym(pkgPlayer, "GameControls.runButtonReport"), BucketObserve, VerdictHarnessOnly,
+		"Reads where the HUD's run button is drawn for the harness ui state, so a script clicks it where a player would. Changes nothing.", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in

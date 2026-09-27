@@ -109,7 +109,7 @@ func (g *GameControls) talkKey(key d2interface.KeyEvent) bool {
 
 	if key.Key() == d2enum.KeyEscape {
 		g.talkHolder.EndTalk()
-		g.hud.talk.open = false
+		g.hud.refreshTalk() // closes the panel and gives the HUD back
 
 		return true
 	}
@@ -177,14 +177,22 @@ func (g *GameControls) talkClick(mx, my int) bool {
 	return true
 }
 
-// refreshTalk reads the holder and lays the panel out.
+// refreshTalk reads the holder and lays the panel out. It is where a talk
+// is seen to open and to end, whatever opened or ended it -- a click, a
+// key, an answer, his death -- so it is where the HUD is held and let go.
 func (h *HUD) refreshTalk() {
 	t := h.talk
 	if t == nil || h.gameControls == nil || h.gameControls.talkHolder == nil {
 		return
 	}
 
+	was := t.open
+
 	t.open, t.view = h.gameControls.talkHolder.Talking()
+	if t.open != was {
+		h.talkHoldsTheHUD(t.open)
+	}
+
 	if !t.open {
 		t.text, t.answerY = t.text[:0], t.answerY[:0]
 		return
@@ -206,6 +214,32 @@ func (h *HUD) refreshTalk() {
 	}
 
 	t.height = y - talkY + talkLineH + 14
+}
+
+// talkHoldsTheHUD gives a talk the journal's treatment (J1 review B1; the
+// polish burst, 27 Sep 2026). The HUD's own buttons are d2ui widgets, which
+// take a click whatever the controls answer, so under an open talk the
+// mini-panel's menu button opened the mini-panel and the run button toggled
+// running. Now the mini-panel is closed and disabled while he talks, as under
+// the journal and the escape menu, and the run button refuses
+// (HUD.onToggleRunButton). When the talk ends the mini-panel comes back as it
+// was -- unless the talk ended into the journal (a writing read to him),
+// which keeps it down until the journal closes and restores it.
+func (h *HUD) talkHoldsTheHUD(open bool) {
+	if h.miniPanel == nil {
+		return
+	}
+
+	if open {
+		h.miniPanel.closeDisabled()
+		return
+	}
+
+	if h.journal != nil && h.journal.open {
+		return
+	}
+
+	h.miniPanel.restoreDisabled()
 }
 
 func (h *HUD) renderTalk(target d2interface.Surface) {

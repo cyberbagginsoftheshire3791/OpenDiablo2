@@ -167,7 +167,12 @@ func (r *RemoteClientConnection) serverListener() {
 
 		p, err := r.decodeToPacket(packet.PacketType, string(packet.PacketData))
 		if err != nil {
+			// A packet this client cannot decode is dropped, not handed on:
+			// decodeToPacket's zero packet reads as an empty UpdateServerInfo
+			// (type 0), which is not what the host sent (BUG-24).
 			r.Errorf("%v %v", packet.PacketType, err)
+
+			continue
 		}
 
 		err = r.clientListener.OnPacketReceived(p)
@@ -219,6 +224,13 @@ func (r *RemoteClientConnection) decodeToPacket(
 		p, err = d2netpacket.UnmarshalServerClosed([]byte(data))
 	case d2netpackettype.JoinRefused:
 		p, err = d2netpacket.UnmarshalJoinRefused([]byte(data))
+	// BUG-24 (27 Sep 2026): neither had a case, so a client refused for a
+	// full server never reached GameClient's "Server is full", and an item
+	// spawned by the host never reached a remote client's map.
+	case d2netpackettype.ServerFull:
+		p, err = d2netpacket.UnmarshalServerFull([]byte(data))
+	case d2netpackettype.SpawnItem:
+		p, err = d2netpacket.UnmarshalSpawnItem([]byte(data))
 	default:
 		err = fmt.Errorf("RemoteClientConnection: unrecognized packet type: %v", t)
 	}

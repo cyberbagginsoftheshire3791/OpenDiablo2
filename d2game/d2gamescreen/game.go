@@ -813,7 +813,9 @@ func (v *Game) Advance(elapsed float64) error {
 			// that world (M5.3's tables burst: Strigoi's game does not load it).
 			soundEnv, areaName, known := v.gameClient.MapEngine.AuthoredRegion()
 			if tile != nil && !known {
-				if levelDetails := v.asset.Records.Level.Details[int(tile.RegionType)]; levelDetails != nil {
+				// Through the locked accessor: levels.txt loads with a generated
+				// world, on whichever goroutine builds it (BUG-23).
+				if levelDetails := v.asset.LevelDetails(int(tile.RegionType)); levelDetails != nil {
 					soundEnv, areaName, known = levelDetails.SoundEnvironmentID, levelDetails.LevelDisplayName, true
 				}
 			}

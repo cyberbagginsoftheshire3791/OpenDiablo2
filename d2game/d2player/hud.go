@@ -534,8 +534,9 @@ func (h *HUD) onToggleRunButton(noButton bool) {
 	// J1 (review B1): the run button is a d2ui widget and takes a click under
 	// the open journal whatever the controls answer; it does nothing there.
 	// (It cannot simply be disabled: it has no disabled face, and drawing it
-	// disabled panics -- measured 24 Sep.)
-	if h.journal != nil && h.journal.open {
+	// disabled panics -- measured 24 Sep.) Nor under an open talk (the polish
+	// burst, 27 Sep 2026; talkHoldsTheHUD).
+	if (h.journal != nil && h.journal.open) || (h.talk != nil && h.talk.open) {
 		return
 	}
 

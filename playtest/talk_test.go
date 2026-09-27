@@ -15,6 +15,11 @@ import (
 //  1. A villager's hover label is his ROLE, not the D2 stand-in's name.
 //  2. THE CONTROL: a click on him from across the camp opens nothing.
 //  3. In reach, a click opens the talk, and the world is held while it lasts.
+//     The HUD's own d2ui buttons are held too: the mini-panel, open before
+//     the talk, is closed under it and its menu button opens nothing, and
+//     the run button does not toggle running (the polish burst, 27 Sep 2026:
+//     the journal's treatment, J1 review B1). When the talk ends (act 4) the
+//     mini-panel comes back open and the run button works again.
 //  4. Answers move the number and cost what they cost: the civil answer +3,
 //     an hour's digging exactly 60 world minutes and +8 -- and that reaches
 //     the first rung, water.
@@ -91,6 +96,16 @@ func TestTalk(t *testing.T) {
 	s.call("strigoi_key", map[string]any{"key": "t"})
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
+	// The mini-panel open before the talk, so that it is the talk that
+	// closes it (below) and the talk's end that brings it back (act 4).
+	if !flag(t, uiState(s), "mini_panel_open") {
+		clickMiniButton(t, s, "open_close")
+	}
+
+	if !flag(t, uiState(s), "mini_panel_open") {
+		t.Fatal("act 3: the mini-panel's menu button opens it (the setup for the talk's hold on the HUD)")
+	}
+
 	openTalkWith(t, s, headman)
 
 	if node := str(villageState(s), "node"); node != "headman_first" {
@@ -113,6 +128,30 @@ func TestTalk(t *testing.T) {
 
 	if msg := s.callErr("strigoi_step_world", map[string]any{"world_minutes": 10.0}); !strings.Contains(msg, "WORLD_HELD") || !strings.Contains(msg, `"talk"`) {
 		t.Fatalf("act 3: step_world during a talk: got %q, want WORLD_HELD naming \"talk\"", msg)
+	}
+
+	// The HUD's own buttons are d2ui widgets and take a click whatever the
+	// controls answer; under the talk they must do nothing (the polish burst,
+	// the journal's treatment). The talk closed the open mini-panel...
+	if flag(t, uiState(s), "mini_panel_open") {
+		t.Fatal("act 3: the mini-panel is still open under the talk; the talk closes it, as the journal does")
+	}
+
+	// ...its menu button opens nothing...
+	clickMiniButton(t, s, "open_close")
+
+	if ui := uiState(s); flag(t, ui, "mini_panel_open") || !flag(t, ui, "talk_open") {
+		t.Fatalf("act 3: the HUD's menu button worked under the talk: mini-panel %v, talk %v",
+			flag(t, ui, "mini_panel_open"), flag(t, ui, "talk_open"))
+	}
+
+	// ...and the run button does not toggle running.
+	running := runToggled(t, s)
+	clickRunButton(t, s)
+
+	if ui := uiState(s); runToggled(t, s) != running || !flag(t, ui, "talk_open") {
+		t.Fatalf("act 3: the run button worked under the talk: run toggled %v -> %v, talk %v",
+			running, runToggled(t, s), flag(t, ui, "talk_open"))
 	}
 
 	// --- 4: answers ------------------------------------------------------------
@@ -146,6 +185,25 @@ func TestTalk(t *testing.T) {
 
 	if flag(t, uiState(s), "talk_open") {
 		t.Fatal("act 4: a node with nothing to answer ends on its one way out")
+	}
+
+	// The talk over, the HUD is his again: the mini-panel as it was before
+	// the talk (open), and the run button toggles -- twice, to leave it be.
+	if !flag(t, uiState(s), "mini_panel_open") {
+		t.Fatal("act 4: the mini-panel, open before the talk, is not back when it ends")
+	}
+
+	running = runToggled(t, s)
+	clickRunButton(t, s)
+
+	if runToggled(t, s) == running {
+		t.Fatal("act 4: the run button does nothing after the talk (the control for act 3's refusal)")
+	}
+
+	clickRunButton(t, s)
+
+	if runToggled(t, s) != running {
+		t.Fatal("act 4: a second click on the run button does not toggle it back")
 	}
 
 	// --- 5: the well -----------------------------------------------------------
@@ -356,4 +414,27 @@ func openTalkWith(t *testing.T, s *session, handle string) {
 			handle, villageState(s), x, y, distTo(t, s, handle), str(ui, "hover_label"),
 			flag(t, combatState(s), "fighting"), combatState(s)["encounter"])
 	}
+}
+
+// runToggled is whether the run button is down: the player's run_toggled.
+func runToggled(t *testing.T, s *session) bool {
+	t.Helper()
+
+	return flag(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "run_toggled")
+}
+
+// clickRunButton clicks the HUD's run button where it is drawn (ui.run_button).
+func clickRunButton(t *testing.T, s *session) {
+	t.Helper()
+
+	b := sub(uiState(s), "run_button")
+	if len(b) == 0 {
+		t.Fatalf("no run button in the ui state: %v", keysOf(uiState(s)))
+	}
+
+	s.call("strigoi_click", map[string]any{
+		"x": int(mustNum(t, b, "x") + mustNum(t, b, "w")/2), "y": int(mustNum(t, b, "y") + mustNum(t, b, "h")/2),
+		"button": "left",
+	})
+	s.call("strigoi_step", map[string]any{"frames": 4})
 }

@@ -12,7 +12,10 @@ import (
 //
 //  1. At the hearth the priest reads him the book on the stand: the talk
 //     ends, his journal opens at the writing, its text is there, and the
-//     first read pays its experience (5).
+//     first read pays its experience (5). The HUD's buttons stay held from
+//     the talk into the journal -- the mini-panel, open before the talk, is
+//     still closed and its menu button opens nothing -- and come back when
+//     the journal closes (the polish burst, 27 Sep 2026).
 //  2. THE CONTROL: read again, the journal opens at it again and pays
 //     nothing.
 //  3. The list of their dead gives a tip: "Only on Saturday" is written
@@ -58,8 +61,29 @@ func TestWritings(t *testing.T) {
 	}
 
 	// --- 1: the first read ------------------------------------------------------------------
+	if !flag(t, uiState(s), "mini_panel_open") {
+		clickMiniButton(t, s, "open_close")
+	}
+
+	if !flag(t, uiState(s), "mini_panel_open") {
+		t.Fatal("act 1: the mini-panel's menu button opens it (the setup for the talk-into-journal hold)")
+	}
+
 	before := xp()
 	read("act 1", "book open on the stand")
+
+	// The talk ended INTO the journal: the HUD stays held (talkHoldsTheHUD
+	// leaves it to the journal).
+	if flag(t, uiState(s), "mini_panel_open") {
+		t.Fatal("act 1: the talk that ended into the journal gave the mini-panel back under the journal")
+	}
+
+	clickMiniButton(t, s, "open_close")
+
+	if ui := uiState(s); flag(t, ui, "mini_panel_open") || !flag(t, ui, "journal_open") {
+		t.Fatalf("act 1: the HUD's menu button worked under the journal a talk opened: mini-panel %v, journal %v",
+			flag(t, ui, "mini_panel_open"), flag(t, ui, "journal_open"))
+	}
 
 	view := sub(uiState(s), "journal_view")
 	if str(view, "part") != "writings" || str(view, "selected") != "w_r01" {
@@ -78,6 +102,10 @@ func TestWritings(t *testing.T) {
 	}
 
 	closeJournal()
+
+	if !flag(t, uiState(s), "mini_panel_open") {
+		t.Fatal("act 1: the mini-panel, open before the talk, is not back when the journal closes")
+	}
 
 	// --- 2: read again (the control) ----------------------------------------------------------
 	before = xp()

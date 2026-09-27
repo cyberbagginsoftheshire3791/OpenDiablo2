@@ -691,30 +691,74 @@ func (a *App) ToCreateGame(filePath string, connType d2clientconnectiontype.Clie
 	a.harnessGameBegins() // no-op unless built with -tags harness
 
 	gameClient, err := d2client.Create(connType, a.asset, *a.Options.LogLevel, a.scriptEngine)
-	if err != nil {
-		a.Error(err.Error())
-	}
+	if err != nil || gameClient == nil {
+		reason := "could not create client"
+		if err != nil {
+			reason = err.Error()
+		}
 
-	if gameClient == nil {
-		a.Error("could not create client")
+		a.Error(reason)
+		a.ToMainMenu(gameStartFailed + reason)
+
 		return
 	}
 
-	if err = gameClient.Open(host, filePath); err != nil {
-		errorMessage := fmt.Sprintf("can not connect to the host: %s", host)
-		a.Error(errorMessage)
-		a.ToMainMenu(errorMessage)
-	} else {
-		game, err := d2gamescreen.CreateGame(
+	game, reason := startGame(gameClient, host, filePath, func() (*d2gamescreen.Game, error) {
+		return d2gamescreen.CreateGame(
 			a, a.asset, a.ui, a.renderer, a.inputManager, a.audio, gameClient, a.terminal, *a.Options.LogLevel, a.guiManager,
 		)
-		if err != nil {
-			a.Error(err.Error())
-		}
+	})
 
-		a.screen.SetNextScreen(game)
-		a.harnessNoteGame(gameClient, game) // no-op unless built with -tags harness
+	// On game == nil, not reason: a nil screen must never reach SetNextScreen.
+	if game == nil {
+		a.Error(reason)
+		a.ToMainMenu(reason)
+
+		return
 	}
+
+	a.screen.SetNextScreen(game)
+	a.harnessNoteGame(gameClient, game) // no-op unless built with -tags harness
+}
+
+// gameStartFailed begins the main menu's line when a game could not start.
+const gameStartFailed = "The game could not start: "
+
+// gameConn is what startGame asks of a game client (d2client.GameClient).
+type gameConn interface {
+	Open(connectionString, saveFilePath string) error
+	Close() error
+}
+
+// startGame opens the client and builds the game screen on it, and answers
+// either the screen or why there is none -- never both, never neither.
+//
+// A FAILED CreateGame CLOSES THE CLIENT (BUG-25, 27 Sep 2026). It used to be
+// logged and the screen set anyway: SetNextScreen got a nil *Game, and the
+// client stayed open -- for a local game, a server holding the port, so the
+// next game could not connect either. Now the client is closed and the
+// player goes back to the main menu with the reason, as a refused join does.
+// A failed Open closes nothing: it did not open (and a local connection
+// whose server was never made cannot be closed).
+func startGame(client gameConn, host, filePath string, create func() (*d2gamescreen.Game, error)) (*d2gamescreen.Game, string) {
+	if err := client.Open(host, filePath); err != nil {
+		return nil, fmt.Sprintf("can not connect to the host: %s", host)
+	}
+
+	game, err := create()
+	if err == nil && game != nil {
+		return game, ""
+	}
+
+	if err == nil {
+		err = errors.New("no game screen")
+	}
+
+	if closeErr := client.Close(); closeErr != nil {
+		err = fmt.Errorf("%w (and closing the client: %v)", err, closeErr)
+	}
+
+	return nil, gameStartFailed + err.Error()
 }
 
 // ToCharacterSelect forces the game to transition to the Character Select (load character) screen
