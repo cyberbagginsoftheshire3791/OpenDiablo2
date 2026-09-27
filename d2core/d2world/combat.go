@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 )
 
@@ -75,7 +76,10 @@ type Combat struct {
 	// a pack actually moved on its turn rather than waiting to be reached.
 	stepsOrdered int
 
-	rng *rand.Rand
+	// rng is every roll's stream and rngSrc its counted source, reported so
+	// the world save can resume the fight's dice where they stood (M4.6 B1).
+	rng    *rand.Rand
+	rngSrc *d2rand.Source
 
 	encounter *encounter
 	nextID    int
@@ -660,6 +664,8 @@ type encounter struct {
 func NewCombat(clock *Clock, notice *Notice, fitness FitnessSource, illum Illumination,
 	bodies Bodies, profiles Profiles, animator Animator, morale Morale, chases Chases,
 	seed int64, dials CombatDials) *Combat {
+	rng, rngSrc := d2rand.New(seed)
+
 	c := &Combat{
 		dials:    dials,
 		clock:    clock,
@@ -671,7 +677,8 @@ func NewCombat(clock *Clock, notice *Notice, fitness FitnessSource, illum Illumi
 		animator: animator,
 		morale:   morale,
 		chases:   chases,
-		rng:      rand.New(rand.NewSource(seed)), // nolint:gosec // gameplay RNG, seeded for reproducibility
+		rng:      rng,
+		rngSrc:   rngSrc,
 		nextID:   1,
 	}
 
@@ -1848,6 +1855,10 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"has_morale":       c.morale != nil,
 		"has_chases":       c.chases != nil,
 		"bodies_known":     0,
+
+		// M4.6 B1: the stream's position and the next encounter's number.
+		"rng":     c.rngSrc.Report(),
+		"next_id": c.nextID,
 
 		// The resolver's facts about the LAST encounter, reported whether or
 		// not one is running: a fight that begins and ends inside one step is

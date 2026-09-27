@@ -595,7 +595,34 @@ Registered today — **`clock`**, **`light`**, **`meters`**, **`pursuit`**,
 **`spawns`**, **`combat`** and **`ui`**, all while a game screen is live -- and
 the systems the game screen owns and registers once the hero binds, among
 them **`journal`** (J1, 24 Sep 2026; read-only: what is written, the tasks,
-the pages, the events raised, unread counts, `open`).
+the pages, the events raised, unread counts, `open`) and **`scene`** (M4.6 B1,
+26 Sep 2026; read-only) -- plus the harness's **`uuid`** (M4.6 B1).
+
+**M4.6 B1 put every value the world save will carry on a provider before
+anything saves it** (the save plan's rule: observability before
+serialisation). Each gameplay RNG reports where it stands as
+`rng: {seed, draws}` -- `spawns`, `combat`, and `rising` (seeded at the run's
+seed + 4707) -- counted by `d2common/d2rand`, whose `Restore(seed, draws)` puts
+a stream back exactly there. Beside them: `spawns.next_id` and
+`since_check_minutes` (the clock toward the next table check), `combat.next_id`,
+`light.next_id`, `rising.last_stage` (its `band` is the band last rolled), each
+notice row's `minutes_since_check`, each chase's `solved_at_x`/`solved_at_y`/
+`solved_distance`, each body's `downed_at` and the corpse registry's
+`risen_as`/`walker`/`last` maps, and each entity's `target` and `waypoints`
+(world tiles). **`scene`** is the game screen's own bookkeeping: `field_dead`
+(Night 1's dead in the order laid -- the i-th carries the i-th writing),
+`dawn_paid_day`, `last_stage`, `watch_clock`/`watch_clock_set` (`watch_stood`
+is on `village`), `spawner_arrival` (it turns the next pack's bearing),
+`bodies` (every monster's `health`/`max_health` by id), and `world_rng` --
+the map engine's stream, whose `draws` is the number the digest's `rng` part
+hashes. The harness's own **`uuid`** provider (registered by the first
+`start_game`; process state, not game state) reports the seeded uuid stream
+that makes entity ids reproducible: `seeded`, `seed`, `bytes` and `uuids`. It
+is counted in bytes, not draws, because that stream reads through
+`rand.Rand.Read`, which keeps unread bytes where no draw counter can see them
+(`d2rand.Reader`; its bytes are the old reader's exactly, so no id moved).
+`TestSpawns` acts 6 and 6c, `TestRising` and `TestCombatResolver` assert these
+against numbers the scripts chose.
 
 **`pursuit`** (M4.3a) reports the live chases and their dials; settable
 `arrive_within`, `release`, `repath_tiles`. **`strigoi_click` takes `hold_frames`** (c-2b, 19 Sep 2026), and the tool count
@@ -972,8 +999,14 @@ digest would have been a leak worth a register entry.
 
 Notes: `sim_seconds` accumulates float error in display (2.4999…96 for 150
 ticks at 1/60) — deterministic, identical across runs, harmless. Entity
-handles (`e:N`) are per-process; digests compare across fresh launches, not
-across two games inside one process. An unseeded `start_game` restores
+handles (`e:N`) are per-process, and **since M4.6 B1 (26 Sep 2026) the
+digest's entity lines do not carry them**: each line is the entity by its id,
+in id order, with its kind, position, tile, layer and state. A handle is this
+process's first-seen numbering, which two launches of one script share and a
+game saved in one process and resumed in another (M4.6) does not; the id is
+what the save keeps. The handles the tools hand out are unchanged -- the digest
+still assigns them in the order it always did. Digests compare across fresh
+launches, not across two games inside one process. An unseeded `start_game` restores
 crypto-random entity IDs and the wall-clock map seed.
 
 ## Determinism leak register (opened 26 Aug 2026)

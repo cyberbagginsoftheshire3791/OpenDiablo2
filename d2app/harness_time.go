@@ -149,6 +149,27 @@ func harnessFmtFloat(v float64) string {
 	return strconv.FormatFloat(v, 'g', -1, 64)
 }
 
+// harnessDigestEntity is one line of the digest's entities part: an entity as
+// strigoi_get_entity reports it, less the per-process handle and the
+// presentation-only screen position.
+type harnessDigestEntity struct {
+	ID    string                 `json:"id"`
+	Kind  string                 `json:"kind"`
+	Label string                 `json:"label,omitempty"`
+	X     float64                `json:"x"`
+	Y     float64                `json:"y"`
+	Tile  [2]int                 `json:"tile"`
+	Layer int                    `json:"layer"`
+	State map[string]interface{} `json:"state,omitempty"`
+}
+
+func harnessDigestLine(info harnessEntityInfo) harnessDigestEntity {
+	return harnessDigestEntity{
+		ID: info.ID, Kind: info.Kind, Label: info.Label,
+		X: info.X, Y: info.Y, Tile: info.Tile, Layer: info.Layer, State: info.State,
+	}
+}
+
 // harnessDigestParts builds the per-part canonical strings on the game
 // goroutine (P3 spec §3.6). Pixels, animation frames, audio, log text, and
 // the raw frame tick are deliberately excluded: parts must be comparable
@@ -182,17 +203,23 @@ func (a *App) harnessDigestParts() (map[string]string, error) {
 
 			sort.Strings(ids)
 
-			infos := make([]harnessEntityInfo, 0, len(ids))
+			// ONE LINE PER ENTITY, IN ID ORDER, WITHOUT ITS HANDLE (M4.6 B1).
+			// A handle (e:N) is this process's first-seen numbering: two
+			// launches of one script agree on it, but a game saved in one
+			// process and resumed in another does not, so a line carrying it
+			// made the part incomparable across exactly the relaunch the world
+			// save is for. The id is what the save keeps. harnessEntityInfoFor
+			// is still called for every entity, in the same order as before,
+			// so the handles later tools hand out are the ones they always were.
+			lines := make([]harnessDigestEntity, 0, len(ids))
 			for _, id := range ids {
-				infos = append(infos, harnessEntityInfoFor(id, entities[id], client.PlayerID, true))
+				lines = append(lines, harnessDigestLine(harnessEntityInfoFor(id, entities[id], client.PlayerID, true)))
 			}
-
-			sort.Slice(infos, func(i, j int) bool { return harnessHandleLess(infos[i].Handle, infos[j].Handle) })
 
 			var canon []byte
 
-			for i := range infos {
-				line, err := json.Marshal(infos[i])
+			for i := range lines {
+				line, err := json.Marshal(lines[i])
 				if err != nil {
 					buildErr = err
 					return

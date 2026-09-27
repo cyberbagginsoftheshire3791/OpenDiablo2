@@ -218,6 +218,15 @@ deferral written only in a commit message is a deferral that has been lost.
   move when the player joins a fight. Deliberate; stated here because a script
   reading the number cannot tell.
 
+* **The world save's restore seams have no caller yet (M4.6 B1, 26 Sep
+  2026).** `d2rand.Restore`, `d2rand.RestoreReader` and
+  `MapEngine.RestoreRand` put a stream back where a saved game left it; B1
+  built and unit-tested them and nothing in the game calls them. They live
+  outside `d2core/d2world` and `d2game/d2gamescreen`, so the register cannot
+  hold them. **M4.6 B2 and B4** (the snapshots and the load) are their
+  callers; until then a green restore test is evidence about the stream, not
+  about the game.
+
 The rule for this section: **if the gate cannot express it, write it here on
 the day you defer it, and name the milestone that picks it up.**
 

@@ -2,6 +2,8 @@ package d2mapengine
 
 import (
 	"math/rand"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 )
 
 // The world RNG (P3 spec E4): one seeded generator per map engine that every
@@ -12,44 +14,24 @@ import (
 // Presentation randomness (audio variants, object start frames) deliberately
 // stays on the global generator so it cannot shift a simulation roll.
 //
-// countingSource wraps the seeded source and counts draws; the count is part
-// of the harness's state digest, so a stray consumer shows up as a digest
-// mismatch with a name.
-type countingSource struct {
-	src   rand.Source64
-	draws uint64
-}
+// Its source counts draws; the count is part of the harness's state digest,
+// so a stray consumer shows up as a digest mismatch with a name. The counting
+// source lived here until M4.6 B1 moved it to d2common/d2rand, where the
+// spawn tables, combat and the rising share it and where Restore puts a
+// stream back where a saved game left it. The count is the same count: Int63
+// and Uint64 are one draw each, as they always were here.
 
-func (c *countingSource) Int63() int64 {
-	c.draws++
-	return c.src.Int63()
-}
-
-func (c *countingSource) Uint64() uint64 {
-	c.draws++
-	return c.src.Uint64()
-}
-
-func (c *countingSource) Seed(seed int64) {
-	c.src.Seed(seed)
-}
-
-func newCountingSource(seed int64) *countingSource {
-	src, ok := rand.NewSource(seed).(rand.Source64)
-	if !ok {
-		// rand.NewSource's result implements Source64 in every supported Go;
-		// this fallback only defends against a future stdlib change.
-		src = rand.New(rand.NewSource(seed))
-	}
-
-	return &countingSource{src: src}
-}
-
-// initRand (re)builds the world RNG from the given seed and hands it to the
-// embedded stamp and entity factories. Called by SetSeed and ReseedRand.
+// initRand (re)builds the world RNG from the given seed. Called by SetSeed and
+// ReseedRand.
 func (m *MapEngine) initRand(seed int64) {
-	m.randSource = newCountingSource(seed)
-	m.rand = rand.New(m.randSource)
+	m.useRand(d2rand.NewSource(seed))
+}
+
+// useRand installs a counted source as the world RNG and hands the RNG to the
+// embedded stamp and entity factories.
+func (m *MapEngine) useRand(src *d2rand.Source) {
+	m.randSource = src
+	m.rand = rand.New(src) // nolint:gosec // simulation RNG, seeded for reproducibility
 
 	if m.StampFactory != nil {
 		m.StampFactory.SetRand(m.rand)
@@ -75,6 +57,19 @@ func (m *MapEngine) ReseedRand(seed int64) {
 	m.initRand(seed)
 }
 
+// RestoreRand puts the world RNG back where a saved game left it: seeded with
+// seed and advanced past its first draws values, so the next value drawn is
+// the one the saved game would have drawn next (M4.6). seed and draws are
+// what RandSeed and RandDraws reported when the game was saved. Like
+// ReseedRand it leaves the map alone.
+//
+// NOTHING CALLS IT YET. It is B1's half of the world save; the load that
+// calls it is burst B4, and it must run AFTER the entities are rebuilt,
+// because rebuilding them draws from this stream (the plan's trap 6).
+func (m *MapEngine) RestoreRand(seed int64, draws uint64) {
+	m.useRand(d2rand.Restore(seed, draws))
+}
+
 // RandDraws returns how many values have been drawn from the world RNG since
 // it was last seeded. Part of the determinism digest.
 func (m *MapEngine) RandDraws() uint64 {
@@ -82,5 +77,16 @@ func (m *MapEngine) RandDraws() uint64 {
 		return 0
 	}
 
-	return m.randSource.draws
+	return m.randSource.Draws()
+}
+
+// RandSeed returns the seed the world RNG was last seeded with -- the engine
+// seed, unless ReseedRand or RestoreRand chose another. Before the RNG's first
+// use it is the engine seed, which is what first use will seed it with.
+func (m *MapEngine) RandSeed() int64 {
+	if m.randSource == nil {
+		return m.seed
+	}
+
+	return m.randSource.Seeded()
 }

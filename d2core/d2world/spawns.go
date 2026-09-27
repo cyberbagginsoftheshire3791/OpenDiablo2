@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 )
 
@@ -53,7 +54,11 @@ type Spawns struct {
 	// is what every build before the hardening burst did.
 	chases Chases
 
-	rng *rand.Rand
+	// rng is the tables' stream and rngSrc its counted source: the provider
+	// reports where the stream stands (seed, draws), which is what the world
+	// save writes and restores (M4.6 B1).
+	rng    *rand.Rand
+	rngSrc *d2rand.Source
 
 	groups  map[string]*group
 	nextID  int
@@ -411,6 +416,8 @@ type group struct {
 // same reason the A* never ranges a map.
 func NewSpawns(clock *Clock, notice *Notice, spawner Spawner, chases Chases, illum Illumination,
 	seed int64, dials SpawnDials) *Spawns {
+	rng, rngSrc := d2rand.New(seed)
+
 	s := &Spawns{
 		dials:   dials,
 		clock:   clock,
@@ -418,7 +425,8 @@ func NewSpawns(clock *Clock, notice *Notice, spawner Spawner, chases Chases, ill
 		illum:   illum,
 		spawner: spawner,
 		chases:  chases,
-		rng:     rand.New(rand.NewSource(seed)), // nolint:gosec // gameplay RNG, seeded for reproducibility
+		rng:     rng,
+		rngSrc:  rngSrc,
 		groups:  make(map[string]*group),
 		nextID:  1,
 	}
@@ -1276,6 +1284,14 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 		"max_groups":      s.dials.MaxGroups,
 		"has_target":      s.target != nil,
 		"has_spawner":     s.spawner != nil,
+
+		// M4.6 B1: what a save must carry to resume the tables exactly --
+		// where the stream stands, the next group's number, and how far the
+		// clock has run toward the next table check. Without since_check a
+		// resumed night checks on a different minute than the saved one.
+		"rng":                 s.rngSrc.Report(),
+		"next_id":             s.nextID,
+		"since_check_minutes": s.sinceCk,
 	}
 
 	// The notice dials and counters ride along here because the notice model

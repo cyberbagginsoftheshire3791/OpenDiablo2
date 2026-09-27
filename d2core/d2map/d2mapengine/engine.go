@@ -13,6 +13,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2dt1"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2geom"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapstamp"
@@ -29,7 +30,7 @@ type MapEngine struct {
 	*d2mapentity.MapEntityFactory
 	seed          int64                            // The map seed
 	rand          *rand.Rand                       // The world RNG, seeded from seed (P3 E4; rand.go)
-	randSource    *countingSource                  // Its draw-counting source (digest input)
+	randSource    *d2rand.Source                   // Its draw-counting source (digest input; d2common/d2rand)
 	entities      map[string]d2interface.MapEntity // Entities on the map
 	tiles         []MapTile
 	size          d2geom.Size               // Size of the map, in tiles

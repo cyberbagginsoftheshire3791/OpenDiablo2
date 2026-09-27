@@ -373,6 +373,10 @@ func (l *Light) HarnessState() map[string]interface{} {
 		"carried_source": "",
 		"carried_burn":   0.0,
 		"carried_lit":    false,
+
+		// M4.6 B1: the id the next source will get. A resume that restored
+		// the sources but not this would give a new torch an old torch's id.
+		"next_id": l.nextID,
 	}
 
 	if c := l.Carried(); c != nil {

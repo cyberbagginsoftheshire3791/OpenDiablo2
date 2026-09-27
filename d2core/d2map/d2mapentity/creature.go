@@ -226,7 +226,7 @@ func (c *Creature) finishAction() {
 // HarnessState exposes the same facts scripts use to inspect inherited NPCs.
 func (c *Creature) HarnessState() map[string]interface{} {
 	x, y := c.GetPositionF()
-	return map[string]interface{}{
+	state := map[string]interface{}{
 		"animation_mode": string(c.mode),
 		"creature":       c.name,
 		"direction":      c.direction,
@@ -234,4 +234,8 @@ func (c *Creature) HarnessState() map[string]interface{} {
 		"world_x":        x,
 		"world_y":        y,
 	}
+
+	c.harnessMotion(state)
+
+	return state
 }

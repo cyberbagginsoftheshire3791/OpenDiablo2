@@ -254,16 +254,17 @@ func CreateGame(
 		game.light,
 		d2world.DefaultNoticeDials(),
 	)
+	game.spawner = &gameSpawner{
+		engine:   gameClient.MapEngine,
+		asset:    asset,
+		bestiary: bestiary,
+		adopt:    game.adoptNPCBody,
+		release:  game.releaseNPCBody,
+	}
 	game.spawns = d2world.NewSpawns(
 		game.worldClock,
 		game.notice,
-		&gameSpawner{
-			engine:   gameClient.MapEngine,
-			asset:    asset,
-			bestiary: bestiary,
-			adopt:    game.adoptNPCBody,
-			release:  game.releaseNPCBody,
-		},
+		game.spawner,
 
 		// Pursuit is the Chases seam: despawning a pack releases its members'
 		// chases so a group sent home at daybreak leaves no ghost pursuit
@@ -335,6 +336,9 @@ func CreateGame(
 	game.rising.SetClock(game.worldClock.WorldMinutes)
 	game.corpses.SetClock(game.worldClock.WorldMinutes)
 	game.rising.SetFirstLight(game.firstLight)
+
+	// M4.6 B1: the screen's own bookkeeping, observable before it is saved.
+	d2harness.Register(sceneProvider{game})
 	game.spawns.SetLayDead(func(member string, x, y float64) {
 		game.corpses.Fall(member, d2world.RisenRow, x, y)
 	})
@@ -419,6 +423,10 @@ type Game struct {
 
 	// J2b: Night 1's dead, in the order they were laid (what each carries).
 	fieldDead []string
+
+	// spawner is the night's arrivals (gameSpawner); kept so the "scene"
+	// provider can report its arrival count (M4.6 B1).
+	spawner *gameSpawner
 
 	// T8: the watch -- minutes stood at the headman's post tonight, the world
 	// clock last frame, and the post itself (the headman's sprite, cached).
@@ -565,6 +573,7 @@ func (v *Game) OnUnload() error {
 	d2harness.Unregister(journalProvider{v}) // B11
 	d2harness.Unregister(v.corpses)
 	d2harness.Unregister(v.rising)
+	d2harness.Unregister(sceneProvider{v}) // M4.6 B1
 
 	// The world's systems die with it too (M4.1).
 	if v.worldClock != nil {

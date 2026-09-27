@@ -405,6 +405,11 @@ func (n *Notice) Report() []map[string]interface{} {
 			"minutes_unseen":  w.sinceSeen,
 			"checks":          w.checks,
 			"notices":         w.notices,
+
+			// M4.6 B1: world minutes since this watch's last sight test --
+			// when it next looks. Not saved, a resumed watch looks on a
+			// different minute and can notice on a different frame.
+			"minutes_since_check": w.sinceCheck,
 		})
 	}
 
