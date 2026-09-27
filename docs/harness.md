@@ -621,8 +621,10 @@ that makes entity ids reproducible: `seeded`, `seed`, `bytes` and `uuids`. It
 is counted in bytes, not draws, because that stream reads through
 `rand.Rand.Read`, which keeps unread bytes where no draw counter can see them
 (`d2rand.Reader`; its bytes are the old reader's exactly, so no id moved).
-`TestSpawns` acts 6 and 6c, `TestRising` and `TestCombatResolver` assert these
-against numbers the scripts chose.
+`TestSpawns` act 6c (and the chase after act 7), `TestRising` and
+`TestCombatResolver` assert these against numbers the scripts chose; the
+first two-launch `TestTownWalkDeterministic` with the `uuid` count in the
+digest agreed at all three checkpoints (26-27 Sep 2026).
 
 **`pursuit`** (M4.3a) reports the live chases and their dials; settable
 `arrive_within`, `release`, `repath_tiles`. **`strigoi_click` takes `hold_frames`** (c-2b, 19 Sep 2026), and the tool count
