@@ -4,7 +4,6 @@ package playtest
 
 import (
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 )
@@ -128,7 +127,7 @@ func TestProgress(t *testing.T) {
 	}
 
 	for i := 0; i < 50; i++ {
-		if data, err := os.ReadFile(sidecar); err == nil && json.Unmarshal(data, &saved) == nil && saved.Progress.XP == 120 {
+		if data, err := readSaved(sidecar); err == nil && json.Unmarshal(data, &saved) == nil && saved.Progress.XP == 120 {
 			break
 		}
 

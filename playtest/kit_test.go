@@ -249,7 +249,7 @@ type kitFile struct {
 func readKit(t *testing.T, path string) kitFile {
 	t.Helper()
 
-	data, err := os.ReadFile(path)
+	data, err := readSaved(path)
 	if err != nil {
 		t.Fatalf("the kit file %s: %v", path, err)
 	}

@@ -5,7 +5,6 @@ package playtest
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 )
@@ -34,7 +33,7 @@ func TestDeath(t *testing.T) {
 	setField(s, "spawns", "chance", 0)
 
 	sidecar := str(game, "save_path") + ".strigoi.json"
-	atEntry, entryErr := os.ReadFile(sidecar)
+	atEntry, entryErr := readSaved(sidecar)
 
 	// --- 1: something earned this session ------------------------------------
 	setField(s, "progress", "grant_xp", 50.0)
@@ -44,14 +43,14 @@ func TestDeath(t *testing.T) {
 	}
 
 	for i := 0; i < 30; i++ {
-		if data, err := os.ReadFile(sidecar); err == nil && strings.Contains(string(data), `"xp": 50`) {
+		if data, err := readSaved(sidecar); err == nil && strings.Contains(string(data), `"xp": 50`) {
 			break
 		}
 
 		s.call("strigoi_step", map[string]any{"frames": 2})
 	}
 
-	if data, _ := os.ReadFile(sidecar); !strings.Contains(string(data), `"xp": 50`) {
+	if data, _ := readSaved(sidecar); !strings.Contains(string(data), `"xp": 50`) {
 		t.Fatalf("act 1: a level is saved beside him as it happens; the file has %s", data)
 	}
 
@@ -96,7 +95,7 @@ func TestDeath(t *testing.T) {
 	}
 
 	// --- 4: the file is back ---------------------------------------------------
-	now, nowErr := os.ReadFile(sidecar)
+	now, nowErr := readSaved(sidecar)
 
 	switch {
 	case entryErr != nil && nowErr == nil:

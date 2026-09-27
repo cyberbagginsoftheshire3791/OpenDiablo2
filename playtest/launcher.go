@@ -776,3 +776,28 @@ func pair(m map[string]any, key string) (x, y float64) {
 
 	return x, y
 }
+
+// readSaved reads a file the game rewrites while the script runs (the kit
+// sidecar, a hero save). The game replaces it atomically -- a temp file, then
+// a rename (d2items.WriteFileAtomic) -- and on Windows a read that lands in
+// that instant fails with a sharing violation ("being used by another
+// process"). Under the parallel suite's load that instant was hit twice on 27
+// Sep (TestKit, both times on a loaded machine; alone it passed). So a read
+// that fails for any reason but absence is retried for up to two seconds.
+// Absence is returned at once: several scripts assert that a file is NOT there.
+func readSaved(path string) ([]byte, error) {
+	var (
+		data []byte
+		err  error
+	)
+
+	for i := 0; i < 40; i++ {
+		if data, err = os.ReadFile(path); err == nil || os.IsNotExist(err) {
+			return data, err
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	return data, err
+}
