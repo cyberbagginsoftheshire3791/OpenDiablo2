@@ -749,13 +749,21 @@ func (v *Game) Advance(elapsed float64) error {
 			tilePosition := v.localPlayer.Position.Tile()
 			tile := v.gameClient.MapEngine.TileAt(int(tilePosition.X()), int(tilePosition.Y()))
 
-			if tile != nil {
-				levelDetails := v.asset.Records.Level.Details[int(tile.RegionType)]
-				v.soundEnv.SetEnv(levelDetails.SoundEnvironmentID)
+			// An authored map says its own sound environment and name (its map
+			// properties); a generated one reads levels.txt, which loads with
+			// that world (M5.3's tables burst: Strigoi's game does not load it).
+			soundEnv, areaName, known := v.gameClient.MapEngine.AuthoredRegion()
+			if tile != nil && !known {
+				if levelDetails := v.asset.Records.Level.Details[int(tile.RegionType)]; levelDetails != nil {
+					soundEnv, areaName, known = levelDetails.SoundEnvironmentID, levelDetails.LevelDisplayName, true
+				}
+			}
+
+			if tile != nil && known {
+				v.soundEnv.SetEnv(soundEnv)
 
 				// skip showing zone change text the first time we enter the world
 				if v.lastRegionType != d2enum.RegionNone && v.lastRegionType != tile.RegionType {
-					areaName := levelDetails.LevelDisplayName
 					areaChgStr := fmt.Sprintf("Entering The %s", areaName)
 					v.gameControls.SetZoneChangeText(areaChgStr)
 					v.gameControls.ShowZoneChangeText()
@@ -2167,7 +2175,16 @@ func (v *Game) OnPlayerSave() error {
 }
 
 // OnPlayerCast sends the casting skill action to the server
+//
+// Diablo II's cast is -classic's (M5.3's tables burst; Josh, 25 Sep 2026: the
+// right button is the torch, shift-click does nothing): Strigoi's hero has no
+// Diablo II skill to cast and his game does not load the skill tables, so a
+// cast asked of it is dropped here, whoever asks.
 func (v *Game) OnPlayerCast(skillID int, targetX, targetY float64) {
+	if !v.asset.Classic() {
+		return
+	}
+
 	cp, err := d2netpacket.CreateCastPacket(v.gameClient.PlayerID, skillID, targetX, targetY)
 	if err != nil {
 		v.Errorf("CastPacket: %v", err)

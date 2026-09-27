@@ -40,7 +40,15 @@ const handsDT = 1.0 / 60 // the harness stepped tick, matching harness.timeDT
 func handsStart(t *testing.T) (s *session, playerID, playerHandle string, px, py float64) {
 	t.Helper()
 
-	s = start(t)
+	return handsStartOn(t, start(t))
+}
+
+// handsStartOn is handsStart on a game the caller launched: the right-click
+// act's subject is Strigoi's game alone, so it launches that explicitly
+// (startWith, no switches) whatever STRIGOI_PLAYTEST_GAME says.
+func handsStartOn(t *testing.T, s *session) (_ *session, playerID, playerHandle string, px, py float64) {
+	t.Helper()
+
 	s.call("strigoi_pause", map[string]any{})
 	s.call("strigoi_start_game", map[string]any{
 		"hero_name": "Hands", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
@@ -1180,4 +1188,134 @@ func stepUntilRoundClosed(t *testing.T, s *session, round float64) {
 	}
 
 	t.Fatalf("round %.0f never closed in 1200 frames: %v", round, combatState(s))
+}
+
+// --- the right button is the torch (M5.3's tables burst) ---------------------
+
+// TestTheHandsRightClickIsTheTorch is Josh's ruling of 25 Sep 2026 made
+// observable: the RIGHT mouse button is the torch verb -- light, relight or
+// douse, exactly as L -- the left owns the blade hand, and shift-click does
+// nothing. One implementation, two bindings: the right button calls the same
+// combatTorch L does, so out of a fight it is free, in a fight it costs the
+// Action, and once the Action is spent it is refused exactly as L is refused.
+// Diablo II's cast on the right button is -classic's; this is Strigoi's game.
+//
+// Negative controls (run 27 Sep 2026, logged in the burst's report): give the
+// right button back its Diablo II cast and act (a) goes red -- the game falls
+// over reaching for a right skill his empty hand does not have
+// (GameControls.OnMouseButtonDown, a nil RightSkill); let it toggle the light
+// past a spent Action instead of going through combatTorch and act (d) goes
+// red -- the right-click douses where L was refused (commits_refused 1 -> 1);
+// make a shift-click walk and act (e) goes red -- he moved.
+func TestTheHandsRightClickIsTheTorch(t *testing.T) {
+	// Strigoi's game explicitly: under -classic the right button casts
+	// Diablo II's right skill, and TestStrigoiIsTheGame's control says so.
+	s, _, playerHandle, _, _ := handsStartOn(t, startWith(t))
+
+	stepToNight(t, s)
+	s.call("strigoi_set_system_field", map[string]any{"system": "combat", "field": "player_control", "value": "human"})
+
+	// (e) first, out of any fight: a shift-click does nothing -- no walk, no
+	// cast, no light.
+	before := s.call("strigoi_get_player", map[string]any{})
+	bx, by := num(before, "x"), num(before, "y")
+
+	sx, sy := pair(before, "screen")
+	if sx == 0 && sy == 0 {
+		t.Fatal("strigoi_get_player reported no screen position; a click would miss the ground beside him")
+	}
+
+	s.call("strigoi_click", map[string]any{"x": int(sx) - 120, "y": int(sy) + 40, "button": "left", "mods": []string{"shift"}})
+	s.call("strigoi_step", map[string]any{"frames": 60})
+
+	after := s.call("strigoi_get_player", map[string]any{})
+	if math.Abs(num(after, "x")-bx) > 0.01 || math.Abs(num(after, "y")-by) > 0.01 || mustStr(t, lightState(s), "carried_source") != "" {
+		t.Fatalf("(e) a shift-click must do nothing: he went from %.2f,%.2f to %.2f,%.2f, light %v",
+			bx, by, num(after, "x"), num(after, "y"), lightState(s))
+	}
+
+	// The control: the same click without shift walks him, so the click
+	// landed on ground he can walk to.
+	s.call("strigoi_click", map[string]any{"x": int(sx) - 120, "y": int(sy) + 40, "button": "left"})
+	s.call("strigoi_step", map[string]any{"frames": 180})
+
+	p := s.call("strigoi_get_player", map[string]any{})
+	if math.Abs(num(p, "x")-bx)+math.Abs(num(p, "y")-by) < 0.5 {
+		t.Fatalf("(e) control: the plain click on the same ground did not walk him (%.2f,%.2f), so the shift-click proved nothing",
+			num(p, "x"), num(p, "y"))
+	}
+
+	t.Logf("(e) a shift-click moved nothing and lit nothing; the plain click on the same ground walked him %.2f,%.2f -> %.2f,%.2f",
+		bx, by, num(p, "x"), num(p, "y"))
+
+	px, py := num(p, "x"), num(p, "y")
+	sx, sy = pair(p, "screen")
+
+	// Open ground beside him, clear of the enemy placed east of him below.
+	rightClick := func() {
+		s.call("strigoi_click", map[string]any{"x": int(sx) - 70, "y": int(sy) - 10, "button": "right"})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+	}
+
+	// (a) Out of a fight the right button lights the torch in his hand, free.
+	if mustStr(t, lightState(s), "carried_source") != "" {
+		t.Fatalf("(a) he should carry no light yet: %v", lightState(s))
+	}
+
+	rightClick()
+
+	if !flag(t, lightState(s), "carried_lit") {
+		t.Fatalf("(a) a right-click out of a fight must light his torch, as L does: %v", lightState(s))
+	}
+
+	// (b) ...and douses it, keeping the burn, as L does.
+	burn := mustNum(t, lightState(s), "carried_burn")
+	rightClick()
+
+	if light := lightState(s); flag(t, light, "carried_lit") || math.Abs(mustNum(t, light, "carried_burn")-burn) > 1.0 {
+		t.Fatalf("(b) a second right-click must douse and keep the burn (%.1f): %v", burn, light)
+	}
+
+	t.Logf("(a, b) out of a fight the right button lit and doused the torch (burn %.1f kept)", burn)
+
+	// (c) In a fight, with the Action unspent, it lights and spends the Action.
+	enemy := spawnNPC(t, s, "zombie1", px+1, py)
+	s.call("strigoi_watch", map[string]any{"watcher": enemy, "target": playerHandle})
+
+	openTurn(t, s)
+
+	if flag(t, combatState(s), "action_spent") {
+		t.Fatalf("(c) a fresh turn has an unspent Action: %v", combatState(s))
+	}
+
+	rightClick()
+
+	if !flag(t, lightState(s), "carried_lit") || !flag(t, combatState(s), "action_spent") {
+		t.Fatalf("(c) a right-click in a fight must light the torch AND spend the Action, as L does: light %v, combat %v",
+			lightState(s), combatState(s))
+	}
+
+	// (d) The Action spent, L is refused -- and the right button is refused
+	// the same way: one more refusal each, and the light as it was.
+	refused := mustNum(t, combatState(s), "commits_refused")
+
+	s.call("strigoi_key", map[string]any{"key": "l"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	afterL := mustNum(t, combatState(s), "commits_refused")
+	if afterL != refused+1 || !flag(t, lightState(s), "carried_lit") {
+		t.Fatalf("(d) L with the Action spent must be refused (commits_refused %.0f -> %.0f) and leave the torch lit: %v",
+			refused, afterL, lightState(s))
+	}
+
+	rightClick()
+
+	afterRight := mustNum(t, combatState(s), "commits_refused")
+	if afterRight != afterL+1 || !flag(t, lightState(s), "carried_lit") || !flag(t, combatState(s), "action_spent") {
+		t.Fatalf("(d) the right button with the Action spent must be refused as L was (commits_refused %.0f -> %.0f; L's was %.0f -> %.0f) and leave the torch lit: %v",
+			afterL, afterRight, refused, afterL, lightState(s))
+	}
+
+	t.Logf("(c, d) in a fight the right button lit and spent the Action; spent, it was refused as L was (commits_refused %.0f -> %.0f -> %.0f)",
+		refused, afterL, afterRight)
 }

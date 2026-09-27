@@ -11,6 +11,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2loader/asset/types"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 )
 
 func placeholderHero(t *testing.T) *pngBody {
@@ -205,6 +206,13 @@ func TestHeroManifest(t *testing.T) {
 		t.Fatalf("fps %v", m.FPS)
 	}
 
+	// The three fields a hero's body is read from (d2hero.Body) are a
+	// manifest's own keys: DisallowUnknownFields must let them through.
+	body, err := parseHeroManifest([]byte(`{"animations":{"idle":"i.png"},"max_health":240,"max_stamina":84,"stamina_run_drain":20}`), "/h.json")
+	if err != nil || body.MaxHealth != 240 || body.MaxStamina != 84 || body.StaminaRunDrain != 20 {
+		t.Fatalf("a manifest with its body: %+v, %v", body.BodyStats, err)
+	}
+
 	for name, c := range map[string]struct{ manifest, says string }{
 		"typo":        {`{"animations":{"idle":"i.png","atack":"a.png"}}`, "atack"},
 		"no idle":     {`{"animations":{"walk":"w.png"}}`, "idle"},
@@ -212,6 +220,12 @@ func TestHeroManifest(t *testing.T) {
 		"trailing":    {`{"animations":{"idle":"i.png"}} {"animations":{}}`, "after"},
 		"fps typo":    {`{"animations":{"idle":"i.png"},"fps":{"wlak":10}}`, "wlak"},
 		"fps not > 0": {`{"animations":{"idle":"i.png"},"fps":{"walk":0}}`, "above zero"},
+		// The body (M5.3's tables burst): charstats.txt's three, now the
+		// manifest's. A negative one is refused here, and a typo is refused
+		// like any other key.
+		"negative health": {`{"animations":{"idle":"i.png"},"max_health":-240}`, "max_health"},
+		"negative drain":  {`{"animations":{"idle":"i.png"},"stamina_run_drain":-1}`, "stamina_run_drain"},
+		"body typo":       {`{"animations":{"idle":"i.png"},"max_heatlh":240}`, "max_heatlh"},
 	} {
 		_, err := parseHeroManifest([]byte(c.manifest), "/h.json")
 		if err == nil {
@@ -345,5 +359,41 @@ func TestHeroHeightFitsTheCell(t *testing.T) {
 
 	if _, h := b.GetSize(); h != 128 {
 		t.Fatalf("no height given: %d, want the 128 px cell", h)
+	}
+}
+
+// The hero's body is read from the manifest his sheets are (M5.3's tables
+// burst): SetHeroArt names it to d2hero.Body too, so the sheets and the body
+// cannot come from two heroes.
+//
+// Negative control: drop the d2hero.SetHeroManifest call from SetHeroArt and
+// this reads the default 240, not the manifest's 300.
+func TestSetHeroArtNamesTheBodyToo(t *testing.T) {
+	t.Cleanup(func() { SetHeroArt("") })
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "hero.json"), []byte(`{"animations":{"idle":"i.png"},"max_health":300}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	asset, err := d2asset.NewAssetManager(d2util.LogLevelError)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := asset.AddSource(dir, types.AssetSourceFileSystem); err != nil {
+		t.Fatal(err)
+	}
+
+	SetHeroArt("hero.json")
+
+	if got := d2hero.Body(asset).MaxHealth; got != 300 {
+		t.Fatalf("the body's health is %d, want the manifest's 300", got)
+	}
+
+	SetHeroArt("")
+
+	if got := d2hero.Body(asset).MaxHealth; got != 240 {
+		t.Fatalf("with no hero manifest the body's health is %d, want the default 240", got)
 	}
 }

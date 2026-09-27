@@ -29,7 +29,7 @@ One player's first day and night (`playtest/census_test.go`). **365 files from D
 | MPQ area | What it is | Replaced by |
 |---|---|---|
 | `data/global/tiles` (74) | Act 1 town and wilderness tiles -- the map itself | **M5.4**: maps authored in Tiled, drawn from our own tile PNGs |
-| `data/global/excel` (83) | D2's data tables (monsters, levels, objects, items, ...) the engine reads to build maps and entities | **83 → 31 (23 Sep):** 52 tables filled record sets nothing outside `d2records` reads, and are no longer loaded (`d2app/initialization.go`). The 31 left are read -- levels, objects, items and affixes, missiles, sounds, monsters, charstats, experience, inventory, skills; each goes as its readers move to Strigoi's own data. Since 24 Sep the generated world's 4 load only when one is built, and the missiles and cast overlays only on the first cast: 14 load at boot |
+| `data/global/excel` (83) | D2's data tables (monsters, levels, objects, items, ...) the engine reads to build maps and entities | **83 → 31 (23 Sep):** 52 tables filled record sets nothing outside `d2records` reads, and are no longer loaded (`d2app/initialization.go`). The 31 left are read -- levels, objects, items and affixes, missiles, sounds, monsters, charstats, experience, inventory, skills; each goes as its readers move to Strigoi's own data. Since 24 Sep the generated world's 4 load only when one is built, and the missiles and cast overlays only on the first cast: 14 load at boot. **Since the tables burst (26-27 Sep): 4 load at boot in Strigoi's game** -- sounds, soundenviron, monstats, monstats2 -- and ten are Diablo II's game's alone (`-classic` still loads all 14): experience, charstats, weapons, armor, misc, inventory, skills, skilldesc, lvltypes, levels |
 | `data/global/ui` (72) | menus, panels, front end, cursor, loading screen | our own UI art (Josh + GPT): **a PNG at `data/strigoi/override/<the sprite's path, lower-cased>.png` is drawn instead, no code per sprite** (23 Sep; `data/strigoi/override/README.md`; sizes from `strigoi_describe_sprite`) |
 | `data/global/monsters` (39) | the town's people and animals (rogues, Warriv, Gheed, cows, chickens) | our villagers and livestock as PNG creatures (M5.1's path) |
 | `data/global/objects` (29) | town objects (waypoint, torches, barrels, ...) | authored with the map (M5.4) |
@@ -52,17 +52,44 @@ screen, the character list, then the same hour.
 | the grid inventory's test items gone, and the 11 item tables only they needed | `43ec354a` | 112 |
 | the generated world's 4 tables load only when one is built | `50e9b235` | 108 |
 | Diablo II's quest log, character panel, grid and skill tree load their art when opened | `7986f9ea` | 66 |
-| the missiles and cast overlays load on the first cast (a right-click) | (history item 116) | **64** |
+| the missiles and cast overlays load on the first cast (a right-click) | (history item 116) | 64 |
+| the tables burst: ten tables are Diablo II's game's alone, and so is its skill-icon sheet (below) | `tables-burst` | **53** |
 
 **A friend's launch, menus included: 80 MPQ files, 47 of them sprites**
 (measured at `4e303446`; 78 since the cast tables left boot -- re-derived,
 not re-measured, as that probe never casts). They
 are the menus and their buttons, the Diablo II logo, the new-hero screen's
 amazon, the loading screen, the cursors, the HUD, the help overlay's pieces
-and the four villager stand-ins. The other 33 were 16 tables, now 14 (villagers, hero,
-starting gear, HUD layout, sounds, levels), 5 palettes, 7 sounds and music,
+and the four villager stand-ins. The other 33 were 16 tables, now 4 (villagers,
+sounds; the hero, starting gear, HUD layout and levels went in the tables burst), 5 palettes, 7 sounds and music,
 4 villager `.cof`s and `animdata.d2`. The sprite list, with sizes and override
 paths, is the project's `claude/art-needs-2026-09-24.md`.
+
+## Measured: the tables burst (27 Sep 2026, M5.3)
+
+`TestAssetCensus` (one player's first day and night, now on the default game)
+before and after, each run in both games, the per-file lists diffed
+(`strigoi-harness-runs\wt-tables\census-diff.txt`):
+
+| Game | Before (`51417742`) | After (`tables-burst`) | What left |
+|---|---:|---:|---|
+| Strigoi's (no switches) | 64 | **53** | exactly `experience.txt`, `charstats.txt`, `weapons.txt`, `armor.txt`, `misc.txt`, `inventory.txt`, `skills.txt`, `skilldesc.txt`, `lvltypes.txt`, `levels.txt` and `ui/spells/skillicon.dc6`; nothing new |
+| `-classic` | 245 | 245 | nothing: the same file list |
+
+Where each one's reader went: the hero's health, stamina and run drain are his
+manifest's (`hero.json`; the 240 pin is data), his loadout is his kit, his
+right hand is the torch (so Diablo II's skills, their tables and the HUD's
+skill-icon sheet are `-classic`'s), the village says its own sound environment
+and name (`village.tmj`'s map properties), its level type is the region enum,
+and the experience bar has no table to fill toward. The item tables load with
+the first Diablo II item made (the debug `spawnitem`, the harness's item
+spawn), the grid's layout when the grid first opens, the level tables when a
+generated world is built. `TestStrigoiIsTheGame` holds all of it: none of the
+ten in Strigoi's first hour, all ten in its `-classic` control.
+
+What is left of the tables in Strigoi's game: monstats and monstats2 (the four
+villagers and the squads' stand-in body: art), sounds and soundenviron (the UI
+clicks and the village's ambience: audio). Brief: `claude/m5.3-last-mile-tables-brief.md`.
 
 ## Measured: our own words too (23 Sep 2026, evening)
 

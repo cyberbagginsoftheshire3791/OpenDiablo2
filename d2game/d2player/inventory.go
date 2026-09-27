@@ -3,8 +3,6 @@ package d2player
 import (
 	"fmt"
 
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
@@ -26,12 +24,15 @@ const (
 	invGoldLabelX, invGoldLabelY     = 510, 455
 )
 
-// NewInventory creates an inventory instance and returns a pointer to it
+// NewInventory creates an inventory instance and returns a pointer to it.
+// recordKey names the grid's layout in inventory.txt (Amazon2, ...), which is
+// read when the grid is first opened (Load), not here: Strigoi's game, with
+// the kit, never opens it, so it never reads the table (M5.3's tables burst).
 func NewInventory(asset *d2asset.AssetManager,
 	ui *d2ui.UIManager,
 	l d2util.LogLevel,
 	gold int,
-	record *d2records.InventoryRecord) (*Inventory, error) {
+	recordKey string) (*Inventory, error) {
 	itemTooltip := ui.NewTooltip(d2resource.FontFormal11, d2resource.PaletteStatic, d2ui.TooltipXCenter, d2ui.TooltipYBottom)
 
 	itemFactory, err := diablo2item.NewItemFactory(asset)
@@ -45,8 +46,8 @@ func NewInventory(asset *d2asset.AssetManager,
 		asset:       asset,
 		uiManager:   ui,
 		item:        itemFactory,
-		grid:        NewItemGrid(asset, ui, l, record),
-		originX:     record.Panel.Left,
+		recordKey:   recordKey,
+		logLevel:    l,
 		itemTooltip: itemTooltip,
 		// originY: record.Panel.Top,
 		originY:       0, // expansion data has these all offset by +60 ...
@@ -70,6 +71,12 @@ type Inventory struct {
 	// or not yet used are never opened in most games, and their sprites were
 	// read from the MPQs at every start (M5.3's census, history item 114).
 	loaded bool
+
+	// recordKey is the grid's layout in inventory.txt, read by Load; grid
+	// is nil until then, and stays nil if the layout cannot be read (the
+	// panel then does not open).
+	recordKey string
+	logLevel  d2util.LogLevel
 
 	asset         *d2asset.AssetManager
 	item          *diablo2item.ItemFactory
@@ -112,6 +119,16 @@ func (g *Inventory) Load() {
 	g.loaded = true
 
 	var err error
+
+	// The grid's layout loads with the grid, the first time it is opened.
+	if err = g.asset.EnsureRecords(d2resource.Inventory); err != nil {
+		g.Error(err.Error())
+	} else if record := g.asset.Records.Layout.Inventory[g.recordKey]; record == nil {
+		g.Errorf("inventory.txt has no %q layout", g.recordKey)
+	} else {
+		g.grid = NewItemGrid(g.asset, g.uiManager, g.logLevel, record)
+		g.originX = record.Panel.Left
+	}
 
 	g.panelGroup = g.uiManager.NewWidgetGroup(d2ui.RenderPriorityInventory)
 
@@ -168,9 +185,14 @@ func (g *Inventory) Load() {
 	g.panelGroup.SetVisible(false)
 }
 
-// Open opens the inventory
+// Open opens the inventory: a grid whose layout could not be read (Load)
+// does not open.
 func (g *Inventory) Open() {
 	g.Load()
+
+	if g.grid == nil {
+		return
+	}
 
 	g.isOpen = true
 	g.panelGroup.SetVisible(true)

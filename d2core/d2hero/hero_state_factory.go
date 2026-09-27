@@ -87,10 +87,9 @@ func (f *HeroStateFactory) GetAllHeroStates() ([]*HeroState, error) {
 		} else if gameState.Stats == nil || gameState.Skills == nil {
 			// temporarily loading default class stats if the character was created before saving stats/skills was introduced
 			// to be removed in the future
-			classStats := f.asset.Records.Character.Stats[gameState.HeroType]
-			gameState.Stats = f.CreateHeroStatsState(gameState.HeroType, classStats)
+			gameState.Stats = f.NewHeroStats(gameState.HeroType)
 
-			skillState, err := f.CreateHeroSkillsState(classStats, gameState.HeroType)
+			skillState, err := f.CreateHeroSkillsState(f.asset.Records.Character.Stats[gameState.HeroType], gameState.HeroType)
 			if err != nil {
 				return nil, err
 			}
@@ -109,8 +108,19 @@ func (f *HeroStateFactory) GetAllHeroStates() ([]*HeroState, error) {
 }
 
 // CreateHeroSkillsState will assemble the hero skills from the class stats record.
+//
+// In Strigoi's game there are none (M5.3's tables burst; Josh, 25 Sep 2026:
+// the right mouse button is the torch, the left owns the blade hand, and
+// shift-click does nothing). The Janissary carried Diablo II's "Attack", the
+// class's base skills and ~30 amazon skills at 0 points, all read from
+// skills.txt and skilldesc.txt, which his game no longer loads. -classic
+// assembles them as before.
 func (f *HeroStateFactory) CreateHeroSkillsState(classStats *d2records.CharStatRecord, heroType d2enum.Hero) (map[int]*HeroSkill, error) {
 	baseSkills := map[int]*HeroSkill{}
+
+	if !f.asset.Classic() {
+		return baseSkills, nil
+	}
 
 	for idx := range classStats.BaseSkill {
 		skillName := &classStats.BaseSkill[idx]
@@ -217,22 +227,52 @@ func (f *HeroStateFactory) LoadHeroState(filePath string) *HeroState {
 	// "load last save means a new dawn" without rewriting the file.
 	reviveIfDead(result.Stats)
 
+	f.loadSkills(result)
+
+	return result
+}
+
+// loadSkills turns a loaded save's skills back into records.
+//
+// Strigoi's game has no Diablo II skills and does not load their tables
+// (CreateHeroSkillsState), so a save's skills -- every hero made before the
+// tables burst carries ~30 -- are left out of the hero it plays; the file on
+// disk is untouched until he is saved. -classic hydrates them, and gives a
+// hero that has none (one made or saved by Strigoi's game) his class's
+// skills, exactly as a new -classic hero gets them: its HUD and its casts read
+// a left and a right skill, and a hero without them could not be drawn.
+func (f *HeroStateFactory) loadSkills(result *HeroState) {
+	if !f.asset.Classic() {
+		result.Skills = map[int]*HeroSkill{}
+		return
+	}
+
 	// Here, we turn the Shallow skill data back into records from the asset manager.
 	// This is because this factory has a reference to the asset manager with loaded records.
 	// We cant do this while unmarshalling because there is no reference to the asset manager.
 	for idx := range result.Skills {
 		hs := result.Skills[idx]
 
-		if hs == nil {
+		if hs == nil || hs.Shallow == nil {
+			delete(result.Skills, idx)
 			continue
 		}
 
 		hs.SkillRecord = f.asset.Records.Skill.Details[hs.Shallow.SkillID]
+		if hs.SkillRecord == nil {
+			delete(result.Skills, idx)
+			continue
+		}
+
 		hs.SkillDescriptionRecord = f.asset.Records.Skill.Descriptions[hs.SkillRecord.Skilldesc]
 		hs.SkillPoints = hs.Shallow.SkillPoints
 	}
 
-	return result
+	if len(result.Skills) == 0 && result.HeroType != d2enum.HeroNone {
+		if skills, err := f.CreateHeroSkillsState(f.asset.Records.Character.Stats[result.HeroType], result.HeroType); err == nil {
+			result.Skills = skills
+		}
+	}
 }
 
 func (f *HeroStateFactory) getGameBaseSavePath() (string, error) {

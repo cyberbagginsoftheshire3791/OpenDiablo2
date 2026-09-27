@@ -57,6 +57,19 @@
 //     Tiled anchors it, its bottom corner, not where it appears to stand --
 //     place people with point objects).
 //
+// # Map properties
+//
+// Optional, and only these (M5.3's tables burst, 26 Sep 2026: the two things
+// the game read from Diablo II's levels.txt for the region):
+//
+//   - "sound_env", int, at least 1: the sound environment the map plays --
+//     a row of soundenviron.txt, its song, its day ambience and its random
+//     day sounds. Without it the map is silent.
+//   - "display_name", string: the region's name, as the game shows it.
+//   - "note", string: for whoever opens the file; the game ignores it.
+//
+// Any other map property is refused, so a typo cannot silently do nothing.
+//
 // # Coordinates
 //
 // Tiled draws isometric tile (x, y) where Diablo II does, so tile coordinates
@@ -199,6 +212,10 @@ type Map struct {
 	Structures     []Structure
 	// Inside is the "inside" areas in whole tiles, Max exclusive.
 	Inside []image.Rectangle
+	// SoundEnv and DisplayName are the map's own properties (0 and "" when
+	// it gives none): see "Map properties" above.
+	SoundEnv    int
+	DisplayName string
 }
 
 // IsInside reports whether tile x, y lies in any inside area.
@@ -256,6 +273,11 @@ func Parse(data []byte, dir string, load Loader) (*Map, error) {
 		return nil, err
 	}
 
+	soundEnv, displayName, err := raw.mapProperties()
+	if err != nil {
+		return nil, err
+	}
+
 	p := &parser{
 		raw:    &raw,
 		dir:    dir,
@@ -263,8 +285,10 @@ func Parse(data []byte, dir string, load Loader) (*Map, error) {
 		kinds:  map[kindKey]int{},
 		images: map[string]*image.RGBA{},
 		out: &Map{
-			Width:  raw.Width,
-			Height: raw.Height,
+			Width:       raw.Width,
+			Height:      raw.Height,
+			SoundEnv:    soundEnv,
+			DisplayName: displayName,
 		},
 	}
 
@@ -282,15 +306,37 @@ func Parse(data []byte, dir string, load Loader) (*Map, error) {
 // ---- the raw Tiled JSON --------------------------------------------------
 
 type tmj struct {
-	Type        string       `json:"type"`
-	Orientation string       `json:"orientation"`
-	Width       int          `json:"width"`
-	Height      int          `json:"height"`
-	TileWidth   int          `json:"tilewidth"`
-	TileHeight  int          `json:"tileheight"`
-	Infinite    bool         `json:"infinite"`
-	Layers      []tmjLayer   `json:"layers"`
-	Tilesets    []tmjTileset `json:"tilesets"`
+	Type        string        `json:"type"`
+	Orientation string        `json:"orientation"`
+	Width       int           `json:"width"`
+	Height      int           `json:"height"`
+	TileWidth   int           `json:"tilewidth"`
+	TileHeight  int           `json:"tileheight"`
+	Infinite    bool          `json:"infinite"`
+	Layers      []tmjLayer    `json:"layers"`
+	Tilesets    []tmjTileset  `json:"tilesets"`
+	Properties  []tmjProperty `json:"properties"`
+}
+
+// mapProperties reads the map's own properties (see "Map properties").
+func (raw *tmj) mapProperties() (soundEnv int, displayName string, err error) {
+	for _, prop := range raw.Properties {
+		switch prop.Name {
+		case "note":
+		case "sound_env":
+			if prop.Type != "int" || json.Unmarshal(prop.Value, &soundEnv) != nil || soundEnv < 1 {
+				return 0, "", errors.New("map property \"sound_env\" must be an int of at least 1 (a row of soundenviron.txt)")
+			}
+		case "display_name":
+			if prop.Type != "string" || json.Unmarshal(prop.Value, &displayName) != nil {
+				return 0, "", errors.New("map property \"display_name\" must be a string")
+			}
+		default:
+			return 0, "", fmt.Errorf("unknown map property %q; the game reads \"sound_env\" and \"display_name\" (and ignores \"note\")", prop.Name)
+		}
+	}
+
+	return soundEnv, displayName, nil
 }
 
 type tmjLayer struct {

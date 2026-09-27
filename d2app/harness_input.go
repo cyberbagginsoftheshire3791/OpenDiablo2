@@ -244,7 +244,7 @@ func (a *App) harnessAddInputTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_click",
-		Description: "Scripted mouse click at SCREEN PIXELS x,y (800x600): the cursor moves there and the button is pressed for one poll and released the next, with optional held modifiers (shift-click casts the left skill). A click on open ground walks the player there through the normal controls. Use strigoi_get_player's screen field to aim at the player. hold_frames 2 or more HOLDS the button down for that many frames instead, which is the only way to reach the click-and-hold path (OnMouseButtonRepeat); paused, each held frame is one dt tick, so the simulation moves.",
+		Description: "Scripted mouse click at SCREEN PIXELS x,y (800x600): the cursor moves there and the button is pressed for one poll and released the next, with optional held modifiers (under -classic a shift-click casts the left skill and a right-click the right; in Strigoi's game the right button is the torch, as L is, and a shift-click does nothing). A click on open ground walks the player there through the normal controls. Use strigoi_get_player's screen field to aim at the player. hold_frames 2 or more HOLDS the button down for that many frames instead, which is the only way to reach the click-and-hold path (OnMouseButtonRepeat); paused, each held frame is one dt tick, so the simulation moves.",
 		Annotations: harnessAnnMut(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessClickIn) (*mcp.CallToolResult, harnessInputOut, error) {
 		harnessLogCall("strigoi_click")

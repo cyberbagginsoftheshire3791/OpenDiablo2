@@ -518,8 +518,19 @@ func (g *GameServer) OnPacketReceived(client ClientConnection, packet d2netpacke
 		}
 
 		playerState := g.connections[client.GetUniqueID()].GetPlayerState()
-		playerState.LeftSkill = savePacket.Player.LeftSkill.Shallow.SkillID
-		playerState.RightSkill = savePacket.Player.RightSkill.Shallow.SkillID
+
+		// Strigoi's hero has no Diablo II skill in either hand (M5.3's
+		// tables burst: the left button is the blade, the right the torch),
+		// so a save carries none and the state keeps what it had. Found by
+		// the burst's playtests: leaving a game dereferenced the nil skill.
+		if skill := savePacket.Player.LeftSkill; skill != nil && skill.Shallow != nil {
+			playerState.LeftSkill = skill.Shallow.SkillID
+		}
+
+		if skill := savePacket.Player.RightSkill; skill != nil && skill.Shallow != nil {
+			playerState.RightSkill = skill.Shallow.SkillID
+		}
+
 		playerState.Stats = savePacket.Player.Stats
 		playerState.Act = savePacket.Player.Act
 		playerState.Difficulty = savePacket.Difficulty

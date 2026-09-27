@@ -107,6 +107,12 @@ const heroDescCharWidth = 37
 // measured, and the barbarian's 400 is not offered, so every player faces the
 // night on the same terms. Changing this constant changes the offer. There is
 // deliberately no "offer them all" value -- a Strigoi build offers exactly one.
+//
+// THE 240 ITSELF IS DATA NOW (M5.3's tables burst, 26 Sep 2026): in Strigoi's
+// game a new hero's health is his manifest's max_health (d2hero.Body, whose
+// default is the 240 charstats.txt gave the amazon), whatever class this
+// names. The pin still chooses the class -- the class token the composite,
+// the save and -classic's charstats row are keyed by.
 const pinnedHeroClass = d2enum.HeroAmazon
 
 // getHeroRenderConfiguration returns the classes the select-hero screen renders.
@@ -534,8 +540,7 @@ func (v *SelectHeroClass) onExitButtonClicked() {
 
 func (v *SelectHeroClass) onOkButtonClicked() {
 	heroName := v.heroNameTextbox.GetText()
-	defaultStats := v.asset.Records.Character.Stats[v.selectedHero]
-	statsState := v.CreateHeroStatsState(v.selectedHero, defaultStats)
+	statsState := v.NewHeroStats(v.selectedHero)
 
 	playerState, err := v.CreateHeroState(heroName, v.selectedHero, statsState)
 	if err != nil {

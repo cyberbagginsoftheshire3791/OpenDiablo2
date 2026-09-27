@@ -181,7 +181,14 @@ func (g *globeWidget) load() {
 
 // Render draws the widget to the screen
 func (g *globeWidget) Render(target d2interface.Surface) {
-	valuePercent := float64(*g.value) / float64(*g.valueMax)
+	// An empty maximum is an empty globe: Strigoi's hero has no mana (M5.3's
+	// tables burst: his body is his manifest's, and it has none), and 0/0 is
+	// not a fill height.
+	valuePercent := 0.0
+	if *g.valueMax > 0 {
+		valuePercent = float64(*g.value) / float64(*g.valueMax)
+	}
+
 	barHeight := int(valuePercent * float64(globeHeight))
 
 	maskRect := image.Rect(0, globeHeight-barHeight, globeWidth, globeHeight)

@@ -36,6 +36,24 @@ func TestStrigoiIsTheGame(t *testing.T) {
 			mpqIn(c, "data/global/tiles"), mpqIn(c, "data/local/font"), str(c, "font_set"))
 	}
 
+	// The ten tables Strigoi's game no longer reads (M5.3's tables burst,
+	// 26 Sep 2026) are still Diablo II's game's: -classic loads every one.
+	for _, table := range diabloGameTables {
+		if !censusHas(c, table) {
+			t.Errorf("control: -classic did not load %s", table)
+		}
+	}
+
+	// And its right button still casts Diablo II's right skill: the cast's
+	// missile and overlay tables load with it.
+	cx, cy := pair(classic.call("strigoi_get_player", map[string]any{}), "screen")
+	classic.call("strigoi_click", map[string]any{"x": int(cx) + 60, "y": int(cy), "button": "right"})
+	classic.call("strigoi_step", map[string]any{"frames": 30})
+
+	if c = sub(classic.call("strigoi_get_system_state", map[string]any{"system": "assets"}), "state"); !censusHas(c, "/data/global/excel/missiles.txt") {
+		t.Errorf("control: a -classic right-click beside him (screen %.0f,%.0f) cast nothing -- missiles.txt unread", cx+60, cy)
+	}
+
 	classic.stop()
 
 	s := startWith(t) // no switches
@@ -126,11 +144,20 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		t.Fatalf("font set %q, string table %q: want Strigoi's", str(a, "font_set"), str(a, "string_set"))
 	}
 
-	// Diablo II's tables: 14 of its 83 at most (history items 111, 113, 116)
-	// -- the generated world's four load only when one is built, the
-	// missiles and cast overlays only when a skill is cast.
-	if n := mpqIn(a, "data/global/excel"); n == 0 || n > 14 {
-		t.Errorf("data/global/excel: %.0f table(s) from Diablo II's MPQs, want 1..14", n)
+	// Diablo II's tables: 4 of its 83 at most (history items 111, 113, 116,
+	// and M5.3's tables burst) -- the generated world's six load only when one
+	// is built, the missiles and cast overlays only when a -classic skill is
+	// cast, and ten are Diablo II's game's alone: the hero's body is his
+	// manifest's, his loadout his kit, his right hand the torch, the village's
+	// sound and name its own.
+	if n := mpqIn(a, "data/global/excel"); n == 0 || n > 4 {
+		t.Errorf("data/global/excel: %.0f table(s) from Diablo II's MPQs, want 1..4", n)
+	}
+
+	for _, table := range diabloGameTables {
+		if censusHas(a, table) {
+			t.Errorf("%s was read: it is Diablo II's game's, not Strigoi's", table)
+		}
 	}
 
 	// The census's area names are what this reads: an area it still reads
@@ -164,14 +191,17 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		t.Errorf("%.0f key(s) the game asked for are not in Strigoi's string table: %v", mustNum(t, a, "strings_missing"), missing)
 	}
 
-	// A right-click still casts Diablo II's right skill (history item 116),
-	// and the missile and overlay tables load with the first cast, not before.
-	cast := []string{"/data/global/excel/missiles.txt", "/data/global/excel/overlay.txt"}
+	// THE RIGHT BUTTON IS THE TORCH (Josh, 25 Sep 2026): a right-click beside
+	// him lights the torch in his hand, as L does, and casts nothing -- the
+	// cast's tables and the skill tables stay unread (history item 116 made
+	// them load with the first cast; that cast is -classic's now, above). The
+	// HUD's two skill icons are his hands, drawn as the keys' letters until
+	// their art lands, and Diablo II's skill-icon sheet is not read.
+	cast := []string{"/data/global/excel/missiles.txt", "/data/global/excel/overlay.txt",
+		"/data/global/excel/skills.txt", "/data/global/excel/skilldesc.txt", "/data/global/ui/spells/skillicon.dc6"}
 
-	for _, table := range cast {
-		if censusHas(a, table) {
-			t.Errorf("%s was read before anything was cast", table)
-		}
+	if hands := sub(uiState(s), "hand_icons"); str(hands, "left") != "F" || str(hands, "right") != "L" {
+		t.Errorf("the HUD's skill icons draw %q and %q; want his hands' keys, F and L", str(hands, "left"), str(hands, "right"))
 	}
 
 	sx, sy := pair(s.call("strigoi_get_player", map[string]any{}), "screen")
@@ -179,13 +209,19 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		t.Fatal("strigoi_get_player reported no screen position; the right-click would miss him")
 	}
 
+	lit := flag(t, sub(s.call("strigoi_get_system_state", map[string]any{"system": "light"}), "state"), "carried_lit")
+
 	s.call("strigoi_click", map[string]any{"x": int(sx) + 60, "y": int(sy), "button": "right"})
 	s.call("strigoi_step", map[string]any{"frames": 30})
 
+	if now := flag(t, sub(s.call("strigoi_get_system_state", map[string]any{"system": "light"}), "state"), "carried_lit"); now == lit {
+		t.Errorf("a right-click beside him (screen %.0f,%.0f) did not light or douse his torch (lit %v -> %v)", sx+60, sy, lit, now)
+	}
+
 	after := sub(s.call("strigoi_get_system_state", map[string]any{"system": "assets"}), "state")
-	for _, table := range cast {
-		if !censusHas(after, table) {
-			t.Errorf("a right-click beside him (screen %.0f,%.0f) did not read %s", sx+60, sy, table)
+	for _, file := range cast {
+		if censusHas(after, file) {
+			t.Errorf("a right-click beside him read %s: Strigoi's right hand casts nothing", file)
 		}
 	}
 
@@ -242,8 +278,34 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		}
 	}
 
+	// Diablo II's item tables are not gone, only late: the debug console's
+	// spawnitem and the harness's item spawn still make a Diablo II item, and
+	// all three tables load with the first one (M5.3's tables burst) -- misc
+	// among them, which nothing else reads.
+	p := s.call("strigoi_get_player", map[string]any{})
+	s.call("strigoi_spawn_entity", map[string]any{"kind": "item", "code": "hax", "x": num(p, "x") + 1, "y": num(p, "y")})
+
+	items := sub(s.call("strigoi_get_system_state", map[string]any{"system": "assets"}), "state")
+	for _, table := range []string{"/data/global/excel/weapons.txt", "/data/global/excel/armor.txt", "/data/global/excel/misc.txt"} {
+		if !censusHas(items, table) {
+			t.Errorf("a Diablo II item was spawned and %s was not loaded for it", table)
+		}
+	}
+
 	t.Logf("Strigoi, as launched: %.0f MPQ files, %.0f of ours, %.0f string keys asked (%.0f missing)",
 		num(a, "mpq_files"), num(a, "native_files"), num(a, "strings_asked"), num(a, "strings_missing"))
+}
+
+// diabloGameTables are the ten Diablo II tables M5.3's tables burst (26 Sep
+// 2026) took out of Strigoi's game and left in -classic's: the experience
+// bar's, the item tables and the grid's layout, the class rows and skills,
+// the level types and levels.
+var diabloGameTables = []string{
+	"/data/global/excel/experience.txt",
+	"/data/global/excel/misc.txt", "/data/global/excel/weapons.txt", "/data/global/excel/armor.txt",
+	"/data/global/excel/inventory.txt",
+	"/data/global/excel/charstats.txt", "/data/global/excel/skills.txt", "/data/global/excel/skilldesc.txt",
+	"/data/global/excel/lvltypes.txt", "/data/global/excel/levels.txt",
 }
 
 // censusHas reports whether the assets census lists a file (paths compared

@@ -117,6 +117,7 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"escape_menu_open":  g.escapeMenu.IsOpen(),
 		"world_held_by":     g.worldHeldByReport(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
+		"hand_icons":        g.handIconsReport(),
 		"left_panel_open":   g.isLeftPanelOpen(),
 		"right_panel_open":  g.isRightPanelOpen(),
 		"free_cam":          g.FreeCam,
@@ -316,4 +317,13 @@ func (g *GameControls) journalNoticeText() string {
 	}
 
 	return g.hud.journal.notice
+}
+
+// handIconsReport is what the HUD's two skill icons last drew in Strigoi's
+// game -- the letter of the key each hand's verb is on (hud_hands.go) -- as
+// {left, right}; both "" under -classic, which draws Diablo II's icons.
+func (g *GameControls) handIconsReport() map[string]interface{} {
+	left, right := g.hud.HandsReport()
+
+	return map[string]interface{}{"left": left, "right": right}
 }

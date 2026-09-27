@@ -13,6 +13,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2dt1"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2geom"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapstamp"
@@ -44,6 +45,7 @@ type MapEngine struct {
 	authoredImages map[AuthoredKey]*image.RGBA
 	authoredStart  *[2]float64
 	authoredInside []image.Rectangle
+	authoredRegion *authoredRegion
 
 	// Which authored bits line of sight obeys. Set explicitly in
 	// CreateMapEngine rather than left to the zero value, because the zero
@@ -94,8 +96,24 @@ func (m *MapEngine) GetStartingPosition() (x, y int) {
 }
 
 // ResetMap clears all map and entity data and reloads it from the cached files.
+// The level type's record -- its DT1 tile sets -- comes from lvltypes.txt,
+// which loads here, with the generated world, not at boot (M5.3's tables
+// burst; d2resource.GeneratedWorldRecords).
 func (m *MapEngine) ResetMap(levelType d2enum.RegionIdType, width, height int) {
-	m.resetState(levelType, width, height)
+	m.resetState(width, height)
+
+	// Saying why beats the index panic a missing table would be a line on,
+	// as the generator does for its own tables.
+	if err := m.asset.EnsureRecords(d2resource.LevelType); err != nil {
+		m.Fatalf("cannot build level type %d: lvltypes.txt did not load: %v", levelType, err)
+	}
+
+	types := m.asset.Records.Level.Types
+	if int(levelType) < 0 || int(levelType) >= len(types) || types[levelType] == nil {
+		m.Fatalf("cannot build level type %d: lvltypes.txt has no such row", levelType)
+	}
+
+	m.levelType = *types[levelType]
 
 	for idx := range m.levelType.Files {
 		m.addDT1(m.levelType.Files[idx])
@@ -108,13 +126,18 @@ func (m *MapEngine) ResetMap(levelType d2enum.RegionIdType, width, height int) {
 // An authored map's tiles are all its own (AuthoredStyle, authored.go), so
 // loading the Act 1 town's tile sets would only read the MPQs for art that
 // is never drawn; the asset census counts every such read.
+//
+// Nor does it read lvltypes.txt (M5.3's tables burst, 26 Sep 2026): an
+// authored map's level type is the region enum it is given -- the ID the
+// renderer's tile cache and palette are keyed to, the one field of the record
+// the authored path ever read -- so the table is not loaded for it.
 func (m *MapEngine) ResetAuthoredMap(levelType d2enum.RegionIdType, width, height int) {
-	m.resetState(levelType, width, height)
+	m.resetState(width, height)
+	m.levelType = d2records.LevelTypeRecord{ID: int(levelType)}
 }
 
-func (m *MapEngine) resetState(levelType d2enum.RegionIdType, width, height int) {
+func (m *MapEngine) resetState(width, height int) {
 	m.entities = make(map[string]d2interface.MapEntity)
-	m.levelType = *m.asset.Records.Level.Types[levelType]
 	m.size = d2geom.Size{Width: width, Height: height}
 	m.tiles = make([]MapTile, width*height)
 	m.dt1TileData = make([]d2dt1.Tile, 0)
@@ -122,6 +145,7 @@ func (m *MapEngine) resetState(levelType d2enum.RegionIdType, width, height int)
 	m.authoredImages = nil
 	m.authoredStart = nil
 	m.authoredInside = nil
+	m.authoredRegion = nil
 }
 
 func (m *MapEngine) addDT1(fileName string) {

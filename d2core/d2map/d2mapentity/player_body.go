@@ -12,6 +12,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 )
 
 // playerBody is what a Player is drawn with: Diablo II's layered composite
@@ -77,6 +78,11 @@ type heroManifest struct {
 	// they use the whole cell, and a cell drawn with headroom floats the bar
 	// above the head. Optional; at most the cell's height.
 	Height int `json:"height,omitempty"`
+
+	// The body the sheets draw: max_health, max_stamina, stamina_run_drain,
+	// each optional (M5.3's tables burst: they were charstats.txt's). This
+	// read refuses a negative one; d2hero.Body is what the game plays.
+	d2hero.BodyStats
 }
 
 // heroMotions are the HeroArt keys, in load order.
@@ -128,6 +134,10 @@ func parseHeroManifest(data []byte, manifestPath string) (heroManifest, error) {
 		return heroManifest{}, fmt.Errorf("hero manifest %s has no idle sheet", manifestPath)
 	}
 
+	if err := m.BodyStats.Check(); err != nil {
+		return heroManifest{}, fmt.Errorf("hero manifest %s: %w", manifestPath, err)
+	}
+
 	dir := slashpath.Dir(manifestPath)
 	for _, p := range []*string{&m.Animations.Idle, &m.Animations.Walk, &m.Animations.Run, &m.Animations.Attack,
 		&m.Animations.Hit, &m.Animations.Block, &m.Animations.Death, &m.Animations.Dead} {
@@ -169,6 +179,10 @@ func SetHeroArt(p string) {
 	defer heroArt.Unlock()
 
 	heroArt.path, heroArt.used, heroArt.err = p, "", nil
+
+	// The hero's body is read from the same manifest (d2hero.Body), so the
+	// sheets and the body cannot come from two heroes.
+	d2hero.SetHeroManifest(p)
 }
 
 // HeroArtReport returns the hero art asked for, the art last used ("" if the

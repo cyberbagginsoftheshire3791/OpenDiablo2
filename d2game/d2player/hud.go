@@ -102,6 +102,9 @@ type HUD struct {
 	hpManaStatusSprite *d2ui.Sprite
 	leftSkillResource  *SkillResource
 	rightSkillResource *SkillResource
+	// In Strigoi's game the two skill icons are his two hands (hud_hands.go).
+	leftHand           *handIcon
+	rightHand          *handIcon
 	runButton          *d2ui.Button
 	zoneChangeText     *d2ui.Label
 	miniPanel          *miniPanel
@@ -413,6 +416,13 @@ func (h *HUD) loadCustomWidgets() {
 }
 
 func (h *HUD) loadSkillResources() {
+	// Strigoi's game draws no Diablo II skill icon: the two are his hands
+	// (hud_hands.go), and Diablo II's skill-icon sheet is not read.
+	if !h.asset.Classic() {
+		h.loadHands()
+		return
+	}
+
 	genericSkillsSprite, err := h.uiManager.NewSprite(d2resource.GenericSkills, d2resource.PaletteSky)
 	if err != nil {
 		h.Error(err.Error())
@@ -613,6 +623,17 @@ func (h *HUD) renderPanel(x, y int, target d2interface.Surface) error {
 }
 
 func (h *HUD) renderLeftSkill(x, y int, target d2interface.Surface) {
+	if !h.asset.Classic() {
+		h.renderHand(h.leftHand, x, y, target)
+		return
+	}
+
+	// A -classic hero always has a left skill (d2hero.CreateHeroSkillsState);
+	// one that somehow has none draws nothing rather than taking the game down.
+	if h.hero.LeftSkill == nil {
+		return
+	}
+
 	newSkillResourcePath := h.getSkillResourceByClass(h.hero.LeftSkill.Charclass)
 	if newSkillResourcePath != h.leftSkillResource.SkillResourcePath {
 		h.leftSkillResource.SkillResourcePath = newSkillResourcePath
@@ -630,6 +651,15 @@ func (h *HUD) renderLeftSkill(x, y int, target d2interface.Surface) {
 
 func (h *HUD) renderRightSkill(x, _ int, target d2interface.Surface) {
 	_, height := target.GetSize()
+
+	if !h.asset.Classic() {
+		h.renderHand(h.rightHand, x, height, target)
+		return
+	}
+
+	if h.hero.RightSkill == nil {
+		return
+	}
 
 	newSkillResourcePath := h.getSkillResourceByClass(h.hero.RightSkill.Charclass)
 	if newSkillResourcePath != h.rightSkillResource.SkillResourcePath {
@@ -688,6 +718,13 @@ func (h *HUD) renderStaminaBar(target d2interface.Surface) {
 func (h *HUD) renderExperienceBar(target d2interface.Surface) {
 	target.PushTranslation(experienceBarOffsetX, experienceBarOffsetY)
 	defer target.Pop()
+
+	// NextLevelExp is 0 in Strigoi's game, which does not load experience.txt
+	// (M5.3's tables burst): Diablo II's bar has nothing to fill toward, and
+	// Experience is never written anyway.
+	if h.hero.Stats.NextLevelExp <= 0 {
+		return
+	}
 
 	expPercent := float64(h.hero.Stats.Experience) / float64(h.hero.Stats.NextLevelExp)
 

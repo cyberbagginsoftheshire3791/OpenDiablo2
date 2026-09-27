@@ -29,7 +29,33 @@ type HeroStatsState struct {
 	NextLevelExp int `json:"-"`
 }
 
-// CreateHeroStatsState generates a running state from a hero stats.
+// NewHeroStats is a new hero's stats. In Strigoi's game his health and
+// stamina are his manifest's body (Body; the 240 pin is data now), and he
+// has none of Diablo II's attributes, mana or experience table: strength,
+// dexterity, vitality, energy and mana are 0 and NextLevelExp is 0
+// (Strigoi's experience is d2progress's). Under -classic they are the class's
+// charstats.txt row, as they always were.
+func (f *HeroStateFactory) NewHeroStats(heroClass d2enum.Hero) *HeroStatsState {
+	if f.asset.Classic() {
+		return f.CreateHeroStatsState(heroClass, f.asset.Records.Character.Stats[heroClass])
+	}
+
+	body := Body(f.asset)
+
+	result := &HeroStatsState{
+		Level:      1,
+		MaxHealth:  body.MaxHealth,
+		MaxStamina: body.MaxStamina,
+	}
+
+	result.Health = result.MaxHealth
+	result.Stamina = float64(result.MaxStamina)
+
+	return result
+}
+
+// CreateHeroStatsState generates a running state from a hero stats: Diablo
+// II's class row (-classic's; NewHeroStats picks).
 func (f *HeroStateFactory) CreateHeroStatsState(heroClass d2enum.Hero, classStats *d2records.CharStatRecord) *HeroStatsState {
 	result := HeroStatsState{
 		Level:        1,

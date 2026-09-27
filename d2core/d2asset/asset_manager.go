@@ -89,6 +89,10 @@ type AssetManager struct {
 
 	// Which tables are loaded (records_lazy.go).
 	recordsLoaded recordsLoaded
+
+	// classic is the -classic launch: Diablo II's game, whose hero, items,
+	// controls and levels read Diablo II's tables (records_lazy.go, Classic).
+	classic bool
 }
 
 // SetLogLevel sets the log level for the asset manager,  record manager, and file loader

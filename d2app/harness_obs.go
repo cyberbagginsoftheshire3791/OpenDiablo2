@@ -496,7 +496,11 @@ func (a *App) harnessAddObservationTools(srv *mcp.Server) {
 			out.Walls = len(tile.Components.Walls)
 			out.Shadows = len(tile.Components.Shadows)
 
-			if rec := a.asset.Records.Level.Details[out.Region]; rec != nil {
+			// An authored map names its own region; a generated one reads
+			// levels.txt (loaded with that world).
+			if _, name, ok := engine.AuthoredRegion(); ok {
+				out.LevelName = name
+			} else if rec := a.asset.Records.Level.Details[out.Region]; rec != nil {
 				out.LevelName = rec.LevelDisplayName
 			}
 

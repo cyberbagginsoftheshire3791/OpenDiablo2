@@ -303,24 +303,37 @@ func (r *RecordManager) Load(path string, dict *d2txt.DataDictionary) error {
 		}
 	}
 
-	// as soon as Armor, Weapons, and Misc items are loaded, we merge into r.Item.All
-	if r.Item.All == nil && r.Item.Armors != nil && r.Item.Weapons != nil && r.Item.Misc != nil {
-		r.Item.All = make(CommonItems)
-
-		for code := range r.Item.Armors {
-			r.Item.All[code] = r.Item.Armors[code]
-		}
-
-		for code := range r.Item.Weapons {
-			r.Item.All[code] = r.Item.Weapons[code]
-		}
-
-		for code := range r.Item.Misc {
-			r.Item.All[code] = r.Item.Misc[code]
-		}
+	// Item.All is every item table loaded so far, merged, and is rebuilt as
+	// each one loads. It used to wait for all three (armor, weapons, misc) and
+	// then never change, which tied misc.txt -- read by nothing else -- to
+	// boot. In Strigoi's game the three load together on the first item made
+	// (d2resource.ItemRecords), -classic loads them at boot, and either way
+	// All holds whatever is loaded (M5.3's tables burst, 26 Sep 2026).
+	switch path {
+	case d2resource.Armor, d2resource.Weapons, d2resource.Misc:
+		r.mergeItems()
 	}
 
 	return nil
+}
+
+// mergeItems rebuilds Item.All from the item tables loaded so far.
+func (r *RecordManager) mergeItems() {
+	all := make(CommonItems, len(r.Item.Armors)+len(r.Item.Weapons)+len(r.Item.Misc))
+
+	for code := range r.Item.Armors {
+		all[code] = r.Item.Armors[code]
+	}
+
+	for code := range r.Item.Weapons {
+		all[code] = r.Item.Weapons[code]
+	}
+
+	for code := range r.Item.Misc {
+		all[code] = r.Item.Misc[code]
+	}
+
+	r.Item.All = all
 }
 
 // GetMaxLevelByHero returns the highest level attainable for a hero type
@@ -328,9 +341,17 @@ func (r *RecordManager) GetMaxLevelByHero(heroType d2enum.Hero) int {
 	return r.Character.MaxLevel[heroType]
 }
 
-// GetExperienceBreakpoint given a hero type and a level, returns the experience required for the level
+// GetExperienceBreakpoint given a hero type and a level, returns the experience required for the level.
+// It is 0 when experience.txt is not loaded: Strigoi's game does not load it
+// (its experience is d2progress's), and nothing in it writes the experience
+// this would be the denominator of (M5.3's tables burst, 26 Sep 2026).
 func (r *RecordManager) GetExperienceBreakpoint(heroType d2enum.Hero, level int) int {
-	return r.Character.Experience[level].HeroBreakpoints[heroType]
+	breakpoint := r.Character.Experience[level]
+	if breakpoint == nil {
+		return 0
+	}
+
+	return breakpoint.HeroBreakpoints[heroType]
 }
 
 // GetLevelDetails gets a LevelDetailRecord by the record Id

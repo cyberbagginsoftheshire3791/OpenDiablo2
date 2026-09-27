@@ -4849,6 +4849,16 @@
    "name": "note",
    "type": "string",
    "value": "M5.4 v0 village. ALL TILE ART IS PLACEHOLDER (tools/villagemap); the layout is a proposal from S1 section 9.1 and G4, Josh decides."
+  },
+  {
+   "name": "sound_env",
+   "type": "int",
+   "value": 1
+  },
+  {
+   "name": "display_name",
+   "type": "string",
+   "value": "Village"
   }
  ],
  "renderorder": "right-down",

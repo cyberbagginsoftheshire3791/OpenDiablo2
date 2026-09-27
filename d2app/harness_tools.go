@@ -408,8 +408,7 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 					return
 				}
 
-				classStats := a.asset.Records.Character.Stats[heroClass]
-				statsState := factory.CreateHeroStatsState(heroClass, classStats)
+				statsState := factory.NewHeroStats(heroClass)
 
 				state, err := factory.CreateHeroState(name, heroClass, statsState)
 				if err != nil {

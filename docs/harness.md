@@ -132,7 +132,13 @@ this doc fails until it agrees.
   clock with it; F strikes and leaves the turn open (executing the Action is not
   finishing the turn), E ends it, a Move plus the Action auto-ends it; L lights,
   burns and douses a torch and spends the Action in a fight; the pace lines land
-  in the log ring and agree with the combat provider's `pace{}` block.
+  in the log ring and agree with the combat provider's `pace{}` block. A ninth
+  act (M5.3's tables burst, 26 Sep 2026; Josh's ruling of 25 Sep):
+  `TestTheHandsRightClickIsTheTorch` -- the right mouse button is the same
+  torch verb as L (lights and douses out of a fight, lights and spends the
+  Action in one, and with the Action spent is refused exactly as L is, one
+  more `commits_refused` each), and a shift-click does nothing (no walk, no
+  cast, no light; the same click without shift walks him, the control).
 * `unaided_test.go` — M4.4c-2a's closeout script, the eighteenth, and the only
   one that measures the GAME rather than a world a script arranged. With nothing
   spawned, nothing watched and no dial touched, it walks a full day–night cycle
@@ -429,7 +435,14 @@ this doc fails until it agrees.
 * `strigoi_game_test.go` — the thirty-ninth: the game launched with NO switches
   builds the village, draws the hero from Strigoi's sheets, uses Strigoi's font
   set and string table, and a first hour reads no Diablo II tile, class-art,
-  font or string file. (Measured at the time: 135 MPQ files.)
+  font or string file. (Measured at the time: 135 MPQ files.) Since M5.3's
+  tables burst (26 Sep 2026) it also holds the ten Diablo II tables that left
+  Strigoi's boot -- experience, misc, weapons, armor, inventory, charstats,
+  skills, skilldesc, lvltypes, levels -- to their place: none is read in the
+  first hour, at most four tables are, the right button lights his torch and
+  casts nothing (no missile, overlay or skill table, no skill-icon sheet), the
+  HUD's two skill icons draw his hands' keys (`ui.hand_icons`: F and L); and
+  its `-classic` control loads all ten and its right-click still casts.
 * `words_test.go` — the thirty-eighth, M5.3 (23 Sep 2026): every label answered
   from Strigoi's own string table (`-strings data/strigoi/strings/strings.json`).
   Control: as shipped, Diablo II's string tables come from the MPQs. With
@@ -603,7 +616,8 @@ does NOT move: it is a field on an existing verb, not a verb of its own. Default
 1 is the old behaviour, a tap that presses for one poll and releases the next.
 **2 or more holds the button DOWN for that many whole frames**, which is the only
 way a script can reach `GameControls.OnMouseButtonRepeat` — the click-and-hold
-path that walks the hero and casts the left skill. Until this, a tap made
+path that walks the hero (and, under `-classic`, casts the left skill; in
+Strigoi's game a shift-click does nothing and the right button is the torch). Until this, a tap made
 `repeatDue(now, now)` false *by construction* and that handler was unreachable
 from any script (BUG-7). The result's `applied` says `held N frame(s)`, so a
 script can assert it got a hold rather than a tap. Modifiers stay a one-poll tap:

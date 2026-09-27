@@ -2,10 +2,12 @@ package diablo2item
 
 import (
 	"errors"
+	"fmt"
 	"math/rand"
 	"regexp"
 	"strconv"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2stats/diablo2stats"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
@@ -82,6 +84,13 @@ func (f *ItemFactory) SetSeed(seed int64) {
 
 // NewItem creates a new item instance from the given codes
 func (f *ItemFactory) NewItem(codes ...string) (*Item, error) {
+	// Diablo II's item tables load with the first item made -- the debug
+	// console's spawnitem, the harness's item spawn -- not at boot: Strigoi's
+	// game has no other use for them (d2resource.ItemRecords).
+	if err := f.asset.EnsureRecords(d2resource.ItemRecords...); err != nil {
+		return nil, fmt.Errorf("cannot make a Diablo II item: its tables did not load: %w", err)
+	}
+
 	var common, set, unique string
 
 	prefixes, suffixes := make([]string, 0), make([]string, 0)

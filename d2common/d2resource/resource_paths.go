@@ -503,12 +503,25 @@ const (
 )
 
 // GeneratedWorldRecords are the tables only Diablo II's generated world reads:
-// its DS1 presets and the monsters and objects they place. They load when that
-// world is first built (AssetManager.EnsureRecords), not at boot -- the
-// default game builds the authored village and never needs them.
+// its DS1 presets and the monsters and objects they place, and (since the
+// tables burst, 26 Sep 2026) its level types -- the DT1 tile sets -- and its
+// levels, the wilderness sizes and each region's sound environment and name.
+// They load when that world is first built (AssetManager.EnsureRecords), not
+// at boot -- the default game builds the authored village, whose level type
+// is the region enum and whose sound environment and name are the map's own
+// properties, and never needs them.
 //
 // nolint:gochecknoglobals // a fixed list, read by the generator and its tools
-var GeneratedWorldRecords = []string{LevelPreset, MonPreset, ObjectType, ObjectDetails}
+var GeneratedWorldRecords = []string{LevelPreset, MonPreset, ObjectType, ObjectDetails, LevelType, LevelDetails}
+
+// ItemRecords are Diablo II's three item tables. Strigoi's game makes an item
+// from them only when the debug console's spawnitem or the harness's item
+// spawn asks for one, and they load then (diablo2item.ItemFactory.NewItem),
+// not at boot: his loadout is his kit (items.json), not a Diablo II item.
+// -classic loads them at boot, as it always has.
+//
+// nolint:gochecknoglobals // a fixed list, read by the item factory
+var ItemRecords = []string{Weapons, Armor, Misc}
 
 // CastRecords are the tables only a Diablo II skill cast reads: its missiles
 // and its cast overlay. They load on the first cast

@@ -454,6 +454,19 @@ func TestParseRefuses(t *testing.T) {
 		{"typo property", func(t *testing.T, f *fixture) {
 			f.tile(0)["properties"] = []any{map[string]any{"name": "blockd", "type": "bool", "value": true}}
 		}, "unknown tile property \"blockd\""},
+		// The map's own properties (M5.3's tables burst): what levels.txt said.
+		{"map property typo", func(t *testing.T, f *fixture) {
+			f.m["properties"] = []any{map[string]any{"name": "sound_evn", "type": "int", "value": 1}}
+		}, "unknown map property \"sound_evn\""},
+		{"sound_env a string", func(t *testing.T, f *fixture) {
+			f.m["properties"] = []any{map[string]any{"name": "sound_env", "type": "string", "value": "1"}}
+		}, "\"sound_env\" must be an int"},
+		{"sound_env zero", func(t *testing.T, f *fixture) {
+			f.m["properties"] = []any{map[string]any{"name": "sound_env", "type": "int", "value": 0}}
+		}, "at least 1"},
+		{"display_name an int", func(t *testing.T, f *fixture) {
+			f.m["properties"] = []any{map[string]any{"name": "display_name", "type": "int", "value": 3}}
+		}, "\"display_name\" must be a string"},
 		{"string bool", func(t *testing.T, f *fixture) {
 			f.tile(0)["properties"] = []any{map[string]any{"name": "blocked", "type": "string", "value": "true"}}
 		}, "must be a bool"},
@@ -649,5 +662,36 @@ func TestClassReadsLikeType(t *testing.T) {
 
 	if _, err := f.parse(t); err != nil {
 		t.Fatalf("class-only player_start refused: %v", err)
+	}
+}
+
+// A map says its own sound environment and name (M5.3's tables burst: the
+// two things the game read from levels.txt), ignores its note, and says
+// neither when it gives neither.
+func TestMapProperties(t *testing.T) {
+	f := newFixture(t)
+
+	m, err := f.parse(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if m.SoundEnv != 0 || m.DisplayName != "" {
+		t.Fatalf("a map with no properties: sound_env %d, display_name %q; want 0 and none", m.SoundEnv, m.DisplayName)
+	}
+
+	f = newFixture(t)
+	f.m["properties"] = []any{
+		map[string]any{"name": "note", "type": "string", "value": "for the reader"},
+		map[string]any{"name": "sound_env", "type": "int", "value": 3},
+		map[string]any{"name": "display_name", "type": "string", "value": "Village"},
+	}
+
+	if m, err = f.parse(t); err != nil {
+		t.Fatal(err)
+	}
+
+	if m.SoundEnv != 3 || m.DisplayName != "Village" {
+		t.Fatalf("sound_env %d, display_name %q; want 3 and Village", m.SoundEnv, m.DisplayName)
 	}
 }

@@ -44,6 +44,20 @@ func (am *AssetManager) EnsureRecords(paths ...string) error {
 	return nil
 }
 
+// SetClassic sets whether this launch is -classic, before the first table is
+// loaded (d2app does it as the asset manager is made).
+func (am *AssetManager) SetClassic(classic bool) { am.classic = classic }
+
+// Classic reports whether this launch is -classic: Diablo II's game, which
+// loads every table it reads at boot and whose hero, items, controls and
+// levels are Diablo II's (M5.3's tables burst, 26 Sep 2026). Strigoi's game
+// -- the default -- reads its own data for those instead (the hero manifest's
+// body, the kit, the torch on the right button, the map's own properties),
+// and a Diablo II table loads only when a Diablo II path that still reads
+// one is taken: an item made (d2resource.ItemRecords), the generated world
+// built (d2resource.GeneratedWorldRecords), Diablo II's grid inventory opened.
+func (am *AssetManager) Classic() bool { return am.classic }
+
 // RecordsLoaded reports whether the table at path has been loaded.
 func (am *AssetManager) RecordsLoaded(path string) bool {
 	am.recordsLoaded.mu.Lock()

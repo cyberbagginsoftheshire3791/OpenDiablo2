@@ -85,6 +85,11 @@ const (
 	// pkgJournal joined at J1 (24 Sep 2026): his diary, which replaces the
 	// quest log.
 	pkgJournal = "d2core/d2journal"
+	// pkgHero and pkgMapEngine joined at M5.3's tables burst (26 Sep 2026):
+	// the hero's body read from his manifest instead of charstats.txt, and an
+	// authored map's sound environment and name instead of levels.txt.
+	pkgHero      = "d2core/d2hero"
+	pkgMapEngine = "d2core/d2map/d2mapengine"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -417,7 +422,7 @@ var Register = []Entry{
 	{sym(pkgPlayer, "GameControls.combatStrike"), BucketWire, VerdictLive,
 		"F. Commits the Action against the first living adjacent enemy in D8 order -- it passes an EMPTY target and lets Combat.Commit choose, so the key and the harness field cannot drift apart. Reached from OnKeyDown.", ""},
 	{sym(pkgPlayer, "GameControls.combatTorch"), BucketWire, VerdictLive,
-		"L. One key: light, relight or douse, decided before anything is spent so that a refused commit changes nothing. Reached from OnKeyDown.", ""},
+		"L, and the right mouse button (Josh, 25 Sep 2026: one implementation, two bindings). One verb: light, relight or douse, decided before anything is spent so that a refused commit changes nothing. Reached from OnKeyDown and, in Strigoi's game, OnMouseButtonDown.", ""},
 	{sym(pkgPlayer, "GameControls.combatEndTurn"), BucketWire, VerdictLive,
 		"E. Ends the turn -- hold when the Action is unspent, end when it is spent. Reached from OnKeyDown. Without it a turn with an unspent Move waits forever.", ""},
 	{sym(pkgScreen, "Game.WorldHeldBy"), BucketWire, VerdictLive,
@@ -709,7 +714,20 @@ var Register = []Entry{
 	{sym(pkgPlayer, "GameControls.skillsAction"), BucketWire, VerdictLive,
 		"The skill key, the mini-panel's skill button and the add-skill button open Strigoi's talents, not Diablo II's skill tree.", ""},
 	{sym(pkgAsset, "AssetManager.EnsureRecords"), BucketWire, VerdictLive,
-		"The generated world's four tables load when it is built (generateAct1World, LoadStamp, NewObject); without the call a -classic game has no presets. The missiles and cast overlays load on the first cast (GameClient.handleCastSkillPacket); without it a right-click casts nothing.", ""},
+		"The generated world's tables load when it is built (generateAct1World, LoadStamp, NewObject, and since the tables burst MapEngine.ResetMap's level types); without the call a generated world has no presets. The missiles and cast overlays load on the first -classic cast (GameClient.handleCastSkillPacket); without it a right-click casts nothing. Diablo II's item tables load with the first item made (diablo2item.ItemFactory.NewItem) and the grid's layout when the grid first opens (Inventory.Load).", ""},
+	// M5.3's tables burst (26 Sep 2026): ten Diablo II tables left Strigoi's
+	// boot, and these are what reads Strigoi's data in their place. If one
+	// goes dark the game reads a zero where a table used to answer.
+	{sym(pkgAsset, "AssetManager.Classic"), BucketWire, VerdictLive,
+		"Which game this launch is: -classic loads Diablo II's fourteen tables at boot and keeps its hero, items, cast and levels; Strigoi's game loads four (d2app.initDataDictionaries) and reads its own data. Everything below asks it.", ""},
+	{sym(pkgHero, "Body"), BucketWire, VerdictLive,
+		"The hero's health, stamina and run drain from his manifest (hero.json), charstats.txt's amazon by default: HeroStateFactory.NewHeroStats for a new hero, StaminaRunDrain for every player built. The 240 pin is data here.", ""},
+	{sym(pkgMapEngine, "MapEngine.SetAuthoredRegion"), BucketWire, VerdictLive,
+		"An authored map's sound environment and name, from its map properties (MapGenerator.generateAuthored); without it the village is silent and nameless.", ""},
+	{sym(pkgMapEngine, "MapEngine.AuthoredRegion"), BucketWire, VerdictLive,
+		"What the game plays on the village instead of levels.txt's row: Game.Advance sets the sound environment from it once a second.", ""},
+	{sym(pkgPlayer, "HUD.renderHand"), BucketWire, VerdictLive,
+		"The HUD's two skill icons are his two hands in Strigoi's game -- the letters of the keys their verbs are on (F, L) until the art lands; renderLeftSkill and renderRightSkill draw them.", ""},
 	{sym(pkgMapGen, "MapGenerator.GenerateHostWorld"), BucketWire, VerdictLive,
 		"A client builds the world its host built, from the GenerateMap packet (GameClient.handleGenerateMapPacket) -- a local game's client too.", ""},
 	{sym(pkgPlayer, "miniPanel.buttonsReport"), BucketObserve, VerdictHarnessOnly,

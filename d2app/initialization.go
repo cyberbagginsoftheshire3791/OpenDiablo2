@@ -106,7 +106,9 @@ func (a *App) initLanguage() {
 
 func (a *App) initDataDictionaries() error {
 	// THE TABLES THE GAME READS (23 Sep 2026, M5.3's census): 14 of the 83
-	// Diablo II .txt tables this list used to load. 52 of the rest filled
+	// Diablo II .txt tables this list used to load -- 4 in Strigoi's game since
+	// the tables burst (26 Sep 2026, below), all 14 under -classic. 52 of the
+	// rest filled
 	// RecordManager fields that nothing outside d2core/d2records ever reads --
 	// LevelWarp, Books, MonProp, MonType, MonMode, ItemRatio, StorePage,
 	// Hireling, Gems, QualityItems, Runes, DifficultyLevels, AutoMap,
@@ -145,18 +147,48 @@ func (a *App) initDataDictionaries() error {
 	//
 	// AND TWO MORE LOAD LATER (history item 116): Missiles and Overlays are
 	// read only when a Diablo II skill is cast (a right-click, or a
-	// shift-click), and load then (GameClient.handleCastSkillPacket).
+	// shift-click, under -classic), and load then
+	// (GameClient.handleCastSkillPacket).
+	//
+	// AND TEN ARE DIABLO II'S GAME ONLY (26 Sep 2026, M5.3's tables burst):
+	// Strigoi's game reads its own data where these were read, and -classic
+	// loads them at boot exactly as before.
+	//   - Experience: the denominator of an experience bar whose numerator is
+	//     never written; NextLevelExp is 0 without it (Strigoi's experience is
+	//     d2progress).
+	//   - CharStats: the hero's health, stamina and run drain are the hero
+	//     manifest's (d2hero.Body), the 240 pin among them.
+	//   - Weapons, Armor, Misc: his loadout is his kit, so a new hero carries
+	//     no Diablo II item (d2inventory); they load with the first item made
+	//     (the debug spawnitem, the harness's item spawn: d2resource.ItemRecords).
+	//   - Skills, SkillDesc: the right button is the torch, as L is (Josh, 25
+	//     Sep 2026); the Janissary has no Diablo II skills and the cast path is
+	//     -classic's.
+	//   - Inventory: the grid panel's layout, loaded when that panel first
+	//     opens -- which Strigoi's game, with the kit, never does.
+	//   - LevelType, LevelDetails: the authored village's level type is the
+	//     region enum and its sound environment and name are the map's own
+	//     properties; they load with the generated world
+	//     (d2resource.GeneratedWorldRecords).
 	//
 	// The order is the old list's, filtered.
 	dictPaths := []string{
-		d2resource.LevelType,
-		d2resource.Weapons,
-		d2resource.Armor, d2resource.Misc,
 		d2resource.SoundSettings,
 		d2resource.MonStats, d2resource.MonStats2,
-		d2resource.CharStats, d2resource.Experience,
-		d2resource.LevelDetails, d2resource.Inventory, d2resource.Skills,
-		d2resource.SkillDesc, d2resource.SoundEnvirons,
+		d2resource.SoundEnvirons,
+	}
+
+	if a.asset.Classic() {
+		dictPaths = []string{
+			d2resource.LevelType,
+			d2resource.Weapons,
+			d2resource.Armor, d2resource.Misc,
+			d2resource.SoundSettings,
+			d2resource.MonStats, d2resource.MonStats2,
+			d2resource.CharStats, d2resource.Experience,
+			d2resource.LevelDetails, d2resource.Inventory, d2resource.Skills,
+			d2resource.SkillDesc, d2resource.SoundEnvirons,
+		}
 	}
 
 	a.Info("Initializing asset manager")

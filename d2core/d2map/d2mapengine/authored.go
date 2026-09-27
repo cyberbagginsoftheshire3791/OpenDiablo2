@@ -103,3 +103,28 @@ func (m *MapEngine) Inside(x, y int) bool {
 func (m *MapEngine) AuthoredImages() map[AuthoredKey]*image.RGBA {
 	return m.authoredImages
 }
+
+// authoredRegion is what an authored map says about its one region.
+type authoredRegion struct {
+	soundEnv int
+	name     string
+}
+
+// SetAuthoredRegion records an authored map's sound environment (a row of
+// soundenviron.txt: the song, the ambience and the day's random sounds) and
+// its display name -- the two things the game read from levels.txt for the
+// region, which an authored map now says itself (d2maptiled's map properties;
+// M5.3's tables burst). ResetMap clears it.
+func (m *MapEngine) SetAuthoredRegion(soundEnv int, name string) {
+	m.authoredRegion = &authoredRegion{soundEnv: soundEnv, name: name}
+}
+
+// AuthoredRegion returns the authored map's sound environment and display
+// name, and false on a generated map, whose region reads levels.txt.
+func (m *MapEngine) AuthoredRegion() (soundEnv int, name string, ok bool) {
+	if m.authoredRegion == nil {
+		return 0, "", false
+	}
+
+	return m.authoredRegion.soundEnv, m.authoredRegion.name, true
+}

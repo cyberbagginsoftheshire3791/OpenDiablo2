@@ -37,6 +37,15 @@ func TestShippedVillageLoads(t *testing.T) {
 		t.Fatalf("the player starts on a blocked tile %.1f,%.1f", m.StartX, m.StartY)
 	}
 
+	// Its sound environment and name are its own (M5.3's tables burst): the
+	// game no longer reads levels.txt for them. 1 is the environment
+	// levels.txt gave the Act 1 town the village stands in for, measured at
+	// a690dfc4 -- the song, the day ambience and the day sounds it has always
+	// played.
+	if m.SoundEnv != 1 || m.DisplayName == "" {
+		t.Errorf("sound_env %d, display_name %q; want 1 and a name", m.SoundEnv, m.DisplayName)
+	}
+
 	// The four speakers' stand-ins (data/strigoi/dialogue.json).
 	want := map[string]bool{"warriv1": false, "kashya": false, "charsi": false, "akara": false}
 	for _, n := range m.NPCs {

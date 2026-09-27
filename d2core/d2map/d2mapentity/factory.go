@@ -182,10 +182,10 @@ func (f *MapEntityFactory) NewPlayer(id, name string, x, y, direction int, heroT
 		body = compositeBody{composite}
 	}
 
-	drain := 0.0
-	if cs := f.asset.Records.Character.Stats[heroType]; cs != nil {
-		drain = float64(cs.StaminaRunDrain)
-	}
+	// The run drain is the hero manifest's in Strigoi's game, charstats.txt's
+	// under -classic (d2hero.StaminaRunDrain); NextLevelExp is 0 without
+	// experience.txt, which Strigoi's game does not load (M5.3's tables burst).
+	drain := d2hero.StaminaRunDrain(f.asset, heroType)
 
 	stats.NextLevelExp = f.asset.Records.GetExperienceBreakpoint(heroType, stats.Level)
 	stats.Stamina = float64(stats.MaxStamina)

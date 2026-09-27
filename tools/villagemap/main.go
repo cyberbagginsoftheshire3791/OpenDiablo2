@@ -530,7 +530,15 @@ func main() {
 		"infinite": false, "compressionlevel": -1,
 		"nextlayerid": 4, "nextobjectid": len(objects) + 1,
 		"properties": []prop{{Name: "note", Type: "string",
-			Value: "M5.4 v0 village. ALL TILE ART IS PLACEHOLDER (tools/villagemap); the layout is a proposal from S1 section 9.1 and G4, Josh decides."}},
+			Value: "M5.4 v0 village. ALL TILE ART IS PLACEHOLDER (tools/villagemap); the layout is a proposal from S1 section 9.1 and G4, Josh decides."},
+			// The two things the game read from Diablo II's levels.txt for the
+			// village's region (M5.3's tables burst, 26 Sep 2026): sound
+			// environment 1 is the one levels.txt gave the Act 1 town the
+			// village stands in for (measured at a690dfc4) -- its song, day
+			// ambience and day sounds -- and the name is a description, not a
+			// name the design has given it.
+			{Name: "sound_env", Type: "int", Value: 1},
+			{Name: "display_name", Type: "string", Value: "Village"}},
 		"layers": []any{
 			layer(1, "floor", floor),
 			layer(2, "walls", walls),
@@ -544,8 +552,9 @@ func main() {
 		}},
 	}
 
-	// "note" is a map property, not a tile property: d2maptiled reads tile
-	// properties only, so it is documentation to whoever opens the file.
+	// "note" is a map property d2maptiled ignores: documentation to whoever
+	// opens the file. sound_env and display_name it reads (its "Map
+	// properties").
 	out, err := json.MarshalIndent(m, "", " ")
 	if err != nil {
 		log.Fatal(err)

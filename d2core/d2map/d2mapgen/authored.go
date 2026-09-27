@@ -229,6 +229,13 @@ func (g *MapGenerator) generateAuthored(p string) (sha string, err error) {
 		}
 	}
 
+	// The map's sound environment is a row of soundenviron.txt (loaded at
+	// boot); one it does not have would be a nil the sound engine reads
+	// every second.
+	if m.SoundEnv != 0 && g.asset.Records.Sound.Environment[m.SoundEnv] == nil {
+		return "", fmt.Errorf("%s: sound_env %d names no soundenviron.txt row", p, m.SoundEnv)
+	}
+
 	// Act 1 town: the region every Strigoi system and the palette are keyed
 	// to (the renderer builds its tile cache only for a level type with a
 	// nonzero ID, and the client refuses a region it does not know).
@@ -264,6 +271,7 @@ func (g *MapGenerator) generateAuthored(p string) (sha string, err error) {
 
 	g.engine.SetAuthored(images, math.Floor(m.StartX), math.Floor(m.StartY))
 	g.engine.SetInside(m.Inside)
+	g.engine.SetAuthoredRegion(m.SoundEnv, m.DisplayName)
 	g.Infof("authored map %s: %dx%d tiles, %d tile kinds, %d npc(s)", p, m.Width, m.Height, len(m.Kinds), len(m.NPCs))
 
 	sum := sha256.Sum256(data)

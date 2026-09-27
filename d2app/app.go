@@ -98,6 +98,9 @@ type Options struct {
 	strings  *string
 	Server   *d2networking.ServerOptions
 	LogLevel *d2util.LogLevel
+
+	// classic is -classic: Diablo II's game (d2asset.AssetManager.Classic).
+	classic bool
 }
 
 const (
@@ -133,6 +136,9 @@ func Create(gitBranch, gitCommit string) *App {
 	app.SetLevel(*app.Options.LogLevel)
 
 	app.asset, app.errorMessage = d2asset.NewAssetManager(*app.Options.LogLevel)
+	if app.asset != nil {
+		app.asset.SetClassic(app.Options.classic)
+	}
 
 	return app
 }
@@ -256,6 +262,7 @@ func (a *App) parseArguments() {
 	})
 
 	launch := resolveLaunch(*classic, given)
+	a.Options.classic = *classic
 
 	d2server.SetPort(*serverPort)
 

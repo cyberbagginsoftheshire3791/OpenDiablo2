@@ -4,12 +4,33 @@ import (
 	"fmt"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 )
 
-// NewInventoryItemFactory creates a new InventoryItemFactory and initializes it
+// NewInventoryItemFactory creates a new InventoryItemFactory and initializes it.
+//
+// STRIGOI'S HERO CARRIES NO DIABLO II ITEM (M5.3's tables burst, 26 Sep
+// 2026). His loadout is his kit -- items.json's loadouts, chosen at first
+// entry and kept beside the save (d2items) -- so in Strigoi's game
+// DefaultHeroItems is empty for every class and weapons.txt and armor.txt are
+// not read for it. The equipment it made was used for exactly one thing: the
+// layers and weapon class of a Diablo II composite hero, which Strigoi's game
+// draws only when his sheets are refused (or -hero diablo asks for it). That
+// composite now holds nothing, in the constant hand-to-hand weapon class an
+// empty hand reports (InventoryItemWeapon.GetWeaponClass). -classic still
+// dresses each class from Diablo II's tables, the amazon with her javelin and
+// buckler.
 func NewInventoryItemFactory(asset *d2asset.AssetManager) (*InventoryItemFactory, error) {
-	factory := &InventoryItemFactory{asset: asset}
+	factory := &InventoryItemFactory{asset: asset, DefaultHeroItems: HeroObjects{}}
+
+	if !asset.Classic() {
+		return factory, nil
+	}
+
+	if err := asset.EnsureRecords(d2resource.Weapons, d2resource.Armor); err != nil {
+		return nil, err
+	}
 
 	err := factory.loadHeroObjects()
 	if err != nil {

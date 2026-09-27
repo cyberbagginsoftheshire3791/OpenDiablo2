@@ -186,13 +186,13 @@ func NewGameControls(
 			Height: manaGlobeHeight,
 		}},
 	}
-	inventoryRecord := asset.Records.Layout.Inventory[inventoryRecordKey]
-
 	heroStatsPanel := NewHeroStatsPanel(asset, ui, hero.Name(), hero.Class, l, hero.Stats)
 
 	questLog := NewQuestLog(asset, ui, l, audioProvider, hero.Act)
 
-	inventory, err := NewInventory(asset, ui, l, hero.Gold, inventoryRecord)
+	// The grid's layout (inventory.txt) is read when the grid first opens,
+	// not here: Strigoi's game, with the kit, never opens it.
+	inventory, err := NewInventory(asset, ui, l, hero.Gold, inventoryRecordKey)
 	if err != nil {
 		return nil, err
 	}
@@ -639,10 +639,15 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 			return true
 		}
 
-		if event.KeyMod() == d2enum.KeyModShift {
-			g.inputListener.OnPlayerCast(g.hero.LeftSkill.ID, px, py)
-		} else {
+		// Shift-click is Diablo II's cast of the left skill, and only
+		// -classic's: in Strigoi's game it does nothing (Josh, 25 Sep 2026).
+		switch {
+		case event.KeyMod() != d2enum.KeyModShift:
 			g.inputListener.OnPlayerMove(px, py)
+		case g.asset.Classic():
+			g.inputListener.OnPlayerCast(g.hero.LeftSkill.ID, px, py)
+		default:
+			return true
 		}
 
 		if g.FreeCam {
@@ -664,7 +669,10 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 		return true
 	}
 
-	if isRight && shouldDoRight && inRect && !g.hero.IsCasting() {
+	// A HELD right button re-casts Diablo II's right skill under -classic. In
+	// Strigoi's game the right button is the torch, one press one verb, as a
+	// key is: held, it would light and douse on every repeat.
+	if isRight && shouldDoRight && inRect && !g.hero.IsCasting() && g.asset.Classic() {
 		g.lastRightBtnActionTime = now
 
 		g.inputListener.OnPlayerCast(g.hero.RightSkill.ID, px, py)
@@ -803,6 +811,13 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 			return true
 		}
 
+		// Shift-click is Diablo II's cast of the left skill, and only
+		// -classic's: in Strigoi's game it does nothing -- no cast, no walk,
+		// and the sheet stays as it was (Josh, 25 Sep 2026).
+		if event.KeyMod() == d2enum.KeyModShift && !g.asset.Classic() {
+			return true
+		}
+
 		// A left click on empty ground orders a walk and closes the sheet
 		// (ruled ask 6: the sheet closes on deselect).
 		g.closeSquadSheet()
@@ -812,6 +827,21 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 		} else {
 			g.inputListener.OnPlayerMove(px, py)
 		}
+
+		return true
+	}
+
+	// THE RIGHT BUTTON IS THE TORCH (Josh, 25 Sep 2026): light, relight or
+	// douse, exactly as L -- the same combatTorch, one implementation and two
+	// bindings, so in a fight it costs the Action and is refused once the
+	// Action is spent, as L is. Like L it is not held back while a swing is
+	// in flight (IsCasting): a strike spends the Action and its swing runs
+	// on, and the torch pressed then must be refused, not dropped. The left
+	// button owns the blade hand. Diablo II's cast of the right skill is
+	// -classic's, below.
+	if event.Button() == d2enum.MouseButtonRight && !g.isInActiveMenusRect(mx, my) && !g.asset.Classic() {
+		g.lastRightBtnActionTime = g.clock
+		g.combatTorch()
 
 		return true
 	}
@@ -1038,7 +1068,14 @@ func (g *GameControls) onCloseHeroStatsPanel() {
 	g.updateLayout()
 }
 
+// toggleLeftSkillPanel and toggleRightSkillPanel open Diablo II's skill
+// choice from the HUD's two skill icons -- -classic's: Strigoi's hero has no
+// Diablo II skills to choose from, and the icons are his two hands.
 func (g *GameControls) toggleLeftSkillPanel() {
+	if !g.asset.Classic() {
+		return
+	}
+
 	if !g.HelpOverlay.IsOpen() {
 		g.clearScreen()
 		g.hud.skillSelectMenu.ToggleLeftPanel()
@@ -1046,6 +1083,10 @@ func (g *GameControls) toggleLeftSkillPanel() {
 }
 
 func (g *GameControls) toggleRightSkillPanel() {
+	if !g.asset.Classic() {
+		return
+	}
+
 	if !g.HelpOverlay.IsOpen() {
 		g.clearScreen()
 		g.hud.skillSelectMenu.ToggleRightPanel()
