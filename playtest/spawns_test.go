@@ -35,14 +35,14 @@ import (
 //     can be taken back out again.
 //
 // M4.6 B1 (26 Sep 2026) rides along, because this script already forces the
-// arrivals and steps the tables the world save's fields describe: act 6 checks
-// that an arrival moves the spawner's arrival count, the next group number and
-// the stream's draws by amounts the other numbers bound; act 6c reads every
-// field B1 added -- each stream's seed against the run's, the world draws
-// against the digest's rng part, one draw per roll at a chance of zero, the
-// tables' clock toward their next check against the minutes stepped, one light
-// id per torch, the screen's bookkeeping against the systems it shadows -- and
-// after act 7 the chase reports its last solve.
+// arrivals and steps the tables the world save's fields describe. Act 6c reads
+// every field B1 added -- each stream's seed against the run's, the world draws
+// against the digest's rng part, the tables' clock toward their next check
+// against the minutes stepped, one draw per roll at a chance of zero, a forced
+// arrival moving the spawner's arrival count, the next group number and the
+// stream by amounts the other numbers bound, one light id per torch, the
+// screen's bookkeeping against the systems it shadows -- and after act 7 the
+// chase reports its last solve.
 func TestSpawns(t *testing.T) {
 	s := start(t)
 
@@ -336,8 +336,6 @@ func TestSpawns(t *testing.T) {
 		"system": "spawns", "field": "chance", "value": 100,
 	})
 
-	arrivalsBefore := markArrivals(t, s) // M4.6 B1
-
 	for i := 0; i < 12 && num(spawnsState(s), "groups") == 0; i++ {
 		s.call("strigoi_step_world", map[string]any{"world_minutes": 6})
 	}
@@ -348,8 +346,6 @@ func TestSpawns(t *testing.T) {
 			int(num(arrived, "checks")), int(num(arrived, "rolls")),
 			int(num(arrived, "spawn_failures")))
 	}
-
-	checkArrivals(t, s, arrivalsBefore) // M4.6 B1
 
 	// THE NEWEST GROUP, NOT group_list[0], AND STEP 5 IS WHY. Until M4.5 step
 	// 5 nothing in the game could move a group's morale, so any live group
@@ -674,7 +670,7 @@ func systemState(s *session, name string) map[string]any {
 	return sub(s.call("strigoi_get_system_state", map[string]any{"system": name}), "state")
 }
 
-// arrivalMark is what act 6 reads before a forced arrival.
+// arrivalMark is what act 6c reads before a forced arrival.
 type arrivalMark struct {
 	arrival, nextID, failures, draws, rolls float64
 }
@@ -709,33 +705,33 @@ func checkArrivals(t *testing.T, s *session, before arrivalMark) {
 	failures := after.failures - before.failures
 
 	if groups < 1 {
-		t.Fatalf("act 6 (M4.6 B1): a group arrived but next_id did not move (%.0f -> %.0f)", before.nextID, after.nextID)
+		t.Fatalf("act 6c: a forced arrival must spend a group number; next_id %.0f -> %.0f", before.nextID, after.nextID)
 	}
 
 	if arrivals < groups || arrivals > groups+failures {
-		t.Fatalf("act 6 (M4.6 B1): %.0f group(s) and %.0f failure(s) must mean %.0f..%.0f arrival(s); "+
+		t.Fatalf("act 6c: %.0f group(s) and %.0f failure(s) must mean %.0f..%.0f arrival(s); "+
 			"the spawner reports %.0f", groups, failures, groups, groups+failures, arrivals)
 	}
 
 	if draws, rolls := after.draws-before.draws, after.rolls-before.rolls; draws < rolls || rolls < 1 {
-		t.Fatalf("act 6 (M4.6 B1): %.0f roll(s) must draw at least %.0f value(s); the stream moved %.0f",
+		t.Fatalf("act 6c: %.0f roll(s) must draw at least %.0f value(s); the stream moved %.0f",
 			rolls, rolls, draws)
 	}
 
 	scene := systemState(s, "scene")
 	if n, known := len(asList(scene["bodies"])), mustNum(t, combatState(s), "bodies_known"); float64(n) != known || n == 0 {
-		t.Fatalf("act 6 (M4.6 B1): the arrival's bodies must be on the scene, one per body combat knows; "+
+		t.Fatalf("act 6c: the arrival's bodies must be on the scene, one per body combat knows; "+
 			"scene lists %d, combat knows %.0f", n, known)
 	}
 
 	for _, raw := range asList(scene["bodies"]) {
 		b, _ := raw.(map[string]any)
 		if h, m := mustNum(t, b, "health"), mustNum(t, b, "max_health"); m < 1 || h > m {
-			t.Fatalf("act 6 (M4.6 B1): a body reads %.0f of %.0f health: %v", h, m, b)
+			t.Fatalf("act 6c: a body reads %.0f of %.0f health: %v", h, m, b)
 		}
 	}
 
-	t.Logf("act 6 (M4.6 B1) PASS: %.0f group(s), %.0f arrival(s), %.0f failure(s); %.0f draw(s) for %.0f roll(s); "+
+	t.Logf("act 6c PASS: %.0f group(s), %.0f arrival(s), %.0f failure(s); %.0f draw(s) for %.0f roll(s); "+
 		"%d bodies with their health on the scene",
 		groups, arrivals, failures, after.draws-before.draws, after.rolls-before.rolls, len(asList(scene["bodies"])))
 }
@@ -830,6 +826,36 @@ func saveFieldsAct(t *testing.T, s *session, seer string) {
 		t.Fatalf("act 6c: with one-minute checks the tables are never a minute from the last: %.4f", since)
 	}
 
+	// --- a forced arrival: the arrival count, the group number, the stream --
+	//
+	// ITS OWN ARRIVAL, NOT ACT 6'S. The first run of this act read across act
+	// 6's loop and failed on its premise: that loop only steps while no group
+	// is alive, and on seed 1462 two were already out after act 5, so nothing
+	// arrived and next_id sat at 3. Here the arrival is forced and waited for,
+	// under a raised cap so a full map cannot starve it, and sent home after.
+	maxGroups := mustNum(t, after, "max_groups")
+
+	setField(s, "spawns", "max_groups", mustNum(t, after, "groups")+4)
+	setField(s, "spawns", "chance", 100)
+
+	mark := markArrivals(t, s)
+
+	for i := 0; i < 10 && mustNum(t, spawnsState(s), "next_id") == mark.nextID; i++ {
+		s.call("strigoi_step_world", map[string]any{"world_minutes": 1})
+	}
+
+	checkArrivals(t, s, mark)
+
+	for _, raw := range asList(spawnsState(s)["group_list"]) {
+		g, _ := raw.(map[string]any)
+
+		var n float64
+		if _, err := fmt.Sscanf(str(g, "group"), "g:%f", &n); err == nil && n >= mark.nextID {
+			setField(s, "spawns", "despawn", str(g, "group"))
+		}
+	}
+
+	setField(s, "spawns", "max_groups", maxGroups)
 	setField(s, "spawns", "chance", chance)
 	setField(s, "spawns", "check_minutes", checkMinutes)
 

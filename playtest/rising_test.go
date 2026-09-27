@@ -180,14 +180,27 @@ func TestRising(t *testing.T) {
 	}
 
 	// And the corpse registry's three maps tie each Downed body to the man it
-	// walked as: nobody walks now (walker empty), each body remembers its last
-	// walker, and that walker's risen_as leads back to the same body.
+	// walked as: nobody walks now (walker empty), each of the two bodies
+	// remembers its last walker, and that walker's risen_as leads back to the
+	// same body. risen_as is EVERY member a body has walked as, not one per
+	// body: the first run of this act found dead:3 -- the man risen under his
+	// spade, beside him -- had walked as ten, cut down and standing again on
+	// his Downed window all night. So every risen_as entry must name one of
+	// the two bodies, and there are at least two.
 	c = corpsesState(s)
 	risenAs, walker, last := saveBlock(t, c, "risen_as"), c["walker"], saveBlock(t, c, "last")
 
-	if w, _ := walker.(map[string]any); w == nil || len(w) != 0 || len(last) != 2 || len(risenAs) != 2 {
+	if w, _ := walker.(map[string]any); w == nil || len(w) != 0 || len(last) != 2 || len(risenAs) < 2 {
 		t.Fatalf("act 3: two walked and both lie down: risen_as %v walker %v last %v", risenAs, walker, last)
 	}
+
+	for member, body := range risenAs {
+		if id, _ := body.(string); last[id] == nil {
+			t.Fatalf("act 3: %s walked as %v, which is none of the bodies that rose (%v)", member, body, last)
+		}
+	}
+
+	t.Logf("act 3 (M4.6 B1): the two bodies walked as %d member(s) between them; last %v", len(risenAs), last)
 
 	now := worldMinutes(t, s)
 
