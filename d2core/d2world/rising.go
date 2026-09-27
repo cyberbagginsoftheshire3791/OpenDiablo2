@@ -72,13 +72,18 @@ type Rising struct {
 	stoodAgain int
 
 	// wander stands a nameless dead man up at the edge (step 5) and says who
-	// and where; nil in tests that do not want him.
-	wander   func() (string, float64, float64)
-	wandered int
+	// and where; nil in tests that do not want him. wanderWas is what his
+	// body says he was: a man he cannot know (Corpse.Was).
+	wander    func() (string, float64, float64)
+	wanderWas string
+	wandered  int
 }
 
-// SetWander attaches what stands the edge floor's wanderers up.
-func (r *Rising) SetWander(fn func() (string, float64, float64)) { r.wander = fn }
+// SetWander attaches what stands the edge floor's wanderers up, and what the
+// hover calls one before the priest's tale (the bestiary's words, 27 Sep).
+func (r *Rising) SetWander(fn func() (string, float64, float64), was string) {
+	r.wander, r.wanderWas = fn, was
+}
 
 // SetClock attaches the world minutes a Downed man's window is measured on.
 func (r *Rising) SetClock(now func() float64) { r.now = now }
@@ -212,7 +217,7 @@ func (r *Rising) wanderers() {
 		r.wandered++
 		id := fmt.Sprintf("wanderer:%d", r.wandered)
 
-		r.corpses.FallHuman(id, x, y)
+		r.corpses.FallHuman(id, r.wanderWas, x, y)
 
 		if r.corpses.Rise(id) {
 			r.corpses.Raised(id, member)

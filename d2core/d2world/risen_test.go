@@ -91,9 +91,9 @@ func TestLayDownDead(t *testing.T) {
 // A risen man who falls is the same body, open again where he fell -- once.
 func TestCorpsesRisenFallsAsHimself(t *testing.T) {
 	open := 0
-	c := NewCorpses(nil, func(d int) { open += d })
+	c := NewCorpses(nil, nil, func(d int) { open += d })
 
-	c.FallHuman("dead:1", 1, 1)
+	c.FallHuman("dead:1", "", 1, 1)
 	require.True(t, c.Rise("dead:1"))
 	c.Raised("dead:1", "m:7")
 	require.Equal(t, 0, open)
@@ -164,8 +164,8 @@ func TestRisingRaisesAndHearsFirstLight(t *testing.T) {
 	dials.P = 1
 
 	r, corpses, night := newTestRising(t, dials)
-	corpses.FallHuman("stands", 0, 0)
-	corpses.FallHuman("cannot", 0, 0)
+	corpses.FallHuman("stands", "", 0, 0)
+	corpses.FallHuman("cannot", "", 0, 0)
 
 	var order []string
 

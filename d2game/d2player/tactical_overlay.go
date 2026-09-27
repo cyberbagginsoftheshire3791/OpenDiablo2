@@ -314,9 +314,18 @@ func (h *HUD) nameOf(id, playerID string) string {
 	}
 
 	if e, ok := h.mapEngine.Entities()[id]; ok {
-		if name := strings.TrimSpace(e.Label()); name != "" {
-			return name
-		}
+		return h.logName(e)
+	}
+
+	return TacticalSomething
+}
+
+// logName is one entity's name in the combat log: the name the hover gives
+// him (nameFor), so a risen man is called what he was until the priest's tale
+// here too -- or "Something" for one with none.
+func (h *HUD) logName(e d2interface.MapEntity) string {
+	if name := strings.TrimSpace(h.nameFor(e)); name != "" {
+		return name
 	}
 
 	return TacticalSomething

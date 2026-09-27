@@ -29,14 +29,19 @@ type CorpseHolder interface {
 	Dig() error
 	// Search goes through the dead man at his feet (J2b).
 	Search() error
-	// DeadName is what the hover calls one of the dead, or "" (M4.7 Q6a).
+	// DeadName is what one of the dead is called, or "" (M4.7 Q6a; before
+	// the priest's tale, what he was in life -- 27 Sep 2026).
 	DeadName(id string) string
 }
 
-// hoverLabel is what the hover calls an entity: a villager's ROLE (T4), one
-// of the dead's name once he knows them (M4.7 Q6a), or its own label. The HUD
-// and the harness both read it, so what a script asserts is what is drawn.
-func (g *GameControls) hoverLabel(e d2interface.MapEntity) string {
+// nameFor is what the player is shown for an entity, wherever he is shown a
+// name -- the hover and the combat log alike: a villager's ROLE (T4), one of
+// the dead's name (DeadName: what he was in life until the priest's tale, the
+// dead after), or its own label. EVERY place that names a creature to the
+// player goes through here; the combat log once read Label and called a risen
+// man by the name the hover withheld. The HUD and the harness both read it, so
+// what a script asserts is what is drawn.
+func (g *GameControls) nameFor(e d2interface.MapEntity) string {
 	if g.talkHolder != nil {
 		if role := g.talkHolder.RoleFor(nameKey(e)); role != "" {
 			return role

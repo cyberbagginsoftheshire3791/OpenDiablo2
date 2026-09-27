@@ -99,15 +99,25 @@ func TestShippedBestiary(t *testing.T) {
 	}
 
 	// M5.1b: the risen dead's own art at the numbers they had before it --
-	// the men's max health (84, measured on the village) -- and the men's
-	// name, which is what the hover calls a risen man until the priest's
-	// tale (R2 §1, Q6a: no name until the hearth).
+	// the men's max health (84, measured on the village). Its name is what
+	// one of the dead is called AFTER the priest's tale; before it he is
+	// called what he was in life (Josh's ruling of 27 Sep 2026), which is
+	// the_dead_were's or his row's -- never this.
 	strigoi, ok := catalog.ForSpawnRow("risen")
 	if !ok {
 		t.Fatal("shipped bestiary draws nothing for the risen row")
 	}
-	if strigoi.ID != "strigoi" || strigoi.StandIn != "fallen1" || strigoi.MaxHealth != 84 || strigoi.Name != "Opportunist" {
+	if strigoi.ID != "strigoi" || strigoi.StandIn != "fallen1" || strigoi.MaxHealth != 84 || strigoi.Name != "the dead" {
 		t.Fatalf("shipped strigoi = %+v", strigoi)
+	}
+	were := catalog.DeadWere()
+	if were.PlacedDead != "A fallen soldier" || were.Wanderer != "A stranger" {
+		t.Fatalf("shipped the_dead_were = %+v, want the 27 Sep labels", were)
+	}
+	for _, live := range []string{were.PlacedDead, were.Wanderer, opportunist.Name} {
+		if live == strigoi.Name {
+			t.Fatalf("a risen man before the tale would be called %q, the dead's own name", live)
+		}
 	}
 	for mode, path := range sheetsOf(strigoi) {
 		if !strings.HasPrefix(path, "/data/strigoi/creatures/strigoi/") {
@@ -259,4 +269,33 @@ func sheetsOf(e Entry) map[string]string {
 	}
 
 	return out
+}
+
+// the_dead_were is optional and whole: absent reads as nothing, present is
+// trimmed, and half of it is refused (the game refuses a bestiary without it:
+// d2gamescreen deadNamesFrom).
+func TestLoadReadsTheDeadWere(t *testing.T) {
+	one := `{"id":"one","name":"One","stand_in":"fallen1","animations":{"idle":"/o.png"},"max_health":1}`
+
+	catalog, err := Load([]byte(`{"creatures":[` + one + `],
+  "the_dead_were": {"placed_dead": " A fallen soldier ", "wanderer": "A stranger"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := catalog.DeadWere(); got != (DeadWere{PlacedDead: "A fallen soldier", Wanderer: "A stranger"}) {
+		t.Fatalf("DeadWere = %+v", got)
+	}
+
+	bare, err := Load([]byte(`{"creatures":[` + one + `]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := bare.DeadWere(); got != (DeadWere{}) {
+		t.Fatalf("absent the_dead_were reads as nothing, got %+v", got)
+	}
+
+	_, err = Load([]byte(`{"creatures":[` + one + `], "the_dead_were": {"placed_dead": "A fallen soldier"}}`))
+	if err == nil || !strings.Contains(err.Error(), "the_dead_were") {
+		t.Fatalf("half a the_dead_were must be refused, got %v", err)
+	}
 }

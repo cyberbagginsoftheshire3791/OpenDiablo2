@@ -102,8 +102,9 @@ func (v *Game) keepWatch() {
 	}
 }
 
-// dawnWatch settles the night at dawn: the watch stood or broken, and the
-// byre his to ask for again.
+// dawnWatch settles the night once it is over -- dawn, or full day after a
+// labour or a sleep carried him past dawn (BUG-17): the watch stood or broken,
+// and the byre his to ask for again.
 func (v *Game) dawnWatch() {
 	if v.dialogue == nil || v.standing == nil {
 		return

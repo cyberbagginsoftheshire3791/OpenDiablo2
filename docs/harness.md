@@ -153,8 +153,10 @@ this doc fails until it agrees.
   used for the art readability review. Since M5.1b (27 Sep 2026) each creature's
   script also asserts the sheet it is drawn from (its own idle sheet, not a
   name that happens to match) and its authored bestiary speed, and the
-  strigoi -- the risen dead's art, named for the men until the hearth -- has
-  its own, `TestStrigoiStillInGame`.
+  strigoi -- the risen dead's art -- has its own, `TestStrigoiStillInGame`.
+  Since 27 Sep 2026 the strigoi is named "the dead", what one of the dead is
+  called after the priest's tale; before it the game calls a risen man what
+  he was in life (`hearth_test.go`, `dead_walk_test.go`).
 * `tactical_test.go` — the twentieth, T1 (23 Sep 2026): the tactical layer
   in a real launch at the SHIPPED combat dials. The fight opens while the enemy
   is still out of reach and the enemy stops; the world is held for the player's
@@ -252,6 +254,11 @@ this doc fails until it agrees.
   lower the count; a dog he kills falls as carrion (Q1a) -- the count rises
   and X will not stake a carcass. A screenshot shows the placeholder marks.
   The "corpses" provider reports every body and counts by state and class.
+  Since 27 Sep 2026 each body also reports `was` -- what the man was in life,
+  which is what a risen man is called before the priest's tale: "A fallen
+  soldier" for Night 1's dead, "A stranger" for a wanderer, a slain man's row's
+  name ("Opportunist"); the words are `data/strigoi/bestiary.json`'s -- and
+  `walks_as`, the member a risen body walks as now ("" when it lies).
 * `rising_test.go` — the thirtieth, M4.7 step 2 (23 Sep 2026): the open dead
   rise in the deep night. One of Night 1's dead is staked (X), one laid in a
   hasty grave (D, 30 world minutes), and D over the staked body is refused
@@ -281,14 +288,31 @@ this doc fails until it agrees.
   stands up at the edge of the night, with a body. Since M5.1b (27 Sep 2026)
   act 3 also asserts every risen man in the fight is drawn from the strigoi's
   own sheets (the `sheet` his entity reports, which `strigoi_describe_sprite`
-  loads as eight directions of 96-pixel frames) at the men's max health, 84.
+  loads as eight directions of 96-pixel frames) at the men's max health, 84,
+  and since 27 Sep (review B2) at the bestiary strigoi's `speed`, read from
+  the data file, so the natural-spawn path's speed has a test (the control
+  authored 6 and reverted `gameSpawner.Spawn` to the stand-in's). Since
+  27 Sep too, act 6 hovers the wanderer ("A stranger", before the priest's
+  tale) and one of the four standing a second time (still "A fallen
+  soldier"). `TestASlainManRises`, in the same file: at dusk the tables send
+  the men's row at certainty (max_groups 3, every other group sent home), he
+  walks to them by torchlight and kills one; the control sees the slain man's
+  remains in the entity list; at odds 1 the next deep-night band stands the
+  body up as a new member, and the remains are gone from the map (review C1:
+  a body standing for the first time left them lying under him); before the
+  tale the hover calls him "Opportunist"; and at the shipped human control
+  (the combat panel is drawn only in a paced fight) he lets the dead come,
+  ends his turns, and the combat log -- the `ui` provider's `tactical_lines`
+  -- calls the risen man "Opportunist" too, with no blow line naming "the
+  dead".
 * `hearth_test.go` — the thirty-second, M4.7 step 4 (23 Sep 2026): the priest's
   rite, the hearth unlock, and a staking seen. By day with the village
   "watching" (`village.seen_radius` wide) a stake costs standing 5 and marks
   `seen_staking`; a second costs nothing more. The controls: a hasty grave
   dug before the rite is granted is still hasty after first light, and a
   risen man before the priest's tale carries no bar and the hover calls him
-  what his body was -- "Opportunist", the men's name, even drawn as the
+  what he was in life -- one of Night 1's dead is "A fallen soldier" (Josh's
+  ruling of 27 Sep 2026; his body's `was` says so too), even drawn as the
   strigoi since M5.1b -- not the dead. At the hearth the priest tells the tale and grants the
   rite; the next night the risen man carries a bar and the hover names him
   "the dead", and at first light the priest closes the grave. `village` now
@@ -920,7 +944,12 @@ and `open_close` -- each `{x, y, w, h, visible}` in screen pixels, so a script
 clicks where they are drawn), and since 24 Sep `world_held_by` (what holds the
 world, `Game.WorldHeldBy`: `""` while it runs, `escape_menu`, `loadout`,
 `talk`, `journal`, `fight`; `"unknown"` if the game screen never attached --
-`strigoi_step_world` refuses all but `""` and `fight` with `WORLD_HELD`).
+`strigoi_step_world` refuses all but `""` and `fight` with `WORLD_HELD`), and
+since 27 Sep `tactical_lines` (the combat panel's five lines as drawn, colour
+tokens and all -- the round, the pips, the keys and the last two blows, which
+are the combat log -- or none when the panel is not shown). `hover_label` is
+what the hover shows under the cursor, from the same naming function the
+combat log uses (`GameControls.nameFor`).
 Read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
 register when the game screen is constructed and close on unload.

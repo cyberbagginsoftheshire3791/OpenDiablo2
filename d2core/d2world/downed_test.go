@@ -11,7 +11,7 @@ import (
 func downedAt(t *testing.T, c *Corpses, clock *float64, id string, at float64) {
 	t.Helper()
 
-	c.FallHuman(id, 0, 0)
+	c.FallHuman(id, "", 0, 0)
 	require.True(t, c.Rise(id))
 	c.Raised(id, "m:"+id)
 
@@ -86,7 +86,7 @@ func TestDownedStandsCertainlyNextBand(t *testing.T) {
 	now := 0.0
 	corpses.SetClock(func() float64 { return now })
 	downedAt(t, corpses, &now, "lay", 10)
-	corpses.FallHuman("open", 0, 0)
+	corpses.FallHuman("open", "", 0, 0)
 
 	night.set(0, StageNight)
 	r.Advance()
@@ -145,8 +145,8 @@ func TestCommitStakeIsAnAction(t *testing.T) {
 // cut down the fight does not end -- he lies Downed and may stand; it ends
 // when he is staked. A dog's death ends its fight at once (the control).
 func TestTheFightHoldsForTheDowned(t *testing.T) {
-	corpses := NewCorpses(nil, nil)
-	corpses.FallHuman("body", 41, 40)
+	corpses := NewCorpses(nil, nil, nil)
+	corpses.FallHuman("body", "", 41, 40)
 	require.True(t, corpses.Rise("body"))
 	corpses.Raised("body", "d:1")
 
@@ -171,7 +171,7 @@ func TestTheFightHoldsForTheDowned(t *testing.T) {
 
 	// The control: a dog cut down ends the fight on the blow.
 	g := newResolverFight(t, 1)
-	g.c.SetCorpses(NewCorpses(nil, nil))
+	g.c.SetCorpses(NewCorpses(nil, nil, nil))
 	g.add(t, "dog:1", 1, Profile{Group: "g:2", Row: "dogs", Speed: 3, DamageMin: 3, DamageMax: 6, Count: 1})
 	g.morale.morale["g:2"] = 50
 	g.open(t)
@@ -187,8 +187,8 @@ func TestTheFightHoldsForTheDowned(t *testing.T) {
 // the player stands within the disengage distance of him (the first-night
 // probe: an unstaked risen stood again eight times and killed him).
 func TestWalkAwayFromTheDowned(t *testing.T) {
-	corpses := NewCorpses(nil, nil)
-	corpses.FallHuman("body", 41, 40)
+	corpses := NewCorpses(nil, nil, nil)
+	corpses.FallHuman("body", "", 41, 40)
 	require.True(t, corpses.Rise("body"))
 	corpses.Raised("body", "d:1")
 

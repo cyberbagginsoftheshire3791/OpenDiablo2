@@ -18,7 +18,7 @@ func newTestRising(t *testing.T, dials RisingDials) (*Rising, *Corpses, *fakeNig
 	t.Helper()
 
 	night := &fakeNight{band: -1, stage: StageDay}
-	corpses := NewCorpses(nil, nil)
+	corpses := NewCorpses(nil, nil, nil)
 	r := NewRising(corpses, func() int { return night.band }, func() Stage { return night.stage }, 1462, dials)
 
 	return r, corpses, night
@@ -31,8 +31,8 @@ func TestRisingRate(t *testing.T) {
 	r, corpses, night := newTestRising(t, dials)
 
 	for i := 0; i < 200; i++ {
-		corpses.FallHuman(fmt.Sprintf("open:%d", i), 0, 0)
-		corpses.FallHuman(fmt.Sprintf("closed:%d", i), 0, 0)
+		corpses.FallHuman(fmt.Sprintf("open:%d", i), "", 0, 0)
+		corpses.FallHuman(fmt.Sprintf("closed:%d", i), "", 0, 0)
 		corpses.Close(fmt.Sprintf("closed:%d", i))
 		corpses.Fall(fmt.Sprintf("dog:%d", i), "dogs", 0, 0)
 	}
@@ -71,7 +71,7 @@ func TestRisingHastyGrave(t *testing.T) {
 		dials.P, dials.HastyWeight = 1, c.weight
 
 		r, corpses, night := newTestRising(t, dials)
-		corpses.FallHuman("grave", 0, 0)
+		corpses.FallHuman("grave", "", 0, 0)
 		corpses.Bury("grave")
 
 		night.set(0, StageNight)
@@ -143,7 +143,7 @@ func TestRisingNothingAtZero(t *testing.T) {
 	dials.P = 0
 
 	r, corpses, night := newTestRising(t, dials)
-	corpses.FallHuman("a", 0, 0)
+	corpses.FallHuman("a", "", 0, 0)
 
 	for b := 0; b < risingBands; b++ {
 		night.set(b, StageNight)
@@ -164,11 +164,11 @@ func TestRisingPressure(t *testing.T) {
 
 	r, corpses, night := newTestRising(t, dials)
 
-	corpses.FallHuman("open1", 0, 0)
-	corpses.FallHuman("open2", 0, 0)
-	corpses.FallHuman("grave", 0, 0)
+	corpses.FallHuman("open1", "", 0, 0)
+	corpses.FallHuman("open2", "", 0, 0)
+	corpses.FallHuman("grave", "", 0, 0)
 	corpses.Bury("grave")
-	corpses.FallHuman("staked", 0, 0)
+	corpses.FallHuman("staked", "", 0, 0)
 	corpses.Close("staked")
 	corpses.Fall("dog", "dogs", 0, 0)
 
@@ -193,7 +193,7 @@ func TestRisingPressure(t *testing.T) {
 // that opens in band 1 rolls band 2 on entering it, and no more.
 func TestRisingSeededBand(t *testing.T) {
 	night := &fakeNight{band: 1, stage: StageNight}
-	r := NewRising(NewCorpses(nil, nil), func() int { return night.band }, func() Stage { return night.stage }, 1, DefaultRisingDials())
+	r := NewRising(NewCorpses(nil, nil, nil), func() int { return night.band }, func() Stage { return night.stage }, 1, DefaultRisingDials())
 
 	r.Advance()
 
@@ -231,10 +231,10 @@ func TestRisingHarnessSet(t *testing.T) {
 // what their state does not allow.
 func TestCorpsesStep2Transitions(t *testing.T) {
 	open := 0
-	c := NewCorpses(nil, func(d int) { open += d })
+	c := NewCorpses(nil, nil, func(d int) { open += d })
 
-	c.FallHuman("a", 0, 0)
-	c.FallHuman("b", 0, 0)
+	c.FallHuman("a", "", 0, 0)
+	c.FallHuman("b", "", 0, 0)
 
 	if !c.Bury("a") || c.Bury("a") || open != 1 {
 		t.Fatalf("bury: open %d", open)

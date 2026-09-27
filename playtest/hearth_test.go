@@ -15,7 +15,9 @@ import (
 //     more (the first time only).
 //  2. THE CONTROLS: a hasty grave dug before the rite is granted is still a
 //     hasty grave after first light; and a risen man, before the priest's
-//     tale, carries no bar and the hover does not call him the dead.
+//     tale, carries no bar and the hover does not call him the dead -- it
+//     calls him what he was in life (Josh's ruling of 27 Sep 2026): one of
+//     Night 1's dead is "A fallen soldier".
 //  3. At the hearth the priest tells the tale (heard_tale) and grants the rite
 //     (rite_granted).
 //  4. The next night the risen man carries a bar and the hover names him
@@ -90,10 +92,19 @@ func TestTheHearth(t *testing.T) {
 		t.Fatalf("act 2: before the tale the dead carry no bar: %d enemy bars", n)
 	}
 
-	// What his body was: the men's name, not the strigoi's -- the art is the
-	// dead's since M5.1b, the name is not until the hearth (R2 §1).
-	if got := hoverAt(t, s, num(door, "x"), num(door, "y")); got != "Opportunist" {
-		t.Fatalf("act 2: before the tale he is called what his body was, a man: hover %q", got)
+	// What he was in life (27 Sep 2026): Night 1's dead are the Janissary's
+	// comrades. The art is the dead's since M5.1b; the dead's name waits on
+	// the hearth (R2 §1). The body says it, and the hover shows it.
+	if got := str(door, "was"); got != "A fallen soldier" {
+		t.Fatalf("act 2: %s's body says he was %q, want \"A fallen soldier\"", str(door, "id"), got)
+	}
+
+	got := hoverAt(t, s, num(door, "x"), num(door, "y"))
+	t.Logf("act 2: before the tale the hover calls %s %q", str(door, "id"), got)
+
+	if got != "A fallen soldier" {
+		t.Fatalf("act 2: before the tale %s is called what he was in life, \"A fallen soldier\": hover %q",
+			str(door, "id"), got)
 	}
 
 	throughTheNight(t, s)

@@ -355,9 +355,10 @@ func DefaultSpawnDials() SpawnDials {
 				// The spawner is asked for THIS row by name, so the dead are
 				// drawn from the bestiary's strigoi (spawn_row "risen"; M5.1b,
 				// Josh 24 Sep: "wire it now"). Until then the row borrowed the
-				// men's art (M4.7 Q5a). The strigoi keeps the men's max health
-				// and the men's name, which is what the hover calls a risen
-				// man until the priest's tale (R2 §1, Q6a).
+				// men's art (M4.7 Q5a). The strigoi keeps the men's max health.
+				// Its name is what one of the dead is called after the
+				// priest's tale; before it he is called what he was in life,
+				// which his body remembers (Corpse.Was; Josh, 27 Sep).
 				Name: RisenRow, Code: "fallen1", DamageClass: "blunt", Human: true,
 				Dead:     true,
 				MinCount: 1, MaxCount: 1,

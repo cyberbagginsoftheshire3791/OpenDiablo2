@@ -39,6 +39,11 @@ func TestNightSurvived(t *testing.T) {
 		{"nor does a dead man's", night, fullDay, 3, 2, false, false},
 		{"day to day is no turn", fullDay, fullDay, 3, 2, true, false},
 		{"dusk into the night is no end of it", dusk, night, 3, 2, true, false},
+
+		// Review C6 (27 Sep): a jump from the night past the whole day to dusk
+		// ended the night too. Without this case the rule "now is dawn or day"
+		// passed every row above.
+		{"a jump from the night over the day to dusk ends it too", night, dusk, 3, 2, true, true},
 	}
 
 	for _, c := range cases {

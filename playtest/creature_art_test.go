@@ -28,12 +28,12 @@ func TestOpportunistStillInGame(t *testing.T) {
 }
 
 // TestStrigoiStillInGame is M5.1b: the risen dead's own art. It is named what
-// his body was -- the men's name -- because that is what the hover calls a
-// risen man until the priest's tale (R2 §1), and it keeps the men's max
-// health and the stand-in's speed: the art changed, the fight did not. Its
-// sheet, not its name, is what tells it from the opportunist.
+// one of the dead is called after the priest's tale, "the dead" (before it the
+// game calls a risen man what he was in life -- Josh's ruling of 27 Sep 2026,
+// hearth_test.go and dead_walk_test.go), and it keeps the men's max health and
+// the stand-in's speed: the art changed, the fight did not.
 func TestStrigoiStillInGame(t *testing.T) {
-	testCreatureStillInGame(t, "strigoi", "Opportunist", 84, 5, "strigoi-v1-night")
+	testCreatureStillInGame(t, "strigoi", "the dead", 84, 5, "strigoi-v1-night")
 }
 
 func testCreatureStillInGame(t *testing.T, creatureID, creatureName string, maxHealth, speed float64, screenshotName string) {
@@ -75,8 +75,8 @@ func testCreatureStillInGame(t *testing.T, creatureID, creatureName string, maxH
 		t.Fatalf("%s animation_mode = %q, want idle", creatureID, got)
 	}
 
-	// Drawn from its own sheet, not a name that happens to match (M5.1b:
-	// the strigoi shares the opportunist's name), at its authored speed.
+	// Drawn from its own sheet, not a name that happens to match, at its
+	// authored speed.
 	if got, want := str(sub(creature, "state"), "sheet"), "/data/strigoi/creatures/"+creatureID+"/idle.png"; got != want {
 		t.Fatalf("%s is drawn from %q, want its own %q", creatureID, got, want)
 	}

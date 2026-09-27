@@ -799,19 +799,24 @@ func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
 	xOff, yOff := int(entOffset.X()), int(entOffset.Y())
 
 	// T4: a villager's label is his ROLE, not the D2 stand-in's name; M4.7:
-	// one of the dead is named once he knows them.
-	label := entity.Label()
-	if h.gameControls != nil {
-		label = h.gameControls.hoverLabel(entity)
-	}
-
-	h.nameLabel.SetText(label)
+	// one of the dead is named for what he was, then for what he is.
+	h.nameLabel.SetText(h.nameFor(entity))
 
 	xLabel, yLabel := entScreenX-xOff, entScreenY-yOff-entityHeight-hoverLabelOuterPad
 	h.nameLabel.SetPosition(xLabel, yLabel)
 
 	h.nameLabel.Render(target)
 	entity.Highlight()
+}
+
+// nameFor is GameControls.nameFor, or the entity's own label before the
+// controls are attached.
+func (h *HUD) nameFor(e d2interface.MapEntity) string {
+	if h.gameControls != nil {
+		return h.gameControls.nameFor(e)
+	}
+
+	return e.Label()
 }
 
 // Render draws the HUD to the screen

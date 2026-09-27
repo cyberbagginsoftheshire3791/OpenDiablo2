@@ -66,7 +66,7 @@
     },
     {
       "id": "strigoi",
-      "name": "Opportunist",
+      "name": "the dead",
       "spawn_row": "risen",
       "stand_in": "fallen1",
       "animations": {
@@ -80,5 +80,9 @@
       "max_health": 84,
       "speed": 5
     }
-  ]
+  ],
+  "the_dead_were": {
+    "placed_dead": "A fallen soldier",
+    "wanderer": "A stranger"
+  }
 }
