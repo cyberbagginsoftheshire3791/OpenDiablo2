@@ -164,9 +164,10 @@ func (v *Game) earnExperience() {
 		}
 	}
 
-	// A night lived through: the stage turning from night to dawn with him on
-	// his feet -- once per day, whatever the stage does at the boundary. The
-	// night is the enemy; seeing it off is worth something.
+	// A night lived through: the stage leaving the night with him on his feet
+	// -- once per day, whatever the stage does at the boundary. The night is
+	// the enemy; seeing it off is worth something. This is the ONE place dawn
+	// is noticed, whatever moved the clock since the last frame (BUG-17).
 	if v.worldClock != nil {
 		stage, day := v.worldClock.Stage(), v.worldClock.DayIndex()
 		if nightSurvived(v.lastStage, stage, day, v.dawnPaidDay, v.alive()) {
@@ -306,8 +307,17 @@ func (p progressProvider) HarnessSet(field string, value interface{}) error {
 	return nil
 }
 
-// nightSurvived is the night-experience rule: the stage turning from night to
-// dawn, on a day whose dawn has not already paid, with him alive.
+// nightSurvived is the night-experience rule: the stage leaving the night, on
+// a day whose dawn has not already paid, with him alive.
+//
+// LEAVING THE NIGHT, NOT TURNING TO DAWN (BUG-17). It runs once a frame, and a
+// labour or a sleep moves the world between two frames (spendMinutes, in
+// ten-minute steps): three hours at the anvil from 01:30, or the byre's four
+// hours from 00:30, is seen as night on one frame and full day on the next,
+// and "night, then dawn" never happened -- no night's experience, the promised
+// watch never settled (dawnWatch), and keepWatch zeroing its minutes at day.
+// Asking whether the night is over, rather than whether this frame is dawn,
+// keeps dawn noticed in one place for every way the clock can jump.
 func nightSurvived(last, now d2world.Stage, day, paidDay int, alive bool) bool {
-	return alive && last == d2world.StageNight && now == d2world.StageDawn && day != paidDay
+	return alive && last == d2world.StageNight && now != d2world.StageNight && day != paidDay
 }

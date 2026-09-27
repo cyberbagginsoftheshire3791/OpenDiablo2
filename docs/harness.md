@@ -236,7 +236,13 @@ this doc fails until it agrees.
   stance, at least the 180 minutes needed are counted (none were, away), dawn
   pays +8 and spends them. About 75 s: it steps two
   nights. Negative controls ran red for paying regardless and for a post
-  that never counts.
+  that never counts. Act 3 (BUG-17, 27 Sep 2026): a fight by day wears his
+  mail, he promises a third time, stands the watch to 01:20-01:50, then
+  takes three hours at the smith's anvil across dawn -- night on one frame,
+  full day on the next -- and the watch he stood is still settled (+8) and
+  the night's 50 experience paid. It zeroes `rising.pressure` first: two
+  dawns with Night 1's bodies open raise soul pressure past the script's
+  `p` 0, and on the third night a risen man comes. About 160 s now.
 * `corpse_test.go` — the twenty-ninth, M4.7 step 1 (23 Sep 2026): the slain
   are open bodies, and the stake closes one. Night 1's dead (Q2a PLACEHOLDER)
   lie as four open bodies of men near where he enters and the carrion count
