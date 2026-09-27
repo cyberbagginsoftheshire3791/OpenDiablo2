@@ -190,8 +190,10 @@ grid:
 {
   "directions": 8,
   "frames_per_direction": 8,
-  "offset_x": 0,
-  "offset_y": 0,
+  "frame_width": 96,
+  "frame_height": 96,
+  "offset_x": -48,
+  "offset_y": 32,
   "origin_at_bottom": true
 }
 ```
@@ -199,6 +201,27 @@ grid:
 With no manifest a PNG is a single still frame, which is why a one-image drop
 works. `origin_at_bottom` is what makes a creature stand *on* its tile rather
 than hang from it — ground creatures want it true.
+
+**The offsets are not optional (26 Sep 2026).** A frame is placed ONLY through
+them: with `origin_at_bottom` the frame hangs from the creature's foot point,
+then moves by `offset_x`/`offset_y`. With zeros — what this example used to
+show — the frame's bottom-LEFT corner sits on the foot point, so the creature
+is drawn half a frame to the right of where it is and lifted by the empty rows
+below its feet. That shipped for the Janissary and every creature (~62 px right
+and ~31 px up for him), while his bar and his clicks used the true spot. The
+rule:
+
+* `offset_x` = minus the figure's centre (the mean x of its opaque pixels, the
+  median over the frames) — about `-frame_width/2` for a figure drawn centred;
+* `offset_y` = `frame_height` minus the feet row (the lowest opaque row, the
+  median over the frames);
+* a lying sheet (death, dead) takes its idle sheet's offsets, or the body jumps
+  when it falls.
+
+`tools/spritestitch` writes both from the frames it stitches (pass
+`-anchor-from <the idle sheet's .png.json>` for death and dead). `TestGroundSheetsStandOnTheirFootPoint`
+(`d2core/d2asset`, runs in the gate and on CI) measures every standing sheet in
+`data/strigoi` and fails one that is off by more than 6 px across or 4 down.
 
 Composites try `.png` first, then `.dcc`, then `.dc6`, so **a creature with our
 art uses our art and everything else still falls back to D2's.** Replacing one

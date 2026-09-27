@@ -3,5 +3,7 @@
   "frames_per_direction": 12,
   "frame_width": 96,
   "frame_height": 96,
+  "offset_x": -50,
+  "offset_y": 29,
   "origin_at_bottom": true
 }
