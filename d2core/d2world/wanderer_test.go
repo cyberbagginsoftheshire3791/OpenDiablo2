@@ -23,7 +23,7 @@ func TestEdgeFloor(t *testing.T) {
 		n++
 
 		return "w:" + itoa(n), 30, 31
-	})
+	}, "a wanderer's word")
 
 	for b := 0; b < dials.EdgeBand; b++ {
 		night.set(b, StageNight)
@@ -42,6 +42,7 @@ func TestEdgeFloor(t *testing.T) {
 	assert.Equal(t, CorpseRisen, b.State)
 	assert.Equal(t, CorpseHuman, b.Class)
 	assert.Equal(t, [2]float64{30, 31}, [2]float64{b.X, b.Y})
+	assert.Equal(t, "a wanderer's word", b.Was, "his body is what the game says a wanderer was (27 Sep ruling)")
 
 	// He falls like any risen man: Downed, the same body.
 	corpses.Fall("w:1", RisenRow, 32, 33)
@@ -56,7 +57,7 @@ func TestEdgeFloorZero(t *testing.T) {
 	dials.EdgeFloor = 0
 
 	r, _, night := newTestRising(t, dials)
-	r.SetWander(func() (string, float64, float64) { return "w:1", 0, 0 })
+	r.SetWander(func() (string, float64, float64) { return "w:1", 0, 0 }, "")
 
 	night.set(dials.EdgeBand, StageNight)
 	r.Advance()

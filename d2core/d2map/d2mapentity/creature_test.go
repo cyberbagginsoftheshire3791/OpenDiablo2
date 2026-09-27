@@ -42,6 +42,9 @@ func TestCreatureLoadsAndPlaysShippedAnimationSet(t *testing.T) {
 	if got := creature.HarnessState()["animation_mode"]; got != "idle" {
 		t.Fatalf("animation_mode = %v, want idle", got)
 	}
+	if got := creature.HarnessState()["sheet"]; got != "/data/strigoi/creatures/feral-dog/idle.png" {
+		t.Fatalf("sheet = %v, want the idle sheet", got)
+	}
 	if len(creature.animations) != 6 {
 		t.Fatalf("loaded %d animation modes, want 6", len(creature.animations))
 	}
@@ -54,6 +57,9 @@ func TestCreatureLoadsAndPlaysShippedAnimationSet(t *testing.T) {
 	}
 	if got := creature.HarnessState()["animation_mode"]; got != "attack" {
 		t.Fatalf("animation_mode = %v during attack, want attack", got)
+	}
+	if got := creature.HarnessState()["sheet"]; got != "/data/strigoi/creatures/feral-dog/attack.png" {
+		t.Fatalf("sheet = %v during attack, want the attack sheet", got)
 	}
 	creature.Advance(1.1)
 	if !attackFinished {
@@ -78,5 +84,43 @@ func TestCreatureLoadsAndPlaysShippedAnimationSet(t *testing.T) {
 	}
 	if got := creature.HarnessState()["animation_mode"]; got != "dead" {
 		t.Fatalf("animation_mode = %v after death, want dead", got)
+	}
+	if got := creature.HarnessState()["sheet"]; got != "/data/strigoi/creatures/feral-dog/dead.png" {
+		t.Fatalf("sheet = %v after death, want the dead sheet", got)
+	}
+}
+
+// A mode with no sheet of its own is drawn from idle, and says so: the harness
+// reports the sheet actually on screen, not the one the mode would have had.
+// And it reports the speed the creature walks at.
+func TestCreatureReportsTheSheetItIsDrawnFrom(t *testing.T) {
+	asset, err := d2asset.NewAssetManager(d2util.LogLevelError)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := asset.AddSource(filepath.Join("..", "..", ".."), types.AssetSourceFileSystem); err != nil {
+		t.Fatal(err)
+	}
+
+	const idle = "/data/strigoi/creatures/strigoi/idle.png"
+
+	creature, err := (&MapEntityFactory{asset: asset}).NewCreature(5, 10, "Idle only",
+		CreatureAnimationPaths{Idle: idle}, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := creature.StartAction(d2enum.MonsterAnimationModeAttack1, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := creature.HarnessState()["sheet"]; got != idle {
+		t.Fatalf("an attack with no attack sheet is drawn from %v, want idle's %s", got, idle)
+	}
+
+	creature.SetSpeed(7)
+	if got := creature.HarnessState()["speed"]; got != 7.0 {
+		t.Fatalf("speed = %v, want 7", got)
 	}
 }

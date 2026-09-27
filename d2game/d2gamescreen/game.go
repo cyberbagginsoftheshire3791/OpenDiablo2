@@ -101,6 +101,14 @@ func CreateGame(
 		return nil, err
 	}
 
+	// The dead's words (27 Sep 2026): a bestiary without them would leave the
+	// hover to fall back on the risen creature's own name before the priest's
+	// tale, the one name a player must not see then -- so it stops the screen.
+	deadNames, err := deadNamesFrom(bestiary)
+	if err != nil {
+		return nil, fmt.Errorf("load Strigoi bestiary: %w", err)
+	}
+
 	// T2: the item table loads beside the bestiary, and for the same reason an
 	// invalid one stops the screen: a half-authored kit is worse than none.
 	itemData, err := asset.LoadFile(itemCatalogPath)
@@ -193,6 +201,7 @@ func CreateGame(
 	game := &Game{
 		asset:                asset,
 		bestiary:             bestiary,
+		deadNames:            deadNames,
 		items:                items,
 		talents:              talents,
 		dialogue:             dialogue,
@@ -314,7 +323,7 @@ func CreateGame(
 
 	// M4.7: the dead lie where they fall. The count of open bodies feeds the
 	// carrion weighting by DELTA, so a script's open_bodies stays additive.
-	game.corpses = d2world.NewCorpses(game.spawns.RowIsHuman, func(delta int) {
+	game.corpses = d2world.NewCorpses(game.spawns.RowIsHuman, game.deadNames.rowName, func(delta int) {
 		// Clamped: a count that would go negative is a bookkeeping slip, not a
 		// reason to stop counting.
 		game.spawns.SetOpenBodies(max(0, game.spawns.OpenBodies()+delta))
@@ -331,7 +340,7 @@ func CreateGame(
 	// M4.7 step 3: a body that rises stands up in the world, and at first
 	// light the dead break off and lie down.
 	game.rising.SetRaise(game.raiseTheDead)
-	game.rising.SetWander(game.spawns.RaiseWanderer)
+	game.rising.SetWander(game.spawns.RaiseWanderer, game.deadNames.were.Wanderer)
 	game.rising.SetClock(game.worldClock.WorldMinutes)
 	game.corpses.SetClock(game.worldClock.WorldMinutes)
 	game.rising.SetFirstLight(game.firstLight)
@@ -374,6 +383,9 @@ type Game struct {
 	*d2mapentity.MapEntityFactory
 	asset    *d2asset.AssetManager
 	bestiary *d2bestiary.Catalog
+
+	// deadNames is every word the game has for the dead (hearth.go).
+	deadNames deadNames
 
 	// T1: a click on a distant enemy spends the Move walking beside it and
 	// strikes on arrival; pendingStrike is that enemy until the walk settles.
@@ -1664,7 +1676,7 @@ func (g *gameSpawner) Spawn(kind, code string, count int, aroundX, aroundY,
 			if err != nil {
 				continue
 			}
-			creature.SetSpeed(float64(monstat.SpeedBase))
+			creature.SetSpeed(creatureEntry.SpeedOr(float64(monstat.SpeedBase)))
 			entity = creature
 			maxHealth = creatureEntry.MaxHealth
 		} else {
@@ -2276,7 +2288,7 @@ func (v *Game) commandSpawnMon(args []string) error {
 			return nil
 		}
 
-		creature.SetSpeed(float64(monstat.SpeedBase))
+		creature.SetSpeed(entry.SpeedOr(float64(monstat.SpeedBase)))
 		v.gameClient.MapEngine.AddEntity(creature)
 		v.adoptNPCBody(creature.ID(), entry.MaxHealth)
 		return nil

@@ -13,7 +13,8 @@
         "death": "/data/strigoi/creatures/feral-dog/death.png",
         "dead": "/data/strigoi/creatures/feral-dog/dead.png"
       },
-      "max_health": 72
+      "max_health": 72,
+      "speed": 5
     },
     {
       "id": "wolf",
@@ -28,7 +29,8 @@
         "death": "/data/strigoi/creatures/wolf/death.png",
         "dead": "/data/strigoi/creatures/wolf/dead.png"
       },
-      "max_health": 96
+      "max_health": 96,
+      "speed": 5
     },
     {
       "id": "wild-boar",
@@ -43,7 +45,8 @@
         "death": "/data/strigoi/creatures/wild-boar/death.png",
         "dead": "/data/strigoi/creatures/wild-boar/dead.png"
       },
-      "max_health": 120
+      "max_health": 120,
+      "speed": 5
     },
     {
       "id": "opportunist",
@@ -58,7 +61,28 @@
         "death": "/data/strigoi/creatures/opportunist/death.png",
         "dead": "/data/strigoi/creatures/opportunist/dead.png"
       },
-      "max_health": 84
+      "max_health": 84,
+      "speed": 5
+    },
+    {
+      "id": "strigoi",
+      "name": "the dead",
+      "spawn_row": "risen",
+      "stand_in": "fallen1",
+      "animations": {
+        "idle": "/data/strigoi/creatures/strigoi/idle.png",
+        "walk": "/data/strigoi/creatures/strigoi/walk.png",
+        "attack": "/data/strigoi/creatures/strigoi/attack.png",
+        "hit": "/data/strigoi/creatures/strigoi/hit.png",
+        "death": "/data/strigoi/creatures/strigoi/death.png",
+        "dead": "/data/strigoi/creatures/strigoi/dead.png"
+      },
+      "max_health": 84,
+      "speed": 5
     }
-  ]
+  ],
+  "the_dead_were": {
+    "placed_dead": "A fallen soldier",
+    "wanderer": "A stranger"
+  }
 }

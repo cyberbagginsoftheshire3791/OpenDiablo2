@@ -11,8 +11,8 @@ import (
 // fell in at once -- no notice, no engage gate -- and the fallen row goes; a
 // member who was never in the fight is not taken in (the control).
 func TestRejoinTheFightHeFellIn(t *testing.T) {
-	corpses := NewCorpses(nil, nil)
-	corpses.FallHuman("body", 41, 40)
+	corpses := NewCorpses(nil, nil, nil)
+	corpses.FallHuman("body", "", 41, 40)
 	require.True(t, corpses.Rise("body"))
 	corpses.Raised("body", "d:1")
 
@@ -47,8 +47,8 @@ func TestRejoinTheFightHeFellIn(t *testing.T) {
 
 // Quick-resolve never finishes a fight while a Downed man lies in it.
 func TestNoQuickResolveOverTheDowned(t *testing.T) {
-	corpses := NewCorpses(nil, nil)
-	corpses.FallHuman("body", 41, 40)
+	corpses := NewCorpses(nil, nil, nil)
+	corpses.FallHuman("body", "", 41, 40)
 	require.True(t, corpses.Rise("body"))
 	corpses.Raised("body", "d:1")
 

@@ -88,6 +88,9 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		// T1: the refusal or hint the combat panel is showing, so a script can
 		// assert WHY a tactical click did nothing rather than only that it did.
 		"tactical_notice": g.tacticalNoticeText(),
+		// The panel's lines themselves, the combat log among them (27 Sep:
+		// a risen man is named there as the hover names him).
+		"tactical_lines": g.tacticalLinesReport(),
 
 		// T2: the kit panel and the loadout choice.
 		"kit_open":         g.hud != nil && g.hud.kit != nil && g.hud.kit.open,
@@ -248,7 +251,18 @@ func (g *GameControls) hoverLabelReport() string {
 		return ""
 	}
 
-	return g.hoverLabel(e)
+	return g.nameFor(e)
+}
+
+// tacticalLinesReport is the combat panel's lines as drawn -- the round, the
+// pips, the keys and the last two blows (the combat log) -- or none when the
+// panel is not shown. Colour tokens are left in: they are what is drawn.
+func (g *GameControls) tacticalLinesReport() []string {
+	if g.hud == nil || g.hud.tactical == nil || !g.hud.tactical.visible {
+		return []string{}
+	}
+
+	return append([]string(nil), g.hud.tactical.texts[:]...)
 }
 
 // miniPanelButtonsReport is the mini-panel's button rects, or nothing before

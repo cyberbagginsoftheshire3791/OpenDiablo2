@@ -104,8 +104,8 @@ type Spawner interface {
 // THE CODES ARE D2 STAND-INS AND SAYING SO MATTERS. N1 §5 signs the roster as
 // feral dogs, wolves, wild boar (bear authored-only, lynx not an enemy). Code
 // remains the inherited fallback for rows without project art. A matching row
-// in data/strigoi/bestiary.json supplies Strigoi's art, health, and explicit
-// stats stand-in without making this world model know about files.
+// in data/strigoi/bestiary.json supplies Strigoi's art, health, speed and
+// explicit stats stand-in without making this world model know about files.
 type SpawnRow struct {
 	// Name is the design's name for the row and never changes with the code.
 	Name string
@@ -122,10 +122,6 @@ type SpawnRow struct {
 	// in every round (Speed 0, D8 §9); never quick-resolved (R2 §2B); no bar
 	// until the hearth (R2 §1); gone at first light (R2 §2A).
 	Dead bool
-
-	// Looks is the row whose art the spawner draws it with ("" for its own).
-	// A risen man stands up as himself (M4.7 Q5a): the men's body and art.
-	Looks string
 
 	// StageWeight is the row's weight in each stage, indexed by Stage. Zero
 	// means the row never fires then. An ARRAY rather than a map on purpose:
@@ -355,8 +351,16 @@ func DefaultSpawnDials() SpawnDials {
 				// where a body lay. Morale 0 is R2 §3's "none, ever", which is
 				// also what keeps quick-resolve off it (Combat.mundane). The
 				// bite is a [DIAL] guessed a little above the men's.
+				//
+				// The spawner is asked for THIS row by name, so the dead are
+				// drawn from the bestiary's strigoi (spawn_row "risen"; M5.1b,
+				// Josh 24 Sep: "wire it now"). Until then the row borrowed the
+				// men's art (M4.7 Q5a). The strigoi keeps the men's max health.
+				// Its name is what one of the dead is called after the
+				// priest's tale; before it he is called what he was in life,
+				// which his body remembers (Corpse.Was; Josh, 27 Sep).
 				Name: RisenRow, Code: "fallen1", DamageClass: "blunt", Human: true,
-				Dead: true, Looks: "opportunists",
+				Dead:     true,
 				MinCount: 1, MaxCount: 1,
 				// The ring a WANDERER stands up in (the edge floor, step 5):
 				// where the men's row arrives. A body's risen stands where
@@ -821,12 +825,7 @@ func (s *Spawns) raiseAt(x, y, minTiles, maxTiles float64) Watcher {
 		return nil
 	}
 
-	kind := row.Name
-	if row.Looks != "" {
-		kind = row.Looks
-	}
-
-	members := s.spawner.Spawn(kind, row.Code, 1, x, y, minTiles, maxTiles)
+	members := s.spawner.Spawn(row.Name, row.Code, 1, x, y, minTiles, maxTiles)
 	if len(members) == 0 {
 		s.failures++
 

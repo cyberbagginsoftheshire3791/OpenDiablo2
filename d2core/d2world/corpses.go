@@ -57,6 +57,13 @@ type Corpse struct {
 	State CorpseState
 	X, Y  float64
 
+	// Was is what the man was in life -- what the hover calls him if he rises,
+	// until the priest's tale (Josh's ruling of 27 Sep 2026). A slain man's is
+	// his row's live name, given by the game (NewCorpses); Night 1's dead and
+	// the edge floor's wanderers are given theirs (FallHuman). The words are
+	// the bestiary's, so a rename is a data edit.
+	Was string
+
 	// DownedAt is the world minute he went down (CorpseDowned only).
 	DownedAt float64
 }
@@ -77,28 +84,39 @@ type Corpses struct {
 	last    map[string]string // a body -> the last member it walked as, standing or fallen
 	now     func() float64    // world minutes, for DownedAt (nil reads 0)
 	isHuman func(row string) bool
+	was     func(row string) string
 	changed func(openDelta int)
 }
 
-// NewCorpses makes a registry. isHuman classes a body by its spawn row;
-// changed hears every change to the count of open bodies (the carrion
-// weighting's input). Either may be nil.
-func NewCorpses(isHuman func(row string) bool, changed func(openDelta int)) *Corpses {
-	return &Corpses{byID: map[string]*Corpse{}, risenAs: map[string]string{}, walker: map[string]string{}, last: map[string]string{}, isHuman: isHuman, changed: changed}
+// NewCorpses makes a registry. isHuman classes a body by its spawn row, and
+// was names what the man of that row was in life (Corpse.Was: the row's live
+// name, "" for none); changed hears every change to the count of open bodies
+// (the carrion weighting's input). Any may be nil.
+func NewCorpses(isHuman func(row string) bool, was func(row string) string, changed func(openDelta int)) *Corpses {
+	return &Corpses{
+		byID: map[string]*Corpse{}, risenAs: map[string]string{}, walker: map[string]string{}, last: map[string]string{},
+		isHuman: isHuman, was: was, changed: changed,
+	}
 }
 
 // Fall records a body where it fell. A second fall of the same id is ignored.
 func (c *Corpses) Fall(id, row string, x, y float64) *Corpse {
-	return c.fall(id, row, x, y, false)
+	was := ""
+	if c.was != nil {
+		was = c.was(row)
+	}
+
+	return c.fall(id, row, was, x, y, false)
 }
 
 // FallHuman records a body that is a man's whatever its row says -- the
-// placed dead of Night 1 (M4.7 Q2a), which no spawn row produced.
-func (c *Corpses) FallHuman(id string, x, y float64) *Corpse {
-	return c.fall(id, "", x, y, true)
+// placed dead of Night 1 (M4.7 Q2a) and the edge floor's wanderers, which no
+// spawn row produced -- and what he was in life, which no row can say.
+func (c *Corpses) FallHuman(id, was string, x, y float64) *Corpse {
+	return c.fall(id, "", was, x, y, true)
 }
 
-func (c *Corpses) fall(id, row string, x, y float64, human bool) *Corpse {
+func (c *Corpses) fall(id, row, was string, x, y float64, human bool) *Corpse {
 	if b, ok := c.byID[id]; ok {
 		return b
 	}
@@ -121,7 +139,7 @@ func (c *Corpses) fall(id, row string, x, y float64, human bool) *Corpse {
 		class = CorpseHuman
 	}
 
-	b := &Corpse{ID: id, Row: row, Class: class, State: CorpseFresh, X: x, Y: y}
+	b := &Corpse{ID: id, Row: row, Class: class, State: CorpseFresh, X: x, Y: y, Was: was}
 	c.byID[id] = b
 	c.order = append(c.order, id)
 
@@ -244,6 +262,18 @@ func (c *Corpses) Raised(bodyID, memberID string) {
 	}
 }
 
+// BodyOf is the body a risen member walks (or walked) as, as it is now: every
+// member it has stood up as maps back to it, so a man who stood again is the
+// same body. False for anything that never rose from one.
+func (c *Corpses) BodyOf(memberID string) (Corpse, bool) {
+	cid, ok := c.risenAs[memberID]
+	if !ok {
+		return Corpse{}, false
+	}
+
+	return c.Get(cid)
+}
+
 // DownedMember reports a member whose body lies Downed now: he fell, and has
 // neither stood again nor been staked (M4.7 step 3b).
 func (c *Corpses) DownedMember(memberID string) bool {
@@ -294,6 +324,7 @@ func (c *Corpses) HarnessState() map[string]interface{} {
 	for _, b := range c.All() {
 		bodies = append(bodies, map[string]interface{}{
 			"id": b.ID, "row": b.Row, "class": string(b.Class), "state": string(b.State), "x": b.X, "y": b.Y,
+			"was": b.Was, "walks_as": c.walker[b.ID],
 		})
 		counts[string(b.State)+"_"+string(b.Class)]++
 	}

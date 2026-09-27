@@ -1,10 +1,13 @@
 package d2gamescreen
 
 import (
+	"errors"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2bestiary"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
@@ -15,9 +18,12 @@ import (
 //
 //   - Q6a: the priest's tale (`heard_tale`, set by "Listen." at the hearth
 //     rung) is how he learns the dead. Before it a risen man is a man: no
-//     bar, and the hover calls him what his body was. After it the dead
-//     carry a bar and the hover names them (PLACEHOLDER label -- the
-//     bestiary's tells wait on M1).
+//     bar, and he is called by what he was in life -- Josh's ruling of 27 Sep
+//     2026: "A fallen soldier" for Night 1's dead, "A stranger" for the edge
+//     floor's, and a slain man by his row's name ("Opportunist"). After it
+//     the dead carry a bar and are called by the risen creature's name, "the
+//     dead" (PLACEHOLDER -- the bestiary's tells wait on M1). Every one of
+//     those words is the bestiary's (deadNames), so a rename is a data edit.
 //   - Q4a: `rite_granted` (the rite rung's "Thank him.") has the priest close
 //     every hasty grave of a man within rite_radius of the church at each
 //     first light, while the village still stands at the rite rung and the
@@ -35,12 +41,77 @@ const (
 	riteRung        = "rite"
 
 	priestSpeaker = "priest"
-
-	// deadLabel is what the hover calls one of the dead once he knows them.
-	// PLACEHOLDER: R1 §1's tells (a ruddy face, blood at the mouth) are the
-	// bestiary's, and M1 is not verified.
-	deadLabel = "the dead"
 )
+
+// deadNames is every word the game has for the dead, all of it the
+// bestiary's (Josh's ruling of 27 Sep 2026: he renames them in data).
+type deadNames struct {
+	// known is what one of the dead is called once the priest has told his
+	// tale: the risen row's creature's name. PLACEHOLDER: R1 §1's tells (a
+	// ruddy face, blood at the mouth) are the bestiary's, and M1 is not
+	// verified.
+	known string
+	// were is what a risen man is called before the tale when no spawn row
+	// names him: Night 1's dead, and the edge floor's wanderers.
+	were d2bestiary.DeadWere
+
+	bestiary *d2bestiary.Catalog
+}
+
+// deadNamesFrom takes the dead's words from the bestiary, and refuses a
+// bestiary without them: the hover would then fall back on the risen
+// creature's own name before the tale, which a player must not see then.
+func deadNamesFrom(c *d2bestiary.Catalog) (deadNames, error) {
+	risen, ok := c.ForSpawnRow(d2world.RisenRow)
+	if !ok {
+		return deadNames{}, fmt.Errorf("no creature for the %q row: the dead have no name", d2world.RisenRow)
+	}
+
+	were := c.DeadWere()
+	if were.PlacedDead == "" || were.Wanderer == "" {
+		return deadNames{}, errors.New("no the_dead_were: nothing to call a risen man before the priest's tale")
+	}
+
+	if were.PlacedDead == risen.Name || were.Wanderer == risen.Name {
+		return deadNames{}, fmt.Errorf("the_dead_were repeats %q, the name he learns only from the priest", risen.Name)
+	}
+
+	return deadNames{known: risen.Name, were: were, bestiary: c}, nil
+}
+
+// rowName is what a man of a spawn row was in life: the row's creature's live
+// name ("Opportunist"), or "" for a row with none. Never the dead's own row --
+// what he became is not what he was. Corpses.Fall asks it for every body.
+func (n deadNames) rowName(row string) string {
+	if strings.EqualFold(strings.TrimSpace(row), d2world.RisenRow) {
+		return ""
+	}
+
+	if e, ok := n.bestiary.ForSpawnRow(row); ok {
+		return e.Name
+	}
+
+	return ""
+}
+
+// name is DeadName's rule on its own: nothing for the living; after the tale,
+// the dead's own name; before it, what his body says he was -- or his row's
+// name, or, for a man nothing names, a stranger. It never answers the known
+// name before the tale.
+func (n deadNames) name(risen, knows bool, body d2world.Corpse, hasBody bool) string {
+	switch {
+	case !risen:
+		return ""
+	case knows:
+		return n.known
+	case hasBody && body.Was != "":
+		return body.Was
+	case hasBody && n.rowName(body.Row) != "":
+		return n.rowName(body.Row)
+	default:
+		return n.were.Wanderer
+	}
+}
 
 // knowsTheDead is the hearth unlock (Q6a).
 func (v *Game) knowsTheDead() bool {
@@ -58,14 +129,23 @@ func (v *Game) isRisen(id string) bool {
 	return ok && p.Dead
 }
 
-// DeadName is what the hover calls an entity that is one of the dead: "" --
-// his body's own name -- until the priest's tale, deadLabel after.
+// DeadName is what the player is shown for an entity that is one of the dead
+// -- on the hover and in the combat log alike (d2player's nameFor) -- and ""
+// for anything else. Before the priest's tale a risen man is called what he
+// was in life, which his body remembers (Corpses.BodyOf); after it, the dead.
 func (v *Game) DeadName(id string) string {
-	if v.knowsTheDead() && v.isRisen(id) {
-		return deadLabel
+	risen := v.isRisen(id)
+
+	var (
+		body    d2world.Corpse
+		hasBody bool
+	)
+
+	if risen && v.corpses != nil {
+		body, hasBody = v.corpses.BodyOf(id)
 	}
 
-	return ""
+	return v.deadNames.name(risen, v.knowsTheDead(), body, hasBody)
 }
 
 // speakerEntity finds a villager's stand-in sprite on the map, looked up each

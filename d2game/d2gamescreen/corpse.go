@@ -92,7 +92,7 @@ func (v *Game) placeTheDead() {
 		}
 
 		id := fmt.Sprintf("dead:%d", i+1)
-		v.corpses.FallHuman(id, tx+0.5, ty+0.5)
+		v.corpses.FallHuman(id, v.deadNames.were.PlacedDead, tx+0.5, ty+0.5)
 		v.fieldDead = append(v.fieldDead, id)
 		placed++
 	}
@@ -369,9 +369,10 @@ func markVisible(level, dist float64) bool {
 	return level >= markLight || dist <= markNear
 }
 
-// raiseTheDead stands a risen body up where it lay (M4.7 step 3; Q5a: as
-// himself -- a man's body and a man's art, so he looks alive until he acts).
-// It names the member he walks as, or "" if he could not stand.
+// raiseTheDead stands a risen body up where it lay (M4.7 step 3), drawn from
+// the strigoi's sheets (M5.1b) and, until the priest's tale, called by what
+// he was in life (DeadName, 27 Sep 2026). It names the member he walks as, or
+// "" if he could not stand.
 func (v *Game) raiseTheDead(b d2world.Corpse) string {
 	if v.spawns == nil {
 		return ""
@@ -385,19 +386,28 @@ func (v *Game) raiseTheDead(b d2world.Corpse) string {
 	// having cut him down (review B2, 24 Sep).
 	rejoined := false
 
-	// A Downed man standing again: the remains of the one who fell are taken
-	// off the map, so the body is never drawn twice (step 3b). Their lay is
-	// a no-op -- he is no longer that member's walker.
-	if old := v.corpses.LastWalker(b.ID); member != "" && old != "" && old != member {
+	// Whenever a body stands, what lay there leaves the map, so the body is
+	// never drawn twice (step 3b; review C1, 27 Sep).
+	switch old := v.corpses.LastWalker(b.ID); {
+	case member == "":
+	case old != "" && old != member:
+		// A Downed man standing again: the remains of the risen man who fell.
 		// Back into the fight he fell in, at once -- not as an arrival that
 		// must be noticed and in reach (the step-3b review).
 		if w, ok := v.spawns.Member(member); ok && v.combat != nil {
 			rejoined = v.combat.Rejoin(old, w)
 		}
 
+		// Their lay is a no-op -- he is no longer that member's walker.
 		if p, ok := v.spawns.ProfileOf(old); ok && p.Dead {
 			v.spawns.Despawn(p.Group)
 		}
+	case old == "":
+		// A body standing for the first time: the remains of the man who
+		// fell there, whose id the body carries -- a slain opportunist's
+		// sprite lay on under the man who stood up from it (C1). Night 1's
+		// dead and the wanderers left none, and there is nothing to take.
+		v.takeOffTheMap(b.ID)
 	}
 
 	switch {
@@ -409,6 +419,20 @@ func (v *Game) raiseTheDead(b d2world.Corpse) string {
 	}
 
 	return member
+}
+
+// takeOffTheMap removes one entity's remains from the map and forgets its
+// body, as gameSpawner.Despawn does for a whole group -- only this one: the
+// rest of a slain man's pack is none of his rising's business.
+func (v *Game) takeOffTheMap(id string) {
+	if v.gameClient == nil || v.gameClient.MapEngine == nil {
+		return
+	}
+
+	if e, ok := v.gameClient.MapEngine.Entities()[id]; ok {
+		v.gameClient.MapEngine.RemoveEntity(e)
+		v.releaseNPCBody(id)
+	}
 }
 
 // firstLight is R2 §2A: the dead break off. A fight they are in loses them

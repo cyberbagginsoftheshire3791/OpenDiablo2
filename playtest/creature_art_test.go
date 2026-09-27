@@ -12,22 +12,31 @@ import (
 // terminal verb a player can use, then proves the placed entity is the PNG
 // creature and records the actual 800x600 game frame for visual review.
 func TestFeralDogStillInGame(t *testing.T) {
-	testCreatureStillInGame(t, "feral-dog", "Feral dog", 72, "feral-dog-still")
+	testCreatureStillInGame(t, "feral-dog", "Feral dog", 72, 5, "feral-dog-still")
 }
 
 func TestWolfStillInGame(t *testing.T) {
-	testCreatureStillInGame(t, "wolf", "Wolf", 96, "wolf-v1-night")
+	testCreatureStillInGame(t, "wolf", "Wolf", 96, 5, "wolf-v1-night")
 }
 
 func TestWildBoarStillInGame(t *testing.T) {
-	testCreatureStillInGame(t, "wild-boar", "Wild boar", 120, "wild-boar-v1-night")
+	testCreatureStillInGame(t, "wild-boar", "Wild boar", 120, 5, "wild-boar-v1-night")
 }
 
 func TestOpportunistStillInGame(t *testing.T) {
-	testCreatureStillInGame(t, "opportunist", "Opportunist", 84, "opportunist-v1-night")
+	testCreatureStillInGame(t, "opportunist", "Opportunist", 84, 5, "opportunist-v1-night")
 }
 
-func testCreatureStillInGame(t *testing.T, creatureID, creatureName string, maxHealth float64, screenshotName string) {
+// TestStrigoiStillInGame is M5.1b: the risen dead's own art. It is named what
+// one of the dead is called after the priest's tale, "the dead" (before it the
+// game calls a risen man what he was in life -- Josh's ruling of 27 Sep 2026,
+// hearth_test.go and dead_walk_test.go), and it keeps the men's max health and
+// the stand-in's speed: the art changed, the fight did not.
+func TestStrigoiStillInGame(t *testing.T) {
+	testCreatureStillInGame(t, "strigoi", "the dead", 84, 5, "strigoi-v1-night")
+}
+
+func testCreatureStillInGame(t *testing.T, creatureID, creatureName string, maxHealth, speed float64, screenshotName string) {
 	t.Helper()
 	s := start(t)
 	s.call("strigoi_start_game", map[string]any{
@@ -64,6 +73,15 @@ func testCreatureStillInGame(t *testing.T, creatureID, creatureName string, maxH
 	}
 	if got := str(sub(creature, "state"), "animation_mode"); got != "idle" {
 		t.Fatalf("%s animation_mode = %q, want idle", creatureID, got)
+	}
+
+	// Drawn from its own sheet, not a name that happens to match, at its
+	// authored speed.
+	if got, want := str(sub(creature, "state"), "sheet"), "/data/strigoi/creatures/"+creatureID+"/idle.png"; got != want {
+		t.Fatalf("%s is drawn from %q, want its own %q", creatureID, got, want)
+	}
+	if got := mustNum(t, sub(creature, "state"), "speed"); got != speed {
+		t.Fatalf("%s walks at %v, want the authored bestiary speed %v", creatureID, got, speed)
 	}
 
 	shot := s.call("strigoi_screenshot", map[string]any{"name": screenshotName})

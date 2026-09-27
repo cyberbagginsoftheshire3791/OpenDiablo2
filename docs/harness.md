@@ -168,7 +168,13 @@ this doc fails until it agrees.
 * `creature_art_test.go` — the nineteenth: the ordinary in-game command path
   creates the first Strigoi creature from its shipped PNG, exposes its creature
   and animation state through the harness, and captures the same rendered frame
-  used for the art readability review.
+  used for the art readability review. Since M5.1b (27 Sep 2026) each creature's
+  script also asserts the sheet it is drawn from (its own idle sheet, not a
+  name that happens to match) and its authored bestiary speed, and the
+  strigoi -- the risen dead's art -- has its own, `TestStrigoiStillInGame`.
+  Since 27 Sep 2026 the strigoi is named "the dead", what one of the dead is
+  called after the priest's tale; before it the game calls a risen man what
+  he was in life (`hearth_test.go`, `dead_walk_test.go`).
 * `tactical_test.go` — the twentieth, T1 (23 Sep 2026): the tactical layer
   in a real launch at the SHIPPED combat dials. The fight opens while the enemy
   is still out of reach and the enemy stops; the world is held for the player's
@@ -250,7 +256,13 @@ this doc fails until it agrees.
   stance, at least the 180 minutes needed are counted (none were, away), dawn
   pays +8 and spends them. About 75 s: it steps two
   nights. Negative controls ran red for paying regardless and for a post
-  that never counts.
+  that never counts. Act 3 (BUG-17, 27 Sep 2026): a fight by day wears his
+  mail, he promises a third time, stands the watch to 01:20-01:50, then
+  takes three hours at the smith's anvil across dawn -- night on one frame,
+  full day on the next -- and the watch he stood is still settled (+8) and
+  the night's 50 experience paid. It zeroes `rising.pressure` first: two
+  dawns with Night 1's bodies open raise soul pressure past the script's
+  `p` 0, and on the third night a risen man comes. About 160 s now.
 * `corpse_test.go` — the twenty-ninth, M4.7 step 1 (23 Sep 2026): the slain
   are open bodies, and the stake closes one. Night 1's dead (Q2a PLACEHOLDER)
   lie as four open bodies of men near where he enters and the carrion count
@@ -260,6 +272,11 @@ this doc fails until it agrees.
   lower the count; a dog he kills falls as carrion (Q1a) -- the count rises
   and X will not stake a carcass. A screenshot shows the placeholder marks.
   The "corpses" provider reports every body and counts by state and class.
+  Since 27 Sep 2026 each body also reports `was` -- what the man was in life,
+  which is what a risen man is called before the priest's tale: "A fallen
+  soldier" for Night 1's dead, "A stranger" for a wanderer, a slain man's row's
+  name ("Opportunist"); the words are `data/strigoi/bestiary.json`'s -- and
+  `walks_as`, the member a risen body walks as now ("" when it lies).
 * `rising_test.go` — the thirtieth, M4.7 step 2 (23 Sep 2026): the open dead
   rise in the deep night. One of Night 1's dead is staked (X), one laid in a
   hasty grave (D, 30 world minutes), and D over the staked body is refused
@@ -286,14 +303,35 @@ this doc fails until it agrees.
   `rising.p` to 0 so Night 1's dead stay down, and since step 5 `rising.edge_floor`
   to 0 so the edge floor's wanderer stays away too. `dead_walk_test.go` act 6
   (step 5): at odds 0, in the third deep-night band a fifth, nameless dead man
-  stands up at the edge of the night, with a body.
+  stands up at the edge of the night, with a body. Since M5.1b (27 Sep 2026)
+  act 3 also asserts every risen man in the fight is drawn from the strigoi's
+  own sheets (the `sheet` his entity reports, which `strigoi_describe_sprite`
+  loads as eight directions of 96-pixel frames) at the men's max health, 84,
+  and since 27 Sep (review B2) at the bestiary strigoi's `speed`, read from
+  the data file, so the natural-spawn path's speed has a test (the control
+  authored 6 and reverted `gameSpawner.Spawn` to the stand-in's). Since
+  27 Sep too, act 6 hovers the wanderer ("A stranger", before the priest's
+  tale) and one of the four standing a second time (still "A fallen
+  soldier"). `TestASlainManRises`, in the same file: at dusk the tables send
+  the men's row at certainty (max_groups 3, every other group sent home), he
+  walks to them by torchlight and kills one; the control sees the slain man's
+  remains in the entity list; at odds 1 the next deep-night band stands the
+  body up as a new member, and the remains are gone from the map (review C1:
+  a body standing for the first time left them lying under him); before the
+  tale the hover calls him "Opportunist"; and at the shipped human control
+  (the combat panel is drawn only in a paced fight) he lets the dead come,
+  ends his turns, and the combat log -- the `ui` provider's `tactical_lines`
+  -- calls the risen man "Opportunist" too, with no blow line naming "the
+  dead".
 * `hearth_test.go` — the thirty-second, M4.7 step 4 (23 Sep 2026): the priest's
   rite, the hearth unlock, and a staking seen. By day with the village
   "watching" (`village.seen_radius` wide) a stake costs standing 5 and marks
   `seen_staking`; a second costs nothing more. The controls: a hasty grave
   dug before the rite is granted is still hasty after first light, and a
-  risen man before the priest's tale carries no bar and the hover does not
-  call him the dead. At the hearth the priest tells the tale and grants the
+  risen man before the priest's tale carries no bar and the hover calls him
+  what he was in life -- one of Night 1's dead is "A fallen soldier" (Josh's
+  ruling of 27 Sep 2026; his body's `was` says so too), even drawn as the
+  strigoi since M5.1b -- not the dead. At the hearth the priest tells the tale and grants the
   rite; the next night the risen man carries a bar and the hover names him
   "the dead", and at first light the priest closes the grave. `village` now
   takes `rite_radius` and `seen_radius` as settable fields (and since J1,
@@ -942,9 +980,14 @@ and since 27 Sep (the tables burst's review) `hand_icons` (the HUD's two
 skill icons: his hands' keys, F and L) and `torch_verbs` (how many torch verbs
 -- a light, a relight, a douse, from L or the right button -- have done
 something this game: two douse what one lit, so a script that must tell one
-verb from three counts them). The `village` provider gained `sound_env` (the
-sound environment the game set from the map he stands on) and `music` (the
-file of the song that environment started, `""` when none) the same day.
+verb from three counts them), and `tactical_lines` (the combat panel's five
+lines as drawn, colour tokens and all -- the round, the pips, the keys and the
+last two blows, which are the combat log -- or none when the panel is not
+shown). `hover_label` is what the hover shows under the cursor, from the same
+naming function the combat log uses (`GameControls.nameFor`). The `village`
+provider gained `sound_env` (the sound environment the game set from the map
+he stands on) and `music` (the file of the song that environment started,
+`""` when none) the same day.
 Read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
 register when the game screen is constructed and close on unload.
@@ -956,7 +999,10 @@ skill ids, and `body` -- `composite` (Diablo II's class art) or `png` (a
 Strigoi hero, M5.3) -- with, for a PNG hero, `body_sheet`: which of its sheets
 the current mode resolved to (idle, walk, attack, hit, death, dead ...,
 fallbacks included). `NPC`: name, monstat (+ id), has_paths, paths, path_index, action,
-repetitions, done, animation_mode, direction, path_len, speed.
+repetitions, done, animation_mode, direction, path_len, speed. `Creature` (a
+bestiary creature, PNG): creature (its name), animation_mode, direction,
+moving, world_x/world_y, and since M5.1b `sheet` -- the sheet the current mode
+is drawn from, idle's when the mode has none of its own -- and `speed`.
 
 ## Input — two layers
 

@@ -1,0 +1,9 @@
+{
+  "directions": 8,
+  "frames_per_direction": 8,
+  "frame_width": 96,
+  "frame_height": 96,
+  "offset_x": -47,
+  "offset_y": 31,
+  "origin_at_bottom": true
+}

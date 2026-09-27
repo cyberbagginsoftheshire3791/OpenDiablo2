@@ -35,16 +35,16 @@ func TestRisenNeverTabled(t *testing.T) {
 	}
 }
 
-// Raise stands ONE of the dead up exactly where the body lay, drawn as a man
-// (Q5a), watching the target; it fights last, never routs, and the cap does
-// not count it.
+// Raise stands ONE of the dead up exactly where the body lay, drawn as its own
+// row -- the bestiary's strigoi (M5.1b; Q5a drew him as a man) -- watching the
+// target; it fights last, never routs, and the cap does not count it.
 func TestRaiseStandsOneWhereTheBodyLay(t *testing.T) {
 	s, _, notice, spawner, _ := newTestSpawns(t)
 
 	id := s.Raise(12.5, 30.5)
 	require.NotEmpty(t, id)
 
-	assert.Equal(t, "opportunists", spawner.lastKind, "a risen man is drawn as a man")
+	assert.Equal(t, RisenRow, spawner.lastKind, "the dead are drawn as their own row, the strigoi")
 	assert.Equal(t, 1, spawner.lastCount)
 	assert.Zero(t, spawner.lastMin)
 	assert.Zero(t, spawner.lastMax, "where the body lay, not a ring around it")
@@ -91,9 +91,9 @@ func TestLayDownDead(t *testing.T) {
 // A risen man who falls is the same body, open again where he fell -- once.
 func TestCorpsesRisenFallsAsHimself(t *testing.T) {
 	open := 0
-	c := NewCorpses(nil, func(d int) { open += d })
+	c := NewCorpses(nil, nil, func(d int) { open += d })
 
-	c.FallHuman("dead:1", 1, 1)
+	c.FallHuman("dead:1", "", 1, 1)
 	require.True(t, c.Rise("dead:1"))
 	c.Raised("dead:1", "m:7")
 	require.Equal(t, 0, open)
@@ -164,8 +164,8 @@ func TestRisingRaisesAndHearsFirstLight(t *testing.T) {
 	dials.P = 1
 
 	r, corpses, night := newTestRising(t, dials)
-	corpses.FallHuman("stands", 0, 0)
-	corpses.FallHuman("cannot", 0, 0)
+	corpses.FallHuman("stands", "", 0, 0)
+	corpses.FallHuman("cannot", "", 0, 0)
 
 	var order []string
 
