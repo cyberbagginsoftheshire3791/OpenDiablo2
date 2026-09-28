@@ -19,3 +19,4 @@ var _ d2interface.KeyEvent = &KeyEvent{}
 var _ d2interface.KeyCharsEvent = &KeyCharsEvent{}
 var _ d2interface.MouseEvent = &MouseEvent{}
 var _ d2interface.MouseMoveEvent = &MouseMoveEvent{}
+var _ d2interface.MouseWheelEvent = &MouseWheelEvent{}

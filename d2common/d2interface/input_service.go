@@ -22,4 +22,11 @@ type InputService interface {
 	IsMouseButtonJustReleased(button d2enum.MouseButton) bool
 	// KeyPressDuration returns how long the key is pressed in frames.
 	KeyPressDuration(key d2enum.Key) int
+	// Wheel returns the x and y scroll amounts of the mouse wheel or touchpad
+	// for this poll, and 0, 0 when nothing is being scrolled. A wheel is not a
+	// key -- it has a magnitude and no press, release or press duration -- so
+	// it is read here rather than through d2enum.KeyMouseWheelUp/Down, which
+	// the ebiten adapter's key map does not carry and which therefore alias
+	// the A key. See d2core/d2input/mousewheel_event.go.
+	Wheel() (xoff, yoff float64)
 }

@@ -22,8 +22,7 @@ const (
 )
 
 const (
-	screenMiddleX = 400
-	two           = 2
+	two = 2
 
 	dbgOffsetXY   = 40
 	dbgBoxWidth   = 220
@@ -176,14 +175,10 @@ func (mr *MapRenderer) Render(target d2interface.Surface) {
 
 	mapSize := mr.mapEngine.Size()
 
-	stxf, styf := mr.viewport.ScreenToWorld(screenMiddleX, -200)
-	etxf, etyf := mr.viewport.ScreenToWorld(screenMiddleX, 1050)
-
-	startX := int(math.Max(0, math.Floor(stxf)))
-	startY := int(math.Max(0, math.Floor(styf)))
-
-	endX := int(math.Min(float64(mapSize.Width), math.Ceil(etxf)))
-	endY := int(math.Min(float64(mapSize.Height), math.Ceil(etyf)))
+	// The probe points, the clamping and the floor/ceil are all unchanged; they
+	// moved to the viewport because that is where the scale is, and so a test can
+	// reach them without a renderer (viewport.go).
+	startX, startY, endX, endY := mr.viewport.cullRange(mapSize.Width, mapSize.Height)
 
 	mr.renderPass1(target, startX, startY, endX, endY)
 	mr.renderPass2(target, startX, startY, endX, endY)
@@ -198,8 +193,9 @@ func (mr *MapRenderer) Render(target d2interface.Surface) {
 	// still shows its roof.
 	endX3, endY3 := endX, endY
 	if len(mr.mapEngine.AuthoredImages()) > 0 {
-		endX3 = int(math.Min(float64(mapSize.Width), float64(endX+authoredCullRows)))
-		endY3 = int(math.Min(float64(mapSize.Height), float64(endY+authoredCullRows)))
+		rows := mr.viewport.authoredCullRows()
+		endX3 = int(math.Min(float64(mapSize.Width), float64(endX+rows)))
+		endY3 = int(math.Min(float64(mapSize.Height), float64(endY+rows)))
 	}
 
 	mr.renderPass3(target, startX, startY, endX3, endY3)
@@ -209,11 +205,6 @@ func (mr *MapRenderer) Render(target d2interface.Surface) {
 		mr.renderEntityDebug(target)
 	}
 }
-
-// authoredCullRows is how many extra tile rows the wall pass draws on an
-// authored map: 768 px (d2maptiled's tallest structure) / 40 px a row, less
-// what the 1050 px bottom margin already covers, rounded up. [DIAL]
-const authoredCullRows = 8
 
 // MoveCameraTo sets the position of the Camera to the given x and y coordinates.
 func (mr *MapRenderer) MoveCameraTo(position *d2vector.Position) {
@@ -233,6 +224,35 @@ func (mr *MapRenderer) MoveCameraTargetBy(vector *d2vector.Vector) {
 // ScreenToWorld returns the world position for the given screen (pixel) position.
 func (mr *MapRenderer) ScreenToWorld(x, y int) (worldX, worldY float64) {
 	return mr.viewport.ScreenToWorld(x, y)
+}
+
+// Scale returns the viewport's zoom. 1.0 is unzoomed, which is the only value
+// the shipped game uses.
+func (mr *MapRenderer) Scale() float64 {
+	return mr.viewport.Scale()
+}
+
+// SetScale sets the viewport's zoom without moving the camera, so the world point
+// at the middle of the screen stays there. ZoomAt is the one that holds a point
+// under the cursor instead.
+func (mr *MapRenderer) SetScale(scale float64) {
+	mr.viewport.SetScale(scale)
+}
+
+// ZoomAt sets the viewport's zoom to newScale and moves the camera so the world
+// point under the given screen pixel stays under it. This is the whole of
+// wheel-zoom-about-the-cursor: a wheel handler reads the event's amount and
+// position and calls this.
+//
+// It moves the camera to the answer rather than aiming Camera.target at it,
+// because a target is smoothed over following frames (Camera.advanceToTarget) and
+// a zoom that arrives a few frames late does not hold the point under the cursor.
+func (mr *MapRenderer) ZoomAt(screenX, screenY int, newScale float64) {
+	camX, camY := mr.viewport.ZoomAtScreen(screenX, screenY, newScale)
+	mr.viewport.SetScale(newScale)
+
+	position := d2vector.NewPosition(camX, camY)
+	mr.Camera.MoveTo(&position)
 }
 
 // ScreenToOrtho returns the orthogonal position, without accounting for the isometric angle, for the given screen

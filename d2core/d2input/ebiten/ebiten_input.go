@@ -167,3 +167,17 @@ func (is InputService) IsMouseButtonJustReleased(button d2enum.MouseButton) bool
 func (is InputService) KeyPressDuration(key d2enum.Key) int {
 	return inpututil.KeyPressDuration(keyToEbiten[key])
 }
+
+// Wheel returns the x and y scroll amounts of the mouse wheel or touchpad for
+// this frame, and 0, 0 when nothing is being scrolled.
+//
+// This is the whole reason the wheel does not arrive as a key. keyToEbiten
+// above has no row for d2enum.KeyMouseWheelUp or KeyMouseWheelDown (nor for
+// KeyTilde, KeyMouse3, KeyMouse4 or KeyMouse5), and a Go map returns the zero
+// value for a missing key -- ebiten.Key(0), which is ebiten.KeyA. So every one
+// of those six d2enum keys currently reports the state of the A key, and there
+// is no honest row to add for a wheel: ebiten reports it as two float64
+// offsets, not as a key that is down or up.
+func (is InputService) Wheel() (xoff, yoff float64) {
+	return ebiten.Wheel()
+}
