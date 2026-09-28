@@ -26,9 +26,6 @@ const (
 	searchMinutes = 10.0
 	placedDead    = 4 // [DIAL] Night 1's dead (Q2a PLACEHOLDER)
 
-	// risingSeedOffset keeps the rising's draws off the spawn tables' stream.
-	risingSeedOffset = 4707
-
 	// markLight is how lit a body's tile must be for its mark to show, and
 	// markNear how close he must stand to see one in the dark [DIALs].
 	markLight = 0.3

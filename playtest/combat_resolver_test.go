@@ -240,6 +240,24 @@ func TestCombatResolver(t *testing.T) {
 		t.Logf("act 3: forced_band=%q applied to %d blow(s)", band, len(forced))
 	}
 
+	// THE DOG IS DEAD BEFORE ACT 4 ASKS FOR ITS CORPSE. Acts 2 and 3 used to
+	// finish it on the dice alone -- seed 1462's combat stream happened to --
+	// and C6 (M4.6 B2a) gave combat a stream of its own, on which the dog
+	// stood through act 3 with 12 of its 61. A corpse is act 4's premise, not
+	// its finding, so it is arranged here with the one outcome-steering dial
+	// there is, and the fight ending is the evidence it died.
+	for i := 0; i < 8 && flag(t, combatState(s), "fighting"); i++ {
+		s.call("strigoi_set_system_field", map[string]any{
+			"system": "combat", "field": "forced_band", "value": "crit",
+		})
+
+		stepToNewRound(t, s)
+	}
+
+	if flag(t, combatState(s), "fighting") {
+		t.Fatalf("act 3: eight forced crits must finish the dog: %v", participant(t, combatState(s), dogID))
+	}
+
 	s.call("strigoi_set_system_field", map[string]any{
 		"system": "combat", "field": "forced_band", "value": "",
 	})

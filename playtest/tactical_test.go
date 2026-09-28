@@ -223,6 +223,24 @@ func TestTacticalFight(t *testing.T) {
 	// tile, or a handler that refuses everything. Only the dial moves.
 	setField(s, "combat", "move_tiles", far+1)
 
+	// A RIPOSTE IS A SWING, AND A SWING IN FLIGHT SWALLOWS A CLICK: the click
+	// handlers wait out IsCasting, which the ui provider reports as casting.
+	// Since C6 (M4.6 B2a) gave combat its own stream, the zombie grazes him on
+	// its turn at seed 1462 and he ripostes, so his swing can still be in the
+	// air here -- the first run of this act clicked into it and nothing
+	// happened, with no notice. The control waits the swing out, as a person
+	// would, so what it tests is the Move and not the swing.
+	swing := 0
+	for ; swing < 240 && flag(t, uiState(s), "casting"); swing++ {
+		s.call("strigoi_step", map[string]any{"frames": 1})
+	}
+
+	if flag(t, uiState(s), "casting") {
+		t.Fatalf("act 3 control: his swing was still in the air after %d frames", swing)
+	}
+
+	t.Logf("act 3 control: waited %d frame(s) for his swing to land", swing)
+
 	p = s.call("strigoi_get_player", map[string]any{})
 	sx, sy = pair(p, "screen")
 	ppx, ppy = num(p, "x"), num(p, "y")

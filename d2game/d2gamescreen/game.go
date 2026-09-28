@@ -18,6 +18,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2bestiary"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2craft"
@@ -282,7 +283,8 @@ func CreateGame(
 		game.pursuit,
 
 		game.light,
-		gameClient.Seed,
+		// C6 (M4.6 B2a): its own stream of the run's seed, never the world's.
+		d2rand.Derive(gameClient.Seed, d2rand.StreamSpawns),
 		d2world.DefaultSpawnDials(),
 	)
 
@@ -318,7 +320,8 @@ func CreateGame(
 		game.spawns,
 		game.pursuit,
 
-		gameClient.Seed,
+		// C6 (M4.6 B2a): its own stream of the run's seed, never the tables'.
+		d2rand.Derive(gameClient.Seed, d2rand.StreamCombat),
 		shippedCombatDials(),
 	)
 
@@ -335,7 +338,7 @@ func CreateGame(
 	// M4.7 step 2: the open dead roll to rise once per deep-night band, on a
 	// stream of the run's seed of their own.
 	game.rising = d2world.NewRising(game.corpses, game.spawns.Band, game.worldClock.Stage,
-		gameClient.Seed+risingSeedOffset, d2world.DefaultRisingDials())
+		d2rand.Derive(gameClient.Seed, d2rand.StreamRising), d2world.DefaultRisingDials())
 	d2harness.Register(game.rising)
 
 	// M4.7 step 3: a body that rises stands up in the world, and at first
