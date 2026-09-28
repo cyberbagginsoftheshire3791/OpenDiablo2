@@ -99,6 +99,13 @@ const (
 	// pkgApp joined at the polish burst (27 Sep 2026): the one place a game
 	// is started, and what it does when the game screen cannot be built.
 	pkgApp = "d2app"
+	// pkgPalette joined at the editor burst (27 Sep 2026): the model behind the
+	// map editor's asset palette. Every row of it is a DEFERRAL, because the
+	// editor screen that drives it (d2core/d2mapedit) is being written in
+	// parallel on another branch and is not present here -- so the shipped game
+	// reaches none of this, and saying otherwise is exactly the hollow claim
+	// this register exists to catch.
+	pkgPalette = "d2core/d2mappalette"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -847,6 +854,107 @@ var Register = []Entry{
 // RegisterMarkdown renders the register as a table, so the register lives in
 // one place -- here, next to the gate that enforces it -- and the document is
 // generated rather than typed. A count in prose is a count that goes stale.
+// PalettePending is the editor palette's 19 rows, written in the same commit as
+// the package and DELIBERATELY NOT IN Register yet.
+//
+// WHY THEY ARE NOT MEASURED. The gate asks `deadcode -whylive=SYM .`, so it can
+// only speak about symbols inside the main package's import graph. Nothing in
+// the shipped program imports d2core/d2mappalette -- the editor screen that will
+// (d2core/d2mapedit) is being written in parallel on another branch, and the
+// palette's brief forbids it from depending on it -- so all 19 measure NOT FOUND,
+// which the gate collapses to `missing`.
+//
+// MEASURED, not assumed: `go run ./tools/reachcheck -only=d2mappalette` on
+// 27 Sep 2026, 19 entries in 7m19s against this working tree. Every row read
+// "expected dead, measured missing".
+//
+// So there are exactly three things that could be done with these rows, and two
+// of them are lies:
+//
+//   - File them `VerdictDead`. Dead means "in the program and reached by
+//     nothing"; these are not in the program at all. The gate goes red for ever
+//     and the register stops being something anyone trusts.
+//   - File them `VerdictMissing`. That verdict's own documentation is "the symbol
+//     does not exist. The register is stale" (classify.go:59). The symbols exist
+//     and the register is not stale, so the row would read as a false sentence to
+//     the next person who opens this file.
+//   - Manufacture an importer so the rows can be measured. That is the exact
+//     failure this whole tool exists to catch -- Spawns.Groups' row says so in as
+//     many words -- and it is not on the table.
+//
+// The fourth option is this: write the rows now, while the reasons for them are
+// fresh, keep them out of the measured set, and MOVE THEM IN with the commit that
+// lands the editor screen and its import. Each then gets a real verdict; any the
+// editor turns out not to need becomes a delete row rather than a quietly-kept
+// deferral. TestPalettePendingIsWellFormed holds the block to the register's own
+// rules in the meantime so it cannot rot.
+//
+// THE EXPECT COLUMN BELOW IS NOT A MEASUREMENT. Nothing measures these rows, so
+// Expect is a placeholder, and it is `dead` because that is what each symbol
+// becomes the moment the package is linked and before the editor actually calls
+// it. Whoever moves a row into Register measures it and writes down what came
+// back -- `live` for the ones the editor drives, `dead` for the rest, and a
+// delete row for anything nobody wanted.
+var PalettePending = []Entry{
+	{sym(pkgPalette, "NewCatalog"), BucketDefer, VerdictDead,
+		"An empty palette catalog. The editor builds one per map it opens.",
+		"the map editor screen, d2core/d2mapedit -- written in parallel this burst on another branch, absent here, and the only intended caller"},
+	{sym(pkgPalette, "Catalog.ReadMap"), BucketDefer, VerdictDead,
+		"Catalogues a .tmj's embedded tilesets: what the open map can already place, measured from the real PNGs, plus the map's own note (which the loader discards) and the distinct-kind count against the 256 cap.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.ReadStructureDir"), BucketDefer, VerdictDead,
+		"Catalogues data/strigoi/structures: art-repo renders installed for the map, with their footprints derived from the loader's own width formula because nothing on disk declares one.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.ReadModules"), BucketDefer, VerdictDead,
+		"Catalogues a strigoi-art module manifest, which is how the Dealu monastery reaches the palette: three of its six modules satisfy the engine's rules and three are offered greyed out with the loader's own refusal.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.Entries"), BucketDefer, VerdictDead,
+		"Every catalogued piece, in tab order. The palette's list.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.InCategory"), BucketDefer, VerdictDead,
+		"One tab's entries.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.Placeable"), BucketDefer, VerdictDead,
+		"Only what the engine will actually accept: what the editor may let a user drop on the map.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.Refused"), BucketDefer, VerdictDead,
+		"What the engine would refuse, so the editor greys it out instead of letting a user build a map that will not open.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.Tabs"), BucketDefer, VerdictDead,
+		"The five tabs with their counts, and the reason each of the three unavailable ones is empty. The editor shows the tab and the reason together.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.ByID"), BucketDefer, VerdictDead,
+		"One entry by the id the loader itself uses for a kind, so a palette selection and an engine error name the same thing.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.KindsFree"), BucketDefer, VerdictDead,
+		"How many of the loader's 256 distinct kinds the open map has left. A palette that cannot see this cap offers a tile the loader then refuses.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Catalog.MapNote"), BucketDefer, VerdictDead,
+		"The open map's \"note\" property verbatim. The loader reads it and throws it away, so this is the only place it survives, and it is one of the three status signals.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Entry.Placeable"), BucketDefer, VerdictDead,
+		"Whether the engine will accept this art as it stands: the greying-out test for one palette cell.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Entry.Why"), BucketDefer, VerdictDead,
+		"One line for the user: why the art has the status it has, and if it cannot be placed, the loader's reason.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "Tabs"), BucketDefer, VerdictDead,
+		"The tab strip with no catalog behind it, for a screen drawing its chrome before a map is open.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "CheckArt"), BucketDefer, VerdictDead,
+		"The engine's art rules, transcribed and held against the real d2maptiled.Parse by TestPaletteAgreesWithTheEngine. The editor calls it to validate art a user drops in before it is in a map.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "DeriveStatus"), BucketDefer, VerdictDead,
+		"Approved / preview / unknown from the only signals that exist -- there is no approval field in the engine -- with the sentence the editor shows and every signal found.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "PNGSize"), BucketDefer, VerdictDead,
+		"A PNG's size from its IHDR without decoding it, so opening a tab costs 24 bytes a file instead of a full decode. The editor also uses it to letterbox a thumbnail at the art's true aspect.",
+		"the map editor screen, d2core/d2mapedit"},
+	{sym(pkgPalette, "HumanName"), BucketDefer, VerdictDead,
+		"Human words from an art path, because no asset in this project carries a title anywhere. \"Church tower\", not \"placeholder-church-tower.png\".",
+		"the map editor screen, d2core/d2mapedit"},
+}
+
 func RegisterMarkdown() string {
 	var b strings.Builder
 
