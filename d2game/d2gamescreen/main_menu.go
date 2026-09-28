@@ -16,6 +16,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2ui"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
@@ -208,6 +209,10 @@ func (v *MainMenu) OnLoad(loading d2screen.LoadingState) {
 	if err := v.inputManager.BindHandler(v); err != nil {
 		v.Error("failed to add main menu as event handler")
 	}
+
+	// The harness's "ui" system while this screen lives (BUG-27); last, so
+	// every button it reports exists.
+	d2harness.Register(mainMenuProvider{v})
 }
 
 func (v *MainMenu) loadBackgroundSprites() {
@@ -496,6 +501,8 @@ func (v *MainMenu) onCinematicsButtonClicked() {
 // key-up reached the stale menu's "exit on Escape" branch and the process
 // exited with code 0 and no message.
 func (v *MainMenu) OnUnload() error {
+	d2harness.Unregister(mainMenuProvider{v}) // the "ui" provider dies with the screen
+
 	if err := v.inputManager.UnbindHandler(v); err != nil {
 		v.Errorf("main menu: unbinding the input handler: %v", err)
 	}

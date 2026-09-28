@@ -805,6 +805,12 @@ type Button struct {
 	pressed               bool
 	toggled               bool
 	tooltip               *Tooltip
+
+	// text and labelRect are what the button was made to say and where on
+	// its own surface it drew it -- reported to the playtest harness, which
+	// measures the label's ink in that rect (BUG-27).
+	text      string
+	labelRect image.Rectangle
 }
 
 // NewButton creates an instance of Button
@@ -851,10 +857,11 @@ func (ui *UIManager) createButton(layout *ButtonLayout, text string) *Button {
 	}
 
 	btn.buttonLayout = layout
+	btn.text = text
 
 	lbl := ui.NewLabel(layout.FontPath, d2resource.PaletteUnits)
 	lbl.SetText(text)
-	lbl.Color[0] = d2util.Color(layout.LabelColor)
+	lbl.Color[0] = d2util.Color(buttonLabelColor(layout.LabelColor, ui.asset != nil && ui.asset.FontSetPath() != ""))
 	lbl.Alignment = HorizontalAlignCenter
 
 	buttonSprite, err := ui.NewSprite(layout.ResourceName, layout.PaletteName)
@@ -903,6 +910,28 @@ func (ui *UIManager) createButton(layout *ButtonLayout, text string) *Button {
 	btn.prerenderStates(buttonSprite, layout, lbl)
 
 	return btn
+}
+
+// buttonLabelColor is the tint a button draws its label in: the layout's
+// LabelColor, except greyAlpha100 when a Strigoi font set is in use (BUG-27).
+//
+// greyAlpha100 was chosen for Diablo II's glyphs. Each is a white face inside
+// a black outline; the tint (a multiply) dims the face to the stone's own grey
+// and leaves the outline black, and it is the OUTLINE that reads against a
+// Diablo II button. A Strigoi font (d2asset's font sets) is one warm-white ink
+// with no outline, so the same multiply draws every letter at about
+// (94,91,85) -- the grey of the stone under it. The label was drawn all along,
+// at full opacity, and could not be seen: eight blank bars on the main menu.
+// With a font set the grey tint is dropped and the label is drawn in the
+// font's own ink. Layouts with no LabelColor (zero, transparent) keep it: the
+// arrow and add-skill buttons are made with a palette path for text, and it
+// was never meant to show.
+func buttonLabelColor(layoutColor uint32, fontSet bool) uint32 {
+	if fontSet && layoutColor == greyAlpha100 {
+		return whiteAlpha100
+	}
+
+	return layoutColor
 }
 
 type buttonStateDescriptor struct {
@@ -963,9 +992,12 @@ func (v *Button) prerenderStates(btnSprite *Sprite, btnLayout *ButtonLayout, lab
 			btnLayout.YSegments, btnLayout.BaseFrame)
 	}
 
-	_, labelHeight := label.GetSize()
+	labelWidth, labelHeight := label.GetSize()
 	textY := half(v.height - labelHeight)
 	xOffset := half(v.width)
+
+	// Centred as HorizontalAlignCenter centres it (Label.getAlignOffset).
+	v.labelRect = image.Rect(xOffset-labelWidth/2, textY, xOffset-labelWidth/2+labelWidth, textY+labelHeight)
 
 	label.SetPosition(xOffset, textY)
 	label.Render(v.normalSurface)
@@ -1142,6 +1174,13 @@ func (v *Button) SetPosition(x, y int) {
 		v.tooltip.SetPosition(x+v.buttonLayout.TooltipXOffset, y+v.buttonLayout.TooltipYOffset)
 	}
 }
+
+// Text is the label the button was made with.
+func (v *Button) Text() string { return v.text }
+
+// LabelRect is where the button draws its label (unpressed), relative to the
+// button's top-left corner.
+func (v *Button) LabelRect() image.Rectangle { return v.labelRect }
 
 // SetTooltip adds a tooltip to the button
 func (v *Button) SetTooltip(t *Tooltip) {

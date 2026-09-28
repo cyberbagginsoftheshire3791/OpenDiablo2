@@ -84,7 +84,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 44 playtest scripts.** That count, the harness version below and the
+**The 45 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -493,6 +493,13 @@ this doc fails until it agrees.
   harness has no wheel verb and no press-and-hold, so those are proved by the
   viewport's unit tests and by the screenshots in
   `strigoi-harness-runs\editor-v0-shots\`, not here.
+* `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
+  menu's labels can be READ in the default game. It boots to the menu, clicks
+  past the trademark page off every button, parks the cursor, screenshots, and
+  in each button's label rect (from the menu's `ui` provider) counts the pixels
+  that stand out from the stone of their row across the button's face. Control
+  first under `-classic`. It reads pixels because the bug was invisible to
+  every field: the labels were set and drawn, in the stone's own grey.
 * `strigoi_game_test.go` — the thirty-ninth: the game launched with NO switches
   builds the village, draws the hero from Strigoi's sheets, uses Strigoi's font
   set and string table, and a first hour reads no Diablo II tile, class-art,
@@ -1070,6 +1077,17 @@ he stands on) and `music` (the file of the song that environment started,
 Read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
 register when the game screen is constructed and close on unload.
+
+**`ui` on the main menu** (BUG-27, 28 Sep 2026) — while the main menu is the
+screen, IT is the `ui` system (`d2gamescreen/main_menu_harness.go`; registered
+at the end of `MainMenu.OnLoad`, removed in `OnUnload`): `screen`
+(`"main_menu"`), `main_menu_page` (`trademark` -- the splash every new menu
+opens on, which draws no buttons -- then `main_menu`, `multiplayer`, `tcp_ip`,
+`server_ip`) and `main_menu_buttons` by name (`single_player`,
+`other_multiplayer`, `project_website`, `map_engine_test`, `world_editor`,
+`credits`, `cinematics`, `exit`), each `{x, y, w, h, visible, text, label_x,
+label_y, label_w, label_h}` in screen pixels -- the label rect is where the
+button drew its label when up.
 
 Entity state today — `Player`: name, class, act, gold, level, experience,
 health/mana/stamina with maxima, the four attributes, in_town, running,

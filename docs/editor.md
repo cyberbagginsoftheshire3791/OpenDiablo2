@@ -180,7 +180,7 @@ Said here rather than left to be assumed:
   village**, because both would write into the tree. `playtest/editor_test.go`
   runs them against a copy instead, and act 4 proves the authoring file survives
   a real game running on an edited map.
-- **The WORLD EDITOR menu button is unreadable in the default game.** Not a fault
-  of this burst: EVERY main-menu label is blank under Strigoi's own build and
-  correct under `-classic` (BUG-27 in `docs/bugs.md`). Until that is fixed,
-  `-editor` on the command line is the reliable way in.
+- **The WORLD EDITOR menu button was unreadable in the default game** until
+  BUG-27 was fixed (28 Sep, `docs/bugs.md`): every main-menu label was drawn in
+  the stone's own grey under Strigoi's fonts. It reads now; `-editor` on the
+  command line still opens the editor directly.
