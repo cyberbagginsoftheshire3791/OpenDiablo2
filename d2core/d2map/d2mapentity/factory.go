@@ -50,6 +50,12 @@ type MapEntityFactory struct {
 	asset *d2asset.AssetManager
 	item  *diablo2item.ItemFactory
 	rng   *rand.Rand // the world RNG (P3 E4); nil falls back to the global generator
+
+	// The next-id seam (M4.6 B2b, entity_id.go): the id the next NewNPC or
+	// NewCreature takes, and every id handed out through it, so none is
+	// handed out twice.
+	nextEntityID string
+	givenIDs     map[string]bool
 }
 
 // SetRand hands the factory the world RNG, so entity creation rolls
@@ -107,6 +113,10 @@ type CreatureAnimationPaths struct {
 
 func (f *MapEntityFactory) NewCreature(x, y int, name string, paths CreatureAnimationPaths, direction int,
 	standIn *d2records.MonStatRecord) (*Creature, error) {
+	// Taken first, whatever follows: a construction that fails must not
+	// leave its id waiting for the next entity (entity_id.go).
+	id := f.takeEntityID()
+
 	if standIn != nil {
 		_ = f.randInt63() // NewNPC's per-entity behaviour seed.
 
@@ -135,7 +145,7 @@ func (f *MapEntityFactory) NewCreature(x, y int, name string, paths CreatureAnim
 		animations[mode] = animation
 	}
 
-	creature, err := newCreature(x, y, name, animations, direction)
+	creature, err := newCreature(x, y, id, name, animations, direction)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +161,11 @@ func (f *MapEntityFactory) NewCreature(x, y int, name string, paths CreatureAnim
 func (f *MapEntityFactory) NewPlayer(id, name string, x, y, direction int, heroType d2enum.Hero,
 	stats *d2hero.HeroStatsState, skills map[int]*d2hero.HeroSkill, equipment *d2inventory.CharacterEquipment,
 	leftSkill, rightSkill, gold int) *Player {
+	// The next-id seam (entity_id.go): a waiting id is spent here, first,
+	// and never worn -- the player's id is his connection's, and a save
+	// names him by a word, not an id.
+	f.spendEntityID()
+
 	layerEquipment := &[d2enum.CompositeTypeMax]string{
 		d2enum.CompositeTypeHead:      equipment.Head.GetArmorClass(),
 		d2enum.CompositeTypeTorso:     equipment.Torso.GetArmorClass(),
@@ -236,6 +251,10 @@ func (f *MapEntityFactory) NewPlayer(id, name string, x, y, direction int, heroT
 
 // NewMissile creates a new Missile and initializes it's animation.
 func (f *MapEntityFactory) NewMissile(x, y int, record *d2records.MissileRecord) (*Missile, error) {
+	// The next-id seam (entity_id.go): a waiting id is spent here, first,
+	// and never worn -- a missile is not saved.
+	f.spendEntityID()
+
 	animation, err := f.asset.LoadAnimation(
 		fmt.Sprintf("%s/%s.dcc", d2resource.MissileData, record.Animation.CelFileName),
 		d2resource.PaletteUnits,
@@ -264,6 +283,10 @@ func (f *MapEntityFactory) NewMissile(x, y int, record *d2records.MissileRecord)
 
 // NewItem creates an item map entity
 func (f *MapEntityFactory) NewItem(x, y int, codes ...string) (*Item, error) {
+	// The next-id seam (entity_id.go): a waiting id is spent here, first,
+	// and never worn -- an item on the ground is not saved.
+	f.spendEntityID()
+
 	item, err := f.item.NewItem(codes...)
 
 	if err != nil {
@@ -294,7 +317,7 @@ func (f *MapEntityFactory) NewItem(x, y int, codes ...string) (*Item, error) {
 func (f *MapEntityFactory) NewNPC(x, y int, monstat *d2records.MonStatRecord, direction int) (*NPC, error) {
 	// https://github.com/OpenDiablo2/OpenDiablo2/issues/803
 	result := &NPC{
-		mapEntity:     newMapEntity(x, y),
+		mapEntity:     newMapEntityWithID(x, y, f.takeEntityID()),
 		HasPaths:      false,
 		monstatRecord: monstat,
 		monstatEx:     f.asset.Records.Monster.Stats2[monstat.ExtraDataKey],
@@ -343,6 +366,10 @@ func (f *MapEntityFactory) NewNPC(x, y int, monstat *d2records.MonStatRecord, di
 
 // NewCastOverlay creates a cast overlay map entity
 func (f *MapEntityFactory) NewCastOverlay(x, y int, overlayRecord *d2records.OverlayRecord) (*CastOverlay, error) {
+	// The next-id seam (entity_id.go): a waiting id is spent here, first,
+	// and never worn -- an overlay is not saved.
+	f.spendEntityID()
+
 	animation, err := f.asset.LoadAnimationWithEffect(
 		fmt.Sprintf("/data/Global/Overlays/%s.dcc", overlayRecord.Filename),
 		d2resource.PaletteUnits,

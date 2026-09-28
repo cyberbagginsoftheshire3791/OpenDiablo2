@@ -44,13 +44,14 @@ type Creature struct {
 
 var _ d2interface.MapEntity = (*Creature)(nil)
 
-func newCreature(x, y int, name string, animations map[creatureMode]d2interface.Animation, direction int) (*Creature, error) {
+// newCreature builds a creature; an empty id means a fresh one.
+func newCreature(x, y int, id, name string, animations map[creatureMode]d2interface.Animation, direction int) (*Creature, error) {
 	if animations[creatureIdle] == nil {
 		return nil, fmt.Errorf("creature %q has no idle animation", name)
 	}
 
 	c := &Creature{
-		mapEntity:  newMapEntity(x, y),
+		mapEntity:  newMapEntityWithID(x, y, id),
 		name:       name,
 		animations: animations,
 		direction:  direction,

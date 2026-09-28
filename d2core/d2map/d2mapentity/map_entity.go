@@ -27,12 +27,25 @@ type mapEntity struct {
 	highlight bool
 }
 
-// newMapEntity creates an instance of mapEntity
+// newMapEntity creates an instance of mapEntity with a fresh id.
 func newMapEntity(x, y int) mapEntity {
+	return newMapEntityWithID(x, y, "")
+}
+
+// newMapEntityWithID creates an instance of mapEntity. An empty id means a
+// fresh one from the uuid stream, which is where every monster's and
+// villager's id is made. A given id (the next-id seam, entity_id.go) draws no uuid at all:
+// the load that rebuilds entities restores the uuid stream's count after
+// them (build plan trap 6), so a draw here would be thrown away anyway.
+func newMapEntityWithID(x, y int, id string) mapEntity {
 	pos := d2vector.NewPosition(float64(x), float64(y))
 
+	if id == "" {
+		id = uuid.New().String()
+	}
+
 	return mapEntity{
-		uuid:     uuid.New().String(),
+		uuid:     id,
 		Position: pos,
 		Target:   pos,
 		velocity: *d2vector.VectorZero(),
