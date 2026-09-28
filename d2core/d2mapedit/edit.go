@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"path"
+	"strings"
 )
 
 // THE EDIT OPERATIONS.
@@ -94,7 +96,7 @@ func (c *placeStructureCmd) Do(d *Doc) error {
 
 	o := newJSONObject()
 	o.Set("id", num(c.id))
-	o.Set("name", k.Name)
+	o.Set("name", StructureName(k))
 	o.Set(d.m.classKey, ClassStructure)
 	o.Set("x", fnum(float64(c.x)*th))
 	o.Set("y", fnum(float64(c.y)*th))
@@ -134,6 +136,32 @@ func (c *placeStructureCmd) Undo(d *Doc) error {
 }
 
 var errNoObjectLayer = fmt.Errorf("the map has no %q layer", LayerObjects)
+
+// StructureName is the name a placed structure is written with: its KIND, the
+// way the village's own records name theirs -- "peasant-house",
+// "burned-house" -- and the way tools/villagemap writes them.
+//
+// It is read off the art's path, because that is where the kind is: a
+// structure's picture lives at structures/<kind>/<state>.png, so the directory
+// is the kind and the file is its state. Art that does not follow that shape
+// (a tile under tiles/) is named for its file, without the extension. Only a
+// kind with no art at all falls back to the loader's "<tileset>#<id>" -- which
+// is what EVERY placed structure was called until the 28 Sep review
+// ("village-placeholder#16" beside the village's "peasant-house").
+func StructureName(k Kind) string {
+	img := strings.ReplaceAll(k.Image, "\\", "/")
+	if strings.TrimSpace(img) == "" {
+		return k.Name
+	}
+
+	img = path.Clean(img)
+
+	if dir := path.Base(path.Dir(img)); dir != "." && dir != ".." && dir != "/" && dir != "tiles" {
+		return dir
+	}
+
+	return strings.TrimSuffix(path.Base(img), path.Ext(img))
+}
 
 // MoveObject moves any object to toX, toY in WORLD TILES -- the unit the read
 // model reports and the unit the loader divides pixels into (tiled.go:928).

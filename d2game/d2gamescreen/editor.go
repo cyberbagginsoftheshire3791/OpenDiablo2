@@ -19,6 +19,8 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2config"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
@@ -75,6 +77,8 @@ const (
 	edReasonLines   = 3  // how much of an unavailable tab's reason the column takes
 	edScrollStep    = 3  // palette rows per wheel notch
 	edMaxPaletteRow = 64 // the Label pool's size; a longer catalog scrolls
+	edMaxPeople     = 32 // name labels for people; more are marked but not named
+	edNoticeLines   = 7  // how much of a refused map's reason the notice shows
 
 	// edMinScale is the viewport's OWN minScale (viewport.go:36), not a
 	// rounder number above it: a 48x48 map is 7680 ortho pixels wide and the
@@ -100,6 +104,17 @@ const (
 	edColSelect   = 0xffe080ff
 	edColGhostOK  = 0x70ff90ff
 	edColGhostNo  = 0xff5050ff
+	// edColVoid is the map view behind the map, so what is not the map is
+	// one known colour rather than whatever the window held (the 28 Sep review's
+	// screenshots showed white).
+	edColVoid = 0x0a0a10ff
+	// edColPerson and edColStart mark the people the map places and the
+	// player_start (B5): the view draws no entities, so without a marker the
+	// only way to find the smith was to drop a house on him.
+	edColPerson = 0x60d8ffff
+	edColStart  = 0xffb030ff
+	// edColNotice is the panel a refused map's reason is drawn on (C).
+	edColNotice = 0x1a0808f4
 
 	// edDimBrightness is how far down a greyed row's art is drawn.
 	edDimBrightness = 0.45
@@ -130,11 +145,24 @@ type Editor struct {
 	ui           *d2ui.UIManager
 	navigator    d2interface.Navigator
 
-	mapPath string
+	// mapPath is the map as the GAME reads it: a path its loader resolves in
+	// its own folders ("data/strigoi/maps/village.tmj"). diskPath is the file
+	// the editor reads and writes, ABSOLUTE and fixed at open (28 Sep review,
+	// B1's hazard: the save target used to be relative to the working
+	// directory, so it moved with it). assetRoot is the folder mapPath is
+	// relative to. See editorResolve.
+	mapPath   string
+	diskPath  string
+	assetRoot string
+
 	doc     *d2mapedit.Doc
 	stack   *d2mapedit.Stack
 	catalog *d2mappalette.Catalog
 	art     d2mapedit.Art
+	// load is how the engine's parser reads the map's art: the game's own
+	// loader, so rebuild, save and playtest all ask exactly what the game
+	// would do with the file.
+	load d2maptiled.Loader
 
 	mapEngine   *d2mapengine.MapEngine
 	mapRenderer *d2maprenderer.MapRenderer
@@ -164,7 +192,6 @@ type Editor struct {
 	panLastX, panLastY int
 
 	showGrid   bool
-	dirty      bool
 	leaveArmed bool // Escape has been pressed once on an unsaved map
 	message    string
 	problems   []d2mapedit.Problem
@@ -174,6 +201,23 @@ type Editor struct {
 	// per tab rather than once a frame; reasonFor is the tab it was wrapped for.
 	reasonLines []string
 	reasonFor   int
+
+	// engineErr is why the game's own parser refuses the document as it now
+	// stands, nil when it takes it; laidOnce is whether any version of it was
+	// ever laid into the view. The notice in the map area is drawn from both
+	// (28 Sep review, C: a refused map used to open as an empty grid with the
+	// reason one line of the status bar).
+	engineErr   error
+	laidOnce    bool
+	noticeLines []string
+	noticeFor   string
+
+	// loaded is whether OnLoad has run before: the screen is loaded again when
+	// a playtest hands it back (A2), and then it keeps the view it had --
+	// viewScale and viewCam, taken in OnUnload -- instead of re-fitting.
+	loaded    bool
+	viewScale float64
+	viewCam   *d2vector.Position
 
 	// A pool of Labels allocated once. Index 0..edMaxPaletteRow-1 are the
 	// palette rows; the rest are named below.
@@ -188,6 +232,8 @@ type Editor struct {
 	problemLbl *d2ui.Label
 	sealedLbl  *d2ui.Label
 	countLbl   *d2ui.Label
+	noticeLbl  *d2ui.Label
+	personLbls []*d2ui.Label
 
 	canvas *d2ui.CustomWidget
 
@@ -208,12 +254,16 @@ func CreateEditor(
 	navigator d2interface.Navigator,
 	l d2util.LogLevel,
 ) (*Editor, error) {
-	if mapPath == "" {
-		mapPath = DefaultEditorMap
+	disk, assetPath, root, err := editorResolve(mapPath, editorAssetRoots())
+	if err != nil {
+		return nil, err
 	}
 
-	mapPath = editorAssetPath(mapPath)
-	disk := editorDiskPath(mapPath)
+	if EditorOpenGuard != nil {
+		if err := EditorOpenGuard(disk); err != nil {
+			return nil, err
+		}
+	}
 
 	doc, err := d2mapedit.OpenFile(disk)
 	if err != nil {
@@ -227,10 +277,13 @@ func CreateEditor(
 		inputManager: inputManager,
 		ui:           ui,
 		navigator:    navigator,
-		mapPath:      mapPath,
+		mapPath:      assetPath,
+		diskPath:     disk,
+		assetRoot:    root,
 		doc:          doc,
 		stack:        d2mapedit.NewStack(doc),
 		art:          d2mapedit.DirArt(filepath.Dir(disk)),
+		load:         asset.LoadFile,
 		thumbs:       map[string]d2interface.Surface{},
 		thumbFail:    map[string]bool{},
 		gids:         map[string]int{},
@@ -246,13 +299,16 @@ func CreateEditor(
 
 	e.catalog = d2mappalette.NewCatalog()
 
-	// The catalog is rooted at the WORKING DIRECTORY and handed the map's own
-	// path, not rooted at the map's own directory: the village's tileset points
-	// at "../structures/village-well/intact.png" and an fs.FS cannot be escaped
-	// upwards, so a catalog rooted at data/strigoi/maps could not read half the
-	// art. Rooting it here also makes Entry.ImagePath exactly the path
-	// AssetManager.LoadFile takes, which is what the thumbnails are loaded by.
-	if err := e.catalog.ReadMap(os.DirFS("."), e.mapPath); err != nil {
+	// The catalog is rooted at the folder the GAME reads the map from and
+	// handed the map's own path, not rooted at the map's own directory: the
+	// village's tileset points at "../structures/village-well/intact.png" and
+	// an fs.FS cannot be escaped upwards, so a catalog rooted at
+	// data/strigoi/maps could not read half the art. Rooting it there also
+	// makes Entry.ImagePath exactly the path AssetManager.LoadFile takes,
+	// which is what the thumbnails are loaded by. (It was the working
+	// directory until the 28 Sep review; for a game started from its own
+	// folder that is the same place.)
+	if err := e.catalog.ReadMap(os.DirFS(e.assetRoot), e.mapPath); err != nil {
 		// A catalog that cannot be built is not fatal -- the map still opens,
 		// and saying so is better than a palette that is silently empty.
 		e.Warningf("the palette could not read %s: %v", e.mapPath, err)
@@ -270,6 +326,96 @@ func CreateEditor(
 // which is the only .tmj that exists.
 const DefaultEditorMap = "data/strigoi/maps/village.tmj"
 
+// EditorOpenGuard, when it is set, may refuse a map before the editor opens it.
+// The game leaves it nil. The playtest harness sets one (d2app/harness.go) that
+// refuses the working tree's own village: the harness runs the game with the
+// repository as its working directory, so a script that pressed Ctrl+S in an
+// editor opened with a bare -editor would have overwritten the shipped
+// data/strigoi/maps/village.tmj (28 Sep review, B1). disk is the absolute path
+// editorResolve settled on.
+var EditorOpenGuard func(disk string) error //nolint:gochecknoglobals // a harness seam, nil in the game
+
+// editorAssetRoots are the folders the game's loader reads loose files from, in
+// its own order: the executable's folder, then %AppData%\OpenDiablo2 -- the two
+// file-system sources App.Run adds (d2app/app.go), read the same way here so
+// the two cannot disagree.
+func editorAssetRoots() []string {
+	return []string{filepath.Dir(d2config.LocalConfigPath()), filepath.Dir(d2config.DefaultConfigPath())}
+}
+
+// editorResolve turns the map the editor was asked for into the three things it
+// works with: disk, the ABSOLUTE file it reads and writes; assetPath, the path
+// the game's loader reads that same file by; and root, the folder assetPath is
+// relative to (the catalog reads the art from there).
+//
+// WHY ABSOLUTE, AND WHY AT OPEN (28 Sep review, B1). The editor used to keep
+// the path it was given, relative, and write to it relative to the working
+// directory at the moment of the save. The playtest harness runs the game with
+// the REPOSITORY as its working directory, so a scripted Ctrl+S under a bare
+// -editor wrote the shipped village. Now the file is fixed once, here, and the
+// save goes to that file whatever the working directory later becomes.
+//
+// A map under one of roots is read by the game from there, so its asset path is
+// its path below that root. A RELATIVE path under none of them is what it
+// always was: the game's loader reads it by that same relative path from its
+// own folders, which for a game run from its own folder is the file itself.
+// (Where the two differ -- a harness build lives in a temporary folder with a
+// COPY of data/strigoi -- the playtest's read-back check catches it before a
+// game starts on the wrong bytes; see playtest.) An ABSOLUTE path under none of
+// them is refused: the game could not load it, nor the art beside it.
+func editorResolve(asked string, roots []string) (disk, assetPath, root string, err error) {
+	if strings.TrimSpace(asked) == "" {
+		asked = DefaultEditorMap
+	}
+
+	native := filepath.FromSlash(strings.ReplaceAll(asked, "\\", "/"))
+	relative := !filepath.IsAbs(native)
+
+	if relative {
+		// The engine's slash-rooted spelling ("/data/strigoi/...") is a
+		// game-relative path, as SetAuthoredMap and -map read it.
+		native = filepath.FromSlash(editorAssetPath(asked))
+	}
+
+	abs, err := filepath.Abs(native)
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolving %s: %w", asked, err)
+	}
+
+	disk = filepath.Clean(abs)
+
+	for _, r := range roots {
+		if strings.TrimSpace(r) == "" {
+			continue
+		}
+
+		ra, err := filepath.Abs(r)
+		if err != nil {
+			continue
+		}
+
+		rel, err := filepath.Rel(ra, disk)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) ||
+			filepath.IsAbs(rel) {
+			continue
+		}
+
+		return disk, filepath.ToSlash(rel), filepath.Clean(ra), nil
+	}
+
+	if relative {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", "", "", err
+		}
+
+		return disk, editorAssetPath(asked), cwd, nil
+	}
+
+	return "", "", "", fmt.Errorf("%s is outside the game's own folders (%s), so the game could not load it or "+
+		"the art beside it; copy it under data/strigoi/maps in the game's folder", disk, strings.Join(roots, ", "))
+}
+
 // editorAssetPath is the path the ENGINE takes: forward slashes, cleaned, with
 // no leading slash -- exactly the shape d2mapgen hands d2maptiled.Parse and
 // AssetManager.LoadFile ("data/strigoi/maps/village.tmj").
@@ -278,8 +424,11 @@ func editorAssetPath(p string) string {
 }
 
 // editorDiskPath turns the engine's slash-rooted asset path into a path on
-// disk. The editor writes files, so unlike every other screen it needs the real
-// path, not the loader's.
+// disk, RELATIVE to the working directory. The editor saved to this until the
+// 28 Sep review (B1): a relative save target moves with the working directory,
+// and the harness runs the game with the repository as its working directory.
+// editorResolve now fixes the file as an absolute path at open; this is kept
+// for the normalisation its test pins.
 func editorDiskPath(p string) string {
 	return filepath.FromSlash(editorAssetPath(p))
 }
@@ -300,7 +449,10 @@ func (e *Editor) OnLoad(loading d2screen.LoadingState) {
 
 	if err := e.rebuild(); err != nil {
 		e.Error("the editor could not lay the map: " + err.Error())
-		e.message = "this map does not load: " + err.Error()
+
+		if !e.loaded {
+			e.message = "this map does not load: " + editorOneLine(err)
+		}
 	}
 
 	loading.Progress(seventyPercent)
@@ -326,12 +478,34 @@ func (e *Editor) OnLoad(loading d2screen.LoadingState) {
 	e.problemLbl = e.newLabel()
 	e.sealedLbl = e.newLabel()
 	e.countLbl = e.newLabel()
+	e.noticeLbl = e.newLabel()
+
+	e.personLbls = make([]*d2ui.Label, edMaxPeople)
+	for i := range e.personLbls {
+		e.personLbls[i] = e.newLabel()
+	}
 
 	e.canvas = e.ui.NewCustomWidget(e.renderChrome, editorScreenW, editorScreenH)
 	e.canvas.SetRenderPriority(d2ui.RenderPriorityForeground)
 
-	e.centreOnStart()
+	// Back from a playtest (A2), the view is where it was left; the first time,
+	// it opens on the whole map.
+	if e.loaded && e.viewScale > 0 && e.viewCam != nil {
+		e.mapRenderer.SetScale(e.viewScale)
+
+		position := d2vector.NewPosition(e.viewCam.X(), e.viewCam.Y())
+		e.mapRenderer.SetCameraPosition(&position)
+	} else {
+		e.centreOnStart()
+	}
+
 	e.revalidate()
+
+	e.loaded = true
+
+	// The harness's "editor" system while this screen lives; last, so every
+	// widget it reports exists. OnUnload removes it.
+	d2harness.Register(editorProvider{e})
 }
 
 // newLabel is one Label of the pool. NewLabel already registers it with the
@@ -342,29 +516,78 @@ func (e *Editor) newLabel() *d2ui.Label {
 	return e.ui.NewLabel(d2resource.Font16, d2resource.PaletteStatic)
 }
 
-// OnUnload releases the input binding.
+// OnUnload releases the input binding, and keeps the view for the next load: a
+// playtest unloads the editor and hands the same screen back afterwards (A2).
 func (e *Editor) OnUnload() error {
+	d2harness.Unregister(editorProvider{e})
+
+	if e.mapRenderer != nil {
+		e.viewScale = e.mapRenderer.Scale()
+
+		if cam := e.mapRenderer.Camera.GetPosition(); cam != nil {
+			position := d2vector.NewPosition(cam.X(), cam.Y())
+			e.viewCam = &position
+		}
+
+		if err := e.mapRenderer.UnbindTerminalCommands(e.terminal); err != nil {
+			e.Warningf("the editor could not unbind the map renderer's commands: %v", err)
+		}
+	}
+
 	return e.inputManager.UnbindHandler(e)
 }
 
 // rebuild re-parses the document with the ENGINE's own parser and lays it into
 // the engine, so the view is what the game would build from the file as it
 // stands. It is the only place the engine map is written.
+//
+// Its verdict is kept (engineErr) and drawn over the map when it is a refusal:
+// a map the engine refuses on open shows nothing to lay, and an edit it refuses
+// leaves the view on the last version it took -- and either way the screen has
+// to say so where the designer is looking, not in one line of the status bar.
 func (e *Editor) rebuild() error {
 	data, err := e.doc.Bytes()
 	if err != nil {
+		e.engineErr = err
 		return err
 	}
 
-	m, err := d2maptiled.Parse(data, path.Dir(e.mapPath), e.asset.LoadFile)
+	m, err := d2maptiled.Parse(data, path.Dir(e.mapPath), e.load)
+	e.engineErr = err
+
 	if err != nil {
 		return err
 	}
 
 	d2mapgen.LayAuthoredMap(e.mapEngine, m)
 	e.mapRenderer.SetMapEngine(e.mapEngine)
+	e.laidOnce = true
 
 	return nil
+}
+
+// engine is the question Save and the playtest put to the game before they
+// write anything: rebuild's own call -- the engine's parser with the game's
+// loader -- over the exact bytes about to be written (28 Sep review, B2).
+func (e *Editor) engine() d2mapedit.Engine {
+	return d2mapedit.EngineParse(path.Dir(e.mapPath), e.load)
+}
+
+// dirty is whether the document differs from the file: the undo history knows
+// where the last save sits in it, so undoing back to the saved map is clean
+// again (28 Sep review, C).
+func (e *Editor) dirty() bool {
+	return e.stack.Dirty()
+}
+
+// editorOneLine is an error as one line of the status bar: the validator's
+// refusal is a list, one problem a line, and a label draws each on its own row.
+func editorOneLine(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	return strings.Join(strings.Fields(err.Error()), " ")
 }
 
 // refreshGIDs indexes this map's tileset by the two things a palette entry can
@@ -557,10 +780,18 @@ func (e *Editor) OnMouseWheel(event d2interface.MouseWheelEvent) bool {
 		scale /= edZoomPerNotch
 	}
 
-	scale = math.Max(edMinScale, math.Min(edMaxScale, scale))
-	e.mapRenderer.ZoomAt(event.X(), event.Y(), scale)
+	e.zoomAbout(event.X(), event.Y(), scale)
 
 	return true
+}
+
+// zoomAbout sets the zoom, clamped to the editor's range, holding the world
+// point under the screen pixel x, y where it is. It is the wheel's whole effect,
+// and the harness's "editor" zoom field calls it too, so a script that zooms
+// goes through the same line the wheel does (the harness has no wheel verb).
+func (e *Editor) zoomAbout(x, y int, scale float64) {
+	scale = math.Max(edMinScale, math.Min(edMaxScale, scale))
+	e.mapRenderer.ZoomAt(x, y, scale)
 }
 
 func (e *Editor) scrollPalette(dy float64) {
@@ -827,9 +1058,13 @@ func (e *Editor) gidFor(ent d2mappalette.Entry) (int, bool) {
 // structure() refuses an overlap, a wall under a footprint and bare ground
 // (tiled.go:1022-1032) -- and making it here means the document never takes an
 // edit that would have the engine throw the whole map away.
+//
+// THE TAB IT ASKS ABOUT IS THE HELD PIECE'S OWN (28 Sep review, B4), not the tab
+// on show: holding a house and looking at the greyed Terrain tab used to refuse
+// the click with Terrain's reason.
 func (e *Editor) canPlace(ent d2mappalette.Entry, x, y int) (bool, string) {
-	if len(e.tabs) > 0 && !e.tabs[e.tab].Available {
-		return false, e.tabs[e.tab].Why
+	if tab, ok := e.entryTab(ent); ok && !tab.Available {
+		return false, tab.Why
 	}
 
 	if !ent.Placeable() {
@@ -881,6 +1116,14 @@ func (e *Editor) canPlace(ent d2mappalette.Entry, x, y int) (bool, string) {
 }
 
 func (e *Editor) footprintIsClear(r image.Rectangle) (bool, string) {
+	// Off the map first: every tile past the edge reads as bare ground, and
+	// "bare ground" is the wrong thing to tell a designer who duplicated a
+	// house against the east edge (28 Sep review, C).
+	if w, h := e.doc.Size().X, e.doc.Size().Y; !r.In(image.Rect(0, 0, w, h)) {
+		return false, fmt.Sprintf("a %dx%d footprint at %d,%d reaches off the %dx%d map",
+			r.Dx(), r.Dy(), r.Min.X, r.Min.Y, w, h)
+	}
+
 	for ty := r.Min.Y; ty < r.Max.Y; ty++ {
 		for tx := r.Min.X; tx < r.Max.X; tx++ {
 			switch {
@@ -939,7 +1182,6 @@ func (e *Editor) apply(cmd d2mapedit.Cmd) {
 }
 
 func (e *Editor) afterEdit(what string) {
-	e.dirty = true
 	e.leaveArmed = false
 
 	// The validator runs WHATEVER the engine said, and before the early return:
@@ -1069,18 +1311,19 @@ func (e *Editor) reachesAnEdge(r d2mapedit.Reach) bool {
 	return false
 }
 
+// save writes the document to the file it was opened from -- diskPath, fixed at
+// open -- once the validator AND the engine have taken the exact bytes
+// (d2mapedit.Doc.Save; 28 Sep review, B2).
 func (e *Editor) save() {
-	disk := editorDiskPath(e.mapPath)
-
-	if err := e.doc.Save(disk, e.art); err != nil {
-		e.message = "NOT SAVED: " + err.Error()
+	if err := e.doc.Save(e.diskPath, e.art, e.engine()); err != nil {
+		e.message = "NOT SAVED: " + editorOneLine(err)
 		return
 	}
 
-	e.dirty = false
+	e.stack.MarkSaved()
 	e.leaveArmed = false
-	e.message = fmt.Sprintf("saved %s (previous kept as %s)", filepath.Base(disk),
-		filepath.Base(d2mapedit.BackupPath(disk)))
+	e.message = fmt.Sprintf("saved %s (previous kept as %s)", filepath.Base(e.diskPath),
+		filepath.Base(d2mapedit.BackupPath(e.diskPath)))
 }
 
 // leave goes back to the main menu, and asks first if there is work in the
@@ -1088,7 +1331,7 @@ func (e *Editor) save() {
 // the file really is unsaved, and a status line that said otherwise would be
 // exactly the small lie this editor is built not to tell.
 func (e *Editor) leave() {
-	if e.dirty && !e.leaveArmed {
+	if e.dirty() && !e.leaveArmed {
 		e.leaveArmed = true
 		e.message = "unsaved changes -- Ctrl+S to save, or Escape again to leave them behind"
 
@@ -1202,8 +1445,8 @@ func (e *Editor) clickPalette() {
 // one particular tile will not take it. The tab's reason comes first because it
 // is the reason a whole category is greyed.
 func (e *Editor) canPickable(ent d2mappalette.Entry) (bool, string) {
-	if len(e.tabs) > 0 && !e.tabs[e.tab].Available {
-		return false, e.tabs[e.tab].Why
+	if tab, ok := e.entryTab(ent); ok && !tab.Available {
+		return false, tab.Why
 	}
 
 	if !ent.Placeable() {
@@ -1217,6 +1460,18 @@ func (e *Editor) canPickable(ent d2mappalette.Entry) (bool, string) {
 	return true, ""
 }
 
+// entryTab is the palette tab a piece belongs to: the one whose category is its
+// own. A piece is judged by ITS tab, whichever one is on show (B4).
+func (e *Editor) entryTab(ent d2mappalette.Entry) (d2mappalette.Tab, bool) {
+	for _, tab := range e.tabs {
+		if tab.Category == ent.Category {
+			return tab, true
+		}
+	}
+
+	return d2mappalette.Tab{}, false
+}
+
 // ---- playtest --------------------------------------------------------------
 
 // playtest writes the document to a TEMPORARY copy and starts the real game on
@@ -1226,28 +1481,74 @@ func (e *Editor) canPickable(ent d2mappalette.Entry) (bool, string) {
 // MEASURED (27 Sep): the .tmj is re-read from disk on every start_game and the
 // loader has no cache, so a write followed by a launch is enough; and the map
 // argument is STICKY per process, so it is always passed explicitly.
+//
+// WHAT CHANGED ON 28 SEP (the review):
+//   - the bytes are the ones the validator AND the engine have taken
+//     (Doc.Checked, B2), so P can no more start the game on a map it would
+//     refuse than Ctrl+S can save one;
+//   - the scratch file is read back THE WAY THE GAME WILL READ IT -- by its
+//     asset path, through the game's loader -- and the playtest refuses to
+//     start unless that is the bytes just written. The loader looks in the
+//     game's folders in its own order, and a playtest that ran on some other
+//     copy of playtest-scratch.tmj would be a playtest of the wrong map;
+//   - THIS SCREEN IS NOT THROWN AWAY. The App keeps it and hands it back when
+//     the playtest game ends (App.ToPlaytest, ReturnFromPlaytest), so the
+//     document, its unsaved changes and its undo history are all still here
+//     afterwards. P used to drop them and the menu reopened the file from disk.
 func (e *Editor) playtest() {
-	disk := editorDiskPath(e.mapPath)
-	tmp := filepath.Join(filepath.Dir(disk), editorPlaytestName)
-
-	data, err := e.doc.Bytes()
+	data, err := e.doc.Checked(e.art, e.engine())
 	if err != nil {
-		e.message = "cannot playtest: " + err.Error()
+		e.message = "cannot playtest: " + editorOneLine(err)
 		return
 	}
 
-	if problems := e.doc.Validate(e.art); len(problems) > 0 {
-		e.message = fmt.Sprintf("cannot playtest: %d problem(s), first: %s", len(problems), problems[0].Error())
-		return
-	}
-
+	tmp := filepath.Join(filepath.Dir(e.diskPath), editorPlaytestName)
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		e.message = "cannot playtest: " + err.Error()
 		return
 	}
 
+	scratch := path.Join(path.Dir(e.mapPath), editorPlaytestName)
+
+	back, err := e.load(scratch)
+	if err != nil || !bytes.Equal(back, data) {
+		why := "it reads a different " + editorPlaytestName
+		if err != nil {
+			why = err.Error()
+		}
+
+		e.message = fmt.Sprintf("cannot playtest: the game would not read the map just written to %s (%s)", tmp, why)
+
+		return
+	}
+
 	e.message = "playtesting " + editorPlaytestName + " -- the authoring file is untouched"
-	e.navigator.ToPlaytest(path.Join(path.Dir(e.mapPath), editorPlaytestName))
+	e.navigator.ToPlaytest(scratch)
+}
+
+// ReturnFromPlaytest is how the App gives this screen back when a playtest game
+// ends (A2). Nothing needs restoring: the document, the undo history and the
+// unsaved mark are this screen's own fields and were never let go -- the screen
+// manager only unloaded it, and OnLoad keeps the view it had. note is why the
+// game ended when that is worth saying (it could not start, say).
+func (e *Editor) ReturnFromPlaytest(note string) {
+	msg := "back from the playtest -- the map is as you left it"
+	if e.dirty() {
+		msg += ", unsaved changes and all"
+	}
+
+	if note = strings.TrimSpace(note); note != "" {
+		msg = note + " -- " + msg
+	}
+
+	e.message = msg
+	e.leaveArmed = false
+}
+
+// PlaytestNotStarted says why a playtest could not begin, when the App finds
+// out before it leaves this screen (it could not make the playtest hero).
+func (e *Editor) PlaytestNotStarted(reason string) {
+	e.message = "cannot playtest: " + reason
 }
 
 // editorPlaytestName is the temporary map a playtest runs on. It sits beside the
@@ -1256,8 +1557,13 @@ const editorPlaytestName = "playtest-scratch.tmj"
 
 // ---- drawing ---------------------------------------------------------------
 
-// Render draws the map, then the editor's own chrome over it.
+// Render draws the map, then the editor's own chrome over it. The map's view is
+// cleared to one known colour first, so what is not the map reads as nothing
+// rather than as whatever the window held.
 func (e *Editor) Render(target d2interface.Surface) {
+	view := mapViewRect()
+	editorFillRect(target, view.Min.X, view.Min.Y, view.Dx(), view.Dy(), edColVoid)
+
 	e.mapRenderer.Render(target)
 
 	if e.canvas != nil {
@@ -1282,8 +1588,10 @@ func (e *Editor) renderChrome(target d2interface.Surface) {
 		e.drawGrid(target)
 	}
 
+	e.drawPeople(target)
 	e.drawSelection(target)
 	e.drawGhost(target)
+	e.drawNotice(target)
 	e.drawToolbar(target)
 	e.drawPalette(target)
 	e.drawStatus(target)
@@ -1424,6 +1732,149 @@ func (e *Editor) drawGhost(target d2interface.Surface) {
 		editorScreenW-edPaletteW-e.mouseX-16)
 }
 
+// drawPeople marks every person the map places and its player_start (28 Sep
+// review, B5). The editor's view is the engine's map with no entities in it, so
+// until this the only way to learn where the smith stood was to drop a house on
+// him and watch the ghost turn red. Each gets his tile outlined and a mark at
+// the point he stands, sized with the zoom (12 px across at 1.0, never under 6),
+// and his name beside it; the start is a cross in its own colour. They are
+// SELECTABLE as they always were -- a click on the tile selects the person on it
+// -- and nothing here moves them: dragging is v1.
+//
+// Names that would land on one another -- the headman and the woman at the well
+// stand two tiles apart, which is a few pixels at the zoom the editor opens on
+// -- are moved a line up or down until they are clear, with a leader line back
+// to the mark, and a name with no room left before the palette is not drawn.
+func (e *Editor) drawPeople(target d2interface.Surface) {
+	half := int(math.Max(3, math.Round(6*e.mapRenderer.Scale())))
+	view := mapViewRect()
+	named := 0
+	placed := make([]image.Rectangle, 0, edMaxPeople)
+
+	for _, o := range e.doc.Objects() {
+		var colour uint32
+
+		name := editorObjectName(o)
+
+		switch o.Class {
+		case d2mapedit.ClassNPC:
+			colour = edColPerson
+		case d2mapedit.ClassPlayerStart:
+			colour, name = edColStart, "start"
+		default:
+			continue
+		}
+
+		t := o.Tile()
+		e.drawTileRect(target, image.Rect(t.X, t.Y, t.X+1, t.Y+1), colour)
+
+		x, y := e.mapRenderer.WorldToScreen(o.X, o.Y)
+
+		if o.Class == d2mapedit.ClassPlayerStart {
+			editorLine(target, x-half, y-half, x+half, y+half, colour)
+			editorLine(target, x-half, y+half, x+half, y-half, colour)
+			editorLine(target, x-half+1, y-half, x+half+1, y+half, colour)
+			editorLine(target, x-half+1, y+half, x+half+1, y-half, colour)
+		} else {
+			editorFillRect(target, x-half, y-half, 2*half, 2*half, colour)
+			editorFillRect(target, x-half, y-half, 2*half, 1, edColSwatchBg)
+			editorFillRect(target, x-half, y+half-1, 2*half, 1, edColSwatchBg)
+		}
+
+		lx, ly := x+half+3, y-edLineH/2
+		room := view.Max.X - lx
+
+		if named >= len(e.personLbls) || room < 24 || y < view.Min.Y || y > view.Max.Y {
+			continue
+		}
+
+		lbl := e.personLbls[named]
+		named++
+
+		w, _ := lbl.GetTextMetrics(editorFit(lbl, editorPlain(name), room))
+		r := editorClearOf(image.Rect(lx, ly, lx+w, ly+edLineH), placed)
+		placed = append(placed, r)
+
+		if r.Min.Y != ly {
+			editorLine(target, x, y, r.Min.X-1, r.Min.Y+edLineH/2, colour)
+		}
+
+		e.text(target, lbl, r.Min.X, r.Min.Y, colour, name, room)
+	}
+}
+
+// editorClearOf moves a label's rectangle a line at a time -- down one, up one,
+// down two, up two -- until it overlaps none of the ones already placed, and
+// gives up where it started after three lines each way.
+func editorClearOf(r image.Rectangle, placed []image.Rectangle) image.Rectangle {
+	for _, lines := range []int{0, 1, -1, 2, -2, 3, -3} {
+		try := r.Add(image.Pt(0, lines*edLineH))
+
+		clear := true
+
+		for _, p := range placed {
+			if try.Overlaps(p) {
+				clear = false
+				break
+			}
+		}
+
+		if clear {
+			return try
+		}
+	}
+
+	return r
+}
+
+// drawNotice puts the engine's refusal in the middle of the map's view (28 Sep
+// review, C). A map the engine refuses used to open as an empty grid with the
+// reason squeezed into the status bar; an edit it refuses leaves the view on the
+// last version it took, which is a picture of a map that no longer exists. Both
+// are said here, in the place the designer is looking.
+func (e *Editor) drawNotice(target d2interface.Surface) {
+	if e.engineErr == nil || e.noticeLbl == nil {
+		return
+	}
+
+	view := mapViewRect()
+	w := view.Dx() - 40
+
+	head := "THE GAME REFUSES THIS MAP -- it would build Diablo II's Act 1 instead"
+	if e.laidOnce {
+		head = "THE GAME REFUSES THE MAP AS IT NOW STANDS -- the view shows the last version it took"
+	}
+
+	reason := editorOneLine(e.engineErr)
+	if e.noticeFor != reason {
+		e.noticeLines = editorWrap(e.noticeLbl, reason, w-16, edNoticeLines)
+		e.noticeFor = reason
+	}
+
+	foot := "Ctrl+S and P refuse it: mend the file, or the art it names, and open it again"
+	if e.laidOnce {
+		foot = "Ctrl+Z takes the edit back; until then Ctrl+S and P refuse this map"
+	}
+
+	// A label draws an empty line as nothing at all, so the spacers are a space.
+	lines := append([]string{head, " "}, e.noticeLines...)
+	lines = append(lines, " ", foot)
+
+	// A label steps down by each line's own height (label.go Render), which
+	// for this font is more than edLineH, so the panel is sized the same way.
+	h := 16
+	for _, l := range lines {
+		_, lh := e.noticeLbl.GetTextMetrics(editorPlain(l))
+		h += lh
+	}
+
+	x0 := view.Min.X + 20
+	y0 := view.Min.Y + (view.Dy()-h)/2
+
+	editorPanel(target, x0, y0, w, h, edColNotice, edColWarn)
+	e.textLines(target, e.noticeLbl, x0+8, y0+8, edColWarn, lines, w-16)
+}
+
 func (e *Editor) drawToolbar(target d2interface.Surface) {
 	editorPanel(target, 0, 0, editorScreenW, edToolbarH, edColStrip, edColEdge)
 
@@ -1440,7 +1891,7 @@ func (e *Editor) drawStatus(target d2interface.Surface) {
 	mark := ""
 	colour := uint32(edColText)
 
-	if e.dirty {
+	if e.dirty() {
 		mark, colour = "  *UNSAVED*", edColSelect
 	}
 
@@ -1454,8 +1905,16 @@ func (e *Editor) drawStatus(target d2interface.Surface) {
 	problems := "the game would take this map as it stands"
 	pColour := uint32(edColGood)
 
-	if len(e.problems) > 0 {
+	switch {
+	case len(e.problems) > 0:
 		problems = fmt.Sprintf("%d problem(s), first: %s", len(e.problems), e.problems[0].Error())
+		pColour = edColWarn
+	case e.engineErr != nil:
+		// The validator reads a PNG's header; the engine decodes it. When they
+		// disagree the engine is the one the game asks, so this line must not
+		// say the game would take the map (28 Sep review: it did, under a
+		// notice saying the opposite).
+		problems = "the game's own loader refuses this map: " + editorOneLine(e.engineErr)
 		pColour = edColWarn
 	}
 

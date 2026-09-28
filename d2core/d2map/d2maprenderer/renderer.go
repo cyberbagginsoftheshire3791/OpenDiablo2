@@ -459,7 +459,7 @@ func (mr *MapRenderer) renderFloor(tile d2ds1.Tile, target d2interface.Surface) 
 	target.PushTranslation(mr.viewport.GetTranslationScreen())
 	defer target.Pop()
 
-	target.Render(img)
+	mr.drawTileArt(target, img)
 }
 
 func (mr *MapRenderer) renderWall(tile d2ds1.Tile, viewport *Viewport, target d2interface.Surface) {
@@ -485,7 +485,7 @@ func (mr *MapRenderer) renderWall(tile d2ds1.Tile, viewport *Viewport, target d2
 	target.PushTranslation(viewport.GetTranslationScreen())
 	defer target.Pop()
 
-	target.Render(img)
+	mr.drawTileArt(target, img)
 }
 
 func (mr *MapRenderer) renderShadow(tile d2ds1.Tile, target d2interface.Surface) {
@@ -503,7 +503,60 @@ func (mr *MapRenderer) renderShadow(tile d2ds1.Tile, target d2interface.Surface)
 	target.PushColor(color.RGBA{R: 255, G: 255, B: 255, A: 160}) //nolint:gomnd // Not a magic number...
 	defer target.Pop()
 
+	mr.drawTileArt(target, img)
+}
+
+// drawTileArt draws one floor, wall or shadow image at the target's current
+// translation, which the caller has already worked out through the viewport.
+//
+// AT SCALE 1.0 THIS IS target.Render(img) AND NOTHING ELSE. The shipped game
+// never leaves 1.0, and that branch is the draw call the three callers made
+// before there was a zoom, character for character: no PushScale, no Pop, no
+// arithmetic on the size. TestDrawTileArtAtScale1IsTheUnscaledDraw pins it.
+//
+// AT ANY OTHER SCALE THE ART IS SCALED WITH ITS POSITION. The viewport has
+// scaled positions since the editor-zoom burst, and until the 28 Sep review
+// nothing scaled the art: the World Editor opened at about 0.08 and drew every
+// tree and house at full size on anchors 0.08 apart, and every floor tile hung
+// (80(1-s), 40(1-s)) screen pixels off its own tile, because the art's top-left
+// was placed by the scaled transform and the rest of it was not. Scaling after
+// the translation is the whole fix: the ebiten surface applies the scale and
+// THEN the translation (ebiten_surface.go createDrawImageOptions), so a pixel
+// (u, v) of the art lands at translation + (u*s, v*s) -- exactly where the
+// viewport puts ortho point anchor + (u, v). TestDrawTileArtScalesTheArt
+// measures the painted pixels, not the positions.
+//
+// seamPad is one screen pixel of overdraw on each axis. Neighbouring floor
+// tiles are placed on whole pixels (OrthoToScreen floors) while their scaled
+// size is fractional, and a nearest-neighbour shrink of interlocking diamonds
+// leaves hairline gaps between them; drawing each tile one pixel wider and
+// taller closes them, and a pixel of overlap between two pieces of ground is
+// invisible. It is never applied at 1.0.
+func (mr *MapRenderer) drawTileArt(target d2interface.Surface, img d2interface.Surface) {
+	s := mr.viewport.Scale()
+	if s == defaultScale {
+		target.Render(img)
+		return
+	}
+
+	w, h := img.GetSize()
+	target.PushScale(seamScale(w, s), seamScale(h, s))
 	target.Render(img)
+	target.Pop()
+}
+
+// seamPad is how many screen pixels of overdraw drawTileArt adds to a scaled
+// tile on each axis. See there. [DIAL]
+const seamPad = 1.0
+
+// seamScale is the scale that draws n art pixels as n*s screen pixels plus
+// seamPad. An image with no size is drawn at s, which draws nothing anyway.
+func seamScale(n int, s float64) float64 {
+	if n <= 0 {
+		return s
+	}
+
+	return (float64(n)*s + seamPad) / float64(n)
 }
 
 func (mr *MapRenderer) renderMapDebug(mapDebugVisLevel int, target d2interface.Surface, startX, startY, endX, endY int) {

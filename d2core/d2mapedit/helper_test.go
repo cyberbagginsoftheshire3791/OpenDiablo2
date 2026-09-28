@@ -286,6 +286,14 @@ func villageLoader(t *testing.T) (string, d2maptiled.Loader) {
 	}
 }
 
+// villageEngine is the engine's verdict on a village document, read with the
+// village's real art (Save's third argument since the 28 Sep review).
+func villageEngine(t *testing.T) Engine {
+	t.Helper()
+
+	return EngineParse(villageLoader(t))
+}
+
 // openVillage opens the shipped village as a document.
 func openVillage(t *testing.T) *Doc {
 	t.Helper()

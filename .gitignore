@@ -56,3 +56,9 @@ __pycache__/
 .agents/
 .codex/
 AGENTS.md
+
+# The World Editor's own by-products, beside whatever map it has open (28 Sep
+# 2026 review, C): the playtest's scratch copy of the map, and the generation a
+# save keeps. Neither is authoring work; the .tmj is.
+playtest-scratch.tmj
+*.tmj.bak

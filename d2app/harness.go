@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.12.4"         // 26 Sep: -harness-addr-file reports the bound address (port 0 = any free port), -harness-timeout; games run side by side
+	harnessVersion     = "0.12.5"         // 28 Sep: the World Editor's "editor" provider (settable zoom), game_info's map_* and playtest fields, and the harness refuses to open the working tree's village in the editor
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessQueueDepth  = 64
 	harnessRingCap     = 5000
@@ -185,6 +185,34 @@ func (a *App) harnessEarlyInit() {
 	// log.Writer() at construction, so this must run before other subsystems
 	// build their loggers (Create calls it first).
 	log.SetOutput(io.MultiWriter(log.Writer(), harness.ring))
+
+	// Before any screen exists: -editor opens the editor before harnessStart.
+	d2gamescreen.EditorOpenGuard = harnessEditorGuard
+}
+
+// harnessEditorGuard refuses to open the working tree's own village in the World
+// Editor while the harness is on (28 Sep review, B1). The playtest launcher runs
+// the game with the REPOSITORY as its working directory (playtest/launcher.go),
+// so under a bare -editor the editor opened data/strigoi/maps/village.tmj in the
+// tree -- and a scripted Ctrl+S would have written it. A script edits a COPY and
+// passes the copy's absolute path; a harness build started without -harness is
+// the game, and opens what it is told.
+func harnessEditorGuard(disk string) error {
+	if harness.enabled == nil || !*harness.enabled {
+		return nil
+	}
+
+	shipped, err := filepath.Abs(filepath.FromSlash(d2gamescreen.DefaultEditorMap))
+	if err != nil {
+		return nil
+	}
+
+	if strings.EqualFold(filepath.Clean(disk), filepath.Clean(shipped)) {
+		return fmt.Errorf("the playtest harness does not open %s in the editor: a scripted Ctrl+S would write "+
+			"the shipped village in the working tree. Copy it and pass the copy's absolute path to -editor", shipped)
+	}
+
+	return nil
 }
 
 // harnessInputService installs the scripted overlay at the d2input seam

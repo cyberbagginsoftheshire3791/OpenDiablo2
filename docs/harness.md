@@ -482,17 +482,29 @@ this doc fails until it agrees.
   the minutes spent); the first again (the control) opens the amulet and pays
   nothing; U with no body at his feet (the control) is refused and takes no
   time.
-* `editor_test.go` — the forty-fourth, M5.4 World Editor v0 (28 Sep 2026): the
-  `-editor` flag opens the EDITOR and the game says so (`screen=world_editor`,
-  which a map that will not open cannot fake -- it falls back to the menu by
-  design); opening the village does not write to it; a save keeps the previous
-  generation beside it; and **a real run on a map the editor wrote leaves the
-  authoring file byte for byte as it was**, with the played copy unchanged too.
-  The control adds ONE byte to a copy and shows the hash moves, so act 4's
-  equality means something. It does NOT claim to have zoomed or panned: the
-  harness has no wheel verb and no press-and-hold, so those are proved by the
-  viewport's unit tests and by the screenshots in
-  `strigoi-harness-runs\editor-v0-shots\`, not here.
+* `editor_test.go` — the forty-fourth, M5.4 World Editor v0 (28 Sep 2026),
+  **rewritten after the 28 Sep review** (BUG-30): the first version saved an
+  unedited map through the API, never pressed P, and never read its
+  screenshot, so it could pass on nothing. Now it drives the real screen, on a
+  copy of the village written into the game's own folder (the launcher's mirror)
+  and opened by its absolute path. Act 0, its own launch: a copy with a
+  truncated tile PNG -- the engine refuses it, the map area shows the refusal
+  (notice pixels counted), and Ctrl+S and P both refuse it. Then: -editor opens
+  THAT file; at the fit zoom the map's ink stays inside its own diamond on the
+  screenshot, the ground is covered and every person carries a marker; a
+  scripted zoom to 0.25 through the `editor` provider's `zoom` field; a peasant
+  house placed by clicking its palette row and a tile the ghost says yes to,
+  its pixels appearing on its footprint; Ctrl+S on the keyboard, the file parsed
+  by the engine, the house named `peasant-house`, a `.bak` kept, Ctrl+Z / Ctrl+Y
+  walking the unsaved mark; an unsaved tree; P into a real game on the scratch
+  map played by the throwaway hero Playtest with the player's Saves untouched;
+  the game ends and the editor comes back with the unsaved tree, the map setting
+  is the launch one again, the authoring copy and the repository's village are
+  byte-identical, the hero's folder is gone, and Ctrl+S then writes the tree;
+  and the menu's WORLD EDITOR button (the repository's village) is refused while
+  the next normal game is built from the launch map. The mouse wheel and the
+  right-drag pan are still not driven: the harness has no wheel verb and cannot
+  move the cursor with a button held.
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -582,7 +594,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.12.4)
+## The tools (37; harness 0.12.5)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -608,7 +620,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | Tool | What |
 |---|---|
 | `strigoi_ping` | Liveness, commit, harness version, mode, tick, uptime |
-| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems |
+| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game |
 | `strigoi_navigate` | main_menu · character_select · select_hero · credits |
 | `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame |
 | `strigoi_save_game` | Write the `.od2` |
@@ -1088,6 +1100,27 @@ opens on, which draws no buttons -- then `main_menu`, `multiplayer`, `tcp_ip`,
 `credits`, `cinematics`, `exit`), each `{x, y, w, h, visible, text, label_x,
 label_y, label_w, label_h}` in screen pixels -- the label rect is where the
 button drew its label when up.
+
+**`editor`** (World Editor review, 28 Sep 2026) -- while the World Editor is the
+screen (`d2gamescreen/editor_harness.go`; registered at the end of
+`Editor.OnLoad`, removed in `OnUnload`, so a playtest's game never sees it):
+the document -- `map_path` (as the game reads it), `disk_path` (the absolute
+file a save writes), `asset_root`, `dirty`, `undo_depth`, `undo_label`,
+`can_redo`, `message`, `problems` and `first_problem` (the validator),
+`engine_error` (the game's own parser), `sealed`, `structures` (each `{id, name,
+gid, footprint:[x0,y0,x1,y1]}`), `map_size`; the screen -- `zoom`, `fit_zoom`,
+`view` (the map area), `world_to_screen` (`origin`, `x_axis`, `y_axis`: world
+x, y is on screen at origin + x*x_axis + y*y_axis), `map_corners` (top, right,
+bottom, left), `people` (each `{id, name, class, tile, screen}` -- where B5's
+marker is drawn), `tabs` and the palette `rows` on show with their rectangles,
+`tool`, `picked`, `selected`, `tab`; and `hover` -- the tile under the cursor
+and, with a piece held, the ghost's own verdict `can_place` / `why`. **Settable:
+`zoom`** -- the harness has no wheel verb, so setting it calls
+`Editor.zoomAbout`, the function the wheel handler calls, about the middle of the
+map area. And from 0.12.5 **the harness refuses to open the working tree's
+`data/strigoi/maps/village.tmj` in the editor** (`harnessEditorGuard`): the game
+runs with the repository as its working directory, and a scripted Ctrl+S would
+have written the shipped village. A script edits a copy by its absolute path.
 
 Entity state today — `Player`: name, class, act, gold, level, experience,
 health/mana/stamina with maxima, the four attributes, in_town, running,

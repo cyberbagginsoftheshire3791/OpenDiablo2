@@ -42,8 +42,11 @@ const (
 	//
 	// Screen pixels is the right unit at every zoom: the probes go through
 	// ScreenToWorld, which divides by the scale, so the world range they
-	// describe widens by 1/scale as the view zooms out -- which is exactly how
-	// much further the art, drawn unscaled, then reaches up the screen. [DIAL]
+	// describe widens by 1/scale as the view zooms out. The art is scaled with
+	// the view (MapRenderer.drawTileArt, since the 28 Sep review), so what it
+	// reaches past its anchor in SCREEN pixels shrinks and grows with the zoom
+	// exactly as the tiles do; the tall authored strips that reach further than
+	// this margin are authoredCullRows' job, at every scale. [DIAL]
 	cullMarginTop    = 200
 	cullMarginBottom = 450
 
@@ -104,9 +107,14 @@ func (v *Viewport) Scale() float64 {
 }
 
 // SetScale sets the viewport's zoom, clamped to [minScale, maxScale]. All four
-// space transforms follow it and stay inverses of each other; nothing about how
-// sprites are drawn follows it (see Surface.PushScale, which assigns rather than
-// multiplies and scales art without scaling where the art goes).
+// space transforms follow it and stay inverses of each other, and the map's own
+// art follows it too: MapRenderer.drawTileArt pushes the same scale onto the
+// surface for every floor, wall and shadow it draws at any scale but 1.0 (the
+// 28 Sep review's A1 -- until then only the POSITIONS followed the zoom, and the
+// art was drawn at full size on scaled anchors). Surface.PushScale assigns
+// rather than multiplies and scales the art about its own top-left, not where
+// it goes, so it is pushed AFTER the translation. Entities are not scaled: the
+// shipped game draws them only at 1.0, and the editor draws none.
 func (v *Viewport) SetScale(scale float64) {
 	v.scale = clampScale(scale)
 }
@@ -312,12 +320,33 @@ func (v *Viewport) cullRange(mapWidth, mapHeight int) (startX, startY, endX, end
 // authored map, so a structure whose tiles are just below the screen still shows
 // its roof.
 //
-// It has to follow the scale. The art is drawn unscaled, so at half zoom a tile
-// row is 20 screen pixels instead of 40 and twice as many rows fit beneath the
-// same 768-pixel strip. At scale 1.0 this is ceil(7.95) = 8, the bare constant it
-// replaces.
+// THE ART IS SCALED WITH THE VIEW (28 Sep review, A1), so the arithmetic is done
+// in ORTHOGONAL pixels, where nothing depends on the zoom but the probe: a strip
+// stands maxAuthoredArtHeight ortho pixels above its anchor at every scale, a
+// tile row is tileHeight ortho pixels at every scale, and the bottom probe is
+// cullMarginBottom SCREEN pixels below the screen, which is cullMarginBottom/scale
+// ortho pixels. So the rows it must reach past the probe are
+//
+//	(maxAuthoredArtHeight - cullMarginBottom/scale) / tileHeight
+//
+// and none when that is negative. At 1.0 that is ceil(7.95) = 8, the bare
+// constant this replaced, and 1.0 returns it without the division. Zoomed out
+// the probe already reaches past the tallest strip, so it is 0; zoomed IN it
+// grows -- 14 at 2.0 -- which the version that divided by the scale got
+// backwards (4 at 2.0: the roofs of houses just below the screen went missing,
+// and 99 rows at the editor's fit zoom, drawn for nothing).
 func (v *Viewport) authoredCullRows() int {
-	return int(math.Ceil(authoredCullRowsAtScale1 / v.scaleOrDefault()))
+	scale := v.scaleOrDefault()
+	if scale == defaultScale {
+		return int(math.Ceil(authoredCullRowsAtScale1))
+	}
+
+	rows := (maxAuthoredArtHeight - cullMarginBottom/scale) / float64(tileHeight)
+	if rows <= 0 {
+		return 0
+	}
+
+	return int(math.Ceil(rows))
 }
 
 // IsTileVisible returns false if no part of the tile is within the game screen.

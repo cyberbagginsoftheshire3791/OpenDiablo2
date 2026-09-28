@@ -32,7 +32,6 @@ import (
 	ebiten2 "github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio/ebiten"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2config"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2input"
 	ebiteninput "github.com/OpenDiablo2/OpenDiablo2/d2core/d2input/ebiten"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
@@ -84,6 +83,16 @@ type App struct {
 	*d2util.Logger
 	errorMessage error
 	*Options
+
+	// editor is the World Editor screen ToWorldEditor last opened: the screen a
+	// playtest started from it hands back to (playtest.go).
+	editor *d2gamescreen.Editor
+
+	// playtest is the playtest in progress, nil when there is none; and
+	// playtestLeftovers are finished playtests' throwaway hero folders, removed
+	// once their game has let go of them (playtest.go).
+	playtest          *playtestRun
+	playtestLeftovers []playtestLeftover
 
 	// reloadPath is a save waiting to be opened once the game it replaces
 	// has fully gone (death screen v0's "load last save"; see ReloadGame).
@@ -498,6 +507,7 @@ func (a *App) advanceOnce(elapsedUnscaled, elapsed, elapsedLastScreenAdvance, cu
 	}
 
 	a.advanceReload()
+	a.advancePlaytestCleanup()
 
 	a.ui.Advance(elapsed)
 
@@ -679,6 +689,17 @@ func (a *App) updateInitError(target d2interface.Surface) error {
 
 // ToMainMenu forces the game to transition to the Main Menu
 func (a *App) ToMainMenu(errorMessageOptional ...string) {
+	// A playtest's game ends where every game ends -- the escape menu's exit,
+	// the death screen's menu button, a game that could not start -- and all of
+	// them come here. During a playtest "the menu" is the editor it started
+	// from (28 Sep review, A2). A reload in progress is the exception: it goes
+	// by the menu to reopen the playtest hero's own save (ReloadGame), and the
+	// playtest goes on.
+	if a.playtest != nil && a.reloadPath == "" {
+		a.endPlaytest(errorMessageOptional...)
+		return
+	}
+
 	buildInfo := d2gamescreen.BuildInfo{Branch: a.gitBranch, Commit: a.gitCommit}
 
 	mainMenu, err := d2gamescreen.CreateMainMenu(a, a.asset, a.renderer, a.inputManager, a.audio, a.ui, buildInfo,
@@ -817,6 +838,8 @@ func (a *App) ToWorldEditor(mapPath string) {
 		return
 	}
 
+	a.editor = editor
+
 	// The harness must be able to tell "the editor opened" from "the editor
 	// refused and we are on the menu". Without this a script that launches with
 	// -editor and reads the screen back cannot fail, which is the hollow test
@@ -824,36 +847,6 @@ func (a *App) ToWorldEditor(mapPath string) {
 	a.harnessNoteScreen("world_editor") // no-op unless built with -tags harness
 
 	a.screen.SetNextScreen(editor)
-}
-
-// ToPlaytest starts a real game on a map the editor has just written.
-//
-// It uses the two mechanisms that ALREADY work rather than a third: the authored
-// map is a process-wide setting (d2mapgen.SetAuthoredMap -- how -map reaches a
-// game at :269 and how the harness swaps a map, harness_tools.go:378-380), and
-// the way into a game is the hero screens the main menu uses
-// (main_menu.go:430-438). The editor names a FILE and has no save path to hand
-// to ToCreateGame, so it cannot go there directly; the player picks his hero and
-// the world he lands in is the one the editor wrote.
-func (a *App) ToPlaytest(mapPath string) {
-	if mapPath != "" {
-		d2mapgen.SetAuthoredMap(mapPath)
-	}
-
-	factory, err := d2hero.NewHeroStateFactory(a.asset)
-	if err != nil {
-		a.Error(err.Error())
-		a.ToSelectHero(d2clientconnectiontype.Local, "")
-
-		return
-	}
-
-	if factory.HasGameStates() {
-		a.ToCharacterSelect(d2clientconnectiontype.Local, "")
-		return
-	}
-
-	a.ToSelectHero(d2clientconnectiontype.Local, "")
 }
 
 // editorFlagValue is -editor, which may be given alone or with a map.

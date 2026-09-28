@@ -169,6 +169,16 @@ type harnessGameInfoOut struct {
 	Player      string   `json:"player,omitempty"`
 	RunDir      string   `json:"run_dir"`
 	Systems     []string `json:"systems"`
+
+	// The authored-map setting (d2mapgen.AuthoredMapReport): the map the next
+	// game is built from, the one the last game was built from, and why the
+	// last attempt was refused. And whether the game in play is a World Editor
+	// playtest, with its throwaway hero's folder (28 Sep review, B3).
+	MapAsked        string `json:"map_asked"`
+	MapBuilt        string `json:"map_built"`
+	MapError        string `json:"map_error,omitempty"`
+	Playtest        bool   `json:"playtest"`
+	PlaytestSaveDir string `json:"playtest_save_dir,omitempty"`
 }
 
 type harnessNavigateIn struct {
@@ -245,7 +255,7 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_get_game_info",
-		Description: "Everything a script needs to orient: screen (a hint — a human clicking through menus is not tracked), loading state, hero, seed, tick, entity count, run dir, registered harness systems. Reads on the game goroutine.",
+		Description: "Everything a script needs to orient: screen (a hint — a human clicking through menus is not tracked), loading state, hero, seed, tick, entity count, run dir, registered harness systems, the authored-map setting (map_asked / map_built / map_error), and whether the game is a World Editor playtest (playtest, playtest_save_dir). Reads on the game goroutine.",
 		Annotations: harnessAnnRO(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in struct{}) (*mcp.CallToolResult, harnessGameInfoOut, error) {
 		harnessLogCall("strigoi_get_game_info")
@@ -260,6 +270,17 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			out.Tick = atomic.LoadInt64(&harness.tick)
 			out.RunDir = harness.runDir
 			out.Systems = harnessSystemNames()
+
+			var mapErr error
+
+			out.MapAsked, out.MapBuilt, mapErr = d2mapgen.AuthoredMapReport()
+			if mapErr != nil {
+				out.MapError = mapErr.Error()
+			}
+
+			if a.playtest != nil {
+				out.Playtest, out.PlaytestSaveDir = true, a.playtest.saveDir
+			}
 
 			if client == nil {
 				return

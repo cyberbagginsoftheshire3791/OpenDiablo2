@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maptiled"
 )
 
 // THE SAVE.
@@ -16,7 +17,9 @@ import (
 //   - It VALIDATES FIRST and refuses to write a file the game would throw away.
 //     See validate.go for why that matters more than it sounds: a refused map
 //     does not stop the game, it silently swaps in Diablo II's Act 1
-//     (d2mapgen/authored.go:34-38).
+//     (d2mapgen/authored.go:34-38). And since the 28 Sep review it also has the
+//     ENGINE parse the exact bytes it is about to write (Engine, Checked): the
+//     validator reads only a PNG's header, and the loader decodes the lot.
 //   - The previous generation is kept as <path>.bak before anything is
 //     overwritten, so one bad save is one undo away even after the editor has
 //     been closed.
@@ -36,13 +39,77 @@ import (
 // stray file in that directory is a file somebody else owns.
 var ErrPlayerSaves = errors.New("that is the player's save directory (OpenDiablo2/Saves); a map does not go there")
 
-// Save validates the document and writes it to path.
-func (d *Doc) Save(path string, art Art) error {
+// Engine is the ENGINE's own verdict on the exact bytes about to be written:
+// nil when the game would build the map, the reason when it would not. It is
+// d2maptiled.Parse run over those bytes with the loader the game will use --
+// see EngineParse.
+//
+// WHY THE VALIDATOR IS NOT ENOUGH (28 Sep review, B2). Validate reproduces the
+// loader's refusals from the document, and for art it reads only the PNG's
+// 24-byte header (DirArt), because that is where the size is. The loader
+// DECODES the picture. A village copy whose grass tile had been truncated just
+// after its header drew no complaint from the validator and was saved -- and the
+// game refused it and built Diablo II's Act 1 instead, without a word to the
+// designer. So a save now asks the engine as well, about the same bytes it is
+// about to write, and a playtest does too (Doc.Checked).
+type Engine func(data []byte) error
+
+// EngineParse is the Engine that runs d2maptiled.Parse, the game's own parser,
+// with dir (what the map's relative image paths are joined to) and load (how
+// the joined paths are read) -- the same two arguments d2mapgen gives it.
+func EngineParse(dir string, load d2maptiled.Loader) Engine {
+	return func(data []byte) error {
+		_, err := d2maptiled.Parse(data, dir, load)
+		return err
+	}
+}
+
+// EngineRefusedError is what Checked and Save return when the validator passed
+// the document and the engine's own parser did not.
+type EngineRefusedError struct {
+	Err error
+}
+
+func (e *EngineRefusedError) Error() string {
+	return "the game's own loader refuses this map: " + e.Err.Error()
+}
+
+func (e *EngineRefusedError) Unwrap() error { return e.Err }
+
+// errNoEngine is Checked's answer when it is not given an engine to ask: a
+// save that skipped the engine's verdict is the hole B2 closed, so it is not a
+// silent default.
+var errNoEngine = errors.New("no engine check was given, so whether the game would build this map is unknown")
+
+// Checked answers the bytes the document renders to, once BOTH the validator
+// and the engine have taken them -- the bytes a save writes and a playtest runs,
+// the same ones the engine was asked about. A *RefusedError carries the
+// validator's problems; an *EngineRefusedError the parser's reason.
+func (d *Doc) Checked(art Art, engine Engine) ([]byte, error) {
 	if problems := d.Validate(art); len(problems) > 0 {
-		return &RefusedError{Problems: problems}
+		return nil, &RefusedError{Problems: problems}
 	}
 
 	data, err := d.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	if engine == nil {
+		return nil, errNoEngine
+	}
+
+	if err := engine(data); err != nil {
+		return nil, &EngineRefusedError{Err: err}
+	}
+
+	return data, nil
+}
+
+// Save validates the document, has the engine parse the exact bytes (Checked),
+// and writes them to path.
+func (d *Doc) Save(path string, art Art, engine Engine) error {
+	data, err := d.Checked(art, engine)
 	if err != nil {
 		return err
 	}

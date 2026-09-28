@@ -358,19 +358,26 @@ func TestCullRangeAtScaleOneIsTheOldArithmetic(t *testing.T) {
 }
 
 // TestAuthoredCullRowsFollowTheScale. The tall-structure allowance was a bare 8
-// tile rows. The art is drawn unscaled, so at half zoom a tile row is half as
-// many screen pixels and twice as many rows fit under the same 768-pixel strip.
-// Scale 1.0 must still be 8, or the shipped game's wall pass has changed.
+// tile rows. Since the 28 Sep review the ART is scaled with the view, so the
+// count is worked in orthogonal pixels (see authoredCullRows): zoomed out the
+// bottom probe already reaches past the tallest strip and no extra row is
+// needed; zoomed in, more are. Scale 1.0 must still be 8, or the shipped game's
+// wall pass has changed.
+//
+// Negative control (28 Sep 2026): restore the old ceil(7.95/scale) and this
+// fails -- "at scale 2 authoredCullRows() = 4, want 14" -- and so does
+// TestAuthoredCullRowsReachTheTallestStrip below.
 func TestAuthoredCullRowsFollowTheScale(t *testing.T) {
 	cases := []struct {
 		scale float64
 		want  int
 	}{
-		{1.0, 8}, // the control: the constant this replaced
-		{0.5, 16},
-		{0.25, 32},
-		{2.0, 4},
-		{4.0, 2},
+		{1.0, 8},  // the control: the constant this replaced
+		{0.6, 1},  // (768 - 750)/40 = 0.45, the last scale with a row to add
+		{0.5, 0},  // the probe is 900 ortho pixels down: past any strip
+		{0.25, 0}, // and further still
+		{2.0, 14}, // (768 - 225)/40 = 13.6
+		{4.0, 17}, // (768 - 112.5)/40 = 16.4
 	}
 
 	for _, c := range cases {
@@ -386,6 +393,27 @@ func TestAuthoredCullRowsFollowTheScale(t *testing.T) {
 
 	if got := zero.authoredCullRows(); got != 8 {
 		t.Errorf("a zero-value Viewport gives %d authored cull rows, want the unzoomed 8", got)
+	}
+}
+
+// TestAuthoredCullRowsReachTheTallestStrip is the property the table above
+// encodes, measured rather than restated: in SCREEN pixels, the rows the wall
+// pass adds plus the bottom probe's margin must reach at least as far as the
+// tallest authored strip stands above its anchor -- which, with the art scaled,
+// is maxAuthoredArtHeight*scale. A shortfall is a roof that vanishes when its
+// house's front tiles are just below the screen.
+func TestAuthoredCullRowsReachTheTallestStrip(t *testing.T) {
+	for _, scale := range []float64{minScale, 0.08, 0.25, 0.5, 0.6, 0.75, 1, 1.5, 2, 3, 4, 8, maxScale} {
+		v := newTestViewport(0, 0)
+		v.SetScale(scale)
+
+		reach := float64(v.authoredCullRows())*tileHeight*scale + cullMarginBottom
+		need := maxAuthoredArtHeight * scale
+
+		if reach < need {
+			t.Errorf("at scale %v the wall pass reaches %.1f screen px below the screen, the tallest strip stands %.1f",
+				scale, reach, need)
+		}
 	}
 }
 

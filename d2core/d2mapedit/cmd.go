@@ -76,10 +76,19 @@ var (
 )
 
 // Stack is the editor's undo/redo history over one document.
+//
+// IT ALSO KNOWS WHICH POINT IN THE HISTORY IS ON DISK (28 Sep review, C): the
+// editor's unsaved marker used to be a flag set by every edit and cleared only by
+// a save, so undoing back to the saved map still said *UNSAVED*. saved is the
+// depth of the history when the document last matched the file -- 0 when it was
+// opened -- and Dirty is simply "the history is not at that depth". A new edit
+// made below it throws away the redo branch the saved state was on, so the file
+// can no longer be reached by undo or redo and saved becomes unreachable (-1).
 type Stack struct {
-	doc  *Doc
-	done []Cmd
-	redo []Cmd
+	doc   *Doc
+	done  []Cmd
+	redo  []Cmd
+	saved int
 }
 
 // NewStack starts a history over a document.
@@ -104,10 +113,29 @@ func (s *Stack) Do(c Cmd) error {
 		return err
 	}
 
+	// Below the saved depth, the saved state lives only in the redo branch
+	// this edit is about to drop.
+	if len(s.done) < s.saved {
+		s.saved = -1
+	}
+
 	s.done = append(s.done, c)
 	s.redo = nil
 
 	return nil
+}
+
+// MarkSaved records that the document as it now stands is what is on disk: the
+// editor calls it after a save succeeds.
+func (s *Stack) MarkSaved() {
+	s.saved = len(s.done)
+}
+
+// Dirty reports whether the document differs from the last save (or from the
+// file it was opened from, before any save): whether undo and redo have left
+// the history anywhere but the point MarkSaved recorded.
+func (s *Stack) Dirty() bool {
+	return len(s.done) != s.saved
 }
 
 // CanUndo reports whether there is anything to undo.

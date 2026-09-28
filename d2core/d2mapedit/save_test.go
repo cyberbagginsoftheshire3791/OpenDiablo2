@@ -25,7 +25,7 @@ func TestSaveRefusesAMapTheGameWouldRefuse(t *testing.T) {
 	d := mustOpen(t, m.bytes(t))
 	path := filepath.Join(t.TempDir(), "broken.tmj")
 
-	err := d.Save(path, files.size())
+	err := d.Save(path, files.size(), EngineParse("", files.loader()))
 	if err == nil {
 		t.Fatal("a map the game refuses was written")
 	}
@@ -76,7 +76,7 @@ func TestSaveKeepsThePreviousGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := d.Save(path, artReader); err != nil {
+	if err := d.Save(path, artReader, villageEngine(t)); err != nil {
 		t.Fatalf("saving: %v", err)
 	}
 
@@ -121,7 +121,7 @@ func TestSaveKeepsThePreviousGeneration(t *testing.T) {
 func TestSavingSomewhereNewKeepsNoGeneration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "new", "village.tmj")
 
-	if err := openVillage(t).Save(path, DirArt(villageDir())); err != nil {
+	if err := openVillage(t).Save(path, DirArt(villageDir()), villageEngine(t)); err != nil {
 		t.Fatalf("saving: %v", err)
 	}
 
@@ -166,7 +166,7 @@ func TestSaveRefusesThePlayersSaveDirectory(t *testing.T) {
 		filepath.Join(saves, "maps", "village.tmj"),
 		saves,
 	} {
-		if err := d.Save(name, artReader); !errors.Is(err, ErrPlayerSaves) {
+		if err := d.Save(name, artReader, villageEngine(t)); !errors.Is(err, ErrPlayerSaves) {
 			t.Errorf("Save(%s) = %v, want ErrPlayerSaves", name, err)
 		}
 
@@ -177,7 +177,7 @@ func TestSaveRefusesThePlayersSaveDirectory(t *testing.T) {
 
 	// And a map next to the saves directory rather than in it is fine.
 	fine := filepath.Join(home, "OpenDiablo2", "village.tmj")
-	if err := d.Save(fine, artReader); err != nil {
+	if err := d.Save(fine, artReader, villageEngine(t)); err != nil {
 		t.Errorf("Save(%s) = %v, want it allowed", fine, err)
 	}
 }

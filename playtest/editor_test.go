@@ -3,207 +3,965 @@
 package playtest
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"image"
+	"image/color"
+	"math"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maptiled"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2mapedit"
 )
 
-// TestWorldEditor is the World Editor v0 acceptance script (M5.4).
+// TestWorldEditor is the World Editor v0 acceptance script (M5.4), REWRITTEN
+// after the 28 Sep 2026 review (B1): the first version could pass on nothing. It
+// saved an UNEDITED document through the API instead of pressing Ctrl+S, never
+// pressed P (so both of its hash comparisons were equal by construction -- the
+// launcher mirrors data/strigoi beside a temporary exe and the game read the
+// mirror), and never looked at the screenshot it took. This one drives the
+// REAL screen with the mouse and the keyboard, and reads the pixels.
 //
-// THE MILESTONE'S ASSERTION IN ONE SENTENCE: the editor opens on the village in
-// a real game with no terminal work beyond a flag, and a playtest run on a map
-// it wrote leaves the AUTHORING file byte for byte as it was.
+// WHERE THE FILES LIVE, AND WHY. The launcher builds the harness game once per
+// run into a temporary folder and mirrors data/strigoi beside it; the game
+// reads its loose files from its OWN folder, so a file the game must read --
+// the map a playtest runs -- has to be there. So the authoring copy is written
+// INTO the mirror and handed to -editor by its ABSOLUTE path: the editor reads
+// and writes that file, its playtest scratch lands beside it, and the game reads
+// both from the same place. The repository's own village is never opened: the
+// harness now REFUSES to open it in the editor (act 9 shows the refusal), because
+// the game runs with the repository as its working directory and a scripted
+// Ctrl+S under a bare -editor would have written it.
 //
-// WHAT THIS SCRIPT DELIBERATELY DOES NOT DO. The editor is driven by the mouse
-// and the keyboard, and the harness has no verb for a mouse WHEEL and no
-// press-and-hold for a DRAG (37 tools, checked). So this script does not claim
-// to have zoomed or panned -- the screenshots in
-// strigoi-harness-runs\editor-v0-shots\ show those working, and the unit tests
-// in d2core/d2map/d2maprenderer prove the transform, but nobody has turned a
-// wheel under a script and this script does not pretend otherwise.
+// Two launches, nine acts:
 //
-// What it DOES prove is the half that matters most and that no unit test can
-// reach: that the flag reaches a real editor in a real game, and that the file
-// on disk is safe from a playtest.
-//
-// THE ORDER OF THE ACTS IS NOT COSMETIC. playtest/launcher.go builds the
-// harness binary ONCE per go test run and MIRRORS data/strigoi beside it -- its
-// own comment calls the copy a snapshot, "art that changes mid-suite does not
-// reach it". So a map written after start/startWith is "file not found" to the
-// game. Every file this script wants the game to read is written BEFORE the
-// game launches. This cost a red run here and another in the burst's footprint
-// scaffold; it is written down so it costs a third nobody.
-//
-// Five acts:
-//  1. the editor's own save keeps the previous generation, and the saved file
-//     is one the GAME takes -- run against the shipped village rather than a
-//     fixture, on a copy, so the real file is never at risk. FIRST, because the
-//     game must see this file at launch;
-//  2. -editor opens the EDITOR, not the main menu -- read back from the game,
-//     so a refused map (which falls back to the menu by design) fails here;
-//  3. opening a map does not write to it: the village is byte-identical after
-//     the editor has had it open;
-//  4. A PLAYTEST RUN ON THE EDITED MAP LEAVES THE AUTHORING FILE BYTE-IDENTICAL
-//     -- the run happens on a scratch copy, the real game plays it, and both
-//     the authoring file and the scratch file are hashed before and after;
-//  5. control -- the same comparison against a map the game was NOT given, so
-//     act 4 is not passing because nothing ever writes to anything.
+//	the refused map (its own launch):
+//	 0. a copy whose grass PNG is cut short after its header -- the validator
+//	    passes it, the engine refuses it: the editor opens and SAYS SO in the
+//	    map area (C), and Ctrl+S and P both refuse it (B2);
+//	the authoring copy:
+//	 1. -editor opens THAT file (disk_path), clean;
+//	 2. the first screen reads (A1): at the fit zoom the map's ink stays inside
+//	    its own diamond (plus the height of its tallest art above it), the
+//	    diamond is covered, and every person and the start carry a marker (B5);
+//	 3. a scripted zoom to 0.25 through the provider's zoom field, which calls
+//	    the wheel's own zoomAbout;
+//	 4. a house placed by CLICKS -- a palette row, then a map tile the ghost
+//	    itself says yes to -- and the house's pixels appear on its footprint;
+//	 5. Ctrl+S on the keyboard: the file parses with the ENGINE's parser, holds
+//	    the new footprint, names it "peasant-house" (C), keeps a .bak; Ctrl+Z and
+//	    Ctrl+Y walk the unsaved mark off and back on (C);
+//	 6. an UNSAVED edit (a tree);
+//	 7. P on the keyboard: a real game on the edited map, played by a throwaway
+//	    hero who is not in the player's Saves (B3);
+//	 8. the game ends -- ToMainMenu, where the escape menu's exit goes -- and the
+//	    EDITOR comes back with the unsaved tree, the dirty mark and the undo
+//	    history (A2); the process's map setting is the launch one again (B3);
+//	    the playtest touched neither the authoring copy nor the repository, and
+//	    the throwaway hero's folder is gone. Ctrl+S then writes the tree;
+//	 9. the menu's own WORLD EDITOR button, which opens the repository's
+//	    village, is refused under the harness -- and a normal game started
+//	    afterwards is built from the launch map, not the playtest's (B3).
 func TestWorldEditor(t *testing.T) {
-	const village = "data/strigoi/maps/village.tmj"
+	if os.Getenv("STRIGOI_HARNESS_ADDR") != "" {
+		t.Skip("attached to a running game; this script launches its own with -editor")
+	}
 
-	repoVillage := filepath.Join("..", filepath.FromSlash(village))
+	repoRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	before := hashFile(t, repoVillage)
-	t.Logf("the shipped village is %s", before[:16])
-
-	// --- act 1: a save keeps the previous generation -------------------------
-	//
-	// On a COPY beside the real map, so the tileset's relative image paths
-	// still resolve and the shipped file is never written to.
-	scratch := filepath.Join(filepath.Dir(repoVillage), "acceptance-scratch.tmj")
+	repoVillage := filepath.Join(repoRoot, "data", "strigoi", "maps", "village.tmj")
+	villageBefore := hashFile(t, repoVillage)
+	t.Logf("the repository's village is %s", villageBefore[:16])
 
 	raw, err := os.ReadFile(repoVillage)
 	if err != nil {
-		t.Fatalf("act 1: reading the village: %v", err)
+		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(scratch, raw, 0o600); err != nil {
-		t.Fatalf("act 1: writing the scratch map: %v", err)
+	exe, err := harnessBinary(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mirror := filepath.Join(filepath.Dir(exe), "data", "strigoi")
+	authoring := filepath.Join(mirror, "maps", "editor-accept.tmj")
+	scratch := filepath.Join(mirror, "maps", "playtest-scratch.tmj")
+
+	if err := os.WriteFile(authoring, raw, 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	t.Cleanup(func() {
-		for _, p := range []string{scratch, d2mapedit.BackupPath(scratch)} {
+		for _, p := range []string{authoring, d2mapedit.BackupPath(authoring), scratch} {
 			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 				t.Logf("LEFT A FILE BEHIND: %v", err)
 			}
 		}
 	})
 
-	doc, err := d2mapedit.OpenFile(scratch)
-	if err != nil {
-		t.Fatalf("act 1: the editor cannot open the scratch copy: %v", err)
+	editorRefusesABrokenMap(t, mirror, raw)
+
+	// --- act 1: -editor opens the authoring copy, by its absolute path -------
+	s := startWith(t, "-editor="+authoring)
+	waitForEditor(t, s)
+
+	st := editorState(s)
+	if !samePath(str(st, "disk_path"), authoring) {
+		t.Fatalf("act 1: the editor opened %q, want %q", str(st, "disk_path"), authoring)
 	}
 
-	art := d2mapedit.DirArt(filepath.Dir(scratch))
-
-	if problems := doc.Validate(art); len(problems) > 0 {
-		t.Fatalf("act 1: the shipped village does not validate clean: %d problem(s), first %s",
-			len(problems), problems[0].Error())
+	if got := str(st, "map_path"); got != "data/strigoi/maps/editor-accept.tmj" {
+		t.Fatalf("act 1: the game would read the map as %q, want data/strigoi/maps/editor-accept.tmj", got)
 	}
 
-	if err := doc.Save(scratch, art); err != nil {
-		t.Fatalf("act 1: the editor refused to save the village it just opened: %v", err)
+	if flag(t, st, "dirty") || mustNum(t, st, "undo_depth") != 0 {
+		t.Fatalf("act 1: a map just opened is dirty or has history: %v", st)
 	}
-
-	if _, err := os.Stat(d2mapedit.BackupPath(scratch)); err != nil {
-		t.Fatalf("act 1: a save left no previous generation beside it: %v", err)
-	}
-
-	t.Logf("act 1: saved, and %s is beside it", filepath.Base(d2mapedit.BackupPath(scratch)))
-
-	// --- act 2: the flag opens the editor -----------------------------------
-	//
-	// STEP FIRST. The screen name is noted when ToWorldEditor runs, but the
-	// ScreenManager loads the screen asynchronously, so at tick 1 the game is
-	// still on the loading frame -- the first version of this act screenshotted
-	// that and called it the editor. Stepping past the load also makes the
-	// assertion mean something: an editor that FAILED to open goes to the main
-	// menu (by design, ToWorldEditor's doc), and ToMainMenu notes "main_menu"
-	// over the top, so after the load the name can still go red.
-	s := startWith(t, "-editor")
-
-	s.call("strigoi_step", map[string]any{"frames": 240})
 
 	info := s.call("strigoi_get_game_info", map[string]any{})
-	if got := str(info, "screen"); got != "world_editor" {
-		t.Fatalf("act 2: after loading, -editor left the game on screen %q, want %q -- the editor did not open",
-			got, "world_editor")
+	launchMap := str(info, "map_asked")
+	t.Logf("act 1: the editor has %s; the process's map setting is %q", str(st, "disk_path"), launchMap)
+
+	// --- act 2: the first screen reads -----------------------------------------
+	parkCursor(s)
+
+	fit := mustNum(t, st, "fit_zoom")
+	if z := mustNum(t, st, "zoom"); math.Abs(z-fit) > 1e-9 {
+		t.Fatalf("act 2: the editor opened at zoom %v, not its fit %v", z, fit)
 	}
 
-	if flag(t, info, "in_game") {
-		t.Fatal("act 2: the editor reports being in a game; it is a screen, not a world")
+	shot, shotPath := screenshot(t, s, "editor-fit")
+	tallest := tallestArt(t, authoring)
+
+	stray, uncovered, inside := inkOutsideTheMap(shot, st, float64(tallest)*fit+2)
+	t.Logf("act 2: at the fit zoom %.3f: %d map pixel(s) outside the diamond (+%d px of art above it), "+
+		"%d of %d pixels inside it uncovered -- %s", fit, stray, int(float64(tallest)*fit+2), uncovered, inside, shotPath)
+
+	if stray > 40 {
+		t.Errorf("act 2: %d pixels of map art lie outside the map's own diamond at the fit zoom: the art is not "+
+			"drawn at the zoom (A1) -- %s", stray, shotPath)
 	}
 
-	if flag(t, info, "loading") {
-		t.Fatal("act 2: the editor is still loading after 240 frames")
+	// Half a percent. MEASURED 28 Sep: 228 of 84535 (0.27%) with the seam pad,
+	// 767 (0.91%) with it set to 0 -- the hairline gaps between floor tiles
+	// on whole-pixel anchors (strigoi-harness-runs\wt-editor-fix\measure-r4-*).
+	if uncovered*200 > inside {
+		t.Errorf("act 2: %d of %d pixels inside the map's diamond are empty: the ground has holes (%s)",
+			uncovered, inside, shotPath)
 	}
 
-	shot := s.call("strigoi_screenshot", map[string]any{"name": "editor-v0-acceptance"})
-	t.Logf("act 2: the editor is open and drawn -- %s", str(shot, "path"))
+	for _, missing := range unmarkedPeople(shot, st) {
+		t.Errorf("act 2: no marker where %s stands (B5) -- %s", missing, shotPath)
+	}
 
-	// --- act 3: opening a map does not write to it --------------------------
+	// --- act 3: the scripted zoom ---------------------------------------------
+	st = sub(s.call("strigoi_set_system_field", map[string]any{"system": "editor", "field": "zoom", "value": 0.25}),
+		"state")
+	if z := mustNum(t, st, "zoom"); math.Abs(z-0.25) > 1e-9 {
+		t.Fatalf("act 3: zoom reads %v after setting 0.25", z)
+	}
+
+	s.call("strigoi_step", map[string]any{"frames": 3})
+	before, beforePath := screenshot(t, s, "editor-025")
+
+	// The same instrument at 0.25. MEASURED 28 Sep: 1 pixel of 282240 even with
+	// the seam pad at 0 -- at 0.25 every tile's anchor is a whole pixel, so the
+	// pad matters at the fit zoom (act 2), not here; this is the coverage check.
+	_, uncovered, inside = inkOutsideTheMap(before, st, float64(tallest)*0.25+2)
+	t.Logf("act 3: at 0.25, %d of %d pixels inside the map's diamond uncovered -- %s", uncovered, inside, beforePath)
+
+	if uncovered*200 > inside {
+		t.Errorf("act 3: %d of %d pixels inside the map's diamond are empty at 0.25: the ground has seams (%s)",
+			uncovered, inside, beforePath)
+	}
+
+	// --- act 4: a house placed by clicks ---------------------------------------
+	house := pickRow(t, s, "Peasant house")
+	x, y := placeByGhost(t, s, authoring, 3)
+
+	st = editorState(s)
+	if mustNum(t, st, "undo_depth") != 1 || !flag(t, st, "dirty") {
+		t.Fatalf("act 4: after placing, undo depth %v dirty %v (%s)", st["undo_depth"], st["dirty"], str(st, "message"))
+	}
+
+	placed := image.Rect(x-2, y-2, x+1, y+1) // the click is the footprint's front tile
+
+	s.call("strigoi_key", map[string]any{"key": "escape"}) // put the house down
+	parkCursor(s)
+
+	after, afterPath := screenshot(t, s, "editor-025-house-placed")
+	changed, of := changedInside(before, after, editorState(s), placed)
+	t.Logf("act 4: %s placed with its front tile at %d,%d; %d of %d pixels on its footprint changed -- %s",
+		house, x, y, changed, of, afterPath)
+
+	if of == 0 || changed*3 < of {
+		t.Errorf("act 4: only %d of %d pixels on the new house's footprint changed: it is not drawn where it stands",
+			changed, of)
+	}
+
+	// --- act 5: Ctrl+S, and what is on disk -----------------------------------
+	ctrl(s, "s")
+
+	st = editorState(s)
+	if flag(t, st, "dirty") || !strings.HasPrefix(str(st, "message"), "saved") {
+		t.Fatalf("act 5: Ctrl+S left dirty=%v message %q", st["dirty"], str(st, "message"))
+	}
+
+	saved, err := os.ReadFile(authoring)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The hash instrument's own control: the save really changed the file, so
+	// the equalities acts 8 and 9 rest on are not a blind instrument agreeing
+	// with itself.
+	if h := hashFile(t, authoring); h == hex.EncodeToString(func() []byte { s := sha256.Sum256(raw); return s[:] }()) {
+		t.Fatal("act 5: the save left the file's hash where it was: the hash instrument cannot see a change")
+	}
+
+	if bak, err := os.ReadFile(d2mapedit.BackupPath(authoring)); err != nil || !bytes.Equal(bak, raw) {
+		t.Fatalf("act 5: the .bak is not the generation the save replaced (%v)", err)
+	}
+
+	m, err := d2maptiled.Parse(saved, ".", func(p string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(filepath.Dir(authoring), filepath.FromSlash(path.Clean(p))))
+	})
+	if err != nil {
+		t.Fatalf("act 5: the ENGINE refuses the saved file: %v", err)
+	}
+
+	if !hasFootprint(m, placed) {
+		t.Fatalf("act 5: the saved map has no structure on %v", placed)
+	}
+
+	doc, err := d2mapedit.OpenFile(authoring)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if o, ok := doc.StructureOn(x, y); !ok || o.Name != "peasant-house" {
+		t.Fatalf("act 5: the saved house is named %q, want the village's own \"peasant-house\"", o.Name)
+	}
+
+	ctrl(s, "z")
+
+	if !flag(t, editorState(s), "dirty") {
+		t.Fatal("act 5: undoing past the save left the map marked saved")
+	}
+
+	ctrl(s, "y")
+
+	if flag(t, editorState(s), "dirty") {
+		t.Fatal("act 5: redoing back to the saved map left it marked unsaved")
+	}
+
+	t.Logf("act 5: Ctrl+S wrote a file the engine parses, with the house on %v named peasant-house; "+
+		"Ctrl+Z / Ctrl+Y walk the unsaved mark off and on", placed)
+
+	// --- act 6: an unsaved edit --------------------------------------------------
+	pickTab(t, s, "Props")
+	pickRow(t, s, "Tree")
+	tx, ty := placeByGhost(t, s, authoring, 1)
+
+	s.call("strigoi_key", map[string]any{"key": "escape"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	st = editorState(s)
+	depth, label := mustNum(t, st, "undo_depth"), str(st, "undo_label")
+
+	if !flag(t, st, "dirty") || depth != 2 {
+		t.Fatalf("act 6: after the tree, dirty %v depth %v", st["dirty"], depth)
+	}
+
+	onDisk := hashFile(t, authoring)
+	t.Logf("act 6: a tree on %d,%d, unsaved (%s)", tx, ty, label)
+
+	// --- act 7: P ------------------------------------------------------------------
+	s.call("strigoi_key", map[string]any{"key": "p"})
+
+	info = waitForScreen(t, s, "game")
+	if !flag(t, info, "playtest") {
+		t.Fatalf("act 7: P started a game that is not a playtest: %v", info)
+	}
+
+	if got := str(info, "map_built"); got != "/data/strigoi/maps/playtest-scratch.tmj" || str(info, "map_error") != "" {
+		t.Fatalf("act 7: the playtest built %q (error %q), not the editor's scratch map", got, str(info, "map_error"))
+	}
+
+	if name := str(sub(s.call("strigoi_get_player", map[string]any{}), "state"), "name"); name != "Playtest" {
+		t.Fatalf("act 7: the playtest is played by %q, not the throwaway hero", name)
+	}
+
+	heroDir := str(info, "playtest_save_dir")
+	home, err := testHome(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	realSaves := filepath.Join(home, "OpenDiablo2", "Saves")
+	if heroDir == "" || strings.HasPrefix(strings.ToLower(heroDir), strings.ToLower(realSaves)) {
+		t.Fatalf("act 7: the playtest hero lives in %q, inside the player's Saves", heroDir)
+	}
+
+	if entries, _ := os.ReadDir(realSaves); len(entries) > 0 {
+		t.Fatalf("act 7: a playtest wrote %d file(s) into the player's Saves (%s)", len(entries), entries[0].Name())
+	}
+
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 30.0})
 	s.call("strigoi_step", map[string]any{"frames": 60})
+	_, gamePath := screenshot(t, s, "playtest-in-game")
 
-	if after := hashFile(t, repoVillage); after != before {
-		t.Fatalf("act 3: the village changed merely by being opened in the editor: %s -> %s",
-			before[:16], after[:16])
+	t.Logf("act 7: P is a real game on %s, played by Playtest from %s -- %s", str(info, "map_built"), heroDir, gamePath)
+
+	// --- act 8: back to the editor ----------------------------------------------
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	info = waitForScreen(t, s, "world_editor")
+
+	st = editorState(s)
+	if !flag(t, st, "dirty") || mustNum(t, st, "undo_depth") != depth || str(st, "undo_label") != label {
+		t.Fatalf("act 8: back from the playtest the editor has dirty=%v depth=%v last edit %q; "+
+			"want the unsaved tree: dirty, depth %v, %q (A2)", st["dirty"], st["undo_depth"], str(st, "undo_label"),
+			depth, label)
 	}
 
-	t.Log("act 3: the village is byte-identical after the editor has had it open")
+	if !samePath(str(st, "disk_path"), authoring) || !strings.Contains(str(st, "message"), "back from the playtest") {
+		t.Fatalf("act 8: the editor came back on %q saying %q", str(st, "disk_path"), str(st, "message"))
+	}
 
-	// --- act 4: a playtest leaves the authoring file alone -------------------
-	//
-	// The real game, on the map the editor wrote. The map argument is STICKY
-	// per process (measured 27 Sep), so it is passed explicitly.
-	scratchBefore := hashFile(t, scratch)
+	if flag(t, info, "playtest") || str(info, "map_asked") != launchMap {
+		t.Fatalf("act 8: after the playtest the process builds %q (playtest=%v); want the launch map %q again (B3)",
+			str(info, "map_asked"), info["playtest"], launchMap)
+	}
 
-	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
-	s.call("strigoi_step", map[string]any{"frames": 30})
+	if h := hashFile(t, authoring); h != onDisk {
+		t.Fatalf("act 8: THE PLAYTEST CHANGED THE AUTHORING COPY: %s -> %s", onDisk[:16], h[:16])
+	}
+
+	if h := hashFile(t, repoVillage); h != villageBefore {
+		t.Fatalf("act 8: THE REPOSITORY'S VILLAGE CHANGED: %s -> %s", villageBefore[:16], h[:16])
+	}
+
+	gone := false
+
+	for i := 0; i < 40 && !gone; i++ {
+		time.Sleep(100 * time.Millisecond)
+		s.call("strigoi_step", map[string]any{"frames": 5})
+
+		_, err := os.Stat(heroDir)
+		gone = os.IsNotExist(err)
+	}
+
+	if !gone {
+		t.Fatalf("act 8: the throwaway hero's folder %s is still there", heroDir)
+	}
+
+	parkCursor(s)
+	_, backPath := screenshot(t, s, "editor-back-from-playtest")
+
+	ctrl(s, "s")
+
+	doc, err = d2mapedit.OpenFile(authoring)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if doc.WallTile(tx, ty) == 0 {
+		t.Fatalf("act 8: Ctrl+S after the playtest wrote no tree on %d,%d -- the edit did not survive", tx, ty)
+	}
+
+	t.Logf("act 8: back in the editor with the unsaved tree, depth %v, map setting %q again, the hero's folder gone; "+
+		"Ctrl+S then wrote the tree -- %s", depth, launchMap, backPath)
+
+	// --- act 9: the repository's village is refused; the launch map is back ------
+	s.call("strigoi_key", map[string]any{"key": "escape"})
+	waitForScreen(t, s, "main_menu")
+
+	button := menuButton(t, s, "world_editor")
+	s.call("strigoi_click", map[string]any{"x": int(num(button, "x") + num(button, "w")/2),
+		"y": int(num(button, "y") + num(button, "h")/2), "button": "left"})
+	s.call("strigoi_step", map[string]any{"frames": 240})
+
+	if got := str(s.call("strigoi_get_game_info", map[string]any{}), "screen"); got == "world_editor" {
+		t.Fatal("act 9: under the harness the menu's WORLD EDITOR button opened the repository's village")
+	}
+
+	if h := hashFile(t, repoVillage); h != villageBefore {
+		t.Fatalf("act 9: THE REPOSITORY'S VILLAGE CHANGED: %s -> %s", villageBefore[:16], h[:16])
+	}
 
 	g := s.call("strigoi_start_game", map[string]any{
-		"hero_name": "Editor", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
-		"map": "data/strigoi/maps/acceptance-scratch.tmj",
+		"hero_name": "After", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
 	})
 
-	if e := str(g, "map_error"); e != "" {
-		t.Fatalf("act 4: the game refused the map the editor saved: %s", e)
+	if built := str(g, "map_built"); "/"+strings.TrimPrefix(built, "/") != "/"+strings.TrimPrefix(launchMap, "/") {
+		t.Fatalf("act 9: the next game was built from %q, not the launch map %q (B3)", built, launchMap)
 	}
 
-	if built := str(g, "map_built"); built != "/data/strigoi/maps/acceptance-scratch.tmj" {
-		t.Fatalf("act 4: the game built %q, not the editor's map -- a refused map falls back to Act 1 silently", built)
-	}
+	t.Logf("act 9: the WORLD EDITOR button's village was refused, and the next game was built from %s", launchMap)
+}
 
-	// Play it: walk the clock on, so the run is a run and not just a load.
-	s.call("strigoi_step_world", map[string]any{"world_minutes": 30.0})
-	s.call("strigoi_step", map[string]any{"frames": 120})
+// editorRefusesABrokenMap is act 0, a launch of its own: a copy of the village
+// whose grass PNG is cut after 40 bytes -- a real signature and size, no
+// picture. The validator (which reads the header) passes it and the engine
+// (which decodes it) refuses it: the review saved exactly this file.
+func editorRefusesABrokenMap(t *testing.T, mirror string, raw []byte) {
+	t.Helper()
 
-	if after := hashFile(t, repoVillage); after != before {
-		t.Fatalf("act 4: A PLAYTEST CHANGED THE AUTHORING FILE: %s -> %s", before[:16], after[:16])
-	}
-
-	if after := hashFile(t, scratch); after != scratchBefore {
-		t.Fatalf("act 4: the run wrote back to the map it played: %s -> %s", scratchBefore[:16], after[:16])
-	}
-
-	t.Log("act 4: after a real run on the editor's map, both the authoring file and the played map are byte-identical")
-
-	// --- act 5: the control --------------------------------------------------
-	//
-	// Act 4 compares hashes and finds them equal, which is exactly what a
-	// broken hash would also report. So hash something that DID change and
-	// prove the instrument can tell the difference.
-	if err := os.WriteFile(scratch+".control", append(raw, '\n'), 0o600); err != nil {
-		t.Fatalf("act 5: %v", err)
-	}
+	tree := filepath.Join(mirror, "zz-editor-bad")
+	bad := filepath.Join(tree, "maps", "bad.tmj")
 
 	t.Cleanup(func() {
-		if err := os.Remove(scratch + ".control"); err != nil && !os.IsNotExist(err) {
-			t.Logf("LEFT A FILE BEHIND: %v", err)
+		if err := os.RemoveAll(tree); err != nil {
+			t.Logf("LEFT A FOLDER BEHIND: %v", err)
 		}
 	})
 
-	if same := hashFile(t, scratch+".control"); same == before {
-		t.Fatal("act 5: CONTROL FAILED -- a file with one byte added hashes the same as the original, so act 4 proved nothing")
+	// The map's art, beside it the way the village's is: tiles/ under the map,
+	// ../structures/ beside its folder.
+	for _, dir := range []string{"maps/tiles", "structures"} {
+		rel := filepath.FromSlash(dir)
+		if err := copyTree(filepath.Join(mirror, rel), filepath.Join(tree, rel)); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	t.Log("act 5: control red as it should be -- one added byte changes the hash, so act 4's equality means something")
+	grass := filepath.Join(tree, "maps", "tiles", "placeholder-grass.png")
+
+	whole, err := os.ReadFile(grass)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(grass, whole[:40], 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(bad, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	badBefore := hashFile(t, bad)
+
+	s := startWith(t, "-editor="+bad)
+	defer s.stop()
+
+	waitForEditor(t, s)
+
+	st := editorState(s)
+	if str(st, "engine_error") == "" || mustNum(t, st, "problems") != 0 {
+		t.Fatalf("act 0: the broken copy was meant to pass the validator and fail the engine: engine %q, %v problem(s)",
+			str(st, "engine_error"), st["problems"])
+	}
+
+	parkCursor(s)
+
+	shot, shotPath := screenshot(t, s, "editor-refused-map")
+	red := countColour(shot, viewRect(st), color.RGBA{R: 0xff, G: 0x50, B: 0x50, A: 0xff}, 8)
+
+	t.Logf("act 0: the engine refuses the copy (%s); %d notice pixel(s) in the map area -- %s",
+		str(st, "engine_error"), red, shotPath)
+
+	if red < 500 {
+		t.Errorf("act 0: the map area shows %d pixels of the refusal notice: a refused map reads as an empty grid (C) -- %s",
+			red, shotPath)
+	}
+
+	ctrl(s, "s")
+
+	if msg := str(editorState(s), "message"); !strings.HasPrefix(msg, "NOT SAVED") {
+		t.Fatalf("act 0: Ctrl+S on a map the engine refuses said %q (B2)", msg)
+	}
+
+	if h := hashFile(t, bad); h != badBefore {
+		t.Fatalf("act 0: Ctrl+S wrote a map the engine refuses (B2)")
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "p"})
+	s.call("strigoi_step", map[string]any{"frames": 60})
+
+	if info := s.call("strigoi_get_game_info", map[string]any{}); str(info, "screen") != "world_editor" ||
+		flag(t, info, "in_game") {
+		t.Fatalf("act 0: P on a map the engine refuses left the editor: %v (B2)", info)
+	}
+
+	if msg := str(editorState(s), "message"); !strings.HasPrefix(msg, "cannot playtest") {
+		t.Fatalf("act 0: P on a map the engine refuses said %q (B2)", msg)
+	}
+
+	t.Log("act 0: Ctrl+S and P both refuse the copy, and the file is as it was")
 }
 
-// hashFile is the instrument acts 2, 4 and 5 rest on.
+// ---- the instruments ----------------------------------------------------------
+
+// editorState is the editor's harness provider.
+func editorState(s *session) map[string]any {
+	return sub(s.call("strigoi_get_system_state", map[string]any{"system": "editor"}), "state")
+}
+
+// waitForEditor steps until the editor has loaded and registered its provider.
+// A map the editor refused sends the game to the main menu, and this fails.
+func waitForEditor(t *testing.T, s *session) {
+	t.Helper()
+
+	waitForScreen(t, s, "world_editor")
+
+	for i := 0; i < 60; i++ {
+		if s.callErr("strigoi_get_system_state", map[string]any{"system": "editor"}) == "" {
+			return
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 10})
+	}
+
+	t.Fatal("the editor never registered its provider")
+}
+
+// waitForScreen steps until the game says it is on screen (and not loading).
+func waitForScreen(t *testing.T, s *session, screen string) map[string]any {
+	t.Helper()
+
+	var info map[string]any
+
+	for i := 0; i < 90; i++ {
+		s.call("strigoi_step", map[string]any{"frames": 20})
+
+		info = s.call("strigoi_get_game_info", map[string]any{})
+		if str(info, "screen") == screen && !flag(t, info, "loading") {
+			if screen != "game" || flag(t, info, "in_game") {
+				return info
+			}
+		}
+	}
+
+	t.Fatalf("the game never reached screen %q: %v", screen, info)
+
+	return nil
+}
+
+// parkCursor puts the pointer on the status bar, off the map and the palette,
+// so it is in no screenshot's measured area.
+func parkCursor(s *session) {
+	s.call("strigoi_move_cursor", map[string]any{"x": 700, "y": 590})
+	s.call("strigoi_step", map[string]any{"frames": 3})
+}
+
+// ctrl presses Ctrl+key on the keyboard, as a hand does: Control held, the key
+// tapped, Control released.
+func ctrl(s *session, key string) {
+	s.call("strigoi_key", map[string]any{"key": "control", "action": "down"})
+	s.call("strigoi_key", map[string]any{"key": key})
+	s.call("strigoi_key", map[string]any{"key": "control", "action": "up"})
+	s.call("strigoi_step", map[string]any{"frames": 3})
+}
+
+func screenshot(t *testing.T, s *session, name string) (image.Image, string) {
+	t.Helper()
+
+	p := str(s.call("strigoi_screenshot", map[string]any{"name": name}), "path")
+
+	return readPNG(t, p), p
+}
+
+// pickTab clicks a palette tab by its title.
+func pickTab(t *testing.T, s *session, title string) {
+	t.Helper()
+
+	for _, v := range list(editorState(s), "tabs") {
+		tab, _ := v.(map[string]any)
+		if str(tab, "title") == title {
+			s.call("strigoi_click", map[string]any{"x": int(num(tab, "x") + num(tab, "w")/2),
+				"y": int(num(tab, "y") + num(tab, "h")/2), "button": "left"})
+			s.call("strigoi_step", map[string]any{"frames": 2})
+
+			return
+		}
+	}
+
+	t.Fatalf("no palette tab %q", title)
+}
+
+// pickRow clicks a palette row by its name and checks the editor picked it up.
+func pickRow(t *testing.T, s *session, name string) string {
+	t.Helper()
+
+	for _, v := range list(editorState(s), "rows") {
+		row, _ := v.(map[string]any)
+		if str(row, "name") != name {
+			continue
+		}
+
+		s.call("strigoi_click", map[string]any{"x": int(num(row, "x") + num(row, "w")/2),
+			"y": int(num(row, "y") + num(row, "h")/2), "button": "left"})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+
+		if st := editorState(s); str(st, "picked") != str(row, "id") || str(st, "tool") != "place" {
+			t.Fatalf("clicking the %s row picked %q (tool %s): %s", name, str(st, "picked"), str(st, "tool"),
+				str(st, "message"))
+		}
+
+		return name
+	}
+
+	t.Fatalf("no palette row %q on show", name)
+
+	return ""
+}
+
+// placeByGhost finds a tile the held piece may go on and clicks it. Candidates
+// are the tiles nearest the view's middle whose side x side footprint, laid
+// back from the tile, is clear in the saved document; each is hovered and the
+// click is made only where the editor's OWN ghost says yes -- the same question
+// the click asks. It answers the tile clicked.
+func placeByGhost(t *testing.T, s *session, file string, side int) (int, int) {
+	t.Helper()
+
+	doc, err := d2mapedit.OpenFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st := editorState(s)
+	view := viewRect(st)
+	cx, cy := float64(view.Min.X+view.Max.X)/2, float64(view.Min.Y+view.Max.Y)/2
+
+	type cand struct {
+		x, y int
+		d    float64
+	}
+
+	var cands []cand
+
+	for y := side - 1; y < doc.Size().Y; y++ {
+		for x := side - 1; x < doc.Size().X; x++ {
+			if !clearFor(doc, x, y, side) {
+				continue
+			}
+
+			sx, sy := tileScreen(st, float64(x)+0.5, float64(y)+0.5)
+			if !image.Pt(int(sx), int(sy)).In(view.Inset(8)) {
+				continue
+			}
+
+			cands = append(cands, cand{x, y, math.Hypot(sx-cx, sy-cy)})
+		}
+	}
+
+	for tries := 0; tries < 25 && len(cands) > 0; tries++ {
+		best := 0
+		for i := range cands {
+			if cands[i].d < cands[best].d {
+				best = i
+			}
+		}
+
+		c := cands[best]
+		cands = append(cands[:best], cands[best+1:]...)
+
+		sx, sy := tileScreen(st, float64(c.x)+0.5, float64(c.y)+0.5)
+
+		s.call("strigoi_move_cursor", map[string]any{"x": int(sx), "y": int(sy)})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+
+		hover := sub(editorState(s), "hover")
+		if tile := list(hover, "tile"); len(tile) != 2 || int(tile[0].(float64)) != c.x || int(tile[1].(float64)) != c.y {
+			continue
+		}
+
+		if ok, _ := hover["can_place"].(bool); !ok {
+			continue
+		}
+
+		s.call("strigoi_click", map[string]any{"x": int(sx), "y": int(sy), "button": "left"})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+
+		return c.x, c.y
+	}
+
+	t.Fatalf("the ghost said yes to none of the tiles tried: %s", str(editorState(s), "message"))
+
+	return -1, -1
+}
+
+// clearFor is the document's side of the ghost's question: every tile of the
+// footprint laid back from x, y on the map, floored, and free of walls,
+// structures and people.
+func clearFor(doc *d2mapedit.Doc, x, y, side int) bool {
+	people := map[image.Point]bool{}
+
+	for _, o := range doc.Objects() {
+		if !o.IsStructure() {
+			people[o.Tile()] = true
+		}
+	}
+
+	for ty := y - side + 1; ty <= y; ty++ {
+		for tx := x - side + 1; tx <= x; tx++ {
+			if tx < 0 || ty < 0 || tx >= doc.Size().X || ty >= doc.Size().Y {
+				return false
+			}
+
+			if _, on := doc.StructureOn(tx, ty); on || doc.FloorTile(tx, ty) == 0 || doc.WallTile(tx, ty) != 0 ||
+				people[image.Pt(tx, ty)] {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// tileScreen is where world point x, y is on screen, from the provider's
+// world_to_screen (origin + x*x_axis + y*y_axis).
+func tileScreen(st map[string]any, x, y float64) (float64, float64) {
+	w := sub(st, "world_to_screen")
+	o, xa, ya := list(w, "origin"), list(w, "x_axis"), list(w, "y_axis")
+
+	f := func(v []any, i int) float64 { n, _ := v[i].(float64); return n }
+
+	return f(o, 0) + x*f(xa, 0) + y*f(ya, 0), f(o, 1) + x*f(xa, 1) + y*f(ya, 1)
+}
+
+func viewRect(st map[string]any) image.Rectangle {
+	v := list(st, "view")
+	f := func(i int) int { n, _ := v[i].(float64); return int(n) }
+
+	return image.Rect(f(0), f(1), f(2), f(3))
+}
+
+func list(m map[string]any, key string) []any {
+	v, _ := m[key].([]any)
+	return v
+}
+
+// tallestArt is the tallest piece of art the map's tileset declares, in art
+// pixels: how far above its own tile anything on this map can stand.
+func tallestArt(t *testing.T, file string) int {
+	t.Helper()
+
+	doc, err := d2mapedit.OpenFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tallest := 0
+	for _, k := range doc.Kinds() {
+		if k.Declared.Y > tallest {
+			tallest = k.Declared.Y
+		}
+	}
+
+	return tallest
+}
+
+// editorVoid is the editor's map-view background (edColVoid).
+var editorVoid = color.RGBA{R: 0x0a, G: 0x0a, B: 0x10, A: 0xff}
+
+func near(c color.Color, want color.RGBA, tol int) bool {
+	r, g, b, _ := c.RGBA()
+	d := func(a uint32, w uint8) bool { return math.Abs(float64(int(a>>8)-int(w))) <= float64(tol) }
+
+	return d(r, want.R) && d(g, want.G) && d(b, want.B)
+}
+
+// inkOutsideTheMap is act 2's instrument: over the map's view (inset two
+// pixels), every pixel that is not the background must lie inside the map's
+// diamond on screen -- its corners from the provider -- or ABOVE it by no more
+// than above, the height the tallest art can stand. A view whose art is drawn
+// at full size on anchors scaled to 0.08 fails it by thousands of pixels. It
+// also counts the pixels well inside the diamond that are background: a hole
+// in the ground.
+func inkOutsideTheMap(img image.Image, st map[string]any, above float64) (stray, uncovered, inside int) {
+	corners := list(st, "map_corners")
+	pt := func(i int) (float64, float64) {
+		c, _ := corners[i].([]any)
+		x, _ := c[0].(float64)
+		y, _ := c[1].(float64)
+
+		return x, y
+	}
+
+	topX, topY := pt(0)
+	rightX, _ := pt(1)
+	_, bottomY := pt(2)
+	leftX, midY := pt(3)
+
+	cx, cy := topX, midY
+	hw, hh := (rightX-leftX)/2, (bottomY-topY)/2
+
+	const pad = 3.0
+
+	view := viewRect(st).Inset(2)
+
+	for y := view.Min.Y; y < view.Max.Y; y++ {
+		for x := view.Min.X; x < view.Max.X; x++ {
+			fx, fy := float64(x)+0.5, float64(y)+0.5
+			void := near(img.At(x, y), editorVoid, 2)
+
+			// Well inside: must be covered.
+			if math.Abs(fx-cx)/(hw-pad)+math.Abs(fy-cy)/(hh-pad) <= 1 {
+				inside++
+
+				if void {
+					uncovered++
+				}
+
+				continue
+			}
+
+			if void {
+				continue
+			}
+
+			// Ink: allowed inside the padded diamond, or above it within reach.
+			dx := math.Abs(fx-cx) / (hw + pad)
+			if dx > 1 {
+				stray++
+				continue
+			}
+
+			half := (hh + pad) * (1 - dx)
+			if fy > cy+half || fy < cy-half-above {
+				stray++
+			}
+		}
+	}
+
+	return stray, uncovered, inside
+}
+
+// unmarkedPeople names every person (and the start) with no pixel of his
+// marker's colour within three pixels of where the provider says he is drawn.
+func unmarkedPeople(img image.Image, st map[string]any) []string {
+	var missing []string
+
+	for _, v := range list(st, "people") {
+		p, _ := v.(map[string]any)
+
+		want := color.RGBA{R: 0x60, G: 0xd8, B: 0xff, A: 0xff}
+		if str(p, "class") == "player_start" {
+			want = color.RGBA{R: 0xff, G: 0xb0, B: 0x30, A: 0xff}
+		}
+
+		scr := list(p, "screen")
+		if len(scr) != 2 {
+			missing = append(missing, str(p, "name")+" (no screen position)")
+			continue
+		}
+
+		x, _ := scr[0].(float64)
+		y, _ := scr[1].(float64)
+
+		if countColour(img, image.Rect(int(x)-3, int(y)-3, int(x)+4, int(y)+4), want, 8) == 0 {
+			missing = append(missing, fmt.Sprintf("%s at %d,%d", str(p, "name"), int(x), int(y)))
+		}
+	}
+
+	return missing
+}
+
+func countColour(img image.Image, r image.Rectangle, want color.RGBA, tol int) int {
+	n := 0
+
+	r = r.Intersect(img.Bounds())
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			if near(img.At(x, y), want, tol) {
+				n++
+			}
+		}
+	}
+
+	return n
+}
+
+// changedInside counts the pixels inside a footprint's diamond on screen that
+// differ between two screenshots.
+func changedInside(a, b image.Image, st map[string]any, fp image.Rectangle) (changed, of int) {
+	tx, ty := tileScreen(st, float64(fp.Min.X), float64(fp.Min.Y))
+	rx, ry := tileScreen(st, float64(fp.Max.X), float64(fp.Min.Y))
+	bx, by := tileScreen(st, float64(fp.Max.X), float64(fp.Max.Y))
+	lx, ly := tileScreen(st, float64(fp.Min.X), float64(fp.Max.Y))
+
+	cx, cy := (tx+bx)/2, (ry+ly)/2
+	hw, hh := (rx-lx)/2-2, (by-ty)/2-2
+
+	for y := int(ty); y <= int(by); y++ {
+		for x := int(lx); x <= int(rx); x++ {
+			if math.Abs(float64(x)-cx)/hw+math.Abs(float64(y)-cy)/hh > 1 {
+				continue
+			}
+
+			of++
+
+			ar, ag, ab, _ := a.At(x, y).RGBA()
+			br, bg, bb, _ := b.At(x, y).RGBA()
+
+			if ar != br || ag != bg || ab != bb {
+				changed++
+			}
+		}
+	}
+
+	return changed, of
+}
+
+func hasFootprint(m *d2maptiled.Map, fp image.Rectangle) bool {
+	for _, s := range m.Structures {
+		if s.Footprint == fp {
+			return true
+		}
+	}
+
+	return false
+}
+
+// menuButton waits for the main menu, clicks past its trademark page off every
+// button, and answers the named button's rectangle (the "ui" provider).
+func menuButton(t *testing.T, s *session, name string) map[string]any {
+	t.Helper()
+
+	var ui map[string]any
+
+	for i := 0; i < 60; i++ {
+		if s.callErr("strigoi_get_system_state", map[string]any{"system": "ui"}) == "" {
+			if ui = uiState(s); str(ui, "screen") == "main_menu" {
+				break
+			}
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 10})
+	}
+
+	for i := 0; i < 10 && str(ui, "main_menu_page") != "main_menu"; i++ {
+		s.call("strigoi_click", map[string]any{"x": 700, "y": 150, "button": "left"})
+		s.call("strigoi_step", map[string]any{"frames": 10})
+		ui = uiState(s)
+	}
+
+	b := sub(sub(ui, "main_menu_buttons"), name)
+	if len(b) == 0 {
+		t.Fatalf("the main menu reports no %s button: %v", name, ui)
+	}
+
+	return b
+}
+
+// samePath compares two Windows paths as the file system does.
+func samePath(a, b string) bool {
+	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+}
+
+// hashFile is the instrument the byte-for-byte acts rest on.
 func hashFile(t *testing.T, path string) string {
 	t.Helper()
 

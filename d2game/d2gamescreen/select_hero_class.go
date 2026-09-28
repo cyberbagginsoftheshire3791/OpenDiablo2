@@ -115,6 +115,11 @@ const heroDescCharWidth = 37
 // the save and -classic's charstats row are keyed by.
 const pinnedHeroClass = d2enum.HeroAmazon
 
+// PinnedHeroClass is the class a new game offers. The World Editor's playtest
+// hero is made of it (d2app/playtest.go), so a playtest plays the class a player
+// would.
+func PinnedHeroClass() d2enum.Hero { return pinnedHeroClass }
+
 // getHeroRenderConfiguration returns the classes the select-hero screen renders.
 // Strigoi renders one. The loop that loads the sprites ranges over this map, so
 // a class absent here is never loaded, never drawn, never hovered and never
