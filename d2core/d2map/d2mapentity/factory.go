@@ -50,6 +50,12 @@ type MapEntityFactory struct {
 	asset *d2asset.AssetManager
 	item  *diablo2item.ItemFactory
 	rng   *rand.Rand // the world RNG (P3 E4); nil falls back to the global generator
+
+	// The next-id seam (M4.6 B2b, entity_id.go): the id the next NewNPC or
+	// NewCreature takes, and every id handed out through it, so none is
+	// handed out twice.
+	nextEntityID string
+	givenIDs     map[string]bool
 }
 
 // SetRand hands the factory the world RNG, so entity creation rolls
@@ -107,6 +113,10 @@ type CreatureAnimationPaths struct {
 
 func (f *MapEntityFactory) NewCreature(x, y int, name string, paths CreatureAnimationPaths, direction int,
 	standIn *d2records.MonStatRecord) (*Creature, error) {
+	// Taken first, whatever follows: a construction that fails must not
+	// leave its id waiting for the next entity (entity_id.go).
+	id := f.takeEntityID()
+
 	if standIn != nil {
 		_ = f.randInt63() // NewNPC's per-entity behaviour seed.
 
@@ -135,7 +145,7 @@ func (f *MapEntityFactory) NewCreature(x, y int, name string, paths CreatureAnim
 		animations[mode] = animation
 	}
 
-	creature, err := newCreature(x, y, name, animations, direction)
+	creature, err := newCreature(x, y, id, name, animations, direction)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +304,7 @@ func (f *MapEntityFactory) NewItem(x, y int, codes ...string) (*Item, error) {
 func (f *MapEntityFactory) NewNPC(x, y int, monstat *d2records.MonStatRecord, direction int) (*NPC, error) {
 	// https://github.com/OpenDiablo2/OpenDiablo2/issues/803
 	result := &NPC{
-		mapEntity:     newMapEntity(x, y),
+		mapEntity:     newMapEntityWithID(x, y, f.takeEntityID()),
 		HasPaths:      false,
 		monstatRecord: monstat,
 		monstatEx:     f.asset.Records.Monster.Stats2[monstat.ExtraDataKey],

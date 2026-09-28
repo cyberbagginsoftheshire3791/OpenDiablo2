@@ -1778,6 +1778,32 @@ func (g *gameSpawner) Despawn(members []d2world.Watcher) {
 	}
 }
 
+// SpawnerSnapshot is the game spawner's one saved number (M4.6 B2b, build
+// plan §1): how many arrivals it has placed. packSpots walks each arrival's
+// bearing and range on by it, so a resumed night that lost it would send the
+// next pack from where the night's FIRST pack came. The scene provider
+// reports it (spawner_arrival).
+type SpawnerSnapshot struct {
+	Arrival int `json:"arrival"`
+}
+
+// Snapshot is the spawner's state now.
+func (g *gameSpawner) Snapshot() SpawnerSnapshot {
+	return SpawnerSnapshot{Arrival: g.arrival}
+}
+
+// Restore puts it back. A negative count, which no game could have made, is
+// refused.
+func (g *gameSpawner) Restore(s SpawnerSnapshot) error {
+	if s.Arrival < 0 {
+		return fmt.Errorf("gameSpawner: %d arrivals is not a count", s.Arrival)
+	}
+
+	g.arrival = s.Arrival
+
+	return nil
+}
+
 // walkableNear finds ground near a wanted point, spiralling outward a few
 // tiles. A ring position can easily land in a wall or off the map; giving up
 // silently would make a spawn table look broken when the geometry was simply
