@@ -175,3 +175,61 @@ func TestRegisterMarkdownRendersEveryEntry(t *testing.T) {
 		}
 	}
 }
+
+// TestPalettePendingIsWellFormed holds [PalettePending] to the register's own
+// rules while it waits for an importer.
+//
+// The block exists because the gate cannot measure a package nothing in the
+// shipped program imports: all 19 of the editor palette's symbols measure
+// not-found, which collapses to "missing", and neither "dead" nor "missing"
+// would be a true row. See PalettePending's own comment for the measurement.
+// This test is what stops the block rotting into a list of names nobody checks:
+// a symbol renamed in the package, or a row quietly filed as wire, fails here
+// long before anyone tries to move it into Register.
+func TestPalettePendingIsWellFormed(t *testing.T) {
+	if len(PalettePending) == 0 {
+		t.Fatal("PalettePending is empty; if the rows have moved into Register, delete this test with them")
+	}
+
+	seen := map[string]bool{}
+
+	for _, e := range PalettePending {
+		switch {
+		case e.Bucket != BucketDefer:
+			t.Errorf("%s is filed %q; a symbol with no importer is a deferral and nothing else", e.Symbol, e.Bucket)
+		case e.Milestone == "":
+			t.Errorf("%s is a deferral with no milestone, which is a leak with better manners", e.Symbol)
+		case e.Why == "":
+			t.Errorf("%s gives no reason", e.Symbol)
+		}
+
+		if !strings.HasPrefix(e.Symbol, ModulePath+"/d2core/d2mappalette.") {
+			t.Errorf("%s is not a d2core/d2mappalette symbol; PalettePending is only for the palette", e.Symbol)
+		}
+
+		// The Expect column on an unmeasured row is a deliberate placeholder,
+		// not a claim: dead is what the symbol becomes the moment something
+		// links the package and before the editor calls it. Pinning it here
+		// stops a later hand deciding a row "is live really" without measuring,
+		// which is the shape of the failure this whole tool exists to catch.
+		if e.Expect != VerdictDead {
+			t.Errorf("%s expects %q; an unmeasured pending row is a placeholder dead until somebody measures it",
+				e.Symbol, e.Expect)
+		}
+
+		if seen[e.Symbol] {
+			t.Errorf("%s appears twice", e.Symbol)
+		}
+
+		seen[e.Symbol] = true
+	}
+
+	// None of these rows may be in the measured register: that is the whole
+	// point of the block, and a copy in both places would be measured and go
+	// red for ever.
+	for _, e := range Register {
+		if seen[e.Symbol] {
+			t.Errorf("%s is in both Register and PalettePending; it cannot be measured and unmeasured at once", e.Symbol)
+		}
+	}
+}
