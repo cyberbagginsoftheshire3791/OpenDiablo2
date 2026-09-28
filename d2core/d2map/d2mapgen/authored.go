@@ -244,18 +244,7 @@ func (g *MapGenerator) generateAuthored(p string) (sha string, err error) {
 		return "", fmt.Errorf("%s: sound_env %d names no soundenviron.txt row", p, m.SoundEnv)
 	}
 
-	// Act 1 town: the region every Strigoi system and the palette are keyed
-	// to (the renderer builds its tile cache only for a level type with a
-	// nonzero ID, and the client refuses a region it does not know).
-	g.engine.ResetAuthoredMap(d2enum.RegionAct1Town, m.Width, m.Height)
-
-	strips, stripImages := structureStrips(m)
-
-	for y := 0; y < m.Height; y++ {
-		for x := 0; x < m.Width; x++ {
-			*g.engine.Tile(x, y) = authoredTile(m, x, y, strips)
-		}
-	}
+	LayAuthoredMap(g.engine, m)
 
 	for i, n := range m.NPCs {
 		npc, err := g.engine.NewNPC(subtile(n.X), subtile(n.Y), stats[i], 0)
@@ -266,25 +255,53 @@ func (g *MapGenerator) generateAuthored(p string) (sha string, err error) {
 		g.engine.AddEntity(npc)
 	}
 
-	// The start by whole tiles. The server places a player at
-	// int(start*5) + the middle-of-tile offset in sub-tiles, which assumes a
-	// whole-tile start: handed the x.5 of a tile's centre it lands him on the
-	// corner of the NEXT tile (the generated town's DS1 start does exactly
-	// that -- 105.5 becomes 106.0), a tile the map never checked. The floor of
-	// the start puts him inside the tile the map put its start in.
-	images := authoredImages(m)
-	for key, img := range stripImages {
-		images[key] = img
-	}
-
-	g.engine.SetAuthored(images, math.Floor(m.StartX), math.Floor(m.StartY))
-	g.engine.SetInside(m.Inside)
-	g.engine.SetAuthoredRegion(m.SoundEnv, m.DisplayName)
 	g.Infof("authored map %s: %dx%d tiles, %d tile kinds, %d npc(s)", p, m.Width, m.Height, len(m.Kinds), len(m.NPCs))
 
 	sum := sha256.Sum256(data)
 
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// LayAuthoredMap builds an engine map from a parsed Tiled map: the region, every
+// tile's art and collision, the structures' strips, the start, the inside areas
+// and the map's own region properties. It touches nothing that needs the asset
+// manager -- no monstats, no soundenviron -- so it is the whole of an authored
+// map EXCEPT its people.
+//
+// It exists as its own function because the World Editor draws the map it is
+// editing with the real renderer, through the real engine, so that the editing
+// view IS the game's view rather than a second drawing of the same file that
+// can disagree with it. The game calls it and then adds the NPCs; the editor
+// calls it alone. One implementation, so the two cannot drift.
+//
+// The start is floored on purpose. The server places a player at
+// int(start*5) + the middle-of-tile offset in sub-tiles, which assumes a
+// whole-tile start: handed the x.5 of a tile's centre it lands him on the
+// corner of the NEXT tile (the generated town's DS1 start does exactly that --
+// 105.5 becomes 106.0), a tile the map never checked. The floor of the start
+// puts him inside the tile the map put its start in.
+func LayAuthoredMap(engine *d2mapengine.MapEngine, m *d2maptiled.Map) {
+	// Act 1 town: the region every Strigoi system and the palette are keyed
+	// to (the renderer builds its tile cache only for a level type with a
+	// nonzero ID, and the client refuses a region it does not know).
+	engine.ResetAuthoredMap(d2enum.RegionAct1Town, m.Width, m.Height)
+
+	strips, stripImages := structureStrips(m)
+
+	for y := 0; y < m.Height; y++ {
+		for x := 0; x < m.Width; x++ {
+			*engine.Tile(x, y) = authoredTile(m, x, y, strips)
+		}
+	}
+
+	images := authoredImages(m)
+	for key, img := range stripImages {
+		images[key] = img
+	}
+
+	engine.SetAuthored(images, math.Floor(m.StartX), math.Floor(m.StartY))
+	engine.SetInside(m.Inside)
+	engine.SetAuthoredRegion(m.SoundEnv, m.DisplayName)
 }
 
 // authoredTile is one engine tile of an authored map: its floor and wall as
