@@ -10,8 +10,10 @@ import (
 
 // b2aLightWorld is a clock in the deep night and a light model with every kind
 // of source the game makes: a carried torch lit and burning, a placed hearth,
-// a placed torch burning, a placed torch burnt out, and a removed source (so
-// next_id is not simply one past the last).
+// a placed torch burning, a placed torch burnt out, a removed source, and a
+// newest torch doused and removed -- so next_id is not one past the last
+// source, as in a game after any douse (the carried torch is re-added on each
+// light).
 func b2aLightWorld(t *testing.T) (*Clock, *Light) {
 	t.Helper()
 
@@ -30,6 +32,8 @@ func b2aLightWorld(t *testing.T) (*Clock, *Light) {
 	require.NoError(t, l.HarnessSet("place_source", map[string]interface{}{"kind": "torch", "x": 16.0, "y": 14.0}))  // 4
 	require.NoError(t, l.HarnessSet("place_source", map[string]interface{}{"kind": "torch", "x": 8.0, "y": 6.0}))    // 5
 	require.NoError(t, l.HarnessSet("remove_source", 3.0))
+	require.NoError(t, l.HarnessSet("place_source", map[string]interface{}{"kind": "torch", "x": 1.0, "y": 1.0})) // 6
+	require.NoError(t, l.HarnessSet("remove_source", 6.0))
 
 	// Torch 5 has burnt out; the carried torch and torch 4 have burnt part way.
 	for _, s := range l.sources {
@@ -114,7 +118,7 @@ func TestLightSnapshotRoundTrip(t *testing.T) {
 	snap := b2aThroughJSON(t, l.Snapshot())
 	require.Equal(t, l.Snapshot(), snap, "the snapshot survives JSON exactly")
 	require.Len(t, snap.Sources, 4)
-	require.Equal(t, 6, snap.NextID)
+	require.Equal(t, 7, snap.NextID, "not one past the last source (5): the doused torch spent 6")
 
 	c2 := NewClock(DefaultClockDials())
 	t.Cleanup(c2.Close)
@@ -178,10 +182,12 @@ func TestLightSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 	clockSnap, snap := c.Snapshot(), l.Snapshot()
 	ref := b2aLightSteps(t, c, l)
 
-	b2aSweep(t, snap, ref, map[string]string{
+	exempt := map[string]string{
 		"sources[0].x": "the carried torch shines from the player (Light.at); where it was lit is read by nothing",
 		"sources[0].y": "the carried torch shines from the player (Light.at); where it was lit is read by nothing",
-	}, func(raw []byte) (string, error) {
+	}
+
+	try := func(raw []byte) (string, error) {
 		var s LightSnapshot
 		if err := json.Unmarshal(raw, &s); err != nil {
 			return "", err
@@ -202,5 +208,16 @@ func TestLightSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		}
 
 		return b2aLightSteps(t, c2, l2), nil
-	})
+	}
+
+	b2aSweep(t, snap, ref, exempt, try)
+
+	// next_id, the ids and the kinds are only ever refused when zeroed; a valid
+	// other value must show. The fixture doused its newest torch, so the saved
+	// next_id is NOT one past the last source, as a game's is after any douse.
+	b2aMustDiverge(t, snap, ref, map[string]func(s *LightSnapshot){
+		"next_id one past the last source": func(s *LightSnapshot) { s.NextID = s.Sources[len(s.Sources)-1].ID + 1 },
+		"a source renumbered":              func(s *LightSnapshot) { s.Sources[3].ID++ },
+		"the hearth a torch":               func(s *LightSnapshot) { s.Sources[1].Kind = SourceTorch },
+	}, try)
 }

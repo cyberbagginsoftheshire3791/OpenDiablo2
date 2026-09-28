@@ -9,7 +9,8 @@ import (
 )
 
 // b2aSquadsWorld is the player's squad bound to his body and two deployed
-// squads (a third deployed and recalled, so next_id has a gap), every one in a
+// squads (a third and a fourth deployed and recalled -- the fourth the newest,
+// so next_id is not one past the last squad), every one in a
 // different state: s:1 starving on watch, s:2 parched at labour with two
 // models (the second added by hand -- nothing in c-1 deploys a squad of two,
 // and the snapshot must carry one), s:4 foraging and selected. Seventeen
@@ -27,11 +28,12 @@ func b2aSquadsWorld(t *testing.T) (*Clock, *Squads, *fakeBody) {
 	body := &fakeBody{health: 80, maxHealth: 100}
 	s.BindPlayer(body, "p:1")
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		require.NoError(t, s.HarnessSet("squad_add", map[string]interface{}{"x": 3.0, "y": 4.0}))
 	}
 
 	require.NoError(t, s.HarnessSet("squad_remove", "s:3"))
+	require.NoError(t, s.HarnessSet("squad_remove", "s:5")) // the newest: next_id stays 6, one past nothing
 
 	s.squads["s:2"].members = append(s.squads["s:2"].members, &model{entity: "m:9", health: 30, max: 50, order: 1})
 
@@ -264,7 +266,7 @@ func TestSquadsSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 	clockSnap, snap, health := c.Snapshot(), s.Snapshot(), body.health
 	ref := b2aSquadsSteps(t, c, s)
 
-	b2aSweep(t, snap, ref, nil, func(raw []byte) (string, error) {
+	try := func(raw []byte) (string, error) {
 		var v SquadsSnapshot
 		if err := json.Unmarshal(raw, &v); err != nil {
 			return "", err
@@ -276,5 +278,18 @@ func TestSquadsSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		}
 
 		return b2aSquadsSteps(t, c2, s2), nil
-	})
+	}
+
+	b2aSweep(t, snap, ref, nil, try)
+
+	// The fields a Restore checks, lost to a valid other value: a next id one
+	// past the last squad (the fixture recalled its newest, so the saved one is
+	// not), another squad selected, an owner, a model's max, an activity.
+	b2aMustDiverge(t, snap, ref, map[string]func(s *SquadsSnapshot){
+		"next_id one past the last squad": func(s *SquadsSnapshot) { s.NextID = s.Squads[len(s.Squads)-1].Ordinal + 1 },
+		"another squad selected":          func(s *SquadsSnapshot) { s.Selected = "s:2" },
+		"an owner renamed":                func(s *SquadsSnapshot) { s.Squads[1].Owner = "b2a" },
+		"a model's max moved":             func(s *SquadsSnapshot) { s.Squads[1].Members[0].Max++ },
+		"s:2 set to watch":                func(s *SquadsSnapshot) { s.Squads[1].Meters.Activity = ActivityWatch },
+	}, try)
 }

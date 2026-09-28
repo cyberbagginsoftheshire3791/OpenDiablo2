@@ -5,8 +5,10 @@ import (
 	"math"
 )
 
-// M4.6 B2a: the world save's snapshot of each system. Every *_snapshot.go in
-// this package follows one contract, and each system's test holds it to it:
+// M4.6 B2a: the world save's snapshot of each system with no entity ids --
+// clock, light, squads, corpses, rising and combat (B2b's spawns, notice and
+// pursuit have their own files and tests). Each of the six follows one
+// contract, and each system's test holds it to it:
 //
 //  1. Snapshot then Restore into a fresh system is the same system: its
 //     provider and its behaviour cannot tell the two apart.
@@ -14,7 +16,9 @@ import (
 //  3. Any one field of the snapshot zeroed (or dropped) and restored makes the
 //     copy diverge from the original, or is refused by Restore. A field whose
 //     loss nothing can see is a hole in observability or dead weight, and the
-//     sweep fails on it rather than letting it through.
+//     sweep fails on it rather than letting it through. The sweep first
+//     restores the untouched snapshot the same way and requires it to match,
+//     so a divergence it counts is the field's and not the harness's.
 //
 // Every field of every system's struct is also classified by a test (saved,
 // derived on load, transient, or wiring), so a field added later cannot be

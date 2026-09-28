@@ -278,7 +278,7 @@ func TestRisingSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		return b2aRisingSteps(t, cp)
 	}()
 
-	b2aSweep(t, snap, ref, nil, func(raw []byte) (string, error) {
+	try := func(raw []byte) (string, error) {
 		var s RisingSnapshot
 		if err := json.Unmarshal(raw, &s); err != nil {
 			return "", err
@@ -290,5 +290,13 @@ func TestRisingSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		}
 
 		return b2aRisingSteps(t, cp), nil
-	})
+	}
+
+	b2aSweep(t, snap, ref, nil, try)
+
+	// last_stage zeroed is no stage at all, refused; another stage must show.
+	b2aMustDiverge(t, snap, ref, map[string]func(s *RisingSnapshot){
+		"the last stage day":  func(s *RisingSnapshot) { s.LastStage = StageDay.String() },
+		"the last stage dusk": func(s *RisingSnapshot) { s.LastStage = StageDusk.String() },
+	}, try)
 }

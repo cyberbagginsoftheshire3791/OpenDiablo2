@@ -199,8 +199,9 @@ func (c *Combat) checkBetweenFights() error {
 }
 
 // Restore puts the saved combat model back between fights, stream included.
-// It is refused during a fight -- a fight is never restored into -- and is
-// checked whole before anything changes.
+// It is refused during a fight -- a fight is never restored into -- and into a
+// model with experience or paced minutes still to be taken, and is checked
+// whole before anything changes.
 //
 // The dials are not restored: the game builds the model with its shipped
 // dials, and the harness's writes to them are test setup. Load order (B4):
@@ -209,6 +210,14 @@ func (c *Combat) checkBetweenFights() error {
 func (c *Combat) Restore(s CombatSnapshot) error {
 	if c.Fighting() {
 		return fmt.Errorf("combat snapshot: restore refused during a fight")
+	}
+
+	// Nor into a model holding what a fight leaves behind for the game screen,
+	// or an open pace window: the snapshot never carries those, so a restore
+	// over them would leave a resumed game owing experience or minutes that
+	// belong to no saved moment. A fresh model (CreateGame's) holds none.
+	if err := c.checkBetweenFights(); err != nil {
+		return fmt.Errorf("combat snapshot: restore refused: %w", err)
 	}
 
 	if err := checkCombatSnapshot(s); err != nil {

@@ -224,7 +224,7 @@ func TestCorpsesSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 	w.deltas = nil
 	ref := b2aCorpsesSteps(t, w)
 
-	b2aSweep(t, snap, ref, nil, func(raw []byte) (string, error) {
+	try := func(raw []byte) (string, error) {
 		var s CorpsesSnapshot
 		if err := json.Unmarshal(raw, &s); err != nil {
 			return "", err
@@ -236,5 +236,15 @@ func TestCorpsesSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		}
 
 		return b2aCorpsesSteps(t, w2), nil
-	})
+	}
+
+	b2aSweep(t, snap, ref, nil, try)
+
+	// A body's id, class and state are only ever refused when zeroed (no id,
+	// no class, no state); a valid other one must show.
+	b2aMustDiverge(t, snap, ref, map[string]func(s *CorpsesSnapshot){
+		"a man's body a beast's": func(s *CorpsesSnapshot) { s.Bodies[0].Class = CorpseBeast },
+		"an open body staked":    func(s *CorpsesSnapshot) { s.Bodies[0].State = CorpseClosed },
+		"a body renamed":         func(s *CorpsesSnapshot) { s.Bodies[8].ID = "b:88" },
+	}, try)
 }

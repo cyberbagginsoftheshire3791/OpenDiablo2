@@ -86,7 +86,10 @@ func b2aCombatCopy(t *testing.T, snap CombatSnapshot) (*resolverFight, error) {
 
 	dials := DefaultCombatDials()
 	dials.PlayerControl = PlayerControlHuman
-	f.c = NewCombat(NewClock(DefaultClockDials()), f.notice, f.fitness, f.illum, f.bodies,
+	clock := NewClock(DefaultClockDials())
+	t.Cleanup(clock.Close)
+
+	f.c = NewCombat(clock, f.notice, f.fitness, f.illum, f.bodies,
 		f.profiles, f.animator, f.morale, f.chases, 99, dials)
 	t.Cleanup(f.c.Close)
 
@@ -266,6 +269,39 @@ func TestCombatSnapshotOfANewGame(t *testing.T) {
 	}
 }
 
+// Combat's stream through the same trip at a wall-clock-sized seed: past 2^53,
+// where a float64 reader cannot hold it (B1 notes, section 2). Rising's test
+// holds the shared stream type; this holds combat's own Snapshot and Restore
+// to it, drawn part way so the count matters too.
+func TestCombatSnapshotSeedSurvivesJSON(t *testing.T) {
+	const seed = int64(1)<<62 + 54321
+
+	require.NotEqual(t, seed, int64(float64(seed)), "the control: float64 loses this seed")
+
+	orig := newResolverFight(t, seed)
+	for i := 0; i < 5; i++ {
+		orig.c.rng.Float64()
+	}
+
+	s, err := orig.c.Snapshot()
+	require.NoError(t, err)
+
+	raw, err := json.Marshal(s)
+	require.NoError(t, err)
+
+	var loose map[string]interface{}
+	require.NoError(t, json.Unmarshal(raw, &loose))
+	require.IsType(t, "", loose["rng"].(map[string]interface{})["seed"], "the seed is written as a string")
+
+	var typed CombatSnapshot
+	require.NoError(t, json.Unmarshal(raw, &typed))
+	require.Equal(t, seed, typed.RNG.Seed, "and read back exactly")
+
+	cp := newResolverFight(t, 7)
+	require.NoError(t, cp.c.Restore(typed))
+	require.Equal(t, orig.c.rng.Float64(), cp.c.rng.Float64(), "the restored stream is the seed's, at its sixth value")
+}
+
 // Saving is refused during a fight, and whenever something a fight leaves for
 // the game screen has not been taken -- a snapshot that dropped it would lose
 // experience or world minutes.
@@ -289,6 +325,8 @@ func TestCombatSnapshotRefusals(t *testing.T) {
 		"decision seconds":     func(c *Combat) { c.decisionSeconds = 0.5 },
 		"wall seconds":         func(c *Combat) { c.wallSeconds = 0.5 },
 		"pace commits":         func(c *Combat) { c.paceCommits = 1 },
+		"round seconds":        func(c *Combat) { c.decisionSecondsRound = 0.5 },
+		"the health it opened": func(c *Combat) { c.paceHealthOpen = 40 },
 	} {
 		cf := b2aCombatFixture(t)
 		dirty(cf.c)
@@ -296,6 +334,19 @@ func TestCombatSnapshotRefusals(t *testing.T) {
 		_, err := cf.c.Snapshot()
 		require.Error(t, err, name)
 		require.False(t, errors.Is(err, ErrCombatFighting), "%s is not a fight", name)
+	}
+
+	// Nor into a model that holds what the snapshot never carries: restored
+	// over, it would stay owed to a resumed game.
+	for name, dirty := range map[string]func(c *Combat){
+		"experience not taken": func(c *Combat) { c.xpEvents = append(c.xpEvents, XPEvent{Kind: "slain"}) },
+		"minutes owed":         func(c *Combat) { c.owedMinutes = 1 },
+		"the pace window open": func(c *Combat) { c.paceOpen = true },
+	} {
+		fresh := newResolverFight(t, 7)
+		dirty(fresh.c)
+		require.Error(t, fresh.c.Restore(good), "restore into a model with %s", name)
+		require.Equal(t, 1, fresh.c.nextID, "%s: a refused restore changes nothing", name)
 	}
 
 	for name, bad := range map[string]func(s *CombatSnapshot){
@@ -318,7 +369,7 @@ func TestCombatSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 
 	ref := b2aCombatSteps(t, orig)
 
-	b2aSweep(t, snap, ref, nil, func(raw []byte) (string, error) {
+	try := func(raw []byte) (string, error) {
 		var s CombatSnapshot
 		if err := json.Unmarshal(raw, &s); err != nil {
 			return "", err
@@ -330,5 +381,14 @@ func TestCombatSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		}
 
 		return b2aCombatSteps(t, cp), nil
-	})
+	}
+
+	b2aSweep(t, snap, ref, nil, try)
+
+	// next_id, started and ended are only ever refused alone (each is checked
+	// against the others); lost together, consistently, they must still show.
+	b2aMustDiverge(t, snap, ref, map[string]func(s *CombatSnapshot){
+		"a fresh model's ids and counts": func(s *CombatSnapshot) { s.NextID, s.Started, s.Ended = 1, 0, 0 },
+		"one fight more":                 func(s *CombatSnapshot) { s.NextID, s.Started, s.Ended = s.NextID+1, s.Started+1, s.Ended+1 },
+	}, try)
 }
