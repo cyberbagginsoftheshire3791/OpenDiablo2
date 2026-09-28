@@ -32,6 +32,7 @@ import (
 	ebiten2 "github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio/ebiten"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2config"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2input"
 	ebiteninput "github.com/OpenDiablo2/OpenDiablo2/d2core/d2input/ebiten"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
@@ -101,6 +102,12 @@ type Options struct {
 
 	// classic is -classic: Diablo II's game (d2asset.AssetManager.Classic).
 	classic bool
+
+	// editor is -editor: open the World Editor instead of the main menu, and
+	// editorMap is the map it opens ("" is the village, d2gamescreen's
+	// DefaultEditorMap).
+	editor    bool
+	editorMap string
 }
 
 const (
@@ -238,6 +245,8 @@ func (a *App) parseArguments() {
 	a.Options.fontSet = flag.String("fonts", "", "the font set every word is drawn in (default "+defaultFonts+"; diablo = Diablo II's)")
 	heroArt := flag.String("hero", "", "the hero's PNG manifest (default "+defaultHero+"; diablo = Diablo II's class art)")
 	authoredMap := flag.String("map", "", "the authored Tiled map played on (default "+defaultMap+"; diablo = Diablo II's generated Act 1)")
+	editorFlag := &editorFlagValue{}
+	flag.Var(editorFlag, "editor", "open the World Editor on a map instead of the main menu (default "+defaultMap+"): -editor, -editor <path> or -editor=<path>")
 	serverPort := flag.String("server-port", "6669", "the port a local game's server listens on for other players (0 = any free port, which is how the playtest harness runs several games at once)")
 
 	flag.Usage = func() {
@@ -272,6 +281,10 @@ func (a *App) parseArguments() {
 	*a.Options.strings = launch.Strings
 
 	_, _ = authoredMap, heroArt // read through flag.Visit above
+
+	// -editor is resolved AFTER the launch choice, so -editor -map <other.tmj>
+	// still edits the map the rest of the game would play.
+	a.Options.editor, a.Options.editorMap = editorFlag.resolve(launch.Map, flag.Args())
 
 	if *showVersion {
 		a.Infof("version: OpenDiablo2 (%s %s)", a.gitBranch, a.gitCommit)
@@ -363,7 +376,11 @@ func (a *App) Run() (err error) {
 		return err
 	}
 
-	a.ToMainMenu()
+	if a.Options.editor {
+		a.ToWorldEditor(a.Options.editorMap)
+	} else {
+		a.ToMainMenu()
+	}
 
 	a.harnessStart() // no-op unless built with -tags harness and run with -harness
 
@@ -782,6 +799,110 @@ func (a *App) ToMapEngineTest(region, level int) {
 	}
 
 	a.screen.SetNextScreen(met)
+}
+
+// ToWorldEditor opens the World Editor on mapPath ("" is the village).
+//
+// A map that will not open is NOT shown as an empty grid: the editor refuses,
+// and the reason goes to the main menu where the other start-up failures go. A
+// designer who asked to edit a file and got a blank screen has been told a lie
+// about it.
+func (a *App) ToWorldEditor(mapPath string) {
+	editor, err := d2gamescreen.CreateEditor(mapPath, a.asset, a.terminal, a.renderer,
+		a.inputManager, a.ui, a, *a.Options.LogLevel)
+	if err != nil {
+		a.Error(err.Error())
+		a.ToMainMenu("The world editor could not open that map: " + err.Error())
+
+		return
+	}
+
+	a.screen.SetNextScreen(editor)
+}
+
+// ToPlaytest starts a real game on a map the editor has just written.
+//
+// It uses the two mechanisms that ALREADY work rather than a third: the authored
+// map is a process-wide setting (d2mapgen.SetAuthoredMap -- how -map reaches a
+// game at :269 and how the harness swaps a map, harness_tools.go:378-380), and
+// the way into a game is the hero screens the main menu uses
+// (main_menu.go:430-438). The editor names a FILE and has no save path to hand
+// to ToCreateGame, so it cannot go there directly; the player picks his hero and
+// the world he lands in is the one the editor wrote.
+func (a *App) ToPlaytest(mapPath string) {
+	if mapPath != "" {
+		d2mapgen.SetAuthoredMap(mapPath)
+	}
+
+	factory, err := d2hero.NewHeroStateFactory(a.asset)
+	if err != nil {
+		a.Error(err.Error())
+		a.ToSelectHero(d2clientconnectiontype.Local, "")
+
+		return
+	}
+
+	if factory.HasGameStates() {
+		a.ToCharacterSelect(d2clientconnectiontype.Local, "")
+		return
+	}
+
+	a.ToSelectHero(d2clientconnectiontype.Local, "")
+}
+
+// editorFlagValue is -editor, which may be given alone or with a map.
+//
+// flag has no optional-argument string, so this is a flag.Value that also
+// answers IsBoolFlag: "-editor" on its own then parses as the bare switch, and
+// "-editor=<path>" carries a path. "-editor <path>" leaves the path in
+// flag.Args(), which resolve picks up -- so all three spellings work and none of
+// them changes what -map, -classic or the rest do.
+type editorFlagValue struct {
+	set  bool
+	path string
+}
+
+func (f *editorFlagValue) String() string {
+	if f == nil {
+		return ""
+	}
+
+	return f.path
+}
+
+func (f *editorFlagValue) Set(v string) error {
+	f.set = true
+
+	if v != "true" {
+		f.path = v
+	}
+
+	return nil
+}
+
+// IsBoolFlag lets "-editor" stand alone. flag checks for this method by
+// interface assertion.
+func (f *editorFlagValue) IsBoolFlag() bool { return true }
+
+// resolve says whether the editor was asked for and which map it opens: the
+// value given to the flag, else a .tmj left in the positional arguments, else
+// the map the rest of the launch would play, else the editor's own default.
+func (f *editorFlagValue) resolve(launchMap string, args []string) (bool, string) {
+	if !f.set {
+		return false, ""
+	}
+
+	if f.path != "" {
+		return true, f.path
+	}
+
+	for _, a := range args {
+		if strings.EqualFold(filepath.Ext(a), ".tmj") {
+			return true, a
+		}
+	}
+
+	return true, launchMap
 }
 
 // ToCredits forces the game to transition to the credits screen

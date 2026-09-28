@@ -23,6 +23,8 @@ func (n *menuNavigator) ToCreateGame(string, d2clientconnectiontype.ClientConnec
 func (n *menuNavigator) ToCharacterSelect(d2clientconnectiontype.ClientConnectionType, string) {}
 func (n *menuNavigator) ToMapEngineTest(int, int)                                              {}
 func (n *menuNavigator) ToCredits()                                                            {}
+func (n *menuNavigator) ToWorldEditor(string)                                                  {}
+func (n *menuNavigator) ToPlaytest(string)                                                     {}
 func (n *menuNavigator) ToCinematics()                                                         {}
 
 // A host that refused this join -- the client launched the other game --

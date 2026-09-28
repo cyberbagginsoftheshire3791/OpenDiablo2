@@ -100,11 +100,12 @@ const (
 	// is started, and what it does when the game screen cannot be built.
 	pkgApp = "d2app"
 	// pkgPalette joined at the editor burst (27 Sep 2026): the model behind the
-	// map editor's asset palette. Every row of it is a DEFERRAL, because the
-	// editor screen that drives it (d2core/d2mapedit) is being written in
-	// parallel on another branch and is not present here -- so the shipped game
-	// reaches none of this, and saying otherwise is exactly the hollow claim
-	// this register exists to catch.
+	// map editor's asset palette. Every row of it was a DEFERRAL then, and not
+	// even a measured one (PalettePending, deleted 28 Sep 2026), because the
+	// editor screen that drives it did not exist and NOTHING in the shipped
+	// program imported the package -- so every symbol measured "not found".
+	// The World Editor screen landed on 28 Sep 2026 and imports it, so the rows
+	// below are now measured like any other.
 	pkgPalette = "d2core/d2mappalette"
 	// pkgInput, pkgInputEbiten and pkgMapRenderer joined at the editor-zoom
 	// burst (27 Sep 2026): the mouse wheel's read, which the engine had no path
@@ -112,6 +113,11 @@ const (
 	pkgInput       = "d2core/d2input"
 	pkgInputEbiten = "d2core/d2input/ebiten"
 	pkgMapRenderer = "d2core/d2map/d2maprenderer"
+	// pkgMapEdit joined at the World Editor screen (28 Sep 2026). It is the
+	// importer the block below spent a burst waiting for: the authoring
+	// document was written first and nothing in the shipped program referred to
+	// it, so the gate could not see the package at all.
+	pkgMapEdit = "d2core/d2mapedit"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -823,185 +829,204 @@ var Register = []Entry{
 	{sym(pkgPlayer, "GameControls.runButtonReport"), BucketObserve, VerdictHarnessOnly,
 		"Reads where the HUD's run button is drawn for the harness ui state, so a script clicks it where a player would. Changes nothing.", ""},
 
-	// d2core/d2mapedit -- THE WORLD EDITOR'S DOCUMENT (M5.4, 27 Sep 2026) HAS NO
-	// ROWS HERE YET, AND THIS BLOCK IS WHY, SO THE NEXT PERSON DOES NOT HAVE TO
-	// WORK IT OUT AGAIN.
+	// d2core/d2mapedit and d2game/d2gamescreen's Editor -- THE WORLD EDITOR
+	// (M5.4, 28 Sep 2026).
 	//
-	// The gate analyses ONE program: `deadcode -whylive=SYM .`, where "." is the
-	// main package (main.go's flag, -pkg, defaults to "."). d2mapedit is not in
-	// that import graph -- nothing in the shipped game imports it, because the
-	// editor SCREEN has not been written -- so deadcode does not see the package
-	// at all. Measured, 27 Sep 2026, from the repo root:
-	//
-	//	> deadcode -whylive=github.com/OpenDiablo2/OpenDiablo2/d2core/d2mapedit.Open .
-	//	deadcode: function ".../d2core/d2mapedit.Open" not found in program
-	//
-	// Classify reads "not found in program" as CfgNotFound -> VerdictMissing,
-	// which is the STALE REGISTER state, not a claim about the code, and
-	// TestRegisterIsWellFormed refuses VerdictMissing as an Expect. So a row for
-	// any of these today would turn the gate red and say the register is stale --
-	// which would be the wrong sentence about a package that is simply not wired
-	// yet.
-	//
-	// WHEN THE EDITOR SCREEN LANDS AND IMPORTS THIS PACKAGE, these go on as WIRE
-	// in the same commit (the screen cannot work without any of them):
-	//
-	//	d2mapedit.Open, Doc.Bytes, Doc.Save, Doc.Validate, DirArt,
-	//	Doc.PlaceStructure, Doc.MoveObject, Doc.DeleteObject,
-	//	Doc.SetFloorTile, Doc.SetWallTile,
-	//	Doc.SetGroup, Doc.DeleteGroup, Doc.MoveGroup,
-	//	Stack.Do, Stack.Undo, Stack.Redo, Doc.Reachable, SetAside
-	//
-	// Until then the package is defended by its own tests, which is a different
-	// instrument and a weaker claim: harness-reachable is not game-reachable, and
-	// test-reachable is not either.
+	// WHAT THIS BLOCK SAID BEFORE, recorded per docs/reachability.md because the
+	// reason is worth keeping: on 27 Sep 2026 there were NO rows here, and the
+	// note explained that the gate analyses one program (`deadcode -whylive=SYM
+	// .`), that nothing in that program imported d2core/d2mapedit because the
+	// editor SCREEN had not been written, and that `deadcode
+	// -whylive=...d2core/d2mapedit.Open .` therefore answered "not found in
+	// program" -- which Classify reads as VerdictMissing, the STALE REGISTER
+	// state, which TestRegisterIsWellFormed refuses as an Expect. It listed the
+	// symbols that would go on as wire in the commit that landed the screen.
+	// This is that commit; the list below is that list, measured, with the five
+	// the v0 screen turned out NOT to call filed as deferrals rather than
+	// quietly claimed.
+	{sym(pkgScreen, "CreateEditor"), BucketWire, VerdictLive,
+		"Opens a .tmj in the World Editor. App.ToWorldEditor calls it from the main menu's WORLD EDITOR button and from -editor at start-up; it REFUSES a map it cannot open rather than showing an empty grid.", ""},
+	{sym(pkgScreen, "Editor.OnLoad"), BucketWire, VerdictLive,
+		"Builds the editor's own MapEngine, lays the document into it through d2mapgen.LayAuthoredMap and allocates the Label pool. If it goes dark the editor opens on nothing.", ""},
+	{sym(pkgScreen, "Editor.Render"), BucketWire, VerdictLive,
+		"Draws the map with the real MapRenderer and then the editor's chrome over it: the toolbar, the palette column, the status area, the grid, the selection outline and the placement ghost.", ""},
+	{sym(pkgScreen, "Editor.Advance"), BucketWire, VerdictLive,
+		"Advances the editor's engine and renderer. MapRenderer.Advance returns nothing; this is the screen's ScreenAdvanceHandler.", ""},
+	{sym(pkgScreen, "Editor.OnKeyDown"), BucketWire, VerdictLive,
+		"Every editor verb: Escape, Ctrl+Z, Ctrl+Y, Ctrl+S, Delete, D, G, P and Tab. If it goes dark the editor is a viewer.", ""},
+	{sym(pkgScreen, "Editor.OnMouseWheel"), BucketWire, VerdictLive,
+		"Zoom about the cursor over the map, and scroll over the palette. The only caller of MapRenderer.ZoomAt in the shipped game.", ""},
+	{sym(pkgScreen, "Editor.OnMouseButtonDown"), BucketWire, VerdictLive,
+		"Select or place on the map, pick in the palette, and start a right-drag pan.", ""},
+	{sym(pkgScreen, "Editor.OnMouseMove"), BucketWire, VerdictLive,
+		"Tracks the cursor for the placement ghost and drags the camera while the right button is down.", ""},
+	{sym(pkgScreen, "Editor.OnMouseButtonUp"), BucketWire, VerdictLive,
+		"Ends a right-drag pan.", ""},
+	{sym(pkgScreen, "Editor.OnUnload"), BucketWire, VerdictLive,
+		"Unbinds the editor's input handler when the screen goes. A screen that does not leaves a handler on the input manager for ever.", ""},
+	{sym(pkgApp, "App.ToWorldEditor"), BucketWire, VerdictLive,
+		"The one way into the editor: the main menu's button and the -editor flag both come through here, and a map that will not open goes back to the menu with the reason.", ""},
+	{sym(pkgApp, "App.ToPlaytest"), BucketWire, VerdictLive,
+		"Starts a real game on the map the editor has just written: d2mapgen.SetAuthoredMap and then the hero screens, which is how -map and the harness already do it. Reached from the editor's P.", ""},
+
+	{sym(pkgMapEdit, "OpenFile"), BucketWire, VerdictLive,
+		"Reads and opens the .tmj the editor edits. CreateEditor's first call, and the editor fails rather than opening an empty screen when it errors.", ""},
+	{sym(pkgMapEdit, "Open"), BucketWire, VerdictLive,
+		"Parses a .tmj into a document. OpenFile's own call, so the editor reaches it on every open.", ""},
+	{sym(pkgMapEdit, "DirArt"), BucketWire, VerdictLive,
+		"Reads the size of the art a map refers to, out of the directory the .tmj lives in. Validate and Save both need it and both refuse a nil one.", ""},
+	{sym(pkgMapEdit, "BackupPath"), BucketWire, VerdictLive,
+		"Where Save keeps the generation it is about to overwrite. The editor names it in the line it shows after a save, so a designer knows what to go back to.", ""},
+	{sym(pkgMapEdit, "NewStack"), BucketWire, VerdictLive,
+		"The editor's undo history over one document, built in CreateEditor.", ""},
+	{sym(pkgMapEdit, "Doc.Bytes"), BucketWire, VerdictLive,
+		"Renders the document back to .tmj bytes. The editor re-parses those bytes with the ENGINE's own parser after every edit, which is what makes the editing view the game's view.", ""},
+	{sym(pkgMapEdit, "Doc.Save"), BucketWire, VerdictLive,
+		"Validates and writes the map. Ctrl+S. It refuses to write a document the game would refuse, so the editor cannot save a map that will not load.", ""},
+	{sym(pkgMapEdit, "Doc.Validate"), BucketWire, VerdictLive,
+		"Every refusal the loader would make, not just the first. The editor runs it after every edit -- including an edit the engine has just refused -- and puts the count and the first problem in the status area.", ""},
+	{sym(pkgMapEdit, "Doc.Reachable"), BucketWire, VerdictLive,
+		"The flood fill from the player_start. The editor runs it after every edit and warns, loudly, when the start can no longer reach the edge of the map: a sealed village looks perfectly right on screen.", ""},
+	{sym(pkgMapEdit, "Doc.PlaceStructure"), BucketWire, VerdictLive,
+		"Puts a structure on the map, its footprint anchored at its bottom corner. The palette's place verb and D (duplicate).", ""},
+	{sym(pkgMapEdit, "Doc.SetFloorTile"), BucketWire, VerdictLive,
+		"Writes one gid onto the floor layer. The place verb takes this arm for a floor-layer palette entry.", ""},
+	{sym(pkgMapEdit, "Doc.SetWallTile"), BucketWire, VerdictLive,
+		"Writes one gid onto the walls layer. The place verb's default arm -- the village stands its well and its hearth on that layer.", ""},
+	{sym(pkgMapEdit, "Doc.DeleteObject"), BucketWire, VerdictLive,
+		"Removes an object, keeping its whole JSON so an undo puts back everything it had. The Delete key.", ""},
+	{sym(pkgMapEdit, "Stack.Do"), BucketWire, VerdictLive,
+		"Runs an edit and pushes it. Every editor edit goes through here; a command that fails is not pushed.", ""},
+	{sym(pkgMapEdit, "Stack.Undo"), BucketWire, VerdictLive,
+		"Ctrl+Z. Measured in the running editor, 28 Sep 2026: a placed house and then 'undid place structure 17 at 29,16'.", ""},
+	{sym(pkgMapEdit, "Stack.Redo"), BucketWire, VerdictLive,
+		"Ctrl+Y.", ""},
+	{sym(pkgMapEdit, "Doc.MoveObject"), BucketDefer, VerdictDead,
+		"Moves any object in world tiles, keeping its sub-tile offset. The v0 screen selects, places, deletes and duplicates; it has no drag, so nothing calls this yet. The 27 Sep note above promised it as wire, which this burst did not earn.",
+		"World Editor v1: dragging a selected object, which is the verb this exists for."},
+	{sym(pkgMapEdit, "Doc.SetGroup"), BucketDefer, VerdictDead,
+		"Names a set of objects that move together. v0 has no group tool.",
+		"World Editor v1: groups, whose whole point is MoveGroup."},
+	{sym(pkgMapEdit, "Doc.DeleteGroup"), BucketDefer, VerdictDead,
+		"Forgets a group, leaving its members where they are.",
+		"World Editor v1: groups."},
+	{sym(pkgMapEdit, "Doc.MoveGroup"), BucketDefer, VerdictDead,
+		"Shifts a whole group by whole tiles as ONE undoable edit, which is the behaviour a designer expects and the thing that is easiest to get wrong.",
+		"World Editor v1: groups."},
+	{sym(pkgMapEdit, "SetAside"), BucketDefer, VerdictDead,
+		"Moves a .tmj that cannot be parsed out of the way, once the designer has said to. v0's CreateEditor refuses the map and goes back to the menu with the reason instead of offering the choice, so nothing calls this.",
+		"World Editor v1: the unreadable-map prompt, which is the only caller this should ever have."},
+
 	// The editor-zoom burst (27 Sep 2026): mouse wheel input and a scale on the
 	// viewport.
 	//
-	// The wheel READ is wired and measured live: inputManager.Advance polls it on
-	// every frame of the shipped game, so the engine can no longer be said to
-	// have no wheel. Everything the wheel is FOR is deferred, because the editor
-	// that calls it does not exist in this tree yet. The brief for this burst said
-	// to file the editor's wheel handler as wire with an empty milestone; that is
-	// not available -- a wire row claims VerdictLive and
-	// TestBucketsMatchTheirExpectedVerdict rejects wire against anything else, so
-	// a row for a symbol with no caller can only honestly be a deferral that
-	// names who picks it up. When the editor lands, these rows go red until they
-	// are moved to wire, which is the whole point of them being here.
+	// WHAT THESE ROWS SAID BEFORE, recorded per docs/reachability.md: every one
+	// of the six below except the wheel's own read was filed `defer` against
+	// "the map editor burst", measured DEAD, with a note that the brief had
+	// asked for wire-with-an-empty-milestone and that a wire row claims
+	// VerdictLive, which no symbol without a caller can honestly be. The World
+	// Editor screen landed on 28 Sep 2026 and is that caller, so they move to
+	// wire -- "which is the whole point of them being here", as the old note
+	// put it.
 	{sym(pkgInputEbiten, "InputService.Wheel"), BucketWire, VerdictLive,
-		"The mouse wheel reaches the engine here, read once per frame by inputManager.Advance through the InputService seam. If it goes dark the engine has no wheel at all again -- it had none before this burst.", ""},
+		"The mouse wheel reaches the engine here, read once per frame by inputManager.Advance through the InputService seam. If it goes dark the engine has no wheel at all again -- it had none before the editor-zoom burst.", ""},
 	{sym(pkgInput, "ScriptedInputService.Wheel"), BucketObserve, VerdictHarnessOnly,
 		"The playtest overlay's pass-through for the real wheel. Only harness builds put the overlay in the path (d2app/harness.go:193 against harness_off.go:35), and it reads the wheel without scripting one, so it changes nothing.", ""},
 	{sym(pkgInput, "MouseWheelEvent.ScrollX"), BucketDefer, VerdictDead,
-		"How far the wheel rolled sideways. A key event cannot carry an amount, which is why the wheel is its own event.",
-		"the map editor burst: the editor's OnMouseWheel reads the amount and calls MapRenderer.ZoomAt."},
-	{sym(pkgInput, "MouseWheelEvent.ScrollY"), BucketDefer, VerdictDead,
-		"How far the wheel rolled, the amount a zoom step is computed from.",
-		"the map editor burst: the editor's OnMouseWheel reads the amount and calls MapRenderer.ZoomAt."},
-	{sym(pkgMapRenderer, "Viewport.SetScale"), BucketDefer, VerdictDead,
-		"Sets the viewport's zoom. The shipped game never leaves 1.0, and the four space transforms have a fast path that keeps 1.0 byte for byte what it was.",
-		"the map editor burst: the editor's zoom control and its reset-to-1.0."},
-	{sym(pkgMapRenderer, "Viewport.Scale"), BucketDefer, VerdictDead,
-		"Reads the viewport's zoom. The renderer's own cull reads the unexported scaleOrDefault, not this, so nothing in the game needs it.",
-		"the map editor burst: the editor's zoom readout."},
-	{sym(pkgMapRenderer, "Viewport.ZoomAtScreen"), BucketDefer, VerdictDead,
-		"The camera position that holds the world point under a given pixel across a change of scale. Pure: it moves nothing.",
-		"the map editor burst: MapRenderer.ZoomAt is its only intended caller."},
-	{sym(pkgMapRenderer, "MapRenderer.ZoomAt"), BucketDefer, VerdictDead,
-		"Wheel-zoom about the cursor in one call: set the scale and move the camera together, which is the only pairing that keeps the point under the cursor still.",
-		"the map editor burst: the editor's OnMouseWheel handler calls this."},
-	{sym(pkgMapRenderer, "MapRenderer.SetScale"), BucketDefer, VerdictDead,
-		"Zoom without moving the camera, so the middle of the screen holds still. The editor's reset, as against ZoomAt's wheel.",
-		"the map editor burst: the editor's zoom reset."},
-	{sym(pkgMapRenderer, "MapRenderer.Scale"), BucketDefer, VerdictDead,
-		"Reads the viewport's zoom through the renderer, which is the only handle an editor outside this package has on it.",
-		"the map editor burst: the editor's zoom readout and its wheel step arithmetic."},
+		"How far the wheel rolled sideways. A key event cannot carry an amount, which is why the wheel is its own event. The World Editor reads ScrollY only: it zooms about the cursor and scrolls the palette, and neither is a sideways gesture.",
+		"World Editor v1: a horizontal scroll across a wide map if the editor ever wants one -- and a delete row if it does not."},
+	{sym(pkgInput, "MouseWheelEvent.ScrollY"), BucketWire, VerdictLive,
+		"Deferred and measured dead until the World Editor landed (28 Sep 2026); recorded before the row was edited. Editor.OnMouseWheel reads the amount, takes a zoom step from its sign and calls MapRenderer.ZoomAt -- or scrolls the palette when the cursor is over the column.", ""},
+	{sym(pkgMapRenderer, "Viewport.SetScale"), BucketWire, VerdictLive,
+		"Deferred and measured dead until the World Editor landed (28 Sep 2026); recorded before the row was edited. Both MapRenderer.SetScale (the editor's opening fit-the-whole-map) and ZoomAt (its wheel) set it. The shipped GAME still never leaves 1.0, and the fast path that keeps 1.0 byte for byte is what makes that safe.", ""},
+	{sym(pkgMapRenderer, "Viewport.Scale"), BucketWire, VerdictLive,
+		"Deferred and measured dead until the World Editor landed (28 Sep 2026); recorded before the row was edited. MapRenderer.Scale reads it, and the editor reads THAT on every wheel notch, every drag-pan step (ortho = screen / scale) and every frame of the status line.", ""},
+	{sym(pkgMapRenderer, "Viewport.ZoomAtScreen"), BucketWire, VerdictLive,
+		"Deferred and measured dead until the World Editor landed (28 Sep 2026); recorded before the row was edited. The camera position that holds the world point under a given pixel across a change of scale. Pure: it moves nothing, which is why ZoomAt is the pair.", ""},
+	{sym(pkgMapRenderer, "MapRenderer.ZoomAt"), BucketWire, VerdictLive,
+		"Deferred and measured dead until the World Editor landed (28 Sep 2026); recorded before the row was edited. Wheel-zoom about the cursor in one call -- set the scale and move the camera together, the only pairing that keeps the point under the cursor still. Editor.OnMouseWheel is its caller.", ""},
+	{sym(pkgMapRenderer, "MapRenderer.SetScale"), BucketWire, VerdictLive,
+		"Deferred and measured dead until the World Editor landed (28 Sep 2026); recorded before the row was edited. Zoom without moving the camera. Editor.centreOnStart uses it to open on the whole map before it puts the player_start in the middle of the view.", ""},
+	{sym(pkgMapRenderer, "MapRenderer.Scale"), BucketWire, VerdictLive,
+		"Deferred and measured dead until the World Editor landed (28 Sep 2026); recorded before the row was edited. Reads the viewport's zoom through the renderer, which is the only handle an editor outside that package has on it.", ""},
+	{sym(pkgMapRenderer, "MapRenderer.MoveCameraBy"), BucketWire, VerdictLive,
+		"Moves the camera by an ORTHO vector. The editor's right-drag pan is this and nothing else: the screen delta divided by the scale, negated, because the camera goes the other way from the hand.", ""},
+
+	// d2core/d2mappalette -- THE EDITOR'S ASSET PALETTE.
+	//
+	// WHAT THESE ROWS WERE BEFORE, recorded per docs/reachability.md: all 19
+	// lived in a separate PalettePending block (27 Sep 2026) and were NOT
+	// measured, because nothing in the shipped program imported the package and
+	// every symbol answered "not found in program", which the gate collapses to
+	// `missing` -- the stale-register verdict, which would have been a false
+	// sentence. That block's note set out the three dishonest options and chose
+	// a fourth: write the rows now, keep them out of the measured set, and move
+	// them in with the commit that lands the editor screen. This is that commit.
+	// PalettePending and TestPalettePendingIsWellFormed are deleted with it.
+	//
+	// Eight of the nineteen are still deferrals. The v0 screen catalogues the
+	// OPEN MAP's own tilesets and nothing else, so the two other readers and the
+	// six whole-catalog accessors have no caller yet, and saying otherwise here
+	// would be the exact hollow claim the block was written to avoid.
+	{sym(pkgPalette, "NewCatalog"), BucketWire, VerdictLive,
+		"An empty palette catalog. CreateEditor builds one per map it opens.", ""},
+	{sym(pkgPalette, "Catalog.ReadMap"), BucketWire, VerdictLive,
+		"Catalogues a .tmj's embedded tilesets: what the open map can already place, measured from the real PNGs, plus the map's own note (which the loader discards) and the distinct-kind count against the 256 cap. The editor's only reader in v0.", ""},
+	{sym(pkgPalette, "Catalog.InCategory"), BucketWire, VerdictLive,
+		"One tab's entries. The palette's list is this, sorted placeable-first.", ""},
+	{sym(pkgPalette, "Catalog.Tabs"), BucketWire, VerdictLive,
+		"The five tabs with their counts, and the reason each of the three unavailable ones is empty. The editor draws the tab, the count and the reason together, greyed.", ""},
+	{sym(pkgPalette, "Catalog.KindsUsed"), BucketWire, VerdictLive,
+		"How many of the loader's 256 distinct kinds the open map already spends. The editor prints it in the palette header and in the status line, because a map at the cap is refused outright.", ""},
+	{sym(pkgPalette, "Entry.Placeable"), BucketWire, VerdictLive,
+		"Whether the engine will accept this art as it stands: the greying-out test for one palette row, and half of the placement ghost's answer.", ""},
+	{sym(pkgPalette, "Entry.Why"), BucketWire, VerdictLive,
+		"One line for the user: why the art has the status it has, and if it cannot be placed, the loader's own reason. The editor puts it on the row and in the status line.", ""},
+	{sym(pkgPalette, "Tabs"), BucketWire, VerdictLive,
+		"The tab strip with no catalog behind it. Catalog.Tabs is built on it, so the editor reaches it on every open.", ""},
+	{sym(pkgPalette, "CheckArt"), BucketWire, VerdictLive,
+		"The engine's art rules, transcribed and held against the real d2maptiled.Parse by TestPaletteAgreesWithTheEngine. Entry.resolve calls it, so every catalogued tile goes through it.", ""},
+	{sym(pkgPalette, "DeriveStatus"), BucketWire, VerdictLive,
+		"Approved / preview / unknown from the only signals that exist -- there is no approval field in the engine -- with the sentence the editor shows. Every tile the editor catalogues gets one.", ""},
+	{sym(pkgPalette, "PNGSize"), BucketWire, VerdictLive,
+		"A PNG's size from its IHDR without decoding it, so opening a map costs 24 bytes a file. The editor letterboxes each palette thumbnail at the size this reports.", ""},
+	{sym(pkgPalette, "HumanName"), BucketWire, VerdictLive,
+		"Human words from an art path, because no asset in this project carries a title anywhere. 'Church tower', not 'placeholder-church-tower.png'. It is what the palette rows are labelled with.", ""},
+	{sym(pkgPalette, "Catalog.ReadStructureDir"), BucketDefer, VerdictDead,
+		"Catalogues data/strigoi/structures: art-repo renders installed for the map, footprints derived from the loader's own width formula. v0 offers only what the OPEN MAP's tileset already carries, because adding a tile to an embedded tileset is a bigger change than v0 makes and offering art it cannot place would be the misleading preview the palette exists to avoid.",
+		"World Editor v1: adding a new tile to the open map's embedded tileset, which is what makes this reader's entries placeable."},
+	{sym(pkgPalette, "Catalog.ReadModules"), BucketDefer, VerdictDead,
+		"Catalogues a strigoi-art module manifest, which is how the Dealu monastery reaches the palette. Same wall as ReadStructureDir, plus the monastery is not installed in the game at all.",
+		"World Editor v1: adding a new tile to the open map's embedded tileset."},
+	{sym(pkgPalette, "Catalog.Entries"), BucketDefer, VerdictDead,
+		"Every catalogued piece, in tab order. The editor draws one TAB at a time, so it asks InCategory instead.",
+		"World Editor v1: a search box across the whole palette, which is the one view that wants the flat list."},
+	{sym(pkgPalette, "Catalog.Placeable"), BucketDefer, VerdictDead,
+		"Only what the engine will accept. The editor tests one entry at a time with Entry.Placeable as it draws the row, so it never needs the filtered list.",
+		"World Editor v1: a 'hide what I cannot place' filter."},
+	{sym(pkgPalette, "Catalog.Refused"), BucketDefer, VerdictDead,
+		"What the engine would refuse. Same as Placeable: the editor greys a row from Entry.Placeable rather than from a list.",
+		"World Editor v1: a 'what is wrong with my art' report, which is the view this list is for."},
+	{sym(pkgPalette, "Catalog.ByID"), BucketDefer, VerdictDead,
+		"One entry by the id the loader itself uses for a kind. v0 holds the picked Entry by value and matches the map's tileset with its own index, so it never looks one up.",
+		"World Editor v1: reopening a map with the last-picked entry still selected, which is a lookup by id."},
+	{sym(pkgPalette, "Catalog.KindsFree"), BucketDefer, VerdictDead,
+		"MaxKinds minus KindsUsed. The editor prints used-of-max instead, so the subtraction has no caller.",
+		"World Editor v1: the warning that a placement would spend the last free kind, which is what this number is for."},
+	{sym(pkgPalette, "Catalog.MapNote"), BucketDefer, VerdictDead,
+		"The open map's 'note' property verbatim -- the loader reads it and throws it away, so this is the only place it survives. The editor shows the STATUS the note produces, through Entry.Why, rather than the note itself.",
+		"World Editor v1: a note editor, since the note is also where the editor's own group data lives."},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in
 // one place -- here, next to the gate that enforces it -- and the document is
 // generated rather than typed. A count in prose is a count that goes stale.
-// PalettePending is the editor palette's 19 rows, written in the same commit as
-// the package and DELIBERATELY NOT IN Register yet.
 //
-// WHY THEY ARE NOT MEASURED. The gate asks `deadcode -whylive=SYM .`, so it can
-// only speak about symbols inside the main package's import graph. Nothing in
-// the shipped program imports d2core/d2mappalette -- the editor screen that will
-// (d2core/d2mapedit) is being written in parallel on another branch, and the
-// palette's brief forbids it from depending on it -- so all 19 measure NOT FOUND,
-// which the gate collapses to `missing`.
-//
-// MEASURED, not assumed: `go run ./tools/reachcheck -only=d2mappalette` on
-// 27 Sep 2026, 19 entries in 7m19s against this working tree. Every row read
-// "expected dead, measured missing".
-//
-// So there are exactly three things that could be done with these rows, and two
-// of them are lies:
-//
-//   - File them `VerdictDead`. Dead means "in the program and reached by
-//     nothing"; these are not in the program at all. The gate goes red for ever
-//     and the register stops being something anyone trusts.
-//   - File them `VerdictMissing`. That verdict's own documentation is "the symbol
-//     does not exist. The register is stale" (classify.go:59). The symbols exist
-//     and the register is not stale, so the row would read as a false sentence to
-//     the next person who opens this file.
-//   - Manufacture an importer so the rows can be measured. That is the exact
-//     failure this whole tool exists to catch -- Spawns.Groups' row says so in as
-//     many words -- and it is not on the table.
-//
-// The fourth option is this: write the rows now, while the reasons for them are
-// fresh, keep them out of the measured set, and MOVE THEM IN with the commit that
-// lands the editor screen and its import. Each then gets a real verdict; any the
-// editor turns out not to need becomes a delete row rather than a quietly-kept
-// deferral. TestPalettePendingIsWellFormed holds the block to the register's own
-// rules in the meantime so it cannot rot.
-//
-// THE EXPECT COLUMN BELOW IS NOT A MEASUREMENT. Nothing measures these rows, so
-// Expect is a placeholder, and it is `dead` because that is what each symbol
-// becomes the moment the package is linked and before the editor actually calls
-// it. Whoever moves a row into Register measures it and writes down what came
-// back -- `live` for the ones the editor drives, `dead` for the rest, and a
-// delete row for anything nobody wanted.
-var PalettePending = []Entry{
-	{sym(pkgPalette, "NewCatalog"), BucketDefer, VerdictDead,
-		"An empty palette catalog. The editor builds one per map it opens.",
-		"the map editor screen, d2core/d2mapedit -- written in parallel this burst on another branch, absent here, and the only intended caller"},
-	{sym(pkgPalette, "Catalog.ReadMap"), BucketDefer, VerdictDead,
-		"Catalogues a .tmj's embedded tilesets: what the open map can already place, measured from the real PNGs, plus the map's own note (which the loader discards) and the distinct-kind count against the 256 cap.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.ReadStructureDir"), BucketDefer, VerdictDead,
-		"Catalogues data/strigoi/structures: art-repo renders installed for the map, with their footprints derived from the loader's own width formula because nothing on disk declares one.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.ReadModules"), BucketDefer, VerdictDead,
-		"Catalogues a strigoi-art module manifest, which is how the Dealu monastery reaches the palette: three of its six modules satisfy the engine's rules and three are offered greyed out with the loader's own refusal.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.Entries"), BucketDefer, VerdictDead,
-		"Every catalogued piece, in tab order. The palette's list.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.InCategory"), BucketDefer, VerdictDead,
-		"One tab's entries.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.Placeable"), BucketDefer, VerdictDead,
-		"Only what the engine will actually accept: what the editor may let a user drop on the map.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.Refused"), BucketDefer, VerdictDead,
-		"What the engine would refuse, so the editor greys it out instead of letting a user build a map that will not open.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.Tabs"), BucketDefer, VerdictDead,
-		"The five tabs with their counts, and the reason each of the three unavailable ones is empty. The editor shows the tab and the reason together.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.ByID"), BucketDefer, VerdictDead,
-		"One entry by the id the loader itself uses for a kind, so a palette selection and an engine error name the same thing.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.KindsFree"), BucketDefer, VerdictDead,
-		"How many of the loader's 256 distinct kinds the open map has left. A palette that cannot see this cap offers a tile the loader then refuses.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Catalog.MapNote"), BucketDefer, VerdictDead,
-		"The open map's \"note\" property verbatim. The loader reads it and throws it away, so this is the only place it survives, and it is one of the three status signals.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Entry.Placeable"), BucketDefer, VerdictDead,
-		"Whether the engine will accept this art as it stands: the greying-out test for one palette cell.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Entry.Why"), BucketDefer, VerdictDead,
-		"One line for the user: why the art has the status it has, and if it cannot be placed, the loader's reason.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "Tabs"), BucketDefer, VerdictDead,
-		"The tab strip with no catalog behind it, for a screen drawing its chrome before a map is open.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "CheckArt"), BucketDefer, VerdictDead,
-		"The engine's art rules, transcribed and held against the real d2maptiled.Parse by TestPaletteAgreesWithTheEngine. The editor calls it to validate art a user drops in before it is in a map.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "DeriveStatus"), BucketDefer, VerdictDead,
-		"Approved / preview / unknown from the only signals that exist -- there is no approval field in the engine -- with the sentence the editor shows and every signal found.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "PNGSize"), BucketDefer, VerdictDead,
-		"A PNG's size from its IHDR without decoding it, so opening a tab costs 24 bytes a file instead of a full decode. The editor also uses it to letterbox a thumbnail at the art's true aspect.",
-		"the map editor screen, d2core/d2mapedit"},
-	{sym(pkgPalette, "HumanName"), BucketDefer, VerdictDead,
-		"Human words from an art path, because no asset in this project carries a title anywhere. \"Church tower\", not \"placeholder-church-tower.png\".",
-		"the map editor screen, d2core/d2mapedit"},
-}
-
+// The PalettePending block that used to sit here -- the editor palette's 19
+// rows, written with the package and deliberately kept out of the measured set
+// because nothing in the shipped program imported them -- was folded into
+// Register on 28 Sep 2026, when the World Editor screen became that importer.
+// Its reasoning is kept above the palette rows themselves.
 func RegisterMarkdown() string {
 	var b strings.Builder
 

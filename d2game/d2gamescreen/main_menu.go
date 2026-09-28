@@ -52,6 +52,7 @@ const (
 	singlePlayerBtnX, singlePlayerBtnY       = 264, 290
 	githubBtnX, githubBtnY                   = 264, 400
 	mapTestBtnX, mapTestBtnY                 = 264, 440
+	editorBtnX, editorBtnY                   = 264, 470
 	tcpBtnX, tcpBtnY                         = 33, 543
 	srvCancelBtnX, srvCancelBtnY             = 285, 305
 	srvOkBtnX, srvOkBtnY                     = 420, 305
@@ -144,6 +145,7 @@ type MainMenu struct {
 	creditsButton       *d2ui.Button
 	cinematicsButton    *d2ui.Button
 	mapTestButton       *d2ui.Button
+	editorButton        *d2ui.Button
 	networkTCPIPButton  *d2ui.Button
 	networkCancelButton *d2ui.Button
 	btnTCPIPCancel      *d2ui.Button
@@ -382,6 +384,14 @@ func (v *MainMenu) createMainMenuButtons(loading d2screen.LoadingState) {
 	v.mapTestButton.SetPosition(mapTestBtnX, mapTestBtnY)
 	v.mapTestButton.OnActivated(func() { v.onMapTestClicked() })
 
+	// The World Editor. A d2ui.Button needs a Diablo II .dc6 -- WideButtonBlank,
+	// which the buttons above already spend -- so a button HERE costs no new
+	// art, which is exactly why the editor itself has none and draws with fills
+	// and Labels instead.
+	v.editorButton = v.uiManager.NewButton(d2ui.ButtonTypeWide, "WORLD EDITOR")
+	v.editorButton.SetPosition(editorBtnX, editorBtnY)
+	v.editorButton.OnActivated(func() { v.onWorldEditorClicked() })
+
 	v.btnTCPIPCancel = v.uiManager.NewButton(d2ui.ButtonTypeMedium,
 		v.asset.TranslateString(d2enum.CancelLabel))
 	v.btnTCPIPCancel.SetPosition(tcpBtnX, tcpBtnY)
@@ -427,6 +437,12 @@ func (v *MainMenu) createMultiplayerMenuButtons() {
 
 func (v *MainMenu) onMapTestClicked() {
 	v.navigator.ToMapEngineTest(0, 1)
+}
+
+// onWorldEditorClicked opens the World Editor on the default map -- the
+// village, the only .tmj there is. -editor <path> is how another one is named.
+func (v *MainMenu) onWorldEditorClicked() {
+	v.navigator.ToWorldEditor("")
 }
 
 func (v *MainMenu) onSinglePlayerClicked() {
@@ -628,6 +644,7 @@ func (v *MainMenu) SetScreenMode(screenMode mainMenuScreenMode) {
 	v.singlePlayerButton.SetVisible(isMainMenu)
 	v.githubButton.SetVisible(isMainMenu)
 	v.mapTestButton.SetVisible(isMainMenu)
+	v.editorButton.SetVisible(isMainMenu)
 	v.multiplayerButton.SetVisible(isMainMenu)
 	v.networkTCPIPButton.SetVisible(isMultiplayer)
 	v.networkCancelButton.SetVisible(isMultiplayer)
