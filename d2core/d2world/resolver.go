@@ -101,6 +101,38 @@ func b2bResolveQuarry(r Resolver, ref string) (Quarry, error) {
 	return q, nil
 }
 
+// b2bLivePlayerID is the live player's id, which a snapshot writes as
+// PlayerRef. A world with watches or chases and no player to name cannot be
+// saved: every record pointing at him would be written as an id the next
+// launch never has.
+func b2bLivePlayerID(r Resolver, what string) (string, error) {
+	if r == nil {
+		return "", fmt.Errorf("%w: %s: no resolver to name the player", ErrUnresolvedRef, what)
+	}
+
+	q, ok := r.Quarry(PlayerRef)
+	if !ok || q == nil || q.QuarryID() == "" {
+		return "", fmt.Errorf("%w: %s: the live world has no player to write as %q", ErrUnresolvedRef, what, PlayerRef)
+	}
+
+	return q.QuarryID(), nil
+}
+
+// b2bSavedRefsResolve checks, at save, that a record's watcher and quarry refs
+// resolve in the live world -- a file whose refs cannot resolve now could not
+// resolve at load either, and is refused before it is written.
+func b2bSavedRefsResolve(r Resolver, what, watcherID, quarryRef string) error {
+	if _, err := b2bResolveWatcher(r, watcherID); err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+
+	if _, err := b2bResolveQuarry(r, quarryRef); err != nil {
+		return fmt.Errorf("%s: %s: %w", what, watcherID, err)
+	}
+
+	return nil
+}
+
 // b2bNum is one saved number and its name, for b2bCheckNumbers.
 type b2bNum struct {
 	name  string

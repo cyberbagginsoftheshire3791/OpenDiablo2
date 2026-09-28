@@ -165,8 +165,8 @@ func TestSpawnsSnapshotEveryFieldIsSeen(t *testing.T) {
 		top("despawned", func(sp *SpawnsSnapshot) { sp.Despawned = 0 }),
 		top("cleared", func(sp *SpawnsSnapshot) { sp.Cleared = 0 }),
 		top("released", func(sp *SpawnsSnapshot) { sp.Released = 0 }),
-		top("rng_seed", func(sp *SpawnsSnapshot) { sp.RNGSeed = 0 }),
-		top("rng_draws", func(sp *SpawnsSnapshot) { sp.RNGDraws = 0 }),
+		top("rng.seed", func(sp *SpawnsSnapshot) { sp.RNG.Seed = 0 }),
+		top("rng.draws", func(sp *SpawnsSnapshot) { sp.RNG.Draws = 0 }),
 		{"spawns.groups lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Spawns.Groups = nil }},
 
 		{"spawns.group.id moved to a free number", b2bDiverge, func(t *testing.T, s *b2bSnap) {
@@ -228,6 +228,47 @@ func TestSpawnsSnapshotEveryFieldIsSeen(t *testing.T) {
 		// answers WatcherAt as the saved chaser did.
 		{"spawns.gone member x moved", b2bCarried, func(t *testing.T, s *b2bSnap) { _, m := gone(t, s); m.X += 0.5 }},
 	})
+}
+
+// GONE IS NOT TAKEN ON THE RESOLVER'S WORD. A live-world Resolver that cannot
+// find a member the notice model still watches has lost a living wolf, not
+// found a dead man: saved as gone, he would come back a stand-in while his
+// entity walked on beside the pack. Refused at save. The dead man the world
+// really lost (unwatched at his death) is still saved as gone.
+func TestSpawnsSnapshotRefusesAWatchedMemberTheResolverLost(t *testing.T) {
+	a := b2bFilledWorld(t)
+
+	_, err := a.spawns.Snapshot(b2bResolver{a})
+	require.NoError(t, err, "the control: the filled world, with its gone member, saves")
+
+	var lost string
+
+	for _, id := range a.spawns.groupIDs() {
+		for _, m := range a.spawns.groups[id].members {
+			if _, watched := a.notice.Noticed(m.WatcherID()); watched && lost == "" {
+				lost = m.WatcherID()
+			}
+		}
+	}
+
+	require.NotEmpty(t, lost, "a watched member")
+
+	_, err = a.spawns.Snapshot(b2bForgetful{b2bResolver{a}, lost})
+	require.True(t, errors.Is(err, ErrUnresolvedRef), "%v", err)
+}
+
+// b2bForgetful is a live-world resolver that cannot find one entity.
+type b2bForgetful struct {
+	b2bResolver
+	lost string
+}
+
+func (r b2bForgetful) Watcher(id string) (Watcher, bool) {
+	if id == r.lost {
+		return nil, false
+	}
+
+	return r.b2bResolver.Watcher(id)
 }
 
 // A refused restore changes nothing: all or nothing.
@@ -302,21 +343,24 @@ func TestSpawnsSnapshotKeepsTheDeadInThePack(t *testing.T) {
 func TestSpawnsSnapshotSeedIsExactPast2to53(t *testing.T) {
 	const seed = int64(1)<<62 + 1
 
-	b, err := json.Marshal(SpawnsSnapshot{NextID: 1, RNGSeed: seed, RNGDraws: 5})
+	b, err := json.Marshal(SpawnsSnapshot{NextID: 1, RNG: b2bStream{Seed: seed, Draws: 5}})
 	require.NoError(t, err)
 
 	var loose map[string]interface{}
 	require.NoError(t, json.Unmarshal(b, &loose))
-	require.Equal(t, "4611686018427387905", loose["rng_seed"], "a reader decoding into interface{} still gets it exactly")
+	rng, ok := loose["rng"].(map[string]interface{})
+	require.True(t, ok, "the stream is written as {seed, draws}: %s", b)
+	require.Equal(t, "4611686018427387905", rng["seed"], "a reader decoding into interface{} still gets it exactly")
+	require.Equal(t, 5.0, rng["draws"])
 
 	var back SpawnsSnapshot
 	require.NoError(t, json.Unmarshal(b, &back))
-	require.Equal(t, seed, back.RNGSeed)
+	require.Equal(t, seed, back.RNG.Seed)
 
 	// The control: the same field without ",string" is a JSON number, and a
 	// float64 reader gets a different seed.
 	type plain struct {
-		RNGSeed int64 `json:"rng_seed"`
+		Seed int64 `json:"seed"`
 	}
 
 	pb, err := json.Marshal(plain{seed})
@@ -324,7 +368,7 @@ func TestSpawnsSnapshotSeedIsExactPast2to53(t *testing.T) {
 
 	var pl map[string]interface{}
 	require.NoError(t, json.Unmarshal(pb, &pl))
-	require.NotEqual(t, seed, int64(pl["rng_seed"].(float64)), "the control: a number past 2^53 does not survive float64")
+	require.NotEqual(t, seed, int64(pl["seed"].(float64)), "the control: a number past 2^53 does not survive float64")
 
 	s, _, _, _, _ := newTestSpawns(t)
 	require.NoError(t, s.Restore(back, b2bResolver{&b2bWorld{entities: map[string]*b2bEntity{}}}))

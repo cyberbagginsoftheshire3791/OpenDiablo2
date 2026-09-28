@@ -284,6 +284,39 @@ func TestNPCMotionRoundTripsAndStepsInStep(t *testing.T) {
 	require.Error(t, b.RestoreMotion(Motion{Action: "ZZ"}), "an unknown held mode is refused")
 }
 
+// An NPC's pose flags -- a corpse, a held action -- round-trip, and each one
+// lost changes what a re-save writes. With no composite (no MPQs) an NPC
+// cannot Advance, so this is the snapshot half only: the creature tests above
+// carry the behaviour of the same two flags, and B4b's playtest carries the
+// composite.
+func TestNPCMotionCarriesItsPose(t *testing.T) {
+	for _, a := range []*NPC{
+		{mapEntity: newMapEntity(50, 50), corpse: true},
+		{mapEntity: newMapEntity(50, 50), held: true, heldMode: d2enum.MonsterAnimationModeAttack1},
+	} {
+		mo := a.MotionSnapshot()
+
+		b := &NPC{mapEntity: newMapEntity(0, 0)}
+		require.NoError(t, b.RestoreMotion(mo))
+		require.Equal(t, a.corpse, b.corpse)
+		require.Equal(t, a.held, b.held)
+		require.Equal(t, a.heldMode, b.heldMode)
+		require.Equal(t, mo, b.MotionSnapshot(), "a re-save writes what was loaded")
+
+		lost := mo
+		lost.Corpse, lost.Action = false, ""
+
+		c := &NPC{mapEntity: newMapEntity(0, 0)}
+		require.NoError(t, c.RestoreMotion(lost))
+		require.NotEqual(t, mo, c.MotionSnapshot(), "the pose lost is seen")
+	}
+
+	held := &NPC{mapEntity: newMapEntity(0, 0), held: true, heldMode: d2enum.MonsterAnimationModeAttack1}
+	require.Equal(t, "A1", held.MotionSnapshot().Action, "the held mode is written by its two letters")
+	require.Error(t, (&NPC{mapEntity: newMapEntity(0, 0)}).RestoreMotion(Motion{Corpse: true, Action: "A1"}),
+		"a corpse holds no action")
+}
+
 // The NPC's mode names read back: every monster mode's two letters parse to a
 // mode that prints them again.
 func TestMonsterModeNamesReadBack(t *testing.T) {

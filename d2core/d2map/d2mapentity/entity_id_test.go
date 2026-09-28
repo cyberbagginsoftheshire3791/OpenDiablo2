@@ -2,7 +2,12 @@ package d2mapentity
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -15,8 +20,9 @@ import (
 )
 
 // M4.6 B2b: the next-id seam. A load rebuilds an entity with its saved id by
-// setting it on the factory; the next NewNPC or NewCreature takes it, once,
-// and then ids come from the uuid stream again.
+// setting it on the factory; the next construction of any map entity takes
+// it, once -- NewNPC and NewCreature wear it, the rest spend it -- and then
+// ids come from the uuid stream again.
 
 // b2bFactory is a factory over the repo's own files: enough for a Strigoi
 // creature (PNG sheets), with no MPQs.
@@ -159,4 +165,123 @@ func TestAFailedConstructionConsumesTheID(t *testing.T) {
 	_, waiting = f.PendingEntityID()
 	require.False(t, waiting, "a failed NPC took its id with it")
 	require.True(t, errors.Is(f.SetNextEntityID("e:npc"), ErrEntityID), "and it counts as given")
+}
+
+// The kinds a save does not rebuild SPEND a waiting id and do not wear it
+// (entity_id.go): a missile or an overlay built while an id waits takes it
+// out of the seam, so it cannot linger for a later monster -- and does not
+// carry a monster's saved name either. Both constructions here fail after the
+// take (no such animation), which is also the "consumed even when it fails
+// half-way" case for these two.
+func TestTheKindsASaveDoesNotRebuildSpendTheID(t *testing.T) {
+	f := b2bFactory(t)
+
+	require.NoError(t, f.SetNextEntityID("e:wolf"))
+
+	_, err := f.NewMissile(50, 50, &d2records.MissileRecord{})
+	require.Error(t, err, "no such missile animation")
+
+	_, waiting := f.PendingEntityID()
+	require.False(t, waiting, "the missile took the waiting id out of the seam")
+	require.True(t, errors.Is(f.SetNextEntityID("e:wolf"), ErrEntityID), "and it counts as used")
+
+	dog := b2bNewDog(t, f, 50, 50)
+	require.NotEqual(t, "e:wolf", dog.ID(), "the next creature does not inherit it")
+
+	require.NoError(t, f.SetNextEntityID("e:boar"))
+
+	_, err = f.NewCastOverlay(50, 50, &d2records.OverlayRecord{Filename: "nope"})
+	require.Error(t, err, "no such overlay")
+
+	_, waiting = f.PendingEntityID()
+	require.False(t, waiting, "the overlay spent it too")
+
+	// The seam still works after a spend: a new id is worn by the next creature.
+	require.NoError(t, f.SetNextEntityID("e:dog"))
+	require.Equal(t, "e:dog", b2bNewDog(t, f, 50, 50).ID())
+}
+
+// b2bSeamCallees are the calls that birth a map entity's id.
+var b2bSeamCallees = map[string]bool{
+	"newMapEntity": true, "newMapEntityWithID": true, "NewAnimatedEntity": true, "newCreature": true,
+}
+
+// EVERY factory constructor that births a map entity takes the waiting id,
+// and takes it in its FIRST statement -- before anything that can fail. The
+// seam is only as good as its coverage: a constructor added later that calls
+// newMapEntity and skips the take would build a fresh-id entity while a saved
+// id waits, and the next monster would wear a name meant for another. Read
+// from the source, so a new constructor cannot slip past it.
+func TestEveryEntityConstructorTakesTheWaitingID(t *testing.T) {
+	fset := token.NewFileSet()
+
+	paths, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+
+	var constructors []string
+
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		require.NoError(t, err)
+
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || fn.Body == nil || !b2bOnFactory(fn) {
+				continue
+			}
+
+			if !b2bCalls(fn.Body, b2bSeamCallees) {
+				continue
+			}
+
+			constructors = append(constructors, fn.Name.Name)
+
+			first := fn.Body.List[0]
+			require.True(t, b2bCalls(first, map[string]bool{"takeEntityID": true, "spendEntityID": true}),
+				"%s makes a map entity and does not take the waiting id in its first statement", fn.Name.Name)
+		}
+	}
+
+	sort.Strings(constructors)
+
+	// The positive control: the instrument found the six it must.
+	require.Equal(t, []string{"NewCastOverlay", "NewCreature", "NewItem", "NewMissile", "NewNPC", "NewPlayer"}, constructors)
+}
+
+func b2bOnFactory(fn *ast.FuncDecl) bool {
+	star, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+
+	id, ok := star.X.(*ast.Ident)
+
+	return ok && id.Name == "MapEntityFactory"
+}
+
+// b2bCalls reports whether n calls any of the named functions or methods.
+func b2bCalls(n ast.Node, names map[string]bool) bool {
+	found := false
+
+	ast.Inspect(n, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return !found
+		}
+
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			found = found || names[fun.Name]
+		case *ast.SelectorExpr:
+			found = found || names[fun.Sel.Name]
+		}
+
+		return !found
+	})
+
+	return found
 }

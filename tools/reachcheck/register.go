@@ -658,6 +658,45 @@ var Register = []Entry{
 	// exactly what its row said it was waiting for: something that ends a
 	// fight.
 
+	// M4.6 B2b -- THE SNAPSHOTS THAT CARRY ENTITY IDS (28 Sep 2026). Fourteen
+	// rows, all DEFERRED and expected DEAD: B2b builds the verbs and tests
+	// them in their own packages, and nothing in the shipped build calls them
+	// yet. The snapshots are for B3's Game.SaveWorld, the restores and the
+	// next-id seam for B4b's hunted-night load. The day either calls one, its
+	// row goes live and the gate goes red until the row moves to wire -- a
+	// save that exists only in a unit test is the hollow class this register
+	// was built for. (The first draft of these rows sat in a file of their
+	// own, appended at init; they are here because the register lives in one
+	// place -- see RegisterMarkdown.)
+	{sym(pkgWorld, "Spawns.Snapshot"), BucketDefer, VerdictDead,
+		"The spawn tables' state for the world file, members by entity id with the dead marked gone. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Spawns.Restore"), BucketDefer, VerdictDead,
+		"Puts the tables back through a Resolver, after the entities are rebuilt with their ids and motion. The hunted-night load calls it.", "M4.6 B4b"},
+	{sym(pkgWorld, "Notice.Snapshot"), BucketDefer, VerdictDead,
+		"Every watch, watcher by entity id and the player as the word player. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Notice.Restore"), BucketDefer, VerdictDead,
+		"Puts every watch back through a Resolver; an unresolved watch is an error, never a drop. The hunted-night load calls it.", "M4.6 B4b"},
+	{sym(pkgWorld, "Pursuit.Snapshot"), BucketDefer, VerdictDead,
+		"Every chase, hunter by entity id and the player as the word player. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Pursuit.Restore"), BucketDefer, VerdictDead,
+		"Puts every chase back through a Resolver, solving nothing: the walk is the entity's motion. The hunted-night load calls it.", "M4.6 B4b"},
+	{sym(pkgMapEngine, "MapEngine.SetNextEntityID"), BucketDefer, VerdictDead,
+		"The next-id seam through the engine: the next entity construction takes a saved id (NewNPC and NewCreature wear it, the rest spend it); an id already on the map is refused. The load rebuilds every saved entity through it.", "M4.6 B4b"},
+	{sym(pkgEntity, "MapEntityFactory.PendingEntityID"), BucketDefer, VerdictDead,
+		"Whether a set id is still waiting. A load that has rebuilt everything asserts nothing is.", "M4.6 B4b"},
+	{sym(pkgEntity, "Creature.MotionSnapshot"), BucketDefer, VerdictDead,
+		"A creature's walk and pose for the world file's entity list. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgEntity, "Creature.RestoreMotion"), BucketDefer, VerdictDead,
+		"Puts a rebuilt creature back mid-stride. The load calls it before Spawns.Restore, which checks each member stands where he was saved.", "M4.6 B4b"},
+	{sym(pkgEntity, "NPC.MotionSnapshot"), BucketDefer, VerdictDead,
+		"An inherited monster's walk and pose for the world file. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgEntity, "NPC.RestoreMotion"), BucketDefer, VerdictDead,
+		"Puts a rebuilt inherited monster back mid-stride. The load calls it.", "M4.6 B4b"},
+	{sym(pkgScreen, "gameSpawner.Snapshot"), BucketDefer, VerdictDead,
+		"The arrival count, which sets where the next pack comes from. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgScreen, "gameSpawner.Restore"), BucketDefer, VerdictDead,
+		"Puts the arrival count back. The load calls it with the spawns.", "M4.6 B4b"},
+
 	// ---------------------------------------------------------------
 	// OBSERVE -- harness surface. Reads and dial writes only; see the
 	// BucketObserve comment for the rule that keeps this from becoming the

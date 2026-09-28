@@ -41,11 +41,19 @@ type SpawnsSnapshot struct {
 	Cleared   int `json:"cleared"`
 	Released  int `json:"released"`
 
-	// The tables' stream as {seed, draws}. The seed is written as a JSON
-	// STRING: a wall-clock seed is past 2^53, and a reader that decodes a
-	// number into float64 would restore a different stream (B1 notes §2).
-	RNGSeed  int64  `json:"rng_seed,string"`
-	RNGDraws uint64 `json:"rng_draws"`
+	// RNG is the tables' stream (d2rand.Stream) as {seed, draws}.
+	RNG b2bStream `json:"rng"`
+}
+
+// b2bStream is a counted stream as a save carries it: the seed it was made
+// from and how many values it has handed out. The seed is written as a JSON
+// STRING: a wall-clock seed is past 2^53, and a reader that decodes a number
+// into float64 would restore a different stream (B1 notes §2). The shape is
+// the one B2a writes for Combat's and Rising's streams, so the world file
+// carries every stream one way.
+type b2bStream struct {
+	Seed  int64  `json:"seed,string"`
+	Draws uint64 `json:"draws"`
 }
 
 // SpawnGroupSnapshot is one arrival.
@@ -116,7 +124,7 @@ func (s *Spawns) Snapshot(r Resolver) (SpawnsSnapshot, error) {
 	}
 
 	if s.rng != nil {
-		snap.RNGSeed, snap.RNGDraws = s.rng.Seeded(), s.rng.Draws()
+		snap.RNG = b2bStream{Seed: s.rng.Seeded(), Draws: s.rng.Draws()}
 	}
 
 	for _, id := range s.groupIDs() {
@@ -129,7 +137,7 @@ func (s *Spawns) Snapshot(r Resolver) (SpawnsSnapshot, error) {
 				return SpawnsSnapshot{}, fmt.Errorf("d2world: spawns: group %s member %d is nil", g.id, i)
 			}
 
-			ms, err := b2bSaveMember(m, g.id, r)
+			ms, err := s.b2bSaveMember(m, g.id, r)
 			if err != nil {
 				return SpawnsSnapshot{}, err
 			}
@@ -197,11 +205,12 @@ func (s *Spawns) Restore(snap SpawnsSnapshot, r Resolver) error {
 	s.failures, s.dropped, s.despawned = snap.Failures, snap.Dropped, snap.Despawned
 	s.cleared, s.released = snap.Cleared, snap.Released
 
+	// Stream.Restore replaces the rand and its counted source together.
 	if s.rng == nil {
-		s.rng = d2rand.NewStream(snap.RNGSeed)
+		s.rng = d2rand.NewStream(snap.RNG.Seed)
 	}
 
-	s.rng.Restore(snap.RNGSeed, snap.RNGDraws)
+	s.rng.Restore(snap.RNG.Seed, snap.RNG.Draws)
 
 	return nil
 }
@@ -300,13 +309,29 @@ func (s *Spawns) b2bGroup(gs SpawnGroupSnapshot, nextID int, r Resolver, members
 // b2bSaveMember writes one member, asking r whether he is on the map. One who
 // is must be the very entity the group holds -- an id the live world answers
 // with a different thing would be saved as a lie.
-func b2bSaveMember(m Watcher, groupID string, r Resolver) (SpawnMemberSnapshot, error) {
+//
+// GONE IS CHECKED AGAINST THE NOTICE MODEL, not taken on the Resolver's word.
+// A man leaves the map while his pack lives on only after he has died (his
+// body stood up and took his remains), and a death unwatches him
+// (Combat.withdraw) before that. So a member the Resolver cannot find while
+// the notice model still watches him is a living wolf the Resolver lost --
+// and saved as gone, he would come back a stand-in while his entity walked on
+// beside the pack, and daybreak would send the pack home without him. That is
+// refused at save.
+func (s *Spawns) b2bSaveMember(m Watcher, groupID string, r Resolver) (SpawnMemberSnapshot, error) {
 	id := m.WatcherID()
 	x, y := m.WatcherAt()
 	ms := SpawnMemberSnapshot{ID: id, X: x, Y: y}
 
 	live, ok := r.Watcher(id)
 	if !ok || live == nil {
+		if s.notice != nil {
+			if _, watched := s.notice.Noticed(id); watched {
+				return ms, fmt.Errorf("%w: spawns: group %s member %s is not in the live world, and the notice model still watches him",
+					ErrUnresolvedRef, groupID, id)
+			}
+		}
+
 		ms.Gone = true
 
 		return ms, nil
