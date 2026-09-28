@@ -817,6 +817,12 @@ func (a *App) ToWorldEditor(mapPath string) {
 		return
 	}
 
+	// The harness must be able to tell "the editor opened" from "the editor
+	// refused and we are on the menu". Without this a script that launches with
+	// -editor and reads the screen back cannot fail, which is the hollow test
+	// this project has been caught by before.
+	a.harnessNoteScreen("world_editor") // no-op unless built with -tags harness
+
 	a.screen.SetNextScreen(editor)
 }
 

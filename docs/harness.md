@@ -84,7 +84,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 43 playtest scripts.** That count, the harness version below and the
+**The 44 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -482,6 +482,17 @@ this doc fails until it agrees.
   the minutes spent); the first again (the control) opens the amulet and pays
   nothing; U with no body at his feet (the control) is refused and takes no
   time.
+* `editor_test.go` — the forty-fourth, M5.4 World Editor v0 (28 Sep 2026): the
+  `-editor` flag opens the EDITOR and the game says so (`screen=world_editor`,
+  which a map that will not open cannot fake -- it falls back to the menu by
+  design); opening the village does not write to it; a save keeps the previous
+  generation beside it; and **a real run on a map the editor wrote leaves the
+  authoring file byte for byte as it was**, with the played copy unchanged too.
+  The control adds ONE byte to a copy and shows the hash moves, so act 4's
+  equality means something. It does NOT claim to have zoomed or panned: the
+  harness has no wheel verb and no press-and-hold, so those are proved by the
+  viewport's unit tests and by the screenshots in
+  `strigoi-harness-runs\editor-v0-shots\`, not here.
 * `strigoi_game_test.go` — the thirty-ninth: the game launched with NO switches
   builds the village, draws the hero from Strigoi's sheets, uses Strigoi's font
   set and string table, and a first hour reads no Diablo II tile, class-art,
