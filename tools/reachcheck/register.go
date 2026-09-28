@@ -809,6 +809,39 @@ var Register = []Entry{
 		"The hands' icon art drops in: data/strigoi/ui/hands/blade.png and torch.png are drawn in place of the key letters when they are there and fit (HUD.loadHands).", ""},
 	{sym(pkgPlayer, "GameControls.runButtonReport"), BucketObserve, VerdictHarnessOnly,
 		"Reads where the HUD's run button is drawn for the harness ui state, so a script clicks it where a player would. Changes nothing.", ""},
+
+	// d2core/d2mapedit -- THE WORLD EDITOR'S DOCUMENT (M5.4, 27 Sep 2026) HAS NO
+	// ROWS HERE YET, AND THIS BLOCK IS WHY, SO THE NEXT PERSON DOES NOT HAVE TO
+	// WORK IT OUT AGAIN.
+	//
+	// The gate analyses ONE program: `deadcode -whylive=SYM .`, where "." is the
+	// main package (main.go's flag, -pkg, defaults to "."). d2mapedit is not in
+	// that import graph -- nothing in the shipped game imports it, because the
+	// editor SCREEN has not been written -- so deadcode does not see the package
+	// at all. Measured, 27 Sep 2026, from the repo root:
+	//
+	//	> deadcode -whylive=github.com/OpenDiablo2/OpenDiablo2/d2core/d2mapedit.Open .
+	//	deadcode: function ".../d2core/d2mapedit.Open" not found in program
+	//
+	// Classify reads "not found in program" as CfgNotFound -> VerdictMissing,
+	// which is the STALE REGISTER state, not a claim about the code, and
+	// TestRegisterIsWellFormed refuses VerdictMissing as an Expect. So a row for
+	// any of these today would turn the gate red and say the register is stale --
+	// which would be the wrong sentence about a package that is simply not wired
+	// yet.
+	//
+	// WHEN THE EDITOR SCREEN LANDS AND IMPORTS THIS PACKAGE, these go on as WIRE
+	// in the same commit (the screen cannot work without any of them):
+	//
+	//	d2mapedit.Open, Doc.Bytes, Doc.Save, Doc.Validate, DirArt,
+	//	Doc.PlaceStructure, Doc.MoveObject, Doc.DeleteObject,
+	//	Doc.SetFloorTile, Doc.SetWallTile,
+	//	Doc.SetGroup, Doc.DeleteGroup, Doc.MoveGroup,
+	//	Stack.Do, Stack.Undo, Stack.Redo, Doc.Reachable, SetAside
+	//
+	// Until then the package is defended by its own tests, which is a different
+	// instrument and a weaker claim: harness-reachable is not game-reachable, and
+	// test-reachable is not either.
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in
