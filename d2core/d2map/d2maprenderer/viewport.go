@@ -24,6 +24,41 @@ const (
 	worldToOrthoOffsetX = 3
 )
 
+const (
+	// defaultScale is the viewport's zoom when nobody has set one: one screen
+	// pixel per orthogonal pixel, which is the only scale the shipped game
+	// ever draws at. A zero-value Viewport reads as this too (scaleOrDefault), so
+	// adding the field changed nothing that existed before it.
+	defaultScale = 1.0
+	// minScale and maxScale bound SetScale. A scale of 0 would divide by zero
+	// in ScreenToOrtho and hand d2vector.NewPosition an Inf, which panics; a
+	// negative one would mirror the world. Both ends are [DIAL].
+	minScale = 0.0625
+	maxScale = 16.0
+
+	// cullMarginTop and cullMarginBottom are how far outside the screen, in
+	// SCREEN pixels, the renderer's two cull probes sit. They were the bare
+	// -200 and 1050 (= 600 + 450) in MapRenderer.Render.
+	//
+	// Screen pixels is the right unit at every zoom: the probes go through
+	// ScreenToWorld, which divides by the scale, so the world range they
+	// describe widens by 1/scale as the view zooms out -- which is exactly how
+	// much further the art, drawn unscaled, then reaches up the screen. [DIAL]
+	cullMarginTop    = 200
+	cullMarginBottom = 450
+
+	// maxAuthoredArtHeight is d2maptiled's tallest structure strip, 768 px
+	// (maxStructureHeight, d2core/d2map/d2maptiled/tiled.go:141).
+	maxAuthoredArtHeight = 768
+
+	// authoredCullRowsAtScale1 is how many extra tile rows the wall pass has to
+	// draw on an authored map at scale 1.0, so a house whose front tiles are
+	// just below the screen still shows its roof: the tallest strip, less what
+	// cullMarginBottom already covers, over the height of a tile row.
+	// (768-450)/40 = 7.95, and the ceiling of that is the 8 this replaces.
+	authoredCullRowsAtScale1 = (maxAuthoredArtHeight - cullMarginBottom) / float64(tileHeight)
+)
+
 // Viewport is used for converting vectors between screen (pixel), orthogonal (Camera) and world (isometric) space.
 type Viewport struct {
 	defaultScreenRect d2geom.Rectangle
@@ -32,6 +67,15 @@ type Viewport struct {
 	transCurrent      worldTrans
 	camera            *Camera
 	align             int
+	// scale is the zoom: screen pixels per orthogonal pixel. It sits between
+	// orthogonal and screen space, NOT between world and orthogonal space,
+	// because the Camera's position is stored in orthogonal pixels
+	// (MapRenderer.CreateMapRenderer feeds it WorldToOrtho, renderer.go:98,
+	// and d2gamescreen/game.go:849 re-aims it the same way every frame).
+	// Scaling world->ortho would move the camera's target every time the zoom
+	// changed and make Camera.advanceToTarget smooth across two different
+	// spaces. 0 means "never set" and reads as defaultScale.
+	scale float64
 }
 
 // NewViewport creates a new Viewport with the given parameters and returns a pointer to it.
@@ -49,7 +93,52 @@ func NewViewport(x, y, width, height int) *Viewport {
 			Width:  width,
 			Height: height,
 		},
+		scale: defaultScale,
 	}
+}
+
+// Scale returns the viewport's zoom: screen pixels per orthogonal pixel. 1.0 is
+// unzoomed, and is what the shipped game runs at.
+func (v *Viewport) Scale() float64 {
+	return v.scaleOrDefault()
+}
+
+// SetScale sets the viewport's zoom, clamped to [minScale, maxScale]. All four
+// space transforms follow it and stay inverses of each other; nothing about how
+// sprites are drawn follows it (see Surface.PushScale, which assigns rather than
+// multiplies and scales art without scaling where the art goes).
+func (v *Viewport) SetScale(scale float64) {
+	v.scale = clampScale(scale)
+}
+
+// scaleOrDefault is the zoom to use, treating the zero value as unzoomed so
+// that a Viewport built without NewViewport behaves exactly as it did before
+// there was a scale at all.
+func (v *Viewport) scaleOrDefault() float64 {
+	if v.scale <= 0 {
+		return defaultScale
+	}
+
+	return v.scale
+}
+
+func clampScale(scale float64) float64 {
+	if scale < minScale {
+		return minScale
+	}
+
+	if scale > maxScale {
+		return maxScale
+	}
+
+	return scale
+}
+
+// halfScreen is the half width and height getCameraOffset takes off the camera.
+// The integer division is deliberate and must stay: it is what the unzoomed
+// transform has always done, and an odd viewport width truncates.
+func (v *Viewport) halfScreen() (halfWidth, halfHeight float64) {
+	return float64(v.screenRect.Width / half), float64(v.screenRect.Height / half)
 }
 
 // SetCamera sets the current Camera to the given value.
@@ -73,14 +162,26 @@ func (v *Viewport) ScreenToWorld(x, y int) (worldX, worldY float64) {
 }
 
 // OrthoToWorld returns the world position for the given orthogonal coordinates.
+// It inverts WorldToOrtho to within float64 rounding (measured at 1e-9 by
+// TestOrthoToWorldInvertsWorldToOrtho; dividing by 80 and 40 is not exact).
+//
+// The two divisors were the literals 80 and 40 until the scale went in. They
+// happened to equal tileWidth and tileHeight, so this is the same arithmetic --
+// but a literal that only happens to match the constant its inverse uses is a
+// trap: change tileWidth and WorldToOrtho follows while this does not, and the
+// round trip every click depends on quietly stops closing.
 func (v *Viewport) OrthoToWorld(x, y float64) (worldX, worldY float64) {
-	worldX = (x/80 + y/40) / half
-	worldY = (y/40 - x/80) / half
+	worldX = (x/tileWidth + y/tileHeight) / half
+	worldY = (y/tileHeight - x/tileWidth) / half
 
 	return worldX, worldY
 }
 
 // WorldToOrtho returns the orthogonal position for the given world coordinates.
+//
+// This is the isometric transform and it is scale-free on purpose: orthogonal
+// space is where the Camera lives, so the zoom sits on the far side of it, in
+// ScreenToOrtho and OrthoToScreen. See the Viewport.scale field.
 func (v *Viewport) WorldToOrtho(x, y float64) (orthoX, orthoY float64) {
 	orthoX = (x - y) * tileWidth
 	orthoY = (x + y) * tileHeight
@@ -89,8 +190,28 @@ func (v *Viewport) WorldToOrtho(x, y float64) (orthoX, orthoY float64) {
 }
 
 // ScreenToOrtho returns the orthogonal position for the given screen coordinates.
+// It inverts OrthoToScreenF at every scale, to within float64 rounding -- measured
+// at 1e-9 by TestScreenToOrthoInvertsOrthoToScreenFAtEveryScale.
+//
+// The zoom is anchored on the camera, which stays at the middle of the viewport
+// at every scale: getCameraOffset has already taken the half screen off the
+// camera's orthogonal position, so adding it back gives the camera itself.
 func (v *Viewport) ScreenToOrtho(x, y int) (orthoX, orthoY float64) {
 	camX, camY := v.getCameraOffset()
+
+	if scale := v.scaleOrDefault(); scale != defaultScale {
+		halfWidth, halfHeight := v.halfScreen()
+		orthoX = (float64(x)-float64(v.screenRect.Left)-halfWidth)/scale + camX + halfWidth
+		orthoY = (float64(y)-float64(v.screenRect.Top)-halfHeight)/scale + camY + halfHeight
+
+		return orthoX, orthoY
+	}
+
+	// The unzoomed path, character for character as it was. Routing scale 1.0
+	// through the branch above would be the same arithmetic reassociated, and
+	// float64 reassociation moves the last bit: OrthoToScreen floors its result,
+	// so one bit low is one pixel out, and the shipped game goes down this
+	// branch on every frame and every click.
 	orthoX = float64(x) + camX - float64(v.screenRect.Left)
 	orthoY = float64(y) + camY - float64(v.screenRect.Top)
 
@@ -99,20 +220,104 @@ func (v *Viewport) ScreenToOrtho(x, y int) (orthoX, orthoY float64) {
 
 // OrthoToScreen returns the screen position for the given orthogonal coordinates as two ints.
 func (v *Viewport) OrthoToScreen(x, y float64) (screenX, screenY int) {
-	camOrthoX, camOrthoY := v.getCameraOffset()
-	screenX = int(math.Floor(x - camOrthoX + float64(v.screenRect.Left)))
-	screenY = int(math.Floor(y - camOrthoY + float64(v.screenRect.Top)))
+	fx, fy := v.OrthoToScreenF(x, y)
 
-	return screenX, screenY
+	return int(math.Floor(fx)), int(math.Floor(fy))
 }
 
 // OrthoToScreenF returns the screen position for the given orthogonal coordinates as two float64s.
+// It inverts ScreenToOrtho; see there.
 func (v *Viewport) OrthoToScreenF(x, y float64) (screenX, screenY float64) {
 	camOrthoX, camOrthoY := v.getCameraOffset()
+
+	if scale := v.scaleOrDefault(); scale != defaultScale {
+		halfWidth, halfHeight := v.halfScreen()
+		screenX = (x-camOrthoX-halfWidth)*scale + float64(v.screenRect.Left) + halfWidth
+		screenY = (y-camOrthoY-halfHeight)*scale + float64(v.screenRect.Top) + halfHeight
+
+		return screenX, screenY
+	}
+
+	// The unzoomed path, kept exact. See ScreenToOrtho.
 	screenX = x - camOrthoX + float64(v.screenRect.Left)
 	screenY = y - camOrthoY + float64(v.screenRect.Top)
 
 	return screenX, screenY
+}
+
+// ZoomAtScreen returns the orthogonal position the camera must move to for the
+// world point currently under the given screen pixel to stay under that same
+// pixel once the scale becomes newScale. newScale is clamped exactly as SetScale
+// clamps it, so the answer matches the scale the viewport will take.
+//
+// It changes nothing: the caller sets the scale and moves the camera, which is
+// what MapRenderer.ZoomAt does.
+func (v *Viewport) ZoomAtScreen(screenX, screenY int, newScale float64) (camOrthoX, camOrthoY float64) {
+	from, to := v.scaleOrDefault(), clampScale(newScale)
+
+	camX, camY := v.getCameraOffset()
+	halfWidth, halfHeight := v.halfScreen()
+
+	// getCameraOffset has taken the half screen off the camera; put it back.
+	camOrthoX, camOrthoY = camX+halfWidth, camY+halfHeight
+
+	// ScreenToOrtho reads ortho = (pixel - left - half)/scale + camera. Holding
+	// ortho fixed across a change of scale and solving for the new camera gives
+	// the offset below.
+	offsetX := float64(screenX) - float64(v.screenRect.Left) - halfWidth
+	offsetY := float64(screenY) - float64(v.screenRect.Top) - halfHeight
+
+	camOrthoX += offsetX * (1/from - 1/to)
+	camOrthoY += offsetY * (1/from - 1/to)
+
+	return camOrthoX, camOrthoY
+}
+
+// cullProbes returns the two screen-space points MapRenderer.Render walks to
+// find the range of tiles it must draw: one above the top of the screen and one
+// below the bottom, both on the screen's vertical centre line.
+//
+// It reads defaultScreenRect, not screenRect, so the aligned half-viewports
+// (toLeft/toRight) do not narrow it -- they still draw over the whole screen,
+// which is what IsOrthoRectVisible tests against too. At the 800x600 the game
+// builds, this is (400, -200, 1050): the three literals it replaces.
+func (v *Viewport) cullProbes() (x, topY, bottomY int) {
+	x = v.defaultScreenRect.Left + v.defaultScreenRect.Width/half
+	topY = v.defaultScreenRect.Top - cullMarginTop
+	bottomY = v.defaultScreenRect.Top + v.defaultScreenRect.Height + cullMarginBottom
+
+	return x, topY, bottomY
+}
+
+// cullRange returns the half-open range of tiles MapRenderer.Render draws,
+// clamped to a map of the given size. The scale reaches it through
+// ScreenToWorld: the probes are fixed screen pixels, and a zoomed-out view turns
+// the same pixels into a wider stretch of world.
+func (v *Viewport) cullRange(mapWidth, mapHeight int) (startX, startY, endX, endY int) {
+	probeX, topY, bottomY := v.cullProbes()
+
+	stxf, styf := v.ScreenToWorld(probeX, topY)
+	etxf, etyf := v.ScreenToWorld(probeX, bottomY)
+
+	startX = int(math.Max(0, math.Floor(stxf)))
+	startY = int(math.Max(0, math.Floor(styf)))
+
+	endX = int(math.Min(float64(mapWidth), math.Ceil(etxf)))
+	endY = int(math.Min(float64(mapHeight), math.Ceil(etyf)))
+
+	return startX, startY, endX, endY
+}
+
+// authoredCullRows is how many extra tile rows the wall pass draws on an
+// authored map, so a structure whose tiles are just below the screen still shows
+// its roof.
+//
+// It has to follow the scale. The art is drawn unscaled, so at half zoom a tile
+// row is 20 screen pixels instead of 40 and twice as many rows fit beneath the
+// same 768-pixel strip. At scale 1.0 this is ceil(7.95) = 8, the bare constant it
+// replaces.
+func (v *Viewport) authoredCullRows() int {
+	return int(math.Ceil(authoredCullRowsAtScale1 / v.scaleOrDefault()))
 }
 
 // IsTileVisible returns false if no part of the tile is within the game screen.

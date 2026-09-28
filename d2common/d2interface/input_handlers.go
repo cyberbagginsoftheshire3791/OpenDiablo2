@@ -47,3 +47,10 @@ type MouseButtonUpHandler interface {
 type MouseMoveHandler interface {
 	OnMouseMove(event MouseMoveEvent) (preventPropagation bool)
 }
+
+// MouseWheelHandler represents a handler for a mouse wheel roll or touchpad
+// scroll. The event carries the scroll amounts and the cursor position, so a
+// handler can zoom about the point under the cursor.
+type MouseWheelHandler interface {
+	OnMouseWheel(event MouseWheelEvent) (preventPropagation bool)
+}

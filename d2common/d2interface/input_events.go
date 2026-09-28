@@ -34,3 +34,13 @@ type MouseEvent interface {
 type MouseMoveEvent interface {
 	HandlerEvent
 }
+
+// MouseWheelEvent represents a roll of the mouse wheel (or a touchpad scroll).
+// X and Y, inherited from HandlerEvent, are where the cursor was when it
+// rolled; ScrollX and ScrollY are how far it rolled, in whatever sign the
+// platform reported (nothing in the engine normalises it).
+type MouseWheelEvent interface {
+	HandlerEvent
+	ScrollX() float64
+	ScrollY() float64
+}

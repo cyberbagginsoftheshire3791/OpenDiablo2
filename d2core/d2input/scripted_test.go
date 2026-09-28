@@ -13,6 +13,8 @@ type fakeReal struct {
 	x, y    int
 	pressed map[d2enum.Key]bool
 	chars   []rune
+	wheelX  float64
+	wheelY  float64
 }
 
 func (f *fakeReal) CursorPosition() (int, int)                   { return f.x, f.y }
@@ -28,6 +30,7 @@ func (f *fakeReal) IsMouseButtonJustReleased(d2enum.MouseButton) bool {
 	return false
 }
 func (f *fakeReal) KeyPressDuration(d2enum.Key) int { return 0 }
+func (f *fakeReal) Wheel() (float64, float64)       { return f.wheelX, f.wheelY }
 
 // TestScriptedTapIsJustPressedForOneTick is engine change E6's test (P3 spec
 // §6.2): a scripted tap is "just pressed" for exactly one poll, "pressed"

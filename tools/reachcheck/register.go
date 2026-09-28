@@ -106,6 +106,12 @@ const (
 	// reaches none of this, and saying otherwise is exactly the hollow claim
 	// this register exists to catch.
 	pkgPalette = "d2core/d2mappalette"
+	// pkgInput, pkgInputEbiten and pkgMapRenderer joined at the editor-zoom
+	// burst (27 Sep 2026): the mouse wheel's read, which the engine had no path
+	// for at all, and the viewport's scale.
+	pkgInput       = "d2core/d2input"
+	pkgInputEbiten = "d2core/d2input/ebiten"
+	pkgMapRenderer = "d2core/d2map/d2maprenderer"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -849,6 +855,47 @@ var Register = []Entry{
 	// Until then the package is defended by its own tests, which is a different
 	// instrument and a weaker claim: harness-reachable is not game-reachable, and
 	// test-reachable is not either.
+	// The editor-zoom burst (27 Sep 2026): mouse wheel input and a scale on the
+	// viewport.
+	//
+	// The wheel READ is wired and measured live: inputManager.Advance polls it on
+	// every frame of the shipped game, so the engine can no longer be said to
+	// have no wheel. Everything the wheel is FOR is deferred, because the editor
+	// that calls it does not exist in this tree yet. The brief for this burst said
+	// to file the editor's wheel handler as wire with an empty milestone; that is
+	// not available -- a wire row claims VerdictLive and
+	// TestBucketsMatchTheirExpectedVerdict rejects wire against anything else, so
+	// a row for a symbol with no caller can only honestly be a deferral that
+	// names who picks it up. When the editor lands, these rows go red until they
+	// are moved to wire, which is the whole point of them being here.
+	{sym(pkgInputEbiten, "InputService.Wheel"), BucketWire, VerdictLive,
+		"The mouse wheel reaches the engine here, read once per frame by inputManager.Advance through the InputService seam. If it goes dark the engine has no wheel at all again -- it had none before this burst.", ""},
+	{sym(pkgInput, "ScriptedInputService.Wheel"), BucketObserve, VerdictHarnessOnly,
+		"The playtest overlay's pass-through for the real wheel. Only harness builds put the overlay in the path (d2app/harness.go:193 against harness_off.go:35), and it reads the wheel without scripting one, so it changes nothing.", ""},
+	{sym(pkgInput, "MouseWheelEvent.ScrollX"), BucketDefer, VerdictDead,
+		"How far the wheel rolled sideways. A key event cannot carry an amount, which is why the wheel is its own event.",
+		"the map editor burst: the editor's OnMouseWheel reads the amount and calls MapRenderer.ZoomAt."},
+	{sym(pkgInput, "MouseWheelEvent.ScrollY"), BucketDefer, VerdictDead,
+		"How far the wheel rolled, the amount a zoom step is computed from.",
+		"the map editor burst: the editor's OnMouseWheel reads the amount and calls MapRenderer.ZoomAt."},
+	{sym(pkgMapRenderer, "Viewport.SetScale"), BucketDefer, VerdictDead,
+		"Sets the viewport's zoom. The shipped game never leaves 1.0, and the four space transforms have a fast path that keeps 1.0 byte for byte what it was.",
+		"the map editor burst: the editor's zoom control and its reset-to-1.0."},
+	{sym(pkgMapRenderer, "Viewport.Scale"), BucketDefer, VerdictDead,
+		"Reads the viewport's zoom. The renderer's own cull reads the unexported scaleOrDefault, not this, so nothing in the game needs it.",
+		"the map editor burst: the editor's zoom readout."},
+	{sym(pkgMapRenderer, "Viewport.ZoomAtScreen"), BucketDefer, VerdictDead,
+		"The camera position that holds the world point under a given pixel across a change of scale. Pure: it moves nothing.",
+		"the map editor burst: MapRenderer.ZoomAt is its only intended caller."},
+	{sym(pkgMapRenderer, "MapRenderer.ZoomAt"), BucketDefer, VerdictDead,
+		"Wheel-zoom about the cursor in one call: set the scale and move the camera together, which is the only pairing that keeps the point under the cursor still.",
+		"the map editor burst: the editor's OnMouseWheel handler calls this."},
+	{sym(pkgMapRenderer, "MapRenderer.SetScale"), BucketDefer, VerdictDead,
+		"Zoom without moving the camera, so the middle of the screen holds still. The editor's reset, as against ZoomAt's wheel.",
+		"the map editor burst: the editor's zoom reset."},
+	{sym(pkgMapRenderer, "MapRenderer.Scale"), BucketDefer, VerdictDead,
+		"Reads the viewport's zoom through the renderer, which is the only handle an editor outside this package has on it.",
+		"the map editor burst: the editor's zoom readout and its wheel step arithmetic."},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in

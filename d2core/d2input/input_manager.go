@@ -57,6 +57,7 @@ func (im *inputManager) Advance(_, _ float64) error {
 	}
 
 	im.updateCursor(cursorX, cursorY, eventBase)
+	im.updateMouseWheel(eventBase)
 
 	// A service with per-poll edge state (the scripted overlay) closes its
 	// cycle here; the real ebiten service has none and skips this.
@@ -222,6 +223,33 @@ func (im *inputManager) updateCursor(cursorX, cursorY int, e HandlerEvent) {
 
 		im.cursorX, im.cursorY = cursorX, cursorY
 	}
+}
+
+// updateMouseWheel dispatches one MouseWheelEvent per poll in which the wheel
+// moved, shaped exactly like updateCursor above: read the service, skip the
+// poll if there is nothing to report, build the event on the shared
+// HandlerEvent base and propagate it to whichever bound handlers implement the
+// wheel interface.
+//
+// The wheel is read as an amount, not as d2enum.KeyMouseWheelUp/Down: those two
+// are missing from the ebiten adapter's key map and therefore alias the A key
+// (see mousewheel_event.go).
+func (im *inputManager) updateMouseWheel(e HandlerEvent) {
+	scrollX, scrollY := im.inputService.Wheel()
+	if scrollX == 0 && scrollY == 0 {
+		return
+	}
+
+	event := MouseWheelEvent{HandlerEvent: e, scrollX: scrollX, scrollY: scrollY}
+
+	fn := func(handler d2interface.InputEventHandler) bool {
+		if l, ok := handler.(d2interface.MouseWheelHandler); ok {
+			return l.OnMouseWheel(&event)
+		}
+
+		return false
+	}
+	im.propagate(fn)
 }
 
 // BindHandlerWithPriority adds an event handler with a specific call priority

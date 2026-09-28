@@ -373,3 +373,13 @@ func (s *ScriptedInputService) KeyPressDuration(k d2enum.Key) int {
 
 	return 0
 }
+
+// Wheel passes the real wheel through untouched.
+//
+// There is no scripted wheel: the playtest harness has no verb that rolls one,
+// so overlaying state here would be a seam nothing drives. A human at the
+// wheel is never locked out, which is the same rule the rest of this overlay
+// follows.
+func (s *ScriptedInputService) Wheel() (xoff, yoff float64) {
+	return s.real.Wheel()
+}
