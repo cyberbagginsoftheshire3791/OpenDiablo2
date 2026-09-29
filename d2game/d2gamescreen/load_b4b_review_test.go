@@ -17,7 +17,8 @@ import (
 // death playing at the save), C2 (a villager the file lacks), C3 (a renamed
 // bestiary entry), C7 (a risen man walking at T) and the merge scout's
 // BUG-86 (the village's sound in the digest's world part). The playtest
-// halves are TestSaveResume's acts 9 and 10 and TestSaveResumeInTheFirstSecond.
+// halves are TestSaveResume's act 6i, TestASlainWalkerLiesWhereHeFell and
+// TestSaveResumeInTheFirstSecond.
 
 // b4bfixStep runs v n frames of 40 ms, the world and the map, as a frame does.
 func b4bfixStep(v *Game, n int) {
