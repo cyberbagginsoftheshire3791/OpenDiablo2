@@ -84,7 +84,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 48 playtest scripts.** That count, the harness version below and the
+**The 49 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -726,6 +726,50 @@ this doc fails until it agrees.
   script's first clock fight. The controls and their logs are in the raid's
   R1 build note (`strigoi-harness-runs\wt-raid-r1\`, and
   `wt-raid-r1-fix\` for the review fixes).
+* `save_clock_fight_test.go` — the forty-ninth, the MERGE's (the merge scout's
+  scripts, 29 Sep 2026, brought into `merge-b4b-r1` against the fixed
+  branches): M4.6 B4b ("a hunted night resumes") with the raid's R1 ("fights
+  he is not in"), the test neither branch could run.
+  **`TestSaveResumeWithAFightHeIsNotIn`**: seed 1462, stepped an hour at a
+  time to true dark (fed and watered), his fights on the policy (his chaser is
+  a `zombie1`, which no quick resolve finishes, and a human turn freezes the
+  clock), and the round slowed to three world minutes (`round_minutes` 3;
+  below); a `zombie1` ten tiles off on a clear line watches him, and a
+  `fallen1` watches a `fallen1` fifteen tiles off the other way. T is the
+  first frames of the chase with the CLOCK FIGHT LIVE (`c:1`, its quarry
+  hurt, the combat-clock stream drawn from), none of it his, and the clock
+  fight's two bodies watching and chasing only each other (checked at T and
+  after every step: a monster in both fights is the R1 review's A1, kept out
+  of). He stands still; **the save is retried a frame at a time while a
+  blow's action plays** (`scSaveSettled`: B4b's held-action refusal,
+  BUG-76; any other refusal is red, Q5 (a); T's condition held at every
+  retry; the retries logged -- 23 on the merge's run) and moves nothing; the
+  file is hunted (a watch and a chase on him) and holds the fight in
+  `combat.clock.live`, `rng.combat_clock` = `combat.clock.rng`. Twelve
+  `step_world(10)` (and on, to 24, until the clock fight has ended): the
+  clock fight ends and his chaser arrives and his fight is played; S_U. A
+  relaunch with no seed: S_R0 = S_T, the clock block whole and the fight's
+  id, round, `next_id` and draws by name; the same steps: S_R = S_U, the
+  ending the same. In process, he dies and "load last save": S_T, then S_U.
+  Control in the script: `combat.clock` dropped from T's file (edited:
+  `strigoi_save_game`'s `omit` takes only top-level blocks) -- refused
+  `FILE`. **`TestSaveResumeAFightHeIsNotIn`**, the scout's first and quick
+  one: two clock fights (`zombie1` on `fallen1`, c:1 and c:2) in the first
+  dawn with the round at four minutes, a second of play first; a world
+  minute at a time until both quarries are hurt, the save (retried, 23 on
+  the merge's run), S_T, three rounds, S_U; relaunch: S_R0 = S_T and S_R =
+  S_U; in process the same. Its three file controls, **each refused**:
+  `combat.clock` omitted (`FILE`), a clock fight's quarry an id no entity has
+  (`BLOCK`), the two fights' quarries swapped (`BLOCK`, BUG-73's
+  `d2world.CheckClockWatches` at the load's step 4). **Why the round is
+  slowed (BUG-87):** at the shipped one world minute a round's swing and
+  flinch (38 frames) outlast the round (24 frames at night, 15 at dawn), so
+  from a clock fight's first blow to its last death no frame takes a save,
+  and T -- a live fight, its quarry hurt -- could never be saved. Source
+  mutation, run by hand: the combat-clock stream not restored -- red. The
+  runs and the controls are in `strigoi-harness-runs\wt-merge\`
+  (`wt-merge-scout\` for the scout's). Its first run on the scout's branch
+  found BUG-85, and its second BUG-86.
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
