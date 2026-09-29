@@ -55,3 +55,44 @@ func TestEngineRefusesAnIDAlreadyOnTheMap(t *testing.T) {
 	bare := &MapEngine{entities: map[string]d2interface.MapEntity{}}
 	require.True(t, errors.Is(bare.SetNextEntityID("e:1"), d2mapentity.ErrEntityID), "no factory, no seam")
 }
+
+// M4.6 B4b: RekeyEntity, the load's re-key verb. The entity on the map keeps
+// being the same pointer, under the new id; the refusals change nothing.
+func TestRekeyEntityMovesTheMapsKey(t *testing.T) {
+	m := &MapEngine{
+		entities:         map[string]d2interface.MapEntity{},
+		MapEntityFactory: &d2mapentity.MapEntityFactory{},
+	}
+
+	villager := &d2mapentity.NPC{}
+	require.Empty(t, villager.ID())
+
+	// An NPC with an id: re-keyed from "" is refused as not on the map.
+	require.True(t, errors.Is(m.RekeyEntity(villager, "0saved"), d2mapentity.ErrEntityID), "not on the map")
+
+	require.NoError(t, m.MapEntityFactory.Rekey(villager, "0built"))
+	m.AddEntity(villager)
+	m.AddEntity(b2bOnMap{"0wolf"})
+
+	for _, id := range []string{"0wolf", "", "player"} {
+		require.True(t, errors.Is(m.RekeyEntity(villager, id), d2mapentity.ErrEntityID), "%q", id)
+		require.Equal(t, "0built", villager.ID(), "%q: nothing changed", id)
+		require.Same(t, villager, m.entities["0built"])
+	}
+
+	require.True(t, errors.Is(m.RekeyEntity(b2bOnMap{"0wolf"}, "0x"), d2mapentity.ErrEntityID),
+		"a kind a save does not carry is not re-keyed")
+	require.True(t, errors.Is(m.RekeyEntity(nil, "0x"), d2mapentity.ErrEntityID))
+
+	require.NoError(t, m.RekeyEntity(villager, "0saved"))
+	require.Equal(t, "0saved", villager.ID())
+	require.Same(t, villager, m.entities["0saved"], "the map is keyed by the new id")
+
+	_, old := m.entities["0built"]
+	require.False(t, old, "and not by the old")
+
+	require.True(t, errors.Is(m.SetNextEntityID("0saved"), d2mapentity.ErrEntityID), "the seam refuses it: on the map")
+
+	bare := &MapEngine{entities: map[string]d2interface.MapEntity{"0saved": villager}}
+	require.True(t, errors.Is(bare.RekeyEntity(villager, "0y"), d2mapentity.ErrEntityID), "no factory, no re-key")
+}

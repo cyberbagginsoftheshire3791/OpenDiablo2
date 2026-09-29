@@ -782,11 +782,12 @@ func (r worldResolver) Watcher(id string) (d2world.Watcher, bool) {
 
 func (r worldResolver) Quarry(ref string) (d2world.Quarry, bool) {
 	if ref == d2world.PlayerRef {
-		if r.v.localPlayer == nil {
+		p := r.v.thePlayer()
+		if p == nil {
 			return nil, false
 		}
 
-		return prey{entity: r.v.localPlayer}, true
+		return prey{entity: p}, true
 	}
 
 	w, ok := r.walker(ref)
@@ -795,6 +796,28 @@ func (r worldResolver) Quarry(ref string) (d2world.Quarry, bool) {
 	}
 
 	return prey{entity: w}, true
+}
+
+// thePlayer is the local player: the one the controls are bound to, or,
+// before they are (a load's step 4 runs at the end of CreateGame, and the
+// controls bind on the first frame: M4.6 B4b), the client's own player -- the
+// same entity bindGameControls will bind.
+func (v *Game) thePlayer() *d2mapentity.Player {
+	if v.localPlayer != nil {
+		return v.localPlayer
+	}
+
+	if v.gameClient == nil {
+		return nil
+	}
+
+	for _, p := range v.gameClient.Players {
+		if p != nil && p.ID() == v.gameClient.PlayerID {
+			return p
+		}
+	}
+
+	return nil
 }
 
 func (r worldResolver) walker(id string) (pathWalker, bool) {

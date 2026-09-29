@@ -84,7 +84,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 46 playtest scripts.** That count, the harness version below and the
+**The 47 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -598,6 +598,39 @@ this doc fails until it agrees.
   20 kept. **6g** (the review's B1 probe, Windows): the file held open so it
   cannot be set aside -- one teardown, one dawn, `load.ignored`, the file
   whole where it was.
+  **M4.6 B4b (29 Sep 2026) made the evening a HUNTED NIGHT** -- the save must
+  resume one, and every dusk, night and dawn save is hunted. Act 1 keeps the
+  quiet evening's content and adds: the day's slain dog LEFT LYING (a corpse
+  entity, his body at 0); a second dog grazed by day and let go, wounded (the
+  survivor of an ended fight); a second squad deployed (`meters.squad_add`: its
+  model an NPC on the map); and, last, the table forced until a pack arrives
+  (three do in those minutes: dogs, wolves, opportunists) that NOTICES him
+  (the notice radius opened, a dial) and gives chase -- T is the first frames
+  of the chase, about 01:40, eight hunters walking in. `huntedPrecondition` names each (a
+  pack aware of him, a chaser mid-walk, no fight, the slain at 0, the survivor
+  below his maximum, the deployed model on the map). Act 2 requires the file
+  to hold the packs, watches, chases, bodies, the entities the map does not
+  build and the deployed squad. Act 3's two hours play the pack's walk in and
+  its fight, quick-resolved (`quick_resolve_advantage` 0 at T), and he lives.
+  Acts 4 and 6b require the deployed squad's model on the resumed map under its
+  saved id, an npc of `fallen1`, named by its squad (`modelAnswers`: B2b's
+  review asked a playtest to prove `NewNPC` wears the id). Two new acts: **6h**
+  -- T's file with its villagers' ids made another launch's (the shipped
+  game's crypto/rand ids; the harness's uuid stream gives the map's villagers
+  the file's ids, so the re-key is otherwise the identity): each villager
+  answers to the file's id and the resumed game saves the file byte for byte
+  but its stamp; **8** -- rule 4: walked, saved mid-stride, loaded, he stands
+  where he was saved and every system, entity and digest part is the saved
+  moment's but his walk (`sameWorldExcept`, `hisWalk`: target, waypoints,
+  path_len, animation_mode, body_sheet). `awaitGame` now waits for a settled
+  load report (B4b: the report it read could be a frame old). The kept
+  evening feeds acts 4-8 in about 20 s. And a new script beside it,
+  **`TestSaveResumeNegatives`** (`save_resume_negatives_test.go`, OPT-IN: it
+  needs `STRIGOI_SAVE_RESUME_FROM`, and is skipped without it): the untouched
+  kept file must resume S_T, then each block B4b loads -- entities, bodies,
+  spawns, spawner, notice, pursuit, squads -- OMITTED (refused `FILE`, he
+  begins at dawn) and EMPTIED (it must resume, and diverge), and two
+  entities' ids swapped (refused or divergent).
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -691,7 +724,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.14.1)
+## The tools (37; harness 0.14.2)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -717,9 +750,9 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | Tool | What |
 |---|---|
 | `strigoi_ping` | Liveness, commit, harness version, mode, tick, uptime |
-| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game; since 0.14.0 (29 Sep, M4.6 B4a) `load`, what the last game's world-save load did (`world_path`, `found`, `resumed`, `saved_at`, `refused` and `reason`, `set_aside`, `fell_back`, and `steps`, the load order as it ran), and `dials`, the script's dials a load re-applies; since the B4a review fixes (29 Sep) the load report also says `preload` (what became of the copy of his sidecar step 1 keeps: `restored` after a refusal, `recovered`/`discarded`/`kept` for one a crash left) and `ignored` (a file refused earlier in the run that could not be set aside, not read again until it changes) |
+| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game; since 0.14.0 (29 Sep, M4.6 B4a) `load`, what the last game's world-save load did (`world_path`, `found`, `resumed`, `saved_at`, `refused` and `reason`, `set_aside`, `fell_back`, and `steps`, the load order as it ran -- since 0.14.2, M4.6 B4b, a hunted night's include `natives`, `entities` and `bodies`), and `dials`, the script's dials a load re-applies; since the B4a review fixes (29 Sep) the load report also says `preload` (what became of the copy of his sidecar step 1 keeps: `restored` after a refusal, `recovered`/`discarded`/`kept` for one a crash left) and `ignored` (a file refused earlier in the run that could not be set aside, not read again until it changes) |
 | `strigoi_navigate` | main_menu · character_select · select_hero · credits |
-| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame. **Since 0.14.0 (M4.6 B4a) a `save_path` with a world file beside it RESUMES it** (the game goes through `App.ToCreateGame`, as every way in does): the file's seed and uuid stream, its moment restored before the first frame, `load` in the result saying what the load did (`resumed`, or `refused` with its code and `set_aside`; a refusal falls back to dawn). A `seed` other than the one the world file was saved on is `BAD_ARGUMENT` and starts nothing -- **for a file the load's step 1 would take** (since the B4a review fixes, 29 Sep: `d2gamescreen.PeekLoad`); a file step 1 refuses anyway (another hero's, a torn save, a hunted night, one this build cannot read) holds the script to no seed, and the game begins at dawn on the seed asked for. No `seed` resumes the file's |
+| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame. **Since 0.14.0 (M4.6 B4a) a `save_path` with a world file beside it RESUMES it** (the game goes through `App.ToCreateGame`, as every way in does): the file's seed and uuid stream, its moment restored before the first frame, `load` in the result saying what the load did (`resumed`, or `refused` with its code and `set_aside`; a refusal falls back to dawn). A `seed` other than the one the world file was saved on is `BAD_ARGUMENT` and starts nothing -- **for a file the load's step 1 would take** (since the B4a review fixes, 29 Sep: `d2gamescreen.PeekLoad`); a file step 1 refuses anyway (another hero's, a torn save, one this build cannot read; a hunted night until 0.14.2 -- M4.6 B4b resumes one) holds the script to no seed, and the game begins at dawn on the seed asked for. No `seed` resumes the file's |
 | `strigoi_save_game` | **Save the game (M4.6 B3, harness 0.13.0): `Game.SaveWorld`.** Writes the world file `N.od2.world.json`, then the `.od2`, then the kit sidecar -- one moment in all three, the sidecar the same bytes the world file embeds -- keeping each previous generation as `.bak`, then re-takes the death screen's "as he entered" copy. Refused, touching no file, with `FIGHTING` (a fight running or not yet settled), `DEAD`, `TALKING`, `JOURNAL`, `LOADOUT`, `NETWORK` (rule 9) or `NOT_READY` (no hero in the world yet). `to` writes ONLY the world file, at that path (his `.od2`, sidecar, `.bak`s and the death copy untouched); `omit:[block...]` leaves top-level blocks out and needs `to` (`BAD_ARGUMENT` otherwise, and for a name that is not a block). Returns `save_path`, `world_path`, `sidecar_path`, `written`, `kept` (the `.bak`s), `set_aside` (a file this build could not read, moved aside -- rule 7), `omitted`, `blocks`, `bytes`. Until 0.13.0 it wrote the `.od2` alone and refused nothing. **`to` is fenced (0.13.1, the B3 review's B5):** it is made absolute and must lie under `%APPDATA%` (the game's own folder -- under the playtest launcher, the test's private home) or the temporary folder, and never inside a source tree of this game (a folder whose `go.mod` is this module: the World Editor's guard, `harnessSourceTree`); and it may not be one of HIS files -- anything in his save folder named after his save (`N.od2`, `N.od2.bak`, the sidecar, the world file and its `.bak`), with or without `omit` (`Game.SaveWorld`, `ErrBadSaveArgument`). Each is `BAD_ARGUMENT` and writes nothing. Before, a relative `to` resolved in the game's working directory, which the launcher sets to the repository, and a file there was set aside as `.unread` and replaced. `world_path` echoes the absolute path. A block the load's own checks would refuse -- each system's `Validate`/`CheckSnapshot` run on what the save took -- fails the save `INTERNAL` naming the block, touching no file |
 | `strigoi_quit` | Manifest + exit (confirm: true) |
 

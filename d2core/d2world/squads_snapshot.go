@@ -109,11 +109,11 @@ func (m *Meters) snapshot() MetersSnapshot {
 //
 // DEPLOYED SQUADS ARE B4b's (D3, 28 Sep 2026). A deployed squad's models are
 // map entities, rebuilt with their saved ids through the next-id seam, which
-// is the hunted-night load's. The quiet-evening load (B4a) restores s:1 only:
-// it refuses a snapshot holding any deployed squad -- a model it cannot
-// rebuild -- until B4b brings the seam to the load. This Restore does not
-// check that the models' entities exist (it has no Resolver); B4b's order
-// rebuilds them before it.
+// is the hunted-night load's. The quiet-evening load (B4a) restored s:1 only
+// and refused a snapshot holding any deployed squad; B4b's load (29 Sep 2026)
+// rebuilds every model first (its step 3) and restores the squads whole. This
+// Restore does not check that the models' entities exist (it has no
+// Resolver); the load holds them to the map itself (Game.checkSquadModels).
 func (s *Squads) Restore(snap SquadsSnapshot) error {
 	if err := s.Validate(snap); err != nil {
 		return err

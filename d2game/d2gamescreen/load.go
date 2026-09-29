@@ -6,23 +6,28 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2saveref"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 )
 
-// THE WORLD SAVE'S LOAD, BURST B4a: A QUIET EVENING RESUMES (M4.6, 29 Sep
-// 2026). Josh's ruling is that the save "stops at that point then resumes at
-// that point"; B3 wrote the file, and this is the first code that reads one
-// back into a game. It follows the one authoritative load order in
-// docs/m4.6-world-save-notes.md ("The B4 load order"), and does every step of
-// it that names no hostile entity:
+// THE WORLD SAVE'S LOAD (M4.6): BURST B4a, A QUIET EVENING RESUMES, AND
+// BURST B4b, A HUNTED NIGHT RESUMES (29 Sep 2026). Josh's ruling is that the
+// save "stops at that point then resumes at that point"; B3 wrote the file,
+// B4a is the first code that read one back into a game, and B4b rebuilt every
+// entity the file names -- the packs, the chases, the risen, the wounded, the
+// deployed squad models -- so a night resumes as it was saved. It follows the
+// one authoritative load order in docs/m4.6-world-save-notes.md ("The B4 load
+// order"):
 //
 //  1. BEFORE Open (PrepareLoad, from App.ToCreateGame): undo a load a crash
 //     cut off (recoverPreload); read the world file (unless this process
@@ -30,34 +35,43 @@ import (
 //     rule 7, the file set aside and he begins at dawn from his sidecar --
 //     when its version is not 1 or it is not a file a load could read
 //     (d2save.Decode), the game is a network game (rule 9), it is another
-//     hero's (World.CheckHeroFile) or a torn save (World.SameMoment); or leave
-//     it where it is, for B4b, when it holds a hunted night (B4a's own limit:
-//     packs, watches, chases, an entity the map does not build, a monster's
-//     body, a deployed squad). Then KEEP HIS OWN SIDECAR (in memory and as
-//     .preload: preload.go) and write the embedded sidecar over his sidecar
+//     hero's (World.CheckHeroFile) or a torn save (World.SameMoment). (B4a
+//     also left a hunted night where it was, as B4b's -- HUNTED; B4b resumes
+//     it, and the refusal is gone.) Then KEEP HIS OWN SIDECAR (in memory and
+//     as .preload: preload.go) and write the embedded sidecar over his sidecar
 //     file. The App hands the server the file's seed and his saved place
 //     (SetNextGameSeed, SetNextStartPosition) and, in a harness build, the
 //     uuid stream its seed from byte 0.
 //  2. In CreateGame, right after NewClock: the clock, validated and restored
 //     (trap 1 -- every system built after it samples it).
-//  3. (B4b: rebuild the entities. B4a rebuilds none, and checks instead that
-//     the villagers the map built are the file's natives, by name_key and
-//     born, standing as saved.)
-//  4. At the end of CreateGame: VALIDATE EVERY BLOCK (D4) -- the map's SHA
-//     (D5), the seed the server ran on, the natives, and each system's own
-//     Validate through one Resolver over the resumed map. Nothing has been
-//     restored but the clock, and a refusal here closes the game before its
+//  3. At the end of CreateGame, once the seed and the map are the file's
+//     (B4b, rebuildEntities): THE ENTITIES. The villagers first -- the map
+//     built them again in Open; each is matched to the file's native by
+//     (name_key, born), given his saved id IN PLACE (MapEngine.RekeyEntity)
+//     and his saved motion, and one the file lacks is taken off the map. Then
+//     every other entity the file names, in the file's order, through the
+//     one-shot next-id seam: SetNextEntityID(id), NewNPC or NewCreature by its
+//     kind, its id checked (a constructor that spent the id refuses the
+//     file), RestoreMotion (monsters, the risen and deployed squads keep their
+//     walk), AddEntity. Nothing may be left waiting in the seam.
+//  4. Then, still in CreateGame: VALIDATE EVERY BLOCK (D4) -- each system's
+//     own Validate through one Resolver over the resumed map (the save's type,
+//     worldResolver), the bodies against the rebuilt monsters, the deployed
+//     squads' models against the map. Nothing has been restored but the
+//     clock and the entities, and a refusal here closes the game before its
 //     first frame (checkLoad).
 //  5. On the first frame, in bindGameControls after bindKit (resumeLoad):
 //     RESTORE EVERY BLOCK -- his health (after applyProgress), squads, light
 //     whole with the kit torch's minutes zeroed (D1), corpses with no open-count
 //     callback and placeTheDead skipped (trap 5), rising, spawns (their open
 //     bodies from the file) and the spawner's arrival, notice, pursuit, combat
-//     (and the ROUND line's key derived from its last round), the scene with
-//     lastStage and dawnPaidDay together (trap 1, BUG-17); then him: standing
-//     at hero.pos, facing hero.facing, with his stamina and run toggle.
-//  6. The world RNG, after everything that draws from it (trap 6); in a
-//     harness build the uuid stream's count and
+//     (and the ROUND line's key derived from its last round), the monsters'
+//     bodies (B4b), the scene with lastStage and dawnPaidDay together (trap
+//     1, BUG-17); then him: standing at hero.pos, facing hero.facing, with his
+//     stamina and run toggle -- his walk does not continue (rule 4).
+//  6. The world RNG, after everything that draws from it (trap 6: the map's
+//     build, and step 3's NewNPC and NewCreature); in a harness build the
+//     uuid stream's count and
 //  7. the dials a script set (the resume hook).
 //  8. ANY REFUSAL AT ANY STEP TEARS THE WHOLE GAME DOWN, PUTS HIS OWN SIDECAR
 //     BACK (SetLoadAside: the B4a review, A1) and falls back per rule 7, on
@@ -66,11 +80,10 @@ import (
 //     Advance, and a game that fails to restore holds its world, writes
 //     nothing on the way out, and is replaced by the dawn (abandonLoad).
 //
-// WHAT B4a LEAVES TO B4b: every entity the map does not build (packs, the
-// risen, deployed squad models) and everything that points at one -- the
-// spawn groups, watches, chases, bodies; the villagers' re-keyed ids and their
-// motion. A file holding any of them is refused with a clear reason, and the
-// player begins at dawn with his hero, kit and progress.
+// WHAT B4a LEFT TO B4b, AND B4b DID: every entity the map does not build
+// (packs, the risen, deployed squad models) and everything that points at one
+// -- the spawn groups, watches, chases, bodies; the villagers' re-keyed ids
+// and their motion. A file B4a refused HUNTED is resumed now.
 
 // ErrLoadRefused is what every refusal of a world file wraps.
 var ErrLoadRefused = errors.New("the world save cannot be resumed")
@@ -82,11 +95,11 @@ const (
 	LoadRefusedNetwork = "NETWORK" // rule 9: a network game loads no world file
 	LoadRefusedHero    = "HERO"    // another hero's file (World.CheckHeroFile)
 	LoadRefusedTorn    = "TORN"    // a save cut off between its files (World.SameMoment)
-	LoadRefusedHunted  = "HUNTED"  // B4a's limit: a hunted night, B4b's
 	LoadRefusedSidecar = "SIDECAR" // his sidecar could not be written
 	LoadRefusedSeed    = "SEED"    // the game did not run on the file's seed
 	LoadRefusedMap     = "MAP"     // D5: another map
 	LoadRefusedNatives = "NATIVES" // the villagers are not the file's
+	LoadRefusedEntity  = "ENTITY"  // B4b: an entity the file names could not be rebuilt as it was saved
 	LoadRefusedBlock   = "BLOCK"   // a system's own Validate refused its block
 )
 
@@ -105,25 +118,17 @@ func refuseLoad(code, format string, args ...interface{}) *LoadRefusal {
 	return &LoadRefusal{Code: code, Detail: fmt.Sprintf(format, args...)}
 }
 
-// setsAside reports whether a refusal moves the file out of the way (rule 7).
-//
-// EVERY REFUSAL BUT A HUNTED NIGHT'S (the B4a review, 29 Sep 2026). HUNTED is
-// not a file this build cannot read but one B4a cannot resume yet and B4b
-// will: it stays where it is, and he begins at dawn with his sidecar untouched
-// (decision B4a-R3, the review's B2: most real saves -- every dusk, night and
-// dawn save measured -- are hunted, and setting each aside would throw away
-// the saves B4b is being built to resume). A network game's refusal and a
-// sidecar that could not be written used to leave the file too (decision
-// B4a-2, OVERTURNED by decision B4a-R1): a session that did not resume the
-// file carried its generation in every kit save, so the next single-player
-// load resumed the old moment over everything that session had earned
-// (BUG-61). They set it aside now. The file a load leaves (HUNTED, or one that
-// could not be moved) is made harmless the other way: a game that did not
+// EVERY REFUSAL SETS THE FILE ASIDE (rule 7). Until B4b one did not: B4a left
+// a hunted night where it was, HUNTED, for B4b to resume (decision B4a-R3),
+// and B4b resumes it -- the refusal and its exception are gone. A network
+// game's refusal and a sidecar that could not be written used to leave the
+// file too (decision B4a-2, OVERTURNED by decision B4a-R1): a session that did
+// not resume the file carried its generation in every kit save, so the next
+// single-player load resumed the old moment over everything that session had
+// earned (BUG-61). The one file a load still leaves is one that could not be
+// moved (B1), and it is made harmless the other way: a game that did not
 // resume it never writes its generation (bindKit), so the file reads TORN the
 // moment his sidecar moves on.
-func (r *LoadRefusal) setsAside() bool {
-	return r.Code != LoadRefusedHunted
-}
 
 // LoadReport is what the last load did, for the harness (strigoi_start_game,
 // strigoi_get_game_info) and the log. It is this process's, never the
@@ -232,17 +237,12 @@ func updateLastLoad(f func(r *LoadReport)) {
 // and reload, for ever.
 func SetLoadAside(savePath string, refusal *LoadRefusal, afterOpen bool) string {
 	worldPath := d2save.WorldPath(savePath)
-	aside := ""
 
 	restored, restoreErr := restorePreload(savePath)
 
-	var asideErr error
-
-	if refusal.setsAside() {
-		aside, asideErr = setAsideWorld(worldPath)
-		if asideErr != nil {
-			ignoreFromNowOn(worldPath, refusal)
-		}
+	aside, asideErr := setAsideWorld(worldPath)
+	if asideErr != nil {
+		ignoreFromNowOn(worldPath, refusal)
 	}
 
 	updateLastLoad(func(r *LoadReport) {
@@ -287,8 +287,8 @@ var (
 // network is a network game (a LAN host or a client): rule 9 refuses loads as
 // it refuses saves, because the TCP handlers race the counted world stream.
 // Since the B4a review (A2, decision B4a-R1) the refused file is SET ASIDE, as
-// every other refusal's but a hunted night's is: his hero, kit and progress
-// carry on into the network game; the saved night does not.
+// every other refusal's is: his hero, kit and progress carry on into the
+// network game; the saved night does not.
 func PrepareLoad(savePath string, network bool) (*d2save.World, *LoadRefusal) {
 	worldPath := d2save.WorldPath(savePath)
 	prev := LastLoad()
@@ -439,8 +439,9 @@ func PeekLoad(savePath string) (*d2save.World, *LoadRefusal) {
 }
 
 // checkWorldFile is step 1's refusals, in order: rule 9, the file itself, the
-// hero it belongs to, the moment of his sidecar, and B4a's own limit. It
-// returns his sidecar file as it read it, which step 1 keeps (A1).
+// hero it belongs to and the moment of his sidecar. (B4a's own limit, a hunted
+// night, was the fifth; B4b resumes one.) It returns his sidecar file as it
+// read it, which step 1 keeps (A1).
 func checkWorldFile(savePath string, data []byte, network bool) (*d2save.World, []byte, *LoadRefusal) {
 	if network {
 		return nil, nil, refuseLoad(LoadRefusedNetwork,
@@ -474,45 +475,7 @@ func checkWorldFile(savePath string, data []byte, network bool) (*d2save.World, 
 		return nil, nil, refuseLoad(LoadRefusedTorn, "%v", err)
 	}
 
-	if why := huntedNight(w); why != "" {
-		return nil, nil, refuseLoad(LoadRefusedHunted,
-			"%s -- a hunted night is burst B4b's to resume; the file stays for it, and he begins at dawn", why)
-	}
-
 	return w, sidecar, nil
-}
-
-// huntedNight is why a file is not a quiet evening, or "": B4a resumes a world
-// that names no entity but the villagers the map builds and the player (the
-// word "player"). Everything else here is an entity B4a cannot rebuild, or a
-// record pointing at one.
-func huntedNight(w *d2save.World) string {
-	switch {
-	case len(w.Spawns.Groups) > 0:
-		return fmt.Sprintf("the spawn tables hold %d pack(s) on the map", len(w.Spawns.Groups))
-	case len(w.Notice.Watches) > 0:
-		return fmt.Sprintf("%d watch(es) are kept on him or another", len(w.Notice.Watches))
-	case len(w.Pursuit.Chases) > 0:
-		return fmt.Sprintf("%d chase(s) are running", len(w.Pursuit.Chases))
-	case len(w.Bodies) > 0:
-		return fmt.Sprintf("%d monster(s) have a body", len(w.Bodies))
-	}
-
-	for _, sq := range w.Squads.Squads {
-		for _, m := range sq.Members {
-			if m.Entity != d2saveref.Player {
-				return fmt.Sprintf("squad %s has a deployed model, %s (D3)", sq.ID, m.Entity)
-			}
-		}
-	}
-
-	for _, e := range w.Entities {
-		if !e.Native {
-			return fmt.Sprintf("entity %s (%s %s%s) is not one the map builds", e.ID, e.Kind, e.Monstat, e.Creature)
-		}
-	}
-
-	return ""
 }
 
 // loadStep records one step of the load as it runs (LoadReport.Steps).
@@ -539,9 +502,13 @@ func (v *Game) restoreClock(w *d2save.World) *LoadRefusal {
 	return nil
 }
 
-// checkLoad is the load's step 4, at the end of CreateGame: every block the
-// load will restore, checked against the game the file is being resumed into,
-// before any is restored (D4). The clock alone is already restored (step 2).
+// checkLoad is the load's steps 3 and 4, at the end of CreateGame: the game
+// runs on the file's seed and map; then the entities are rebuilt (step 3, B4b:
+// rebuildEntities); then every block the load will restore is checked against
+// the game the file is being resumed into, through one Resolver over the
+// resumed map, before any is restored (D4). The clock alone is already
+// restored (step 2). A refusal anywhere closes this game before its first
+// frame: the entities the rebuild placed go with its map.
 func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 	if v.gameClient.Seed != w.Seed {
 		return refuseLoad(LoadRefusedSeed, "the game runs on seed %d and the file was saved on %d", v.gameClient.Seed, w.Seed)
@@ -554,7 +521,9 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 			path, sha, path == "", w.Map.Path, w.Map.SHA, w.Map.Generated)
 	}
 
-	if r := v.checkNatives(w); r != nil {
+	// Step 3 (B4b): every entity the file names, on the map with its saved id
+	// and motion, before anything that resolves one is checked.
+	if r := v.rebuildEntities(w); r != nil {
 		return r
 	}
 
@@ -566,6 +535,7 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 	}{
 		{"light", v.light.Validate(w.Light)},
 		{"squads", v.squads.Validate(w.Squads)},
+		{"squads", v.checkSquadModels(w.Squads)},
 		{"corpses", v.corpses.Validate(w.Corpses)},
 		{"rising", v.rising.Validate(w.Rising, seed, w.Corpses)},
 		{"spawns", v.spawns.Validate(w.Spawns, r, seed)},
@@ -573,6 +543,7 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 		{"notice", v.notice.Validate(w.Notice, r)},
 		{"pursuit", v.pursuit.Validate(w.Pursuit, r)},
 		{"combat", v.combat.Validate(w.Combat, seed)},
+		{"bodies", v.checkBodies(w.Bodies)},
 		{"world rng", w.RNG.World.Check(seed, d2rand.StreamWorld)},
 		{"scene", checkStage(w.Scene.LastStage)},
 	}
@@ -588,53 +559,291 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 	return nil
 }
 
-// checkNatives: the villagers the map built are the file's natives, one for
-// one by (name_key, born), each standing as the file saved him. B4a rebuilds
-// no entity and re-keys none (B4b's), so a villager missing, added, or moved
-// from where the map puts him is a world B4a cannot resume.
-func (v *Game) checkNatives(w *d2save.World) *LoadRefusal {
-	live := nativesOf(v.gameClient.MapEngine)
+// rebuiltEntity is what the load asks of an entity it re-keys or rebuilds:
+// an NPC or a creature, whose walk and pose it puts back and reads again.
+type rebuiltEntity interface {
+	d2interface.MapEntity
+	MotionSnapshot() d2mapentity.Motion
+	RestoreMotion(d2mapentity.Motion) error
+}
+
+// rebuildEntities is the load's step 3 (M4.6 B4b), in the load order's
+// order: the villagers first, then every other entity the file names; and
+// nothing may be left waiting in the next-id seam.
+func (v *Game) rebuildEntities(w *d2save.World) *LoadRefusal {
+	if r := v.rekeyNatives(w); r != nil {
+		return r
+	}
+
+	v.loadStep("natives")
+
+	for _, se := range w.Entities {
+		if se.Native {
+			continue
+		}
+
+		if r := v.rebuildEntity(se); r != nil {
+			return r
+		}
+	}
+
+	if id, waiting := v.gameClient.MapEngine.PendingEntityID(); waiting {
+		return refuseLoad(LoadRefusedEntity, "%q is still waiting in the next-id seam after the rebuild: the entity it was set for was never built", id)
+	}
+
+	v.loadStep("entities")
+
+	return nil
+}
+
+// rekeyNatives is step 3's first half: the villagers. The map built them
+// again in Open, and the game screen captured them, by the entity, before
+// anything else could be placed (natives, in CreateGame). Each is matched to
+// the file's native by (name_key, born) -- where the map put him, which
+// World.Check holds unique in the file and saveEntities at the save -- and:
+//   - given the id he was saved under, IN PLACE (MapEngine.RekeyEntity): he
+//     stays the entity the screen holds, so he is still native at the next
+//     save (the B3 review, B3). In a harness build the id is already his (the
+//     uuid stream is reseeded from the file's seed); in the shipped game it is
+//     a new crypto/rand id every launch, and this is what puts the file's back;
+//   - given the walk and pose he was saved in (RestoreMotion), read back and
+//     required equal. (B4a refused a villager saved mid-walk, NATIVES; B4b
+//     restores him. What is NOT carried is a patrol's place -- path index,
+//     repetitions, the arrival that starts his next leg -- and only the
+//     generated Act 1's villagers patrol: the authored village's stand.)
+//
+// A villager the map builds and the file lacks was taken off the map before
+// the save (B3-6), and is taken off again here. A villager the file has and
+// the map does not build, or two the map built on one key, or one of another
+// kind or monstat than saved, is a world this build cannot resume: NATIVES.
+func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
+	engine := v.gameClient.MapEngine
 	saved := map[nativeKey]d2save.Entity{}
 
 	for _, e := range w.Entities {
-		if e.Native {
+		if e.Native && e.Born != nil {
 			saved[nativeKey{nameKey: e.NameKey, x: e.Born[0], y: e.Born[1]}] = e
 		}
 	}
 
-	for k, e := range live {
+	keys := make([]nativeKey, 0, len(v.natives))
+	for k := range v.natives {
+		keys = append(keys, k)
+	}
+
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		if a.nameKey != b.nameKey {
+			return a.nameKey < b.nameKey
+		}
+
+		if a.x != b.x {
+			return a.x < b.x
+		}
+
+		return a.y < b.y
+	})
+
+	type pair struct {
+		live  rebuiltEntity
+		saved d2save.Entity
+	}
+
+	pairs := make([]pair, 0, len(saved))
+
+	for _, k := range keys {
+		e := v.natives[k]
 		if e == nil {
 			return refuseLoad(LoadRefusedNatives, "two villagers the map built are both %q at %v,%v", k.nameKey, k.x, k.y)
 		}
 
 		se, ok := saved[k]
 		if !ok {
-			return refuseLoad(LoadRefusedNatives, "the map builds %q at %v,%v and the file has no such villager (a villager's removal is B4b's)",
-				k.nameKey, k.x, k.y)
+			// B3-6: taken off the map before the save, so taken off now.
+			engine.RemoveEntity(e)
+			continue
 		}
 
-		if motion, ok := motionOf(e); !ok || !sameMotion(motion, se.Motion) {
-			return refuseLoad(LoadRefusedNatives, "%q (born %v,%v) was saved mid-walk or turned (%+v; the map builds him %+v): a villager's motion is B4b's to restore",
-				k.nameKey, k.x, k.y, se.Motion, motion)
+		live, ok := e.(rebuiltEntity)
+		if !ok || kindOf(e) != se.Kind {
+			return refuseLoad(LoadRefusedNatives, "%q (born %v,%v) is a %T on the map and was saved as a %s", k.nameKey, k.x, k.y, e, se.Kind)
+		}
+
+		if npc, isNPC := e.(*d2mapentity.NPC); isNPC && (npc.MonStat() == nil || npc.MonStat().Key != se.Monstat) {
+			return refuseLoad(LoadRefusedNatives, "%q (born %v,%v) was saved as monstat %q and the map builds another", k.nameKey, k.x, k.y, se.Monstat)
+		}
+
+		pairs = append(pairs, pair{live: live, saved: se})
+	}
+
+	if len(pairs) != len(saved) {
+		for k, se := range saved {
+			if _, ok := v.natives[k]; !ok {
+				return refuseLoad(LoadRefusedNatives, "the file's villager %s, %q born at %v,%v, is not one the map builds",
+					se.ID, k.nameKey, k.x, k.y)
+			}
 		}
 	}
 
-	if len(saved) != len(live) {
-		return refuseLoad(LoadRefusedNatives, "the file has %d villager(s) and the map builds %d", len(saved), len(live))
+	for _, p := range pairs {
+		if err := engine.RekeyEntity(p.live, p.saved.ID); err != nil {
+			return refuseLoad(LoadRefusedNatives, "%q (born %v,%v) cannot take his saved id: %v", p.saved.NameKey, p.saved.Born[0], p.saved.Born[1], err)
+		}
+	}
+
+	// Each villager answers to his saved id now, on the map and to himself:
+	// what every record naming him -- a watch, a chase, the next save's
+	// entity list -- will ask.
+	for _, p := range pairs {
+		if on := engine.Entities()[p.saved.ID]; on != d2interface.MapEntity(p.live) || p.live.ID() != p.saved.ID {
+			return refuseLoad(LoadRefusedNatives, "%q (born %v,%v) answers to %q, not his saved id %q",
+				p.saved.NameKey, p.saved.Born[0], p.saved.Born[1], p.live.ID(), p.saved.ID)
+		}
+	}
+
+	for _, p := range pairs {
+		if err := restoreMotionExactly(p.live, p.saved.Motion); err != nil {
+			return refuseLoad(LoadRefusedNatives, "%s, %q: %v", p.saved.ID, p.saved.NameKey, err)
+		}
 	}
 
 	return nil
 }
 
-func motionOf(e interface{}) (d2mapentity.Motion, bool) {
-	switch t := e.(type) {
-	case *d2mapentity.NPC:
-		return t.MotionSnapshot(), true
-	case *d2mapentity.Creature:
-		return t.MotionSnapshot(), true
+// rebuildEntity is step 3's second half, for one entity the map does not
+// build: the seam set to its saved id, the entity built by its kind, its id
+// checked, its walk and pose put back and read back, and it placed on the
+// map. The kind's record is found BEFORE the id is set, so a file naming a
+// monster this build does not have leaves nothing waiting.
+func (v *Game) rebuildEntity(se d2save.Entity) *LoadRefusal {
+	engine := v.gameClient.MapEngine
+
+	build, r := v.entityBuilder(se)
+	if r != nil {
+		return r
 	}
 
-	return d2mapentity.Motion{}, false
+	if err := engine.SetNextEntityID(se.ID); err != nil {
+		return refuseLoad(LoadRefusedEntity, "%s (%s): %v", se.ID, se.Kind, err)
+	}
+
+	e, err := build()
+	if err != nil {
+		return refuseLoad(LoadRefusedEntity, "%s (%s %s%s): rebuilding it: %v", se.ID, se.Kind, se.Monstat, se.Creature, err)
+	}
+
+	// The seam's own promise, checked where it matters: NewNPC and NewCreature
+	// WEAR the id. One that spent it would put a monster on the map under a
+	// fresh id, and every registry that names him -- his pack, his watch, his
+	// chase, his body, his squad -- would name nobody.
+	if got := e.ID(); got != se.ID {
+		return refuseLoad(LoadRefusedEntity, "%s (%s) was rebuilt as %q: the constructor spent the saved id instead of wearing it", se.ID, se.Kind, got)
+	}
+
+	if err := restoreMotionExactly(e, se.Motion); err != nil {
+		return refuseLoad(LoadRefusedEntity, "%s (%s): %v", se.ID, se.Kind, err)
+	}
+
+	if got := d2mapentity.NameKey(e); got != se.NameKey {
+		return refuseLoad(LoadRefusedEntity, "%s (%s) is rebuilt as %q and was saved as %q", se.ID, se.Kind, got, se.NameKey)
+	}
+
+	engine.AddEntity(e)
+
+	return nil
+}
+
+// entityBuilder is how the entity se is built, by its kind, with the record
+// its kind names -- NewNPC from its monstat, NewCreature from its bestiary
+// entry (and the entry's stand-in monstat, as the spawner builds one) -- or
+// the refusal when this build has no such record.
+func (v *Game) entityBuilder(se d2save.Entity) (func() (rebuiltEntity, error), *LoadRefusal) {
+	engine := v.gameClient.MapEngine
+	x, y := int(se.Motion.Pos[0]), int(se.Motion.Pos[1])
+
+	switch se.Kind {
+	case d2save.KindNPC:
+		monstat := v.monstatNamed(se.Monstat)
+		if monstat == nil {
+			return nil, refuseLoad(LoadRefusedEntity, "%s is an npc of monstat %q, which this build does not have", se.ID, se.Monstat)
+		}
+
+		return func() (rebuiltEntity, error) {
+			npc, err := engine.NewNPC(x, y, monstat, 0)
+			if err != nil {
+				return nil, err
+			}
+
+			return npc, nil
+		}, nil
+	case d2save.KindCreature:
+		if v.bestiary == nil {
+			return nil, refuseLoad(LoadRefusedEntity, "%s is a creature and the game has no bestiary", se.ID)
+		}
+
+		entry, ok := v.bestiary.ByID(se.Creature)
+		if !ok {
+			return nil, refuseLoad(LoadRefusedEntity, "%s is a creature of bestiary entry %q, which this build does not have", se.ID, se.Creature)
+		}
+
+		// The stand-in monstat, as gameSpawner.Spawn passes it: it only
+		// decides what the construction draws from the world stream, which
+		// step 6 puts back after the rebuild. (A unit test's game has no
+		// monstats, and builds the creature with none.)
+		standIn := v.monstatNamed(entry.StandIn)
+
+		return func() (rebuiltEntity, error) {
+			creature, err := engine.NewCreature(x, y, entry.Name, creatureAnimationPaths(entry), 0, standIn)
+			if err != nil {
+				return nil, err
+			}
+
+			creature.SetCreatureID(entry.ID)
+
+			return creature, nil
+		}, nil
+	}
+
+	return nil, refuseLoad(LoadRefusedEntity, "%s is of kind %q, which no load rebuilds", se.ID, se.Kind)
+}
+
+// monstatNamed is this build's monstats record by its Id, or nil.
+func (v *Game) monstatNamed(key string) *d2records.MonStatRecord {
+	if key == "" || v.asset == nil || v.asset.Records == nil {
+		return nil
+	}
+
+	return v.asset.Records.Monster.Stats[key]
+}
+
+// kindOf is the entity list's kind of a map entity ("" for one it does not
+// carry).
+func kindOf(e d2interface.MapEntity) string {
+	switch e.(type) {
+	case *d2mapentity.NPC:
+		return d2save.KindNPC
+	case *d2mapentity.Creature:
+		return d2save.KindCreature
+	}
+
+	return ""
+}
+
+// restoreMotionExactly puts a walk and pose back and reads it back: a Motion
+// no entity could have had is refused by RestoreMotion before anything
+// changes, and one that comes back other than it went in -- a mode the
+// sheets or the composite cannot hold, a facing the entity will not take --
+// is a monster that would not take the saved step next.
+func restoreMotionExactly(e rebuiltEntity, mo d2mapentity.Motion) error {
+	if err := e.RestoreMotion(mo); err != nil {
+		return err
+	}
+
+	if got := e.MotionSnapshot(); !sameMotion(got, mo) {
+		return fmt.Errorf("its motion was restored as %+v and saved as %+v", got, mo)
+	}
+
+	return nil
 }
 
 // sameMotion compares two motions through their JSON, the form the file keeps.
@@ -643,6 +852,76 @@ func sameMotion(a, b d2mapentity.Motion) bool {
 	jb, errB := json.Marshal(b)
 
 	return errA == nil && errB == nil && bytes.Equal(ja, jb)
+}
+
+// checkSquadModels is the squads block's half that needs the map (D3, B4b):
+// every deployed squad's model is an NPC on the resumed map -- squadDeployer
+// builds each with NewNPC, and step 3 rebuilt it with its saved id. (Squads'
+// own Validate has no map to look at: the B2 review's "What the review fixes
+// did NOT do".)
+func (v *Game) checkSquadModels(snap d2world.SquadsSnapshot) error {
+	for _, sq := range snap.Squads {
+		for _, m := range sq.Members {
+			if m.Entity == d2saveref.Player {
+				continue
+			}
+
+			e, ok := v.gameClient.MapEngine.Entities()[m.Entity]
+			if !ok {
+				return fmt.Errorf("%s's model %s is not on the map", sq.ID, m.Entity)
+			}
+
+			if _, isNPC := e.(*d2mapentity.NPC); !isNPC {
+				return fmt.Errorf("%s's model %s is a %T, and a deployed model is an NPC", sq.ID, m.Entity, e)
+			}
+		}
+	}
+
+	return nil
+}
+
+// checkBodies is the bodies block against the resumed map (B4b): the game
+// knows no body yet -- a body restored twice is refused -- and every body is
+// a monster on the map, an NPC or a creature, at 0 to its maximum.
+func (v *Game) checkBodies(bodies []d2save.Body) error {
+	if len(v.bodies) != 0 {
+		return fmt.Errorf("the game already knows %d monster bodies; a load restores into none", len(v.bodies))
+	}
+
+	for _, b := range bodies {
+		e, ok := v.gameClient.MapEngine.Entities()[b.ID]
+		if !ok {
+			return fmt.Errorf("%s has a body and is not on the map", b.ID)
+		}
+
+		if kindOf(e) == "" {
+			return fmt.Errorf("%s has a body and is a %T", b.ID, e)
+		}
+
+		if b.MaxHealth < 1 || b.Health < 0 || b.Health > b.MaxHealth {
+			return fmt.Errorf("%s's body is at %d of %d", b.ID, b.Health, b.MaxHealth)
+		}
+	}
+
+	return nil
+}
+
+// restoreBodies puts every monster's health back (B4b): Game.bodies from the
+// file, id by id -- the wounded survivor at his wounds, the slain at 0 -- and
+// nothing adopted at full health in their place. Checked first, so it can
+// never restore over bodies already known.
+func (v *Game) restoreBodies(bodies []d2save.Body) error {
+	if err := v.checkBodies(bodies); err != nil {
+		return err
+	}
+
+	v.bodies = make(map[string]*npcBody, len(bodies))
+
+	for _, b := range bodies {
+		v.bodies[b.ID] = &npcBody{health: b.Health, maxHealth: b.MaxHealth}
+	}
+
+	return nil
 }
 
 func checkStage(name string) error {
@@ -673,7 +952,7 @@ var resumeHook struct {
 
 // SetResumeHook hands the load the harness's part of it, called once every
 // block is restored: the uuid stream's count put back (step 6, after the
-// entities -- B4a rebuilds none, B4b will) and the dials a script set
+// entities, which step 3 rebuilt in CreateGame) and the dials a script set
 // re-applied (step 7), naming the steps it ran. The shipped game never sets
 // it: its ids come from crypto/rand, and it has no script.
 func SetResumeHook(fn func(uuid *d2save.UUIDStream) []string) {
@@ -778,6 +1057,14 @@ func (v *Game) resumeLoad(w *d2save.World) error {
 
 	v.loadStep("combat")
 
+	// B4b: every monster's health, as the file has it -- a wounded survivor
+	// at his wounds, the slain at 0 -- and none adopted fresh in its place.
+	if err := v.restoreBodies(w.Bodies); err != nil {
+		return refuseLoad(LoadRefusedBlock, "bodies: %v", err)
+	}
+
+	v.loadStep("bodies")
+
 	v.restoreScene(w.Scene)
 	v.loadStep("scene")
 
@@ -800,7 +1087,8 @@ func (v *Game) resumeLoad(w *d2save.World) error {
 	v.checkRegion()
 
 	// Trap 6: last, after everything that draws from it -- the map's
-	// generation and the villagers' construction drew in Open.
+	// generation and the villagers' construction drew in Open, and step 3's
+	// NewNPC and NewCreature in CreateGame (B4b).
 	if err := v.gameClient.MapEngine.RestoreRand(w.RNG.World.Seed, w.RNG.World.Draws); err != nil {
 		return refuseLoad(LoadRefusedBlock, "world rng: %v", err)
 	}
