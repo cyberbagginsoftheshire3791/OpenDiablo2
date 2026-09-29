@@ -370,6 +370,59 @@ func TestCombatClockSnapshotRoundTrip(t *testing.T) {
 	require.Equal(t, clockSteps(t, orig), clockSteps(t, cp), "and it fights on the same")
 }
 
+// TestAClockFightAtARoundsEndSaves is BUG-85: a clock fight whose round
+// resolved on an accumulated minute a hair short of RoundMinutes (fifteen
+// slices of a stepped minute, roundEpsilon's own case) holds since_turn a
+// hair below zero until the next slice. That is the model's own state, so
+// the save takes it, the load restores it exactly, and the fight goes on the
+// same. (The control -- the check back at "< 0" -- turns the first
+// require.NoError red with "since_turn -1.1102230246251565e-16".)
+func TestAClockFightAtARoundsEndSaves(t *testing.T) {
+	atRoundsEnd := func() *clockWorld {
+		w := clockFixture(t)
+		w.c.Advance(0.5) // the fixture left c:1 half a minute into its round
+
+		for i := 0; i < 15; i++ {
+			w.c.Advance(1.0 / 15)
+		}
+
+		return w
+	}
+
+	orig := atRoundsEnd()
+	require.Len(t, orig.c.clockFights, 1)
+	since := orig.c.clockFights[0].sinceTurn
+	require.True(t, since < 0 && since >= -roundEpsilon, "the round resolved a hair short of the minute: since_turn %v", since)
+
+	s, err := orig.c.Snapshot()
+	require.NoError(t, err, "a clock fight at its round's end does not stop a save")
+	require.NoError(t, orig.c.Validate(s, b2aWorldSeed), "and the save's own check (validateSnapshots) takes it")
+
+	snap := b2aThroughJSON(t, s)
+	require.Equal(t, since, snap.Clock.Live[0].SinceTurn, "the JSON keeps it exactly")
+
+	// The same world, its combat model replaced by a fresh one into which
+	// the save is restored (clockCopy's shape, at the round's end).
+	cp := atRoundsEnd()
+	cp.c.Close()
+
+	dials := DefaultCombatDials()
+	dials.PlayerControl = PlayerControlHuman
+	clock := NewClock(DefaultClockDials())
+	t.Cleanup(clock.Close)
+
+	cp.c = NewCombat(clock, cp.notice, cp.fitness, cp.illum, cp.bodies,
+		cp.profiles, cp.animator, cp.morale, cp.chases, d2rand.Derive(99, d2rand.StreamCombat), dials)
+	t.Cleanup(cp.c.Close)
+	cp.c.SetPlayer("p:1")
+	cp.c.SetCorpses(cp.corpses)
+	cp.c.SetResolver(clockResolver{cp})
+
+	require.NoError(t, cp.c.Restore(snap, b2aWorldSeed), "the load restores it")
+	require.Equal(t, since, cp.c.clockFights[0].sinceTurn)
+	require.Equal(t, clockSteps(t, orig), clockSteps(t, cp), "and it fights on the same")
+}
+
 func clockBlockOf(c *Combat) map[string]interface{} {
 	return c.HarnessState()["clock"].(map[string]interface{})
 }

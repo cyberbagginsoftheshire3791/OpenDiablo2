@@ -172,7 +172,15 @@ func checkClockFight(f CombatClockFightSnapshot, started int) error {
 		return fmt.Errorf("no enemies")
 	case f.Round < 1:
 		return fmt.Errorf("round %d", f.Round)
-	case math.IsNaN(f.SinceTurn) || math.IsInf(f.SinceTurn, 0) || f.SinceTurn < 0:
+	case math.IsNaN(f.SinceTurn) || math.IsInf(f.SinceTurn, 0) || f.SinceTurn < -roundEpsilon:
+		// Not below 0 -- below -roundEpsilon (BUG-85, found by the merge
+		// scout's TestSaveResumeAFightHeIsNotIn). The round loop resolves a
+		// round once the minutes reach RoundMinutes-roundEpsilon and then
+		// takes a whole RoundMinutes off, so a round resolved on an
+		// accumulated 0.9999999999999999 leaves since_turn a hair below zero
+		// (-2.2e-16, measured) until the next slice: a state the model makes
+		// on the frame a round resolves, which the save refused INTERNAL and
+		// a load would have refused BLOCK.
 		return fmt.Errorf("since_turn %v", f.SinceTurn)
 	case f.Initiator != "enemy":
 		return fmt.Errorf("initiator %q: a clock fight opens on its enemies' notice", f.Initiator)
