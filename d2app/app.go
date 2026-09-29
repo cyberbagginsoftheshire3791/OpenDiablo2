@@ -147,6 +147,9 @@ func Create(gitBranch, gitCommit string) *App {
 	app.harnessEarlyInit() // no-op unless built with -tags harness
 	app.Infof("OpenDiablo2 - Open source Diablo 2 engine")
 
+	// Every world file this process writes names the build (M4.6 B3).
+	d2gamescreen.SetSaveBuild(gitBranch + " " + gitCommit)
+
 	app.parseArguments()
 
 	app.SetLevel(*app.Options.LogLevel)

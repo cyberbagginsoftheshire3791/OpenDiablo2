@@ -226,6 +226,10 @@ func CreateGame(
 		guiManager:    guiManager,
 		keyMap:        keyMap,
 		logLevel:      l,
+
+		// Before anything this screen does can place an entity: what is on
+		// the map now is what the map built (M4.6 B3).
+		natives: nativesOf(gameClient.MapEngine),
 	}
 	// The world clock and the light it drives (M4.1, S1 §3–§4). Built here,
 	// at construction, so they are registered providers from the screen's
@@ -490,6 +494,12 @@ type Game struct {
 	// provider can report its arrival count (M4.6 B1).
 	spawner *gameSpawner
 
+	// natives is every NPC and creature the map built, as it stood when this
+	// screen was made (M4.6 B3): the villagers. The world save marks them
+	// native, with where the map put them, because a load's map build makes
+	// them again and re-keys them rather than rebuilding them (B4b).
+	natives map[string]nativeEntity
+
 	// T8: the watch -- minutes stood at the headman's post tonight, the world
 	// clock last frame, and the post itself (the headman's sprite, cached).
 	watchStood    float64
@@ -667,9 +677,20 @@ func (v *Game) OnUnload() error {
 	// The load path revives one anyway (d2hero.reviveIfDead), and the death
 	// screen v0's "quit" must not save either (attack catch 4a). Before the
 	// controls bind localPlayer is nil, and the original always-save stands.
+	//
+	// THE WORLD IS NOT SAVED HERE, and cannot be (M4.6 B3): v.bodies was
+	// nilled and releaseWorld closed every world system above, so a world
+	// file written now would carry no monster's wounds. The world save is a
+	// verb, Game.SaveWorld, taken while the world stands; SAVE AND EXIT will
+	// call it before it leaves (B5). What is saved here is what always was.
+	//
+	// A FAILED .od2 WRITE IS LOGGED AND THE UNLOAD GOES ON (M4.6 B3). The
+	// server now returns its write error to a local sender, and returning
+	// here would skip the kit's save and leave the client -- a local game's
+	// server, holding its port -- open behind the menu (BUG-25's shape).
 	if shouldSaveOnUnload(v.localPlayer) {
 		if err := v.OnPlayerSave(); err != nil {
-			return err
+			v.Errorf("leaving: his .od2 was not saved: %v", err)
 		}
 
 		v.saveKit()
@@ -1714,6 +1735,7 @@ func (g *gameSpawner) Spawn(kind, code string, count int, aroundX, aroundY,
 			if err != nil {
 				continue
 			}
+			creature.SetCreatureID(creatureEntry.ID) // M4.6 B3: the world save rebuilds it from this entry
 			creature.SetSpeed(creatureEntry.SpeedOr(float64(monstat.SpeedBase)))
 			entity = creature
 			maxHealth = creatureEntry.MaxHealth
@@ -2352,6 +2374,7 @@ func (v *Game) commandSpawnMon(args []string) error {
 			return nil
 		}
 
+		creature.SetCreatureID(entry.ID)
 		creature.SetSpeed(entry.SpeedOr(float64(monstat.SpeedBase)))
 		v.gameClient.MapEngine.AddEntity(creature)
 		v.adoptNPCBody(creature.ID(), entry.MaxHealth)

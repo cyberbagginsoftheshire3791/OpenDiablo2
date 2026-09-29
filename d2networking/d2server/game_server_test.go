@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket/d2netpackettype"
@@ -188,5 +191,51 @@ func TestJoinRefusalNamesTheFlag(t *testing.T) {
 
 	if r := joinRefusal(true, false); !strings.Contains(r, "with -classic") || strings.Contains(r, "without") {
 		t.Fatalf("-classic's host to a Strigoi client: %q", r)
+	}
+}
+
+// savingClient is a connected client whose hero saves where a test says.
+type savingClient struct {
+	recordingClient
+	state *d2hero.HeroState
+}
+
+func (c *savingClient) GetPlayerState() *d2hero.HeroState { return c.state }
+
+// M4.6 B3: a hero save that fails comes back to the sender as an error, as
+// well as into the log. A local client's send is this call, so the world
+// save learns that his .od2 was not written instead of reporting a save one
+// file short. The control: the same save to a writable path is no error, and
+// the file is there.
+func TestAFailedHeroSaveIsReturned(t *testing.T) {
+	g, _, _ := testServer(t, false)
+	g.heroStateFactory = &d2hero.HeroStateFactory{}
+
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "a-file")
+
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	good := &savingClient{recordingClient: recordingClient{id: "good"}, state: &d2hero.HeroState{FilePath: filepath.Join(dir, "0.od2")}}
+	bad := &savingClient{recordingClient: recordingClient{id: "bad"}, state: &d2hero.HeroState{FilePath: filepath.Join(blocker, "0.od2")}}
+	g.connections[good.id], g.connections[bad.id] = good, bad
+
+	save, err := d2netpacket.CreateSavePlayerPacket(&d2mapentity.Player{Stats: &d2hero.HeroStatsState{Health: 5, MaxHealth: 9}}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.OnPacketReceived(good, save); err != nil {
+		t.Fatalf("the control: a save to a writable path is no error: %v", err)
+	}
+
+	if _, err := os.Stat(good.state.FilePath); err != nil {
+		t.Fatalf("the control's .od2 is not there: %v", err)
+	}
+
+	if err := g.OnPacketReceived(bad, save); err == nil {
+		t.Fatal("a save that could not be written must come back as an error")
 	}
 }

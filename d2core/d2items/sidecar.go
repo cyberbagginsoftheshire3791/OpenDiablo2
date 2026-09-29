@@ -99,16 +99,63 @@ func SaveHero(path string, k *Kit, x Extras) error {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: x.Progress, Village: x.Village, Land: x.Land, Journal: x.Journal}, "", "  ")
+	data, err := HeroBytes(k, x)
 	if err != nil {
 		return err
 	}
 
+	return WriteHero(path, data)
+}
+
+// HeroBytes is the document SaveHero writes: the kit and what rides beside it,
+// indented. The world save (M4.6 B3) takes it once and writes the same bytes
+// twice -- into the sidecar and, embedded, into the world file -- so the two
+// are one moment by construction.
+func HeroBytes(k *Kit, x Extras) ([]byte, error) {
+	if k == nil {
+		return nil, errors.New("no kit to write")
+	}
+
+	return json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: x.Progress, Village: x.Village, Land: x.Land, Journal: x.Journal}, "", "  ")
+}
+
+// WriteHero writes a document HeroBytes made to the sidecar at path,
+// atomically.
+func WriteHero(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 
 	return WriteFileAtomic(path, data)
+}
+
+// BakPath is where a save keeps the generation it replaces: path + ".bak"
+// (rule 5 of the world save: one save per hero, the last one kept and not
+// offered in game). The World Editor's map save keeps its own the same way
+// (d2mapedit.BackupPath).
+func BakPath(path string) string {
+	return path + ".bak"
+}
+
+// KeepGeneration copies the file at path, if there is one, to BakPath(path)
+// through WriteFileAtomic, before a save replaces it (M4.6 B3: the hero's
+// .od2 and the world file). Nothing at path yet is not an error: there is no
+// generation to keep.
+func KeepGeneration(path string) error {
+	old, err := os.ReadFile(path) // nolint:gosec // the hero's own save
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("reading the generation about to be replaced: %w", err)
+	}
+
+	if err := WriteFileAtomic(BakPath(path), old); err != nil {
+		return fmt.Errorf("keeping the previous generation: %w", err)
+	}
+
+	return nil
 }
 
 // Rename retries: how many, and how long between.

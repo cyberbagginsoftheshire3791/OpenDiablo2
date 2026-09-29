@@ -90,6 +90,8 @@ const (
 	// authored map's sound environment and name instead of levels.txt.
 	pkgHero      = "d2core/d2hero"
 	pkgMapEngine = "d2core/d2map/d2mapengine"
+	// pkgSave joined at M4.6 B3 (28 Sep 2026): the world file.
+	pkgSave = "d2core/d2save"
 	// pkgClient, pkgServer and pkgAudio joined at the tables burst's review
 	// (27 Sep 2026): a host refusing the other game's join and cast, the
 	// refused client going back to the menu, and the village's sound read.
@@ -684,38 +686,47 @@ var Register = []Entry{
 	// Every Restore has a Validate twin (D4): the same checks, changing
 	// nothing, so a load checks every block of the file before it restores
 	// any and a refusal anywhere sets the whole file aside (rule 7).
-	{sym(pkgWorld, "Clock.Snapshot"), BucketDefer, VerdictDead,
-		"The world minutes since the epoch, the clock's whole state. Game.SaveWorld calls it.", "M4.6 B3"},
+	//
+	// M4.6 B3 (28 Sep 2026) BUILT Game.SaveWorld, and every Snapshot row
+	// moved from "dead, for B3" to "HARNESS-ONLY, for B5": the save verb's
+	// one caller today is the harness's strigoi_save_game, and the game's own
+	// callers -- the escape menu's SAVE GAME and SAVE AND EXIT, the window's
+	// close hook, the dawn autosave (rule 10) -- are B5's. A save the player
+	// cannot make is the hollow class this register is for, so these rows
+	// stay deferred until B5 wires them and moves them to wire. The Restore
+	// and Validate rows are untouched: nothing loads yet.
+	{sym(pkgWorld, "Clock.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"The world minutes since the epoch, the clock's whole state. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgWorld, "Clock.Restore"), BucketDefer, VerdictDead,
 		"Puts the clock at the saved minute, right after NewClock and before bindProgress reads it (trap 1). The load calls it.", "M4.6 B4a"},
 	{sym(pkgWorld, "Clock.Validate"), BucketDefer, VerdictDead,
 		"Restore's check alone (D4): the load validates every block before it restores any.", "M4.6 B4a"},
-	{sym(pkgWorld, "Light.Snapshot"), BucketDefer, VerdictDead,
-		"Every light source (no radius: a dial, D2) and the next id. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Light.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"Every light source (no radius: a dial, D2) and the next id. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgWorld, "Light.Restore"), BucketDefer, VerdictDead,
 		"Puts every source back exactly, his carried torch included -- the light model is the truth on load, the kit torch's minutes are ignored, and nothing re-lights through the L path (D1). Radii come from the dials (D2). The load calls it.", "M4.6 B4a"},
 	{sym(pkgWorld, "Light.Validate"), BucketDefer, VerdictDead,
 		"Restore's check alone (D4), including a burn that fits the kind (the B2a review's B2).", "M4.6 B4a"},
-	{sym(pkgWorld, "Squads.Snapshot"), BucketDefer, VerdictDead,
-		"Every squad with its members and meters, s:1's member written as the player. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Squads.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"Every squad with its members and meters, s:1's member written as the player. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgWorld, "Squads.Restore"), BucketDefer, VerdictDead,
 		"Puts the squads back into a fresh owner, s:1 in place so the game's meters pointer and his conditioning survive. Deployed squads' models are map entities rebuilt through the next-id seam, so this row is the hunted-night load's (D3); B4a restores s:1 alone and refuses a deployed squad.", "M4.6 B4b"},
 	{sym(pkgWorld, "Squads.Validate"), BucketDefer, VerdictDead,
 		"Restore's check alone (D4), including one man in one squad (the B2a review's B2).", "M4.6 B4b"},
-	{sym(pkgWorld, "Corpses.Snapshot"), BucketDefer, VerdictDead,
-		"Every body in fall order and the three member maps. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Corpses.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"Every body in fall order and the three member maps. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgWorld, "Corpses.Restore"), BucketDefer, VerdictDead,
 		"Puts the bodies back into an empty registry WITHOUT the open-count callback (trap 5); the load skips placeTheDead and sets openBodies from the file.", "M4.6 B4a"},
 	{sym(pkgWorld, "Corpses.Validate"), BucketDefer, VerdictDead,
 		"Restore's check alone (D4), accepting only what the machine could have written (the B2a review's B2).", "M4.6 B4a"},
-	{sym(pkgWorld, "Rising.Snapshot"), BucketDefer, VerdictDead,
-		"The accrued soul pressure (not the dial's constant, D2), the band and stage last seen, the counters and the stream. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Rising.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"The accrued soul pressure (not the dial's constant, D2), the band and stage last seen, the counters and the stream. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgWorld, "Rising.Restore"), BucketDefer, VerdictDead,
 		"Puts the rising back after the corpses, its stream checked against the game seed and restored through d2rand. The load calls it.", "M4.6 B4a"},
 	{sym(pkgWorld, "Rising.Validate"), BucketDefer, VerdictDead,
 		"Restore's check alone (D4), against the file's corpses block, so it runs before the registry is restored.", "M4.6 B4a"},
-	{sym(pkgWorld, "Combat.Snapshot"), BucketDefer, VerdictDead,
-		"The model between fights: counters, records and the stream. Refuses during a fight (ErrCombatFighting) and while experience or paced minutes wait to be taken. Game.SaveWorld calls it, and its refusal is the save's FIGHTING.", "M4.6 B3"},
+	{sym(pkgWorld, "Combat.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"The model between fights: counters, records and the stream. Refuses during a fight (ErrCombatFighting) and while experience or paced minutes wait to be taken. Game.SaveWorld calls it, and its refusal is the save's FIGHTING.", "M4.6 B5"},
 	{sym(pkgWorld, "Combat.Restore"), BucketDefer, VerdictDead,
 		"Puts the model back between fights, its stream checked against the game seed, with the other systems' counters. The load calls it.", "M4.6 B4a"},
 	{sym(pkgWorld, "Combat.Validate"), BucketDefer, VerdictDead,
@@ -724,13 +735,17 @@ var Register = []Entry{
 	// The saved stream's one shape (the B2 review: B2a's and B2b's private
 	// copies made one, in d2rand) and its check. Dead with the snapshots that
 	// write and read it.
-	{sym("d2common/d2rand", "StateOf"), BucketDefer, VerdictDead,
-		"A counted stream's {seed, draws} for the world file. Every Snapshot with a stream calls it.", "M4.6 B3"},
-	{sym("d2common/d2rand", "StreamState.Check"), BucketDefer, VerdictDead,
+	{sym("d2common/d2rand", "StateOf"), BucketDefer, VerdictHarnessOnly,
+		"A counted stream's {seed, draws} for the world file. Every Snapshot with a stream calls it.", "M4.6 B5"},
+	// StreamState.Check and SeedFor are harness-only since B3: d2save's
+	// World.Check refuses a file whose streams are not the seed's before
+	// SaveWorld writes it (strict at save). Their game caller is the load's
+	// validation, B4a.
+	{sym("d2common/d2rand", "StreamState.Check"), BucketDefer, VerdictHarnessOnly,
 		"Refuses a saved stream on another stream's seed (a swapped block) or past MaxDraws (the B2a review's B1). Every Validate with a stream calls it.", "M4.6 B4a"},
 	{sym("d2common/d2rand", "StreamState.RestoreInto"), BucketDefer, VerdictDead,
 		"Puts a stream back through Stream.Restore, rand and counted source together. Every Restore with a stream calls it.", "M4.6 B4a"},
-	{sym("d2common/d2rand", "SeedFor"), BucketDefer, VerdictDead,
+	{sym("d2common/d2rand", "SeedFor"), BucketDefer, VerdictHarnessOnly,
 		"The seed a named stream runs on in a game of a given seed: the check's half.", "M4.6 B4a"},
 
 	// M4.6 B2b -- THE SNAPSHOTS THAT CARRY ENTITY IDS (28 Sep 2026). All
@@ -743,16 +758,16 @@ var Register = []Entry{
 	// class this register was built for. (The first draft of these rows sat in
 	// a file of their own, appended at init; they are here because the
 	// register lives in one place -- see RegisterMarkdown.)
-	{sym(pkgWorld, "Spawns.Snapshot"), BucketDefer, VerdictDead,
-		"The spawn tables' state for the world file, members by entity id with the dead marked gone. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Spawns.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"The spawn tables' state for the world file, members by entity id with the dead marked gone. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgWorld, "Spawns.Restore"), BucketDefer, VerdictDead,
 		"Puts the tables back through a Resolver, after the entities are rebuilt with their ids and motion. The hunted-night load calls it.", "M4.6 B4b"},
-	{sym(pkgWorld, "Notice.Snapshot"), BucketDefer, VerdictDead,
-		"Every watch, watcher by entity id and the player as the word player. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Notice.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"Every watch, watcher by entity id and the player as the word player. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgWorld, "Notice.Restore"), BucketDefer, VerdictDead,
 		"Puts every watch back through a Resolver; an unresolved watch is an error, never a drop. The hunted-night load calls it.", "M4.6 B4b"},
-	{sym(pkgWorld, "Pursuit.Snapshot"), BucketDefer, VerdictDead,
-		"Every chase, hunter by entity id and the player as the word player. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Pursuit.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"Every chase, hunter by entity id and the player as the word player. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgWorld, "Pursuit.Restore"), BucketDefer, VerdictDead,
 		"Puts every chase back through a Resolver, solving nothing: the walk is the entity's motion. The hunted-night load calls it.", "M4.6 B4b"},
 	{sym(pkgWorld, "Spawns.Validate"), BucketDefer, VerdictDead,
@@ -765,18 +780,42 @@ var Register = []Entry{
 		"The next-id seam through the engine: the next entity construction takes a saved id (NewNPC and NewCreature wear it, the rest spend it); an id already on the map is refused. The load rebuilds every saved entity through it.", "M4.6 B4b"},
 	{sym(pkgEntity, "MapEntityFactory.PendingEntityID"), BucketDefer, VerdictDead,
 		"Whether a set id is still waiting. A load that has rebuilt everything asserts nothing is.", "M4.6 B4b"},
-	{sym(pkgEntity, "Creature.MotionSnapshot"), BucketDefer, VerdictDead,
-		"A creature's walk and pose for the world file's entity list. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgEntity, "Creature.MotionSnapshot"), BucketDefer, VerdictHarnessOnly,
+		"A creature's walk and pose for the world file's entity list. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgEntity, "Creature.RestoreMotion"), BucketDefer, VerdictDead,
 		"Puts a rebuilt creature back mid-stride. The load calls it before Spawns.Restore, which checks each member stands where he was saved.", "M4.6 B4b"},
-	{sym(pkgEntity, "NPC.MotionSnapshot"), BucketDefer, VerdictDead,
-		"An inherited monster's walk and pose for the world file. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgEntity, "NPC.MotionSnapshot"), BucketDefer, VerdictHarnessOnly,
+		"An inherited monster's walk and pose for the world file. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgEntity, "NPC.RestoreMotion"), BucketDefer, VerdictDead,
 		"Puts a rebuilt inherited monster back mid-stride. The load calls it.", "M4.6 B4b"},
-	{sym(pkgScreen, "gameSpawner.Snapshot"), BucketDefer, VerdictDead,
-		"The arrival count, which sets where the next pack comes from. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgScreen, "gameSpawner.Snapshot"), BucketDefer, VerdictHarnessOnly,
+		"The arrival count, which sets where the next pack comes from. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgScreen, "gameSpawner.Restore"), BucketDefer, VerdictDead,
 		"Puts the arrival count back. The load calls it with the spawns.", "M4.6 B4b"},
+
+	// M4.6 B3 -- THE FILE AND THE SAVE VERB (28 Sep 2026). Game.SaveWorld is
+	// harness-only until B5 gives it the game's callers (the menu, the close
+	// hook, the dawn autosave); what the save needs that the game ALREADY
+	// calls is wire -- the .od2's .bak generation, the sidecar's one
+	// document, the bestiary id a creature is saved by.
+	{sym(pkgScreen, "Game.SaveWorld"), BucketDefer, VerdictHarnessOnly,
+		"THE save verb: the world file, then the .od2, then the sidecar, then the death screen's copy re-taken; refused (touching no file) while fighting, talking, reading, choosing, dead or networked. The harness's strigoi_save_game calls it today; the escape menu, the close hook and the dawn autosave are B5's.", "M4.6 B5"},
+	{sym(pkgSave, "Encode"), BucketDefer, VerdictHarnessOnly,
+		"Writes the world file's bytes, every block in order (omit is the negative controls'). Game.SaveWorld calls it.", "M4.6 B5"},
+	{sym(pkgSave, "WriteWorld"), BucketDefer, VerdictHarnessOnly,
+		"The world file's write: the previous version-1 file kept as .bak, a file this build cannot read set aside unread (rule 7), then tmp + rename. Game.SaveWorld calls it.", "M4.6 B5"},
+	{sym(pkgSave, "Decode"), BucketDefer, VerdictHarnessOnly,
+		"Reads a world file, refusing any version but 1 and any block missing, null or unknown. SaveWorld reads back what it is about to write (strict at save); the load reading the file before Open is its game caller.", "M4.6 B4a"},
+	{sym(pkgSave, "World.Check"), BucketDefer, VerdictHarnessOnly,
+		"The file's own refusals: streams on the seed, rng copies equal to their blocks, every live ref an entity in the list, hero and entities at their own pos. Decode calls it; the load is its game caller.", "M4.6 B4a"},
+	{sym(pkgEntity, "Creature.CreatureID"), BucketDefer, VerdictHarnessOnly,
+		"The bestiary entry a creature is saved by (entities[].creature). Game.SaveWorld reads it; the load rebuilds from it.", "M4.6 B5"},
+	{sym(pkgEntity, "Creature.SetCreatureID"), BucketWire, VerdictLive,
+		"The game spawner (and the terminal's spawnmon) records the bestiary entry beside every NewCreature, so every creature the game places can be saved and rebuilt. If it went dark, every creature would refuse the save.", ""},
+	{sym(pkgItems, "KeepGeneration"), BucketWire, VerdictLive,
+		"The .od2's previous generation, kept as .bak before the server's hero save replaces it (rule 5). Every hero save the game makes goes through it.", ""},
+	{sym(pkgItems, "HeroBytes"), BucketWire, VerdictLive,
+		"The sidecar's one document: saveKit writes it, and the world save embeds the same bytes it writes, so the two files are one moment.", ""},
 
 	// ---------------------------------------------------------------
 	// OBSERVE -- harness surface. Reads and dial writes only; see the

@@ -84,7 +84,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 45 playtest scripts.** That count, the harness version below and the
+**The 46 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -519,6 +519,25 @@ this doc fails until it agrees.
   reviewer's way: a copy of the village written into the WORKING TREE,
   `-editor` naming it by its relative path, refused with the guard's reason
   (read from the menu's `main_menu_error`), the file unchanged.
+* `save_resume_test.go` — the forty-sixth, M4.6 B3 (28 Sep 2026):
+  `TestSaveResume`, the world save's acceptance test (build plan section 4),
+  **act 7 only** -- acts 1-6 (the resume) and 8 (rule 4) are B4's, act 9 (the
+  omit sweep) B6's. Seed 99. 7a: a quiet save writes `N.od2.world.json` with
+  every block in order, the `.od2` and the sidecar, the sidecar the document
+  the world file embeds, the hero where he stands, and the state digest
+  before and after is ONE digest (saving moves nothing). 7b: mid-fight
+  `FIGHTING`, five files hashed untouched, and a refused save to another path
+  writes nothing there. 7c: a busy world (the slain dog's fight and wounds, a
+  lit torch, a forced pack, a chase, the placed dead) saves with every list
+  block non-empty, every live pack member in the entity list where his pack
+  says, the villagers native, the streams' copies equal to their blocks, the
+  map named, the previous save kept as `.bak` byte for byte -- and the digest
+  still unmoved; the file is kept beside the run's logs
+  (`pt\TestSaveResume\save-resume-7c.world.json`). 7d: `to` writes only there,
+  the same file but `saved_at`; `omit` drops exactly its blocks; `omit`
+  without `to` and an unknown block are `BAD_ARGUMENT`. 7e: dead, `DEAD`, files
+  untouched, and the death put his sidecar back to the LAST SAVE's bytes (the
+  save re-took the death screen's copy).
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -584,7 +603,9 @@ player is always handle `p:1`; other entities are `e:N` in first-seen order
 with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING ·
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · AWAITING_PLAYER · CLOCK_FROZEN ·
-WORLD_HELD · INTERNAL`. `CLOCK_FROZEN` (24 Sep 2026, harness 0.12.1) is
+WORLD_HELD · INTERNAL`, and `strigoi_save_game`'s refusals (M4.6 B3) `FIGHTING ·
+DEAD · TALKING · JOURNAL · LOADOUT · NETWORK · NOT_READY`, each of which touches
+no file. `CLOCK_FROZEN` (24 Sep 2026, harness 0.12.1) is
 `strigoi_step_world`'s refusal when the clock is frozen: no number of ticks
 moves it, and the stepper used to spin to its tick cap past the client's
 timeout before saying so. `WORLD_HELD` (harness 0.12.2) is the same refusal
@@ -608,7 +629,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.12.6)
+## The tools (37; harness 0.13.0)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -637,7 +658,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game |
 | `strigoi_navigate` | main_menu · character_select · select_hero · credits |
 | `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame |
-| `strigoi_save_game` | Write the `.od2` |
+| `strigoi_save_game` | **Save the game (M4.6 B3, harness 0.13.0): `Game.SaveWorld`.** Writes the world file `N.od2.world.json`, then the `.od2`, then the kit sidecar -- one moment in all three, the sidecar the same bytes the world file embeds -- keeping each previous generation as `.bak`, then re-takes the death screen's "as he entered" copy. Refused, touching no file, with `FIGHTING` (a fight running or not yet settled), `DEAD`, `TALKING`, `JOURNAL`, `LOADOUT`, `NETWORK` (rule 9) or `NOT_READY` (no hero in the world yet). `to` writes ONLY the world file, at that path (his `.od2`, sidecar, `.bak`s and the death copy untouched); `omit:[block...]` leaves top-level blocks out and needs `to` (`BAD_ARGUMENT` otherwise, and for a name that is not a block). Returns `save_path`, `world_path`, `sidecar_path`, `written`, `kept` (the `.bak`s), `set_aside` (a file this build could not read, moved aside -- rule 7), `omitted`, `blocks`, `bytes`. Until 0.13.0 it wrote the `.od2` alone and refused nothing |
 | `strigoi_quit` | Manifest + exit (confirm: true) |
 
 ### Time and determinism (M3.3)
@@ -755,6 +776,19 @@ after act 7), `TestRising` and `TestCombatResolver` assert these against
 numbers the scripts chose; the first two-launch `TestTownWalkDeterministic`
 with the `uuid` count in the digest agreed at all three checkpoints (26-27 Sep
 2026).
+
+**M4.6 B3 (28 Sep 2026) put the rest of the world file on a provider before
+saving it.** `scene` also reports `natives` -- every NPC and creature the map
+built, as it stood when the game screen was made: `id`, `name_key` and `born`
+(world tiles); the world file marks these native, because a load's map build
+makes them again and re-keys them where every other entity is rebuilt with its
+saved id (B4b) -- and `map_path`, `map_sha`, `map_generated`, the world the
+game was built from (the file's `map` block, for D5). A creature entity's
+state reports `creature_id`, the bestiary entry the world file rebuilds it
+from (`entities[].creature`; the label `creature` is a name, not a key). The
+hero's saved `x`, `y`, `health` and run toggle were already on `get_player`
+(`run_toggled`). The world file itself is `docs/m4.6-world-save-notes.md`'s
+"B3" section.
 
 **ONLY `start_game` SEEDS A GAME (a known limitation, owned by M4.6 burst
 B4b).** `start_game` sets the server's one-shot seed and reseeds the uuid

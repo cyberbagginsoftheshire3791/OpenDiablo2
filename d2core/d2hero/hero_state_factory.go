@@ -10,16 +10,16 @@ import (
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2inventory"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 )
 
-const (
-	mkdirPermission     = 0750
-	writefilePermission = 0600
-)
+// mkdirPermission is the save directory's. The file's own is
+// d2items.WriteFileAtomic's (0600), the one every Strigoi save uses.
+const mkdirPermission = 0750
 
 // NewHeroStateFactory creates a new HeroStateFactory and initializes it.
 func NewHeroStateFactory(asset *d2asset.AssetManager) (*HeroStateFactory, error) {
@@ -319,7 +319,16 @@ func (s *HeroState) onDisk() *HeroState {
 	return &out
 }
 
-// Save saves the player state to a file
+// Save saves the player state to a file.
+//
+// ATOMICALLY, AND KEEPING THE LAST GENERATION (M4.6 B3, rule 5 of the world
+// save). It used to be a plain WriteFile: a crash or a full disk mid-write
+// left half a hero, and nothing of the one before. Now the file already there
+// is kept as N.od2.bak and the new one goes in through a temporary file and a
+// rename (d2items.WriteFileAtomic, which carries the Windows lesson: the
+// rename is retried while anything holds the target open, then written in
+// place). The hero screen lists only *.od2, so neither N.od2.bak nor the
+// temporary N.od2.tmp is ever offered as a hero.
 func (f *HeroStateFactory) Save(state *HeroState) error {
 	if state.FilePath == "" {
 		state.FilePath = f.getFirstFreeFileName()
@@ -329,10 +338,14 @@ func (f *HeroStateFactory) Save(state *HeroState) error {
 		return err
 	}
 
-	fileJSON, _ := json.MarshalIndent(state.onDisk(), "", "   ")
-	if err := ioutil.WriteFile(state.FilePath, fileJSON, writefilePermission); err != nil {
+	fileJSON, err := json.MarshalIndent(state.onDisk(), "", "   ")
+	if err != nil {
 		return err
 	}
 
-	return nil
+	if err := d2items.KeepGeneration(state.FilePath); err != nil {
+		return err
+	}
+
+	return d2items.WriteFileAtomic(state.FilePath, fileJSON)
 }

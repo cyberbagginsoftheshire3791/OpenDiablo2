@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
 )
 
 // The "scene" harness provider (M4.6 B1): the game screen's own bookkeeping,
@@ -33,6 +34,13 @@ import (
 //     two read one number, not that the number is right. The count is checked
 //     against the stream itself in d2mapengine's unit tests, and across two
 //     launches by TestTownWalkDeterministic.
+//   - natives (M4.6 B3): every NPC and creature the map built, as it stood
+//     when the screen was made -- id, name_key and born (world tiles). The
+//     world save marks these native: a load's map build makes them again and
+//     re-keys them, where every other entity is rebuilt with its saved id.
+//   - map_path, map_sha, map_generated (M4.6 B3): the world the game was
+//     built from, which the world save records for D5 (a changed map sets
+//     the file aside).
 //
 // Read-only, like "progress": a settable field here would be a harness path
 // into the screen's bookkeeping that the game never takes.
@@ -78,7 +86,29 @@ func (p sceneProvider) HarnessState() map[string]interface{} {
 		world = d2rand.ReportOf(v.gameClient.MapEngine.RandSeed(), v.gameClient.MapEngine.RandDraws())
 	}
 
+	nativeIDs := make([]string, 0, len(v.natives))
+	for id := range v.natives {
+		nativeIDs = append(nativeIDs, id)
+	}
+
+	sort.Strings(nativeIDs)
+
+	natives := make([]map[string]interface{}, 0, len(nativeIDs))
+
+	for _, id := range nativeIDs {
+		n := v.natives[id]
+		natives = append(natives, map[string]interface{}{
+			"id": id, "name_key": n.nameKey, "born": [2]float64{n.x, n.y},
+		})
+	}
+
+	mapPath, mapSHA := d2mapgen.HostMap()
+
 	return map[string]interface{}{
+		"natives":         natives,
+		"map_path":        mapPath,
+		"map_sha":         mapSHA,
+		"map_generated":   mapPath == "",
 		"field_dead":      fieldDead,
 		"dawn_paid_day":   v.dawnPaidDay,
 		"last_stage":      v.lastStage.String(),

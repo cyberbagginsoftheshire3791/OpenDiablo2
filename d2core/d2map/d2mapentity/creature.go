@@ -40,6 +40,12 @@ type Creature struct {
 	// sheets is the path each mode was loaded from (M5.1b), so the harness
 	// can say which art a creature is drawn from rather than only its name.
 	sheets map[creatureMode]string
+
+	// creatureID is the bestiary entry the creature was built from (M4.6
+	// B3): the world save's entity list names it, and a load rebuilds the
+	// creature from that entry. The name alone is not a key -- it is a label,
+	// and two entries may share one.
+	creatureID string
 }
 
 var _ d2interface.MapEntity = (*Creature)(nil)
@@ -67,6 +73,16 @@ func newCreature(x, y int, id, name string, animations map[creatureMode]d2interf
 
 // ID returns the creature's stable map id.
 func (c *Creature) ID() string { return c.mapEntity.uuid }
+
+// SetCreatureID records the bestiary entry the creature was built from. The
+// game calls it beside every NewCreature (the spawner's and the terminal's);
+// NewCreature does not take it, because the factory knows art and a stand-in,
+// not the bestiary.
+func (c *Creature) SetCreatureID(id string) { c.creatureID = id }
+
+// CreatureID is the bestiary entry the creature was built from, or "" for one
+// built without it (a unit test's).
+func (c *Creature) CreatureID() string { return c.creatureID }
 
 // Label returns the authored creature name.
 func (c *Creature) Label() string { return c.name }
@@ -237,6 +253,7 @@ func (c *Creature) HarnessState() map[string]interface{} {
 	state := map[string]interface{}{
 		"animation_mode": string(c.mode),
 		"creature":       c.name,
+		"creature_id":    c.creatureID, // M4.6 B3: what the world save names it by
 		"direction":      c.direction,
 		"moving":         c.IsMoving(),
 		"sheet":          c.sheets[c.mode],

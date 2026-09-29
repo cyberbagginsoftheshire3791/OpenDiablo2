@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -605,9 +606,15 @@ func (g *GameServer) OnPacketReceived(client ClientConnection, packet d2netpacke
 		playerState.Act = savePacket.Player.Act
 		playerState.Difficulty = savePacket.Difficulty
 
-		err = g.heroStateFactory.Save(playerState)
-		if err != nil {
+		// The error goes back to the sender as well as into the log (M4.6
+		// B3). A local client's SendPacketToServer is this call, so the
+		// game's world save (Game.SaveWorld) learns that his .od2 was not
+		// written instead of reporting a save that is one file short; a
+		// remote client's packet manager logs it as before.
+		if err := g.heroStateFactory.Save(playerState); err != nil {
 			g.Errorf("GameServer: error saving saving Player: %s", err)
+
+			return fmt.Errorf("saving the hero: %w", err)
 		}
 	case d2netpackettype.PlayerConnectionRequest:
 		break // prevent log message. these are handled by handleConnection

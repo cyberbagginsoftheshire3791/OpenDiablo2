@@ -57,6 +57,7 @@ func b2bCreatureClass() b2bMotionClass {
 		"finished":   "W: a held action's callback, a function; the game starts every action with nil",
 		"corpse":     "S:corpse",
 		"sheets":     "D: the path each mode was loaded from, set by NewCreature at rebuild",
+		"creatureID": "D: the bestiary entry, saved in the world file's entity list (entities[].creature, M4.6 B3), not in the motion; the load rebuilds the creature from it",
 	}}
 }
 

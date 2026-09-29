@@ -225,26 +225,17 @@ func (v *Game) saveKit() {
 		return
 	}
 
-	// A torch lit when he leaves keeps what it had left: the light model holds
-	// the minutes while it burns (the kit holds zero, see the L key), so they
-	// are written for the save and taken back out, and the live kit still
-	// owns nothing the light model owns.
-	_, torch, isTorch := v.kit.OffHandTorch()
-	held := 0.0
-
-	if isTorch && v.light != nil {
-		if carried := v.light.Carried(); carried != nil && torch.BurnLeft == 0 {
-			held = carried.Burn
-			torch.BurnLeft = held
-		}
+	// A torch lit when he leaves keeps what it had left: heroBytes writes the
+	// light model's minutes into the document and takes them back out of the
+	// live kit (save.go). The world save writes the same document, so the
+	// sidecar is one shape whoever writes it (M4.6 B3).
+	data, err := v.heroBytes()
+	if err == nil {
+		err = d2items.WriteHero(v.kitPath, data)
 	}
 
-	if err := d2items.SaveHero(v.kitPath, v.kit, d2items.Extras{Progress: v.progressJSON(), Village: v.standingJSON(), Land: v.landJSON(), Journal: v.journalJSON()}); err != nil {
+	if err != nil {
 		v.Errorf("kit: %v", err)
-	}
-
-	if held > 0 {
-		torch.BurnLeft = 0
 	}
 }
 

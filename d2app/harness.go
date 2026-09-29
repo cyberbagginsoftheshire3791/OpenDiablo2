@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.12.6"         // 28 Sep (second editor review): the editor guard refuses the whole source tree; the editor provider reports grid, label_zoom and each person's mark and label; the menu's ui provider reports main_menu_error. 0.12.5: the "editor" provider (settable zoom), game_info's map_* and playtest fields
+	harnessVersion     = "0.13.0"         // 28 Sep (M4.6 B3): strigoi_save_game is Game.SaveWorld -- the world file, the .od2 and the sidecar, refusals by code, omit/to, world_path; the scene provider reports natives and the map; a creature reports creature_id. 0.12.6, 28 Sep (second editor review): the editor guard refuses the whole source tree; the editor provider reports grid, label_zoom and each person's mark and label; the menu's ui provider reports main_menu_error. 0.12.5: the "editor" provider (settable zoom), game_info's map_* and playtest fields
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessQueueDepth  = 64
 	harnessRingCap     = 5000

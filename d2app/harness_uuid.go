@@ -10,6 +10,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
+	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen"
 )
 
 // The harness's uuid stream, counted (M4.6 B1).
@@ -52,7 +53,27 @@ var harnessUUID struct {
 }
 
 func harnessRegisterUUID() {
-	harnessUUID.once.Do(func() { d2harness.Register(harnessUUIDProvider{}) })
+	harnessUUID.once.Do(func() {
+		d2harness.Register(harnessUUIDProvider{})
+
+		// M4.6 B3: the world save carries where the stream stands (rng.uuid),
+		// so a load can put it back after the entities (B4b, trap 6).
+		d2gamescreen.SetUUIDStream(harnessUUIDStream)
+	})
+}
+
+// harnessUUIDStream is where the seeded uuid stream stands, for the world
+// save: its seed and byte count, and false when start_game left it unseeded
+// (crypto/rand, which no save can carry).
+func harnessUUIDStream() (seed int64, bytes uint64, ok bool) {
+	harnessUUID.mu.Lock()
+	defer harnessUUID.mu.Unlock()
+
+	if harnessUUID.r == nil {
+		return 0, 0, false
+	}
+
+	return harnessUUID.r.Seeded(), harnessUUID.r.Bytes(), true
 }
 
 // harnessSeedUUID seeds the uuid stream (seed != 0) or hands it back to

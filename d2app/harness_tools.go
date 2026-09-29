@@ -8,6 +8,7 @@ package d2app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -25,13 +26,27 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2term"
+	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2netpacket"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2server"
 )
 
 func harnessBoolPtr(b bool) *bool { return &b }
+
+// harnessIsWorldBlock reports whether name is a top-level block of the world
+// file (d2save.Blocks).
+func harnessIsWorldBlock(name string) bool {
+	for _, b := range d2save.Blocks {
+		if b == name {
+			return true
+		}
+	}
+
+	return false
+}
 
 // annotation presets (P3 §4: honest annotations; openWorldHint false everywhere)
 func harnessAnnRO(idem bool) *mcp.ToolAnnotations {
@@ -217,8 +232,24 @@ type harnessStartGameOut struct {
 	HeroError string `json:"hero_error,omitempty"`
 }
 
+// harnessSaveGameIn is strigoi_save_game's arguments (M4.6 B3): both are for
+// burst B6's negative controls, and both default to the save a player makes.
+type harnessSaveGameIn struct {
+	Omit []string `json:"omit,omitempty" jsonschema:"top-level blocks of the world file to leave out (version, build, saved_at, map, seed, rng, hero, sidecar, clock, light, squads, spawns, spawner, notice, pursuit, corpses, rising, combat, bodies, entities, scene); requires to, because a file missing a block is one no load reads"`
+	To   string   `json:"to,omitempty" jsonschema:"write ONLY the world file, at this path; his .od2, his sidecar, their .bak and the death screen's copy are left alone"`
+}
+
+// harnessSaveGameOut is what Game.SaveWorld wrote (d2gamescreen.SaveResult).
 type harnessSaveGameOut struct {
-	SavePath string `json:"save_path"`
+	SavePath    string   `json:"save_path"`
+	WorldPath   string   `json:"world_path"`
+	SidecarPath string   `json:"sidecar_path"`
+	Written     []string `json:"written"`
+	Kept        []string `json:"kept"`
+	SetAside    string   `json:"set_aside,omitempty"`
+	Omitted     []string `json:"omitted"`
+	Blocks      []string `json:"blocks"`
+	Bytes       int      `json:"bytes"`
 }
 
 type harnessQuitIn struct {
@@ -550,13 +581,28 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "strigoi_save_game",
-		Description: "Write the current hero state to its .od2 save.",
+		Name: "strigoi_save_game",
+		Description: "Save the game (M4.6 B3, Game.SaveWorld): the world file N.od2.world.json, then the .od2, then the " +
+			"kit sidecar -- one moment in all three -- keeping each previous generation as .bak. Refused, touching no file, " +
+			"with FIGHTING, DEAD, TALKING, JOURNAL, LOADOUT, NETWORK or NOT_READY. omit + to write a world file with blocks " +
+			"left out somewhere else (negative controls); to alone writes only the world file, there.",
 		Annotations: harnessAnnMut(false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, in struct{}) (*mcp.CallToolResult, harnessSaveGameOut, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessSaveGameIn) (*mcp.CallToolResult, harnessSaveGameOut, error) {
 		harnessLogCall("strigoi_save_game")
 
 		var out harnessSaveGameOut
+
+		if len(in.Omit) > 0 && in.To == "" {
+			return nil, out, harnessErr("BAD_ARGUMENT", "omit needs to: a world file with a block left out is one no load reads, and it must not replace his save",
+				"give to a path of its own")
+		}
+
+		for _, name := range in.Omit {
+			if !harnessIsWorldBlock(name) {
+				return nil, out, harnessErr("BAD_ARGUMENT", fmt.Sprintf("%q is not a block of the world file", name),
+					strings.Join(d2save.Blocks, ", "))
+			}
+		}
 
 		var saveErr error
 
@@ -567,13 +613,21 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 				return
 			}
 
-			if err := game.OnPlayerSave(); err != nil {
-				saveErr = harnessErr("INTERNAL", fmt.Sprintf("save failed: %v", err), "")
-				return
+			res, err := game.SaveWorld(d2gamescreen.SaveOptions{Omit: in.Omit, To: in.To})
+
+			out = harnessSaveGameOut{
+				SavePath: res.SavePath, WorldPath: res.WorldPath, SidecarPath: res.SidecarPath,
+				Written: res.Written, Kept: res.Kept, SetAside: res.SetAside,
+				Omitted: res.Omitted, Blocks: res.Blocks, Bytes: res.Bytes,
 			}
 
-			if client.GameState != nil {
-				out.SavePath = client.GameState.FilePath
+			var refusal *d2gamescreen.SaveRefusal
+
+			switch {
+			case errors.As(err, &refusal):
+				saveErr = harnessErr(refusal.Code, refusal.Reason, "every file is as it was")
+			case err != nil:
+				saveErr = harnessErr("INTERNAL", fmt.Sprintf("save failed: %v", err), "")
 			}
 		})
 		if err != nil {
@@ -584,7 +638,7 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			return nil, out, saveErr
 		}
 
-		return harnessText("saved to %s", out.SavePath), out, nil
+		return harnessText("saved: %s", strings.Join(out.Written, ", ")), out, nil
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
