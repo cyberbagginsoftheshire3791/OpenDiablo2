@@ -33,7 +33,7 @@ import (
 //     cut off (recoverPreload); read the world file (unless this process
 //     refused it and could not move it: B1); refuse it -- and fall back per
 //     rule 7, the file set aside and he begins at dawn from his sidecar --
-//     when its version is not 1 or it is not a file a load could read
+//     when its version is not d2save.Version or it is not a file a load could read
 //     (d2save.Decode), the game is a network game (rule 9), it is another
 //     hero's (World.CheckHeroFile) or a torn save (World.SameMoment). (B4a
 //     also left a hunted night where it was, as B4b's -- HUNTED; B4b resumes
@@ -90,8 +90,8 @@ var ErrLoadRefused = errors.New("the world save cannot be resumed")
 
 // The load's refusal codes (LoadRefusal.Code), for the log and the harness.
 const (
-	LoadRefusedVersion = "VERSION" // a version other than 1 (a newer build's file)
-	LoadRefusedFile    = "FILE"    // version 1, and not a file a load could read (d2save.Decode)
+	LoadRefusedVersion = "VERSION" // a version other than d2save.Version (a newer or an older build's file)
+	LoadRefusedFile    = "FILE"    // this build's version, and not a file a load could read (d2save.Decode)
 	LoadRefusedNetwork = "NETWORK" // rule 9: a network game loads no world file
 	LoadRefusedHero    = "HERO"    // another hero's file (World.CheckHeroFile)
 	LoadRefusedTorn    = "TORN"    // a save cut off between its files (World.SameMoment)
@@ -563,6 +563,10 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 		{"notice", v.notice.Validate(w.Notice, r)},
 		{"pursuit", v.pursuit.Validate(w.Pursuit, r)},
 		{"combat", v.combat.Validate(w.Combat, seed)},
+		// BUG-73: each live clock fight held against the FILE's watches and
+		// chases. Only the file holds both halves here: the combat model's
+		// notice is this new game's, which watches no one until step 5.
+		{"combat", d2world.CheckClockWatches(w.Combat, w.Notice, w.Pursuit)},
 		{"bodies", v.checkBodies(w.Bodies)},
 		{"world rng", w.RNG.World.Check(seed, d2rand.StreamWorld)},
 		{"scene", checkStage(w.Scene.LastStage)},

@@ -380,8 +380,10 @@ func (v *Game) raiseTheDead(b d2world.Corpse) string {
 	// J1 (A5): a body rose. It is "reraised" -- a man he cut down standing
 	// again -- only when he rejoins the fight he fell in: a dead man laid down
 	// at first light is Downed too, and stands the next night without anyone
-	// having cut him down (review B2, 24 Sep).
-	rejoined := false
+	// having cut him down (review B2, 24 Sep). And only when that fight is
+	// HIS: a man a villager cut down stands again into the village's fight,
+	// which he did not cut (the raid R1 review's B2, BUG-69).
+	rejoinedHis := false
 
 	// Whenever a body stands, what lay there leaves the map, so the body is
 	// never drawn twice (step 3b; review C1, 27 Sep).
@@ -391,8 +393,8 @@ func (v *Game) raiseTheDead(b d2world.Corpse) string {
 		// A Downed man standing again: the remains of the risen man who fell.
 		// Back into the fight he fell in, at once -- not as an arrival that
 		// must be noticed and in reach (the step-3b review).
-		if w, ok := v.spawns.Member(member); ok && v.combat != nil {
-			rejoined = v.combat.Rejoin(old, w)
+		if w, ok := v.spawns.Member(member); ok {
+			rejoinedHis = v.rejoinHisFight(old, w)
 		}
 
 		// Their lay is a no-op -- he is no longer that member's walker.
@@ -407,15 +409,39 @@ func (v *Game) raiseTheDead(b d2world.Corpse) string {
 		v.takeOffTheMap(b.ID)
 	}
 
-	switch {
-	case member == "":
-	case rejoined:
-		v.note("reraised")
-	default:
-		v.note("rose")
+	if n := riseNote(member, rejoinedHis); n != "" {
+		v.note(n)
 	}
 
 	return member
+}
+
+// rejoinHisFight puts a Downed man who stood again back into the fight he
+// fell in -- his, or one he is not in -- and reports whether it was HIS
+// (Combat.RejoinFight; the raid R1 review's B2, BUG-69).
+func (v *Game) rejoinHisFight(old string, stood d2world.Combatant) bool {
+	if v.combat == nil {
+		return false
+	}
+
+	_, his := v.combat.RejoinFight(old, stood)
+
+	return his
+}
+
+// riseNote is what his journal is told of a body that stood (J1, A5):
+// nothing when none did; "reraised" -- "I cut one down and turned my back on
+// it" -- when a man stood again into HIS fight; and "rose" for every other
+// rising, a man standing again into a fight he is not in among them.
+func riseNote(member string, rejoinedHis bool) string {
+	switch {
+	case member == "":
+		return ""
+	case rejoinedHis:
+		return "reraised"
+	default:
+		return "rose"
+	}
 }
 
 // takeOffTheMap removes one entity's remains from the map and forgets its

@@ -109,5 +109,13 @@ func (c *Combat) TakeXPEvents() []XPEvent {
 }
 
 func (c *Combat) earn(kind, enemyID string) {
+	// The raid's R1: experience comes from his fights only. A kill or a rout
+	// in a fight he is not in is counted, and pays nobody.
+	if c.encounter != nil && c.encounter.driver == driverClock {
+		c.clockBook.xpSuppressed++
+
+		return
+	}
+
 	c.xpEvents = append(c.xpEvents, XPEvent{Kind: kind, Row: c.profileOf(enemyID).Row})
 }

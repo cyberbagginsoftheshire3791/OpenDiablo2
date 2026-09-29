@@ -170,6 +170,40 @@ func (v *Game) speakerEntity(speaker string) d2interface.MapEntity {
 	return nil
 }
 
+// protectedQuarry is the raid's S0-1, default (a): the four speakers are no
+// quarry until their death art (A5) lands. Their stand-ins are 1-HP bodies
+// (MaxHPNormal 0) with no death to show -- Kashya and Charsi die standing,
+// Warriv and Akara vanish (the raid's S0, M0.5) -- so combat's scans skip a
+// pair whose target is one (Combat.SetProtected), and no fight opens on them.
+// A speaker is an NPC drawn by a speaker's stand-in, as speakerEntity finds
+// one. This departs, for as long as it lasts, from ruling 1's "Full entities"
+// and "any living quarry" and from ruling 4's freedom to terrorise the
+// village; the brief's S0-1 names it for Josh.
+func (v *Game) protectedQuarry(id string) bool {
+	if v.dialogue == nil || v.gameClient == nil || v.gameClient.MapEngine == nil {
+		return false
+	}
+
+	e, ok := v.gameClient.MapEngine.Entities()[id]
+	if !ok {
+		return false
+	}
+
+	if _, npc := e.(*d2mapentity.NPC); !npc {
+		return false
+	}
+
+	key := d2mapentity.NameKey(e)
+
+	for i := range v.dialogue.Speakers {
+		if v.dialogue.Speakers[i].StandIn == key {
+			return true
+		}
+	}
+
+	return false
+}
+
 // riteHolds is the priest still keeping his promise: the rite granted, the
 // village still at the rite rung, and the gate not shut against him -- a man
 // who took the bread at sword-point has no priest (the step-4 review; a

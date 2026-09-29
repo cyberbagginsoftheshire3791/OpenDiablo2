@@ -94,14 +94,26 @@ const (
 // paced reports whether THIS fight runs as the tactical layer: the dial is on
 // and a person is at the controls. Under the policy there is nobody to wait
 // for and nothing to watch, so the world-time path stands.
-func (c *Combat) paced() bool {
-	return c.dials.Paced && c.dials.PlayerControl == PlayerControlHuman
+func (c *Combat) paced() bool { return pacedBy(c.dials) }
+
+// pacedBy is paced() for a set of dials: his, or the book's copy of his while
+// a clock fight steps (WorldHeld).
+func pacedBy(d CombatDials) bool {
+	return d.Paced && d.PlayerControl == PlayerControlHuman
 }
 
 // Paced reports whether a paced fight would run now: the dial is on and a
 // person is at the controls. The game screen gates its tactical input and the
 // overlay on it, so an unpaced or policy fight keeps the old click behaviour.
-func (c *Combat) Paced() bool { return c.paced() }
+//
+// It reads HIS dials, mid clock step too (midStep).
+func (c *Combat) Paced() bool {
+	if c.midStep() {
+		return pacedBy(c.clockBook.dials)
+	}
+
+	return c.paced()
+}
 
 // WorldHeld reports whether the fight is holding the world still. It replaces
 // Awaiting as the game screen's gate: a paced fight holds the world for its
@@ -110,12 +122,21 @@ func (c *Combat) Paced() bool { return c.paced() }
 //
 // Awaiting keeps its meaning (the player's turn is open) and its other
 // readers: the harness's step_world guard and the decision timer.
+//
+// Only HIS fight holds the world, so it reads his encounter and his dials --
+// from the book, mid clock step (midStep).
 func (c *Combat) WorldHeld() bool {
-	if c.encounter == nil {
+	e, d := c.encounter, c.dials
+
+	if c.midStep() {
+		e, d = c.clockBook.encounter, c.clockBook.dials
+	}
+
+	if e == nil {
 		return false
 	}
 
-	return c.encounter.awaiting || c.paced()
+	return e.awaiting || pacedBy(d)
 }
 
 // TakeRoundMinutes hands over the world minutes owed by rounds closed since the
@@ -132,7 +153,7 @@ func (c *Combat) TakeRoundMinutes() float64 {
 // before starting a chase: inside a paced fight a participant moves only on its
 // turn, and a chase re-pathing it every tick would walk it in real time.
 func (c *Combat) Participates(id string) bool {
-	e := c.encounter
+	e := c.his()
 	if e == nil || id == "" {
 		return false
 	}
@@ -537,7 +558,18 @@ type TacticalView struct {
 
 // Tactical reports the live fight for the overlay. Out of a fight it still
 // carries the last blows, so the log does not vanish the instant a fight ends.
+// It is HIS fight's view, mid clock step too: it reads too many of his records
+// to take one by one, so it reads them with the book swap undone (asHis).
 func (c *Combat) Tactical() TacticalView {
+	var v TacticalView
+
+	c.asHis(func() { v = c.tactical() })
+
+	return v
+}
+
+// tactical is Tactical with his records on the struct.
+func (c *Combat) tactical() TacticalView {
 	v := TacticalView{
 		Paced:     c.paced(),
 		MoveTiles: c.dials.MoveTiles,

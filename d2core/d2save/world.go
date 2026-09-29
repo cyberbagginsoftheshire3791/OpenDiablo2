@@ -28,6 +28,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -43,13 +44,41 @@ import (
 // Any other is refused (ErrWorldVersion) and the file is set aside, never
 // overwritten (rule 7). There is no migration: when the shape changes
 // incompatibly, this number moves and the old file is set aside.
-const Version = 1
+//
+// NOTHING ELSE NAMES THE NUMBER (the raid's R0.5, 29 Sep 2026). Decode, the
+// refusal's message, WriteWorld's keep-or-set-aside and every test derive it
+// from here, so a bump is this line, testdata/world-v<Version>.json
+// regenerated and its shape hash recorded (world_shape_test.go), nothing more.
+//
+// VERSION 2 (the raid's R1, 29 Sep 2026): the combat block gained its clock
+// -- the fights he is not in, their stream and records, and the clock fights
+// live at the save (the raid's Q5 (a)) -- and rng gained combat_clock. A
+// version-1 file is refused and set aside as .v1.unread (rule 7), never read
+// and never lost.
+//
+// THAT COSTS JOSH NOTHING, AND IT WAS MEASURED (the R1 review's B3, decision
+// (a), accepted): on 29 Sep his %APPDATA%\OpenDiablo2\Saves held no world file
+// at all, and the save verb is not a player's until B5, so no version-1 file
+// of his exists to be set aside -- the HUNTED nights B4a keeps for B4b
+// included.
+//
+// This is the raid milestone's one bump, and THE RULE UNTIL THE MILESTONE
+// SHIPS IS THIS: a later raid burst may amend version 2's shape without a
+// second bump. A world file written by a build between two such bursts is
+// then refused by the later build -- FILE, a shape it does not know (Decode
+// refuses a field missing or unknown at any depth) -- and set aside beside
+// his save, never read with a field at zero, never overwritten, never lost.
+// Josh plays between bursts, so this is his to know (the raid brief, section
+// 4; the R1 build note).
+const Version = 2
 
 // ErrWorldVersion is what a file of any version but Version is refused with.
-// The error is a *VersionError naming the version the file holds.
-var ErrWorldVersion = errors.New("d2save: this build reads world files of version 1 only")
+// The error is a *VersionError naming the version the file holds. Its message
+// names Version, not a literal (the raid's R0.5, 29 Sep 2026: "the version
+// follows Version", so a bump is the constant, the golden file and the hash).
+var ErrWorldVersion = fmt.Errorf("d2save: this build reads world files of version %d only", Version)
 
-// ErrWorldFile is what a version-1 file that no load could read is refused
+// ErrWorldFile is what a file of this Version that no load could read is refused
 // with: not JSON, a block missing or null, a block this build does not know,
 // or a block that disagrees with another (World.Check).
 var ErrWorldFile = errors.New("d2save: world file refused")
@@ -67,7 +96,7 @@ func (e *VersionError) Error() string {
 // Unwrap makes errors.Is(err, ErrWorldVersion) true.
 func (e *VersionError) Unwrap() error { return ErrWorldVersion }
 
-// FileError is a refusal of a version-1 file: Reason names the one rule that
+// FileError is a refusal of a file of this Version: Reason names the one rule that
 // refused it (the Reason* constants), Detail says what it found. Every
 // refusal Decode, Check, CheckHeroFile and SameMoment make is one, and
 // errors.Is(err, ErrWorldFile) holds for each.
@@ -248,12 +277,16 @@ type Map struct {
 //
 // UUID is the harness's seeded uuid stream, in a harness build whose game was
 // seeded; absent in the shipped game, where ids come from crypto/rand.
+//
+// CombatClock is the fights he is not in (the raid's R1): combat's second
+// stream, combat-clock, whose own block is combat.clock.rng.
 type RNG struct {
-	World  d2rand.StreamState `json:"world"`
-	Spawns d2rand.StreamState `json:"spawns"`
-	Combat d2rand.StreamState `json:"combat"`
-	Rising d2rand.StreamState `json:"rising"`
-	UUID   *UUIDStream        `json:"uuid,omitempty"`
+	World       d2rand.StreamState `json:"world"`
+	Spawns      d2rand.StreamState `json:"spawns"`
+	Combat      d2rand.StreamState `json:"combat"`
+	CombatClock d2rand.StreamState `json:"combat_clock"`
+	Rising      d2rand.StreamState `json:"rising"`
+	UUID        *UUIDStream        `json:"uuid,omitempty"`
 }
 
 // UUIDStream is the uuid reader's position: its seed (a JSON string, exact
@@ -453,7 +486,7 @@ func isBlock(name string) bool {
 // exactly. In order:
 //
 //  1. Not a JSON object: ErrWorldFile.
-//  2. A version that is not the integer 1 -- another number, a string, a
+//  2. A version that is not the integer Version -- another number, a string, a
 //     float, or none -- is a *VersionError (ErrWorldVersion), and nothing
 //     else is read: rule 7 sets such a file aside unread.
 //  3. A block missing, null, or unknown: ErrWorldFile.
@@ -482,7 +515,9 @@ func Decode(data []byte) (*World, error) {
 		return nil, &VersionError{Version: "absent"}
 	}
 
-	if v := string(bytes.TrimSpace(version)); v != "1" {
+	// The version follows Version (R0.5): never a literal, so the milestone's
+	// one bump is the constant, the golden file and its hash (B3-8).
+	if v := string(bytes.TrimSpace(version)); v != strconv.Itoa(Version) {
 		return nil, &VersionError{Version: v}
 	}
 
@@ -543,9 +578,9 @@ func Decode(data []byte) (*World, error) {
 }
 
 // VersionOf is the version a file holds, as written, without reading the rest:
-// "1" for a file this build may read, another number or token for one it may
-// not, "absent" for a JSON object with no version, and "" for bytes that are
-// not a JSON object at all.
+// Version, written as a whole number, for a file this build may read; another
+// number or token for one it may not; "absent" for a JSON object with no
+// version; and "" for bytes that are not a JSON object at all.
 func VersionOf(data []byte) string {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(data, &top); err != nil || top == nil {
@@ -654,6 +689,7 @@ func (w *World) checkRNG() error {
 	}{
 		{d2rand.StreamSpawns, w.RNG.Spawns, w.Spawns.RNG},
 		{d2rand.StreamCombat, w.RNG.Combat, w.Combat.RNG},
+		{d2rand.StreamCombatClock, w.RNG.CombatClock, w.Combat.Clock.RNG},
 		{d2rand.StreamRising, w.RNG.Rising, w.Rising.RNG},
 	}
 
@@ -670,6 +706,7 @@ func (w *World) checkRNG() error {
 		{d2rand.StreamWorld, w.RNG.World},
 		{d2rand.StreamSpawns, w.RNG.Spawns},
 		{d2rand.StreamCombat, w.RNG.Combat},
+		{d2rand.StreamCombatClock, w.RNG.CombatClock},
 		{d2rand.StreamRising, w.RNG.Rising},
 	}
 

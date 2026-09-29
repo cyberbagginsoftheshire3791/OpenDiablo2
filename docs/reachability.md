@@ -258,6 +258,35 @@ deferral written only in a commit message is a deferral that has been lost.
   seed check reads step 1's verdict; the shipped game has no script).
   `d2server.ArmedForNextGame` is read by tests only and is not on the
   register.
+- **The raid's R1 (29 Sep 2026), the fights he is not in.** Four rows, all
+  wire and live: `Combat.SetPlayer` (bound by `Game.advanceWorld` every
+  frame), `Combat.SetResolver` and `Combat.SetProtected` (attached in
+  CreateGame), and `d2rand.Rederive` (NewCombat seeds the clock fights'
+  stream with it). What the gate cannot express: `Combat.SetProtected` and
+  `Combat.SetResolver` both accept nil, so a CreateGame that dropped either
+  line would stay live on the register only while the other caller of each
+  remained -- the instrument for the first is `TestAFightHeIsNotIn`'s speakers
+  act (control `no-protection-wiring`: red), and for the second its save act
+  (a save with the village fighting is refused `ErrUnresolvedRef` without
+  it). The game's rule itself, `Game.protectedQuarry`, is unexported and
+  reached only through the Combat seam.
+- **The raid's R1 review fixes (29 Sep 2026).** One row, wire and live:
+  `Combat.RejoinFight` (the review's B2, BUG-69) -- `Game.raiseTheDead`
+  (through the unexported `rejoinHisFight`) now asks it which fight a Downed
+  man stood again into, so his journal's "reraised" is written for HIS fight
+  alone. `Combat.Rejoin` keeps its row: `RejoinFight` calls it, so it stays
+  live in the game, and its bool form is what the M4.7 and R1 unit tests
+  assert (`rejoin_test.go`, one of the 289 that may not be edited).
+- **The raid-r1 follow-up (29 Sep 2026), BUG-73.** One row, wire and live:
+  `d2world.CheckClockWatches`, the world file's cross-check of the combat
+  block's live clock fights against its watches and chases -- the load's step
+  4 (`Game.checkLoad`) calls it, and the save's `validateSnapshots`. The
+  load's call is what makes it live (the save verb is harness-only until B5),
+  so the gate sees that line go dark; it cannot see the save's go, and the
+  instrument for that is the game screen's
+  `TestASaveThatTookASwappedClockBlockWritesNothing` (control
+  `bug73-no-save-call`: red). The load's own instrument is
+  `TestAClockFightsSwappedQuarryIsRefused` (control `bug73-no-load-call`: red).
 
 The rule for this section: **if the gate cannot express it, write it here on
 the day you defer it, and name the milestone that picks it up.**

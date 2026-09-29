@@ -529,7 +529,9 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 			World:  d2rand.StreamState{Seed: engine.RandSeed(), Draws: engine.RandDraws()},
 			Spawns: spawns.RNG,
 			Combat: combat.RNG,
-			UUID:   readUUIDStream(),
+			// The raid's R1: the fights he is not in, combat's second stream.
+			CombatClock: combat.Clock.RNG,
+			UUID:        readUUIDStream(),
 		},
 		Hero: d2save.Hero{
 			Name:  v.localPlayer.Name(),
@@ -587,7 +589,9 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 // and Pursuit by CheckSnapshot -- Validate's checks without its refusal of a
 // system in use, which the live system this save read always is -- Spawns,
 // Notice and Pursuit through the save's own Resolver over the live map, as
-// the load's goes over the resumed one. And the spawner's arrival.
+// the load's goes over the resumed one. And the spawner's arrival, and the
+// clock fights against the watches and chases beside them
+// (d2world.CheckClockWatches, BUG-73), as the load's step 4 checks them.
 //
 // A refusal is the live world holding something no load would take -- a lit
 // torch at no minutes, two carried sources, a source id past next_id -- and
@@ -639,6 +643,14 @@ func (v *Game) validateSnapshots(w *d2save.World, r d2world.Resolver) error {
 
 	if err := v.pursuit.CheckSnapshot(w.Pursuit, r); err != nil {
 		return refused("pursuit", err)
+	}
+
+	// BUG-73: the load's cross-check of the combat block's clock fights
+	// against the watches and chases beside them (checkLoad), made on the
+	// file this save assembled. The live game never refuses it: it is the
+	// rule pruneOrEnd keeps at the end of every clock step.
+	if err := d2world.CheckClockWatches(w.Combat, w.Notice, w.Pursuit); err != nil {
+		return refused("combat", err)
 	}
 
 	return nil

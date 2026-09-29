@@ -57,6 +57,8 @@ func b3Fixture() *World {
 	hx, hy := b3World(heroPos)
 
 	spawns, combat, rising := b3Stream(d2rand.StreamSpawns, 17), b3Stream(d2rand.StreamCombat, 230), b3Stream(d2rand.StreamRising, 9)
+	// The raid's R1: the fights he is not in draw from combat's second stream.
+	clock := b3Stream(d2rand.StreamCombatClock, 31)
 
 	return &World{
 		Version: Version,
@@ -65,7 +67,7 @@ func b3Fixture() *World {
 		Map:     Map{Path: "/data/strigoi/maps/village.tmj", SHA: strings.Repeat("ab", 32)},
 		Seed:    b3Seed,
 		RNG: RNG{
-			World: b3Stream(d2rand.StreamWorld, 4242), Spawns: spawns, Combat: combat, Rising: rising,
+			World: b3Stream(d2rand.StreamWorld, 4242), Spawns: spawns, Combat: combat, Rising: rising, CombatClock: clock,
 			UUID: &UUIDStream{Seed: b3Seed, Bytes: 16 * 9},
 		},
 		Hero:    Hero{Name: "Saver", Class: "Amazon", X: hx, Y: hy, Pos: heroPos, Facing: 3, Health: 187, Stamina: 42.5, Run: true},
@@ -99,7 +101,9 @@ func b3Fixture() *World {
 			RisenAs: map[string]string{}, Walker: map[string]string{}, Last: map[string]string{},
 		},
 		Rising: d2world.RisingSnapshot{Accrued: 2.5, LastBand: 1, LastStage: "night", Rolls: 4, RNG: rising},
-		Combat: d2world.CombatSnapshot{NextID: 3, Started: 2, Ended: 2, Rounds: 7, Actions: 12, EndedReason: "enemies_dead", EndedEnemiesDead: 2, RNG: combat},
+		Combat: d2world.CombatSnapshot{NextID: 3, Started: 2, Ended: 2, Rounds: 7, Actions: 12, EndedReason: "enemies_dead", EndedEnemiesDead: 2, RNG: combat,
+			Clock: d2world.CombatClockSnapshot{NextID: 2, RNG: clock, Started: 1, Ended: 1, Rounds: 4, Actions: 9,
+				EndedReason: "quarry_dead", EndedQuarryDead: 1, Released: 1}},
 		Bodies: []Body{{ID: wolf, Health: 40, MaxHealth: 181}},
 		Entities: []Entity{
 			{ID: wolf, Kind: KindCreature, Creature: "wolf", NameKey: "Wolf", X: wx, Y: wy, Motion: d2mapentity.Motion{
@@ -220,16 +224,26 @@ func TestSeedsPast2To53Survive(t *testing.T) {
 	require.NotEqual(t, b3Seed, int64(asNumber["seed"].(float64)))
 }
 
-// ANY VERSION BUT 1 IS REFUSED, as a *VersionError naming it, before a single
-// other block is read.
+// ANY VERSION BUT THIS BUILD'S IS REFUSED, as a *VersionError naming it,
+// before a single other block is read.
+//
+// THE VERSION FOLLOWS Version (the raid's R0.5, 29 Sep 2026). The test was
+// written at version 1 and named for it; every literal that stood for the
+// build's own version now reads Version (cur), and the one that stood for
+// the next build's reads Version+1, so each case asserts what it asserted at
+// version 1 and still does after a bump. The name is kept: the notes and the
+// raid brief find it by it.
 func TestAVersionOtherThanOneIsRefused(t *testing.T) {
+	cur, next := strconv.Itoa(Version), strconv.Itoa(Version+1)
+
 	data := b3Encode(t, b3Fixture())
-	require.Contains(t, string(data), "\n  \"version\": 1,\n")
+	require.Contains(t, string(data), "\n  \"version\": "+cur+",\n")
 
 	for _, tc := range []struct{ version, named string }{
-		{"0", "0"}, {"2", "2"}, {"-1", "-1"}, {`"1"`, `"1"`}, {"1.0", "1.0"}, {"99999999999", "99999999999"}, {"null", "null"},
+		{"0", "0"}, {next, next}, {"-1", "-1"}, {`"` + cur + `"`, `"` + cur + `"`}, {cur + ".0", cur + ".0"},
+		{"99999999999", "99999999999"}, {"null", "null"},
 	} {
-		bad := bytes.Replace(data, []byte("\"version\": 1,"), []byte("\"version\": "+tc.version+","), 1)
+		bad := bytes.Replace(data, []byte("\"version\": "+cur+","), []byte("\"version\": "+tc.version+","), 1)
 
 		_, err := Decode(bad)
 		require.ErrorIs(t, err, ErrWorldVersion, "version %s", tc.version)
@@ -251,10 +265,11 @@ func TestAVersionOtherThanOneIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrWorldVersion)
 	require.Equal(t, "absent", VersionOf(absent))
 
-	// A version-1 file is not refused on its version (the control).
+	// A file of this build's version is not refused on its version (the
+	// control).
 	_, err = Decode(data)
 	require.NoError(t, err)
-	require.Equal(t, "1", VersionOf(data))
+	require.Equal(t, cur, VersionOf(data))
 	require.Equal(t, "", VersionOf([]byte("not json")))
 }
 
@@ -347,7 +362,8 @@ func TestCheckRefusesWhatNoLoadCouldRestore(t *testing.T) {
 		reason string
 		mutate func(w *World)
 	}{
-		"version 2 in a struct":            {ReasonVersion, func(w *World) { w.Version = 2 }},
+		// The next build's version (R0.5: Version+1, not the literal 2).
+		"the next version in a struct":     {ReasonVersion, func(w *World) { w.Version = Version + 1 }},
 		"generated with a path":            {ReasonMap, func(w *World) { w.Map.Generated = true }},
 		"authored with no path":            {ReasonMap, func(w *World) { w.Map.Path = "" }},
 		"authored with no sha":             {ReasonMap, func(w *World) { w.Map.SHA = "" }},

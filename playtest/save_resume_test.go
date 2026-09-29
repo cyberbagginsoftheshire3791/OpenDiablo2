@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
 )
 
 // TestSaveResume is M4.6's acceptance test (build plan section 4): the save
@@ -2560,8 +2562,9 @@ func refusedWith(t *testing.T, s *session, act, code string, args map[string]any
 	}
 }
 
-// worldFile decodes a world file and requires every block, in order,
-// version 1.
+// worldFile decodes a world file and requires every block, in order, and
+// this build's version -- d2save.Version, never a literal (the raid's R0.5:
+// the version follows Version, so the milestone's bump leaves this green).
 func worldFile(t *testing.T, act string, data []byte) map[string]any {
 	t.Helper()
 
@@ -2593,7 +2596,7 @@ func worldFile(t *testing.T, act string, data []byte) map[string]any {
 		t.Fatalf("%s: the world file's blocks are %v, want %v", act, order, worldBlocks)
 	}
 
-	if num(file, "version") != 1 {
+	if num(file, "version") != float64(d2save.Version) {
 		t.Fatalf("%s: version %v", act, file["version"])
 	}
 

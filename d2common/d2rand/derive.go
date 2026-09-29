@@ -10,6 +10,12 @@ const (
 	StreamSpawns = "spawns"
 	StreamCombat = "combat"
 	StreamRising = "rising"
+
+	// StreamCombatClock is the dice of the fights he is not in -- the combat
+	// model's clock-driven encounters (the raid's R1, 29 Sep 2026). His own
+	// fight keeps StreamCombat, so a fight across the village never moves a
+	// roll of his (the raid brief's M0.1d, measured roll for roll).
+	StreamCombatClock = "combat-clock"
 )
 
 // int32max is math/rand's seed modulus (rngSource.Seed): 2^31 - 1.
@@ -78,4 +84,21 @@ func streamOffset(stream string) int64 {
 	_, _ = h.Write([]byte(stream)) // hash.Hash.Write never errs
 
 	return 1 + int64(h.Sum64()%uint64(int32max-2))
+}
+
+// Rederive is the seed stream `to` runs on in the game whose stream `from` runs
+// on derived: Rederive(Derive(g, from), from, to) == Derive(g, to) for every
+// game seed g (the raid's R1, 29 Sep 2026).
+//
+// Derive moves the game's effective seed a fixed offset round the ring of the
+// 2^31-2 non-zero residues, so one derived seed names the game's effective
+// seed, and with it every sibling stream: step back by from's offset, forward
+// by to's. It lets a system handed one derived seed -- the combat model is
+// handed StreamCombat's, at ten construction sites -- seed a second stream of
+// its own (StreamCombatClock) with no new constructor argument.
+func Rederive(derived int64, from, to string) int64 {
+	m := int64(int32max - 1)
+	e := ((derived-1-streamOffset(from))%m + m) % m // the game's Effective - 1
+
+	return 1 + (e+streamOffset(to))%m
 }
