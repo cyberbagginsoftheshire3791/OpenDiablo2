@@ -384,6 +384,13 @@ func CreateGame(
 	// T3: and his talents, as numbers.
 	game.combat.SetEdges(game)
 
+	// The raid's R1: a fight he is not in is saved with the world (Q5 (a)), so
+	// its quarry and enemies are named by id and found again through the same
+	// Resolver the save and the load use; and the four speakers are no quarry
+	// until their death art lands (S0-1 (a); protectedQuarry, hearth.go).
+	game.combat.SetResolver(worldResolver{game})
+	game.combat.SetProtected(game.protectedQuarry)
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -1094,6 +1101,12 @@ func (v *Game) advanceWorld(elapsed float64) {
 	// list IS the turn structure -- there is no queue anywhere in this engine,
 	// and every system takes world minutes as a float (M4.5 §3.7).
 	if v.combat != nil {
+		// The raid's R1: bind him the way Squads.BindPlayer is bound, so the
+		// resolver can tell his fight from the fights he is not in.
+		if v.localPlayer != nil {
+			v.combat.SetPlayer(v.localPlayer.ID())
+		}
+
 		v.combat.Advance(worldMinutes)
 
 		v.applyFightingActivity()

@@ -390,6 +390,17 @@ var Register = []Entry{
 		"T3: CreateGame attaches the screen as the resolver's Edges source -- his talents as numbers. Nil is legal (no talents); the progress provider's edge block is the instrument.", ""},
 	{sym(pkgWorld, "Combat.TakeXPEvents"), BucketWire, VerdictLive,
 		"T3: what fights did that earns experience (slain, routed), taken every live frame by Game.earnExperience.", ""},
+
+	// The raid's R1 (the village at night, 29 Sep 2026): the fights he is not
+	// in -- one resolver, two drivers (d2world/combat_clock.go).
+	{sym(pkgWorld, "Combat.SetPlayer"), BucketWire, VerdictLive,
+		"The raid's R1: Game.advanceWorld binds his id every frame beside Advance, so a fight whose quarry is not he is a clock fight and never takes his slot. If this goes dark every fight is the legacy rule's one encounter again -- a monster that notices a villager opens a paced fight with the villager in his slot (the raid brief's M0.1a) -- and TestAFightHeIsNotIn is the instrument.", ""},
+	{sym(pkgWorld, "Combat.SetResolver"), BucketWire, VerdictLive,
+		"The raid's R1, Q5 (a): CreateGame attaches worldResolver, through which Validate and Restore find a saved clock fight's quarry and enemies. Without it a save made while the village fights is refused at the save's own Validate (ErrUnresolvedRef).", ""},
+	{sym(pkgWorld, "Combat.SetProtected"), BucketWire, VerdictLive,
+		"The raid's S0-1 (a): CreateGame attaches Game.protectedQuarry, so no fight opens on the four speakers (1-HP stand-ins with no death to show) until their death art lands. Nil is legal -- nobody protected -- so losing this line is silent everywhere but TestAFightHeIsNotIn's speakers act.", ""},
+	{sym("d2common/d2rand", "Rederive"), BucketWire, VerdictLive,
+		"The raid's R1: NewCombat seeds the clock fights' combat-clock stream from the one StreamCombat seed it is handed (newFightBook), so its ten construction sites take no new argument.", ""},
 	{sym(pkgWorld, "Meters.SetConditioning"), BucketWire, VerdictLive,
 		"T3: Endurance's talents applied to his body -- fatigue and hunger rates, the Shaken and no-Reaction thresholds.", ""},
 	{sym(pkgWorld, "Light.SetCarriedBurnRate"), BucketWire, VerdictLive,

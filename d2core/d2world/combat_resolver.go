@@ -905,6 +905,14 @@ func (c *Combat) reachedZero(id string) {
 	}
 
 	if e.target != nil && e.target.QuarryID() == id {
+		// The raid's R1: a clock fight's quarry is not him. His body falls as a
+		// man's, the watches on him go, and the fight ends quarry_dead.
+		if e.driver == driverClock {
+			c.quarryDead(e)
+
+			return
+		}
+
 		c.end("player_dead")
 
 		return

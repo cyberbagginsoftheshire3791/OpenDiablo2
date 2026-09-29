@@ -1,0 +1,392 @@
+{
+  "version": 2,
+  "build": "save-b3 test",
+  "saved_at": "2026-09-28T21:14:05.123Z",
+  "map": {
+    "path": "/data/strigoi/maps/village.tmj",
+    "sha": "abababababababababababababababababababababababababababababababab",
+    "generated": false
+  },
+  "seed": "4611686018427400249",
+  "rng": {
+    "world": {
+      "seed": "4611686018427400249",
+      "draws": 4242
+    },
+    "spawns": {
+      "seed": "443265693",
+      "draws": 17
+    },
+    "combat": {
+      "seed": "179930213",
+      "draws": 230
+    },
+    "combat_clock": {
+      "seed": "1070651287",
+      "draws": 31
+    },
+    "rising": {
+      "seed": "1368539928",
+      "draws": 9
+    },
+    "uuid": {
+      "seed": "4611686018427400249",
+      "bytes": 144
+    }
+  },
+  "hero": {
+    "name": "Saver",
+    "class": "Amazon",
+    "x": 108.08,
+    "y": 122.25999999999999,
+    "pos": [
+      540.4,
+      611.3
+    ],
+    "facing": 3,
+    "health": 187,
+    "stamina": 42.5,
+    "run": true
+  },
+  "sidecar": {
+    "version": 1,
+    "generation": "2026-09-28T21:14:05.123Z",
+    "kit": {
+      "worn": {
+        "off": "torch"
+      }
+    },
+    "progress": {
+      "xp": 50
+    }
+  },
+  "clock": {
+    "elapsed": 1092.5
+  },
+  "light": {
+    "sources": [
+      {
+        "id": 2,
+        "kind": "torch",
+        "burn": 41.5,
+        "lit": true,
+        "carried": true,
+        "x": 0,
+        "y": 0
+      }
+    ],
+    "next_id": 3
+  },
+  "squads": {
+    "next_id": 2,
+    "selected": "s:1",
+    "squads": [
+      {
+        "id": "s:1",
+        "owner": "player",
+        "ordinal": 1,
+        "morale": 100,
+        "members": [
+          {
+            "entity": "player",
+            "health": 0,
+            "max": 0,
+            "order": 0
+          }
+        ],
+        "meters": {
+          "food": 71.25,
+          "water": 64,
+          "fatigue": 12.5,
+          "activity": "idle",
+          "damage": 0.25
+        }
+      }
+    ]
+  },
+  "spawns": {
+    "groups": [
+      {
+        "id": "g:1",
+        "row": "wolves",
+        "code": "zombie1",
+        "members": [
+          {
+            "id": "0a-wolf",
+            "x": 106.24000000000001,
+            "y": 122.54
+          },
+          {
+            "id": "0b-gone",
+            "x": 90,
+            "y": 91,
+            "gone": true
+          }
+        ],
+        "morale": 60,
+        "born_at": 1030,
+        "band": 1,
+        "stage": "night",
+        "weight": 1.5,
+        "spawned": 2,
+        "born_where": [
+          [
+            100,
+            120
+          ],
+          [
+            101,
+            121
+          ]
+        ]
+      }
+    ],
+    "next_id": 2,
+    "since_check_minutes": 3.5,
+    "open_bodies": 1,
+    "checks": 40,
+    "rolls": 40,
+    "spawned": 2,
+    "failures": 0,
+    "dropped": 0,
+    "despawned": 0,
+    "cleared": 0,
+    "released": 1,
+    "rng": {
+      "seed": "443265693",
+      "draws": 17
+    }
+  },
+  "spawner": {
+    "arrival": 2
+  },
+  "notice": {
+    "watches": [
+      {
+        "watcher": "0a-wolf",
+        "target": "player",
+        "sees": true,
+        "noticed": true,
+        "distance": 6.25,
+        "light_at_target": 0,
+        "reach": 9,
+        "since_check_minutes": 0,
+        "since_seen_minutes": 0,
+        "checks": 55,
+        "notices": 1
+      }
+    ],
+    "checks": 55,
+    "notices": 1
+  },
+  "pursuit": {
+    "chases": [
+      {
+        "hunter": "0a-wolf",
+        "quarry": "player",
+        "solved_at_x": 108,
+        "solved_at_y": 122,
+        "solved_distance": 6.25,
+        "since_solve_minutes": 0.5,
+        "reachable": true,
+        "solves": 3,
+        "arrived": false
+      }
+    ],
+    "solves": 3
+  },
+  "corpses": {
+    "bodies": [
+      {
+        "id": "dead:1",
+        "row": "men",
+        "class": "human",
+        "state": "fresh",
+        "x": 99.5,
+        "y": 100.5,
+        "was": "a carter",
+        "downed_at": 0
+      }
+    ],
+    "risen_as": {},
+    "walker": {},
+    "last": {}
+  },
+  "rising": {
+    "pressure_accrued": 2.5,
+    "last_band": 1,
+    "last_stage": "night",
+    "rolls": 4,
+    "risen": 0,
+    "stood_again": 0,
+    "wandered": 0,
+    "rng": {
+      "seed": "1368539928",
+      "draws": 9
+    }
+  },
+  "combat": {
+    "next_id": 3,
+    "rng": {
+      "seed": "179930213",
+      "draws": 230
+    },
+    "started": 2,
+    "ended": 2,
+    "rounds": 7,
+    "declines": 0,
+    "actions": 12,
+    "commits_refused": 0,
+    "commits_by_input": 0,
+    "commits_by_field": 0,
+    "steps_ordered": 0,
+    "joined": 0,
+    "quick_resolved": 0,
+    "last_quick_advantage": 0,
+    "ended_reason": "enemies_dead",
+    "ended_enemies_dead": 2,
+    "ended_player_dead": 0,
+    "ended_disengaged": 0,
+    "ended_routed": 0,
+    "ended_dawn": 0,
+    "last_action_verb": "",
+    "last_round": {
+      "encounter": "",
+      "round": 0,
+      "decide_seconds": 0,
+      "action": "",
+      "move": false
+    },
+    "last_pace": {
+      "encounter": "",
+      "rounds": 0,
+      "wall_seconds": 0,
+      "decide_seconds": 0,
+      "health_open": 0,
+      "health_close": 0,
+      "end_reason": "",
+      "enemies": 0,
+      "kinds": null,
+      "initiator": "",
+      "surprised": false,
+      "control": "",
+      "commits": 0
+    },
+    "actions_round": 0,
+    "last_actions": null,
+    "blow_log": null,
+    "clock": {
+      "next_id": 2,
+      "rng": {
+        "seed": "1070651287",
+        "draws": 31
+      },
+      "started": 1,
+      "ended": 1,
+      "rounds": 4,
+      "declines": 0,
+      "actions": 9,
+      "joined": 0,
+      "quick_resolved": 0,
+      "last_quick_advantage": 0,
+      "ended_reason": "quarry_dead",
+      "ended_quarry_dead": 1,
+      "ended_enemies_dead": 0,
+      "ended_player_dead": 0,
+      "ended_disengaged": 0,
+      "ended_routed": 0,
+      "ended_dawn": 0,
+      "xp_suppressed": 0,
+      "released": 1,
+      "reentrant_reads": 0,
+      "actions_round": 0
+    }
+  },
+  "bodies": [
+    {
+      "id": "0a-wolf",
+      "health": 40,
+      "max_health": 181
+    }
+  ],
+  "entities": [
+    {
+      "id": "0a-wolf",
+      "kind": "creature",
+      "native": false,
+      "creature": "wolf",
+      "name_key": "Wolf",
+      "x": 106.24000000000001,
+      "y": 122.54,
+      "motion": {
+        "pos": [
+          531.2,
+          612.7
+        ],
+        "target": [
+          533,
+          612.5
+        ],
+        "velocity": [
+          0.5,
+          -0.1
+        ],
+        "path": [
+          [
+            535,
+            612.5
+          ],
+          [
+            540,
+            612.5
+          ]
+        ],
+        "speed": 6,
+        "dir": 3,
+        "mode": "walk"
+      }
+    },
+    {
+      "id": "7f-villager",
+      "kind": "npc",
+      "native": true,
+      "monstat": "warriv",
+      "name_key": "Warriv",
+      "born": [
+        101,
+        118
+      ],
+      "x": 101,
+      "y": 118,
+      "motion": {
+        "pos": [
+          505,
+          590
+        ],
+        "target": [
+          505,
+          590
+        ],
+        "velocity": [
+          0,
+          0
+        ],
+        "path": [],
+        "speed": 3,
+        "dir": 0,
+        "mode": "NU"
+      }
+    }
+  ],
+  "scene": {
+    "watch_stood": 30.25,
+    "field_dead": [
+      "dead:1",
+      "dead:2"
+    ],
+    "dawn_paid_day": 1,
+    "last_stage": "night",
+    "watch_clock": 1080,
+    "watch_clock_set": true
+  }
+}

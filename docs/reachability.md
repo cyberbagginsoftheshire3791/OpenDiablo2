@@ -258,6 +258,18 @@ deferral written only in a commit message is a deferral that has been lost.
   seed check reads step 1's verdict; the shipped game has no script).
   `d2server.ArmedForNextGame` is read by tests only and is not on the
   register.
+- **The raid's R1 (29 Sep 2026), the fights he is not in.** Four rows, all
+  wire and live: `Combat.SetPlayer` (bound by `Game.advanceWorld` every
+  frame), `Combat.SetResolver` and `Combat.SetProtected` (attached in
+  CreateGame), and `d2rand.Rederive` (NewCombat seeds the clock fights'
+  stream with it). What the gate cannot express: `Combat.SetProtected` and
+  `Combat.SetResolver` both accept nil, so a CreateGame that dropped either
+  line would stay live on the register only while the other caller of each
+  remained -- the instrument for the first is `TestAFightHeIsNotIn`'s speakers
+  act (control `no-protection-wiring`: red), and for the second its save act
+  (a save with the village fighting is refused `ErrUnresolvedRef` without
+  it). The game's rule itself, `Game.protectedQuarry`, is unexported and
+  reached only through the Combat seam.
 
 The rule for this section: **if the gate cannot express it, write it here on
 the day you defer it, and name the milestone that picks it up.**

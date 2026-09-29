@@ -482,7 +482,9 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 			World:  d2rand.StreamState{Seed: engine.RandSeed(), Draws: engine.RandDraws()},
 			Spawns: spawns.RNG,
 			Combat: combat.RNG,
-			UUID:   readUUIDStream(),
+			// The raid's R1: the fights he is not in, combat's second stream.
+			CombatClock: combat.Clock.RNG,
+			UUID:        readUUIDStream(),
 		},
 		Hero: d2save.Hero{
 			Name:  v.localPlayer.Name(),

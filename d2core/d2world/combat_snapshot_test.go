@@ -164,6 +164,17 @@ func b2aCombatClasses() []b2aClass {
 			"corpses":  "W: the registry the dead fall into, restored on its own",
 			"stepper":  "W: the game screen's walk for a paced fight",
 
+			// The raid's R1 (the rows TestCombatSnapshotFieldsClassified asks a
+			// new field for). The clock fights and their book are saved under
+			// clock -- clock.live, clock.rng and the book's records; this
+			// fixture binds no player, so it has no live clock fight, and the
+			// clock block's depth is combat_clock_snapshot_test.go's.
+			"player":      "W: his entity id, bound by the game every frame beside Advance (SetPlayer)",
+			"clockFights": "S:clock",
+			"clockBook":   "S:clock",
+			"resolver":    "W: the game's worldResolver, attached at construction (SetResolver)",
+			"protected":   "W: the game's rule for who is no quarry, attached at construction (SetProtected)",
+
 			"xpEvents":       "T: the game takes them every frame (TakeXPEvents); Snapshot refuses unless empty",
 			"killerIsPlayer": "T: set and cleared inside one blow's resolution; Snapshot refuses unless clear",
 			"owedMinutes":    "T: the game takes them every frame (TakeRoundMinutes); Snapshot refuses unless zero",

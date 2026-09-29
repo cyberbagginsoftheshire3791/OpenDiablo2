@@ -49,7 +49,15 @@ import (
 // refusal's message, WriteWorld's keep-or-set-aside and every test derive it
 // from here, so a bump is this line, testdata/world-v<Version>.json
 // regenerated and its shape hash recorded (world_shape_test.go), nothing more.
-const Version = 1
+//
+// VERSION 2 (the raid's R1, 29 Sep 2026): the combat block gained its clock
+// -- the fights he is not in, their stream and records, and the clock fights
+// live at the save (the raid's Q5 (a)) -- and rng gained combat_clock. A
+// version-1 file is refused and set aside as .v1.unread (rule 7); none has
+// shipped (B5 has not). This is the raid milestone's one bump: its later
+// bursts amend version 2's shape while no build between them is played with
+// saves (the raid brief, section 4).
+const Version = 2
 
 // ErrWorldVersion is what a file of any version but Version is refused with.
 // The error is a *VersionError naming the version the file holds. Its message
@@ -256,12 +264,16 @@ type Map struct {
 //
 // UUID is the harness's seeded uuid stream, in a harness build whose game was
 // seeded; absent in the shipped game, where ids come from crypto/rand.
+//
+// CombatClock is the fights he is not in (the raid's R1): combat's second
+// stream, combat-clock, whose own block is combat.clock.rng.
 type RNG struct {
-	World  d2rand.StreamState `json:"world"`
-	Spawns d2rand.StreamState `json:"spawns"`
-	Combat d2rand.StreamState `json:"combat"`
-	Rising d2rand.StreamState `json:"rising"`
-	UUID   *UUIDStream        `json:"uuid,omitempty"`
+	World       d2rand.StreamState `json:"world"`
+	Spawns      d2rand.StreamState `json:"spawns"`
+	Combat      d2rand.StreamState `json:"combat"`
+	CombatClock d2rand.StreamState `json:"combat_clock"`
+	Rising      d2rand.StreamState `json:"rising"`
+	UUID        *UUIDStream        `json:"uuid,omitempty"`
 }
 
 // UUIDStream is the uuid reader's position: its seed (a JSON string, exact
@@ -664,6 +676,7 @@ func (w *World) checkRNG() error {
 	}{
 		{d2rand.StreamSpawns, w.RNG.Spawns, w.Spawns.RNG},
 		{d2rand.StreamCombat, w.RNG.Combat, w.Combat.RNG},
+		{d2rand.StreamCombatClock, w.RNG.CombatClock, w.Combat.Clock.RNG},
 		{d2rand.StreamRising, w.RNG.Rising, w.Rising.RNG},
 	}
 
@@ -680,6 +693,7 @@ func (w *World) checkRNG() error {
 		{d2rand.StreamWorld, w.RNG.World},
 		{d2rand.StreamSpawns, w.RNG.Spawns},
 		{d2rand.StreamCombat, w.RNG.Combat},
+		{d2rand.StreamCombatClock, w.RNG.CombatClock},
 		{d2rand.StreamRising, w.RNG.Rising},
 	}
 

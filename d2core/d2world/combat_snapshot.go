@@ -61,6 +61,73 @@ type CombatSnapshot struct {
 	ActionsRound int                    `json:"actions_round"`
 	LastActions  []CombatActionSnapshot `json:"last_actions"`
 	BlowLog      []CombatBlowSnapshot   `json:"blow_log"`
+
+	// Clock is the fights he is not in (the raid's R1): the clock book's
+	// stream and records, which outlive every fight, and -- the raid's Q5,
+	// default (a), "a fight he is not in never stops a save" -- the clock
+	// fights live at the save. Everything above is his, as it always was.
+	Clock CombatClockSnapshot `json:"clock"`
+}
+
+// CombatClockSnapshot is the clock driver at a save (the raid's R1): its own
+// id sequence (c:<n>, S0-3 (a)), its stream (combat-clock), the records its
+// book keeps, and the live clock fights. Every field is reported in the combat
+// provider's clock block, so a resumed game that lost any would report a
+// different world.
+type CombatClockSnapshot struct {
+	NextID int                `json:"next_id"`
+	RNG    d2rand.StreamState `json:"rng"`
+
+	Started            int     `json:"started"`
+	Ended              int     `json:"ended"`
+	Rounds             int     `json:"rounds"`
+	Declines           int     `json:"declines"`
+	Actions            int     `json:"actions"`
+	Joined             int     `json:"joined"`
+	QuickResolved      int     `json:"quick_resolved"`
+	LastQuickAdvantage float64 `json:"last_quick_advantage"`
+
+	EndedReason      string `json:"ended_reason"`
+	EndedQuarryDead  int    `json:"ended_quarry_dead"`
+	EndedEnemiesDead int    `json:"ended_enemies_dead"`
+	EndedPlayerDead  int    `json:"ended_player_dead"`
+	EndedDisengaged  int    `json:"ended_disengaged"`
+	EndedRouted      int    `json:"ended_routed"`
+	EndedDawn        int    `json:"ended_dawn"`
+
+	XPSuppressed   int `json:"xp_suppressed"`
+	Released       int `json:"released"`
+	ReentrantReads int `json:"reentrant_reads"`
+
+	// The clock's last resolved round's blows. Omitted, as the live fights
+	// are, when there are none: a game the village has not fought in writes
+	// the block without them.
+	ActionsRound int                    `json:"actions_round"`
+	LastActions  []CombatActionSnapshot `json:"last_actions,omitempty"`
+
+	Live []CombatClockFightSnapshot `json:"live,omitempty"`
+}
+
+// CombatClockFightSnapshot is one clock fight between two steps: everything
+// the world-time loop carries from one step to the next. Its quarry and its
+// enemies are entity ids -- a clock fight's quarry is never he, so PlayerRef
+// never appears -- turned back into live things by the Resolver at a load.
+// What it does not carry is the paced round's machinery and the turn's
+// economy, which a clock fight never uses: Snapshot refuses one that holds
+// any of it.
+type CombatClockFightSnapshot struct {
+	ID          string   `json:"id"`
+	Quarry      string   `json:"quarry"`
+	Enemies     []string `json:"enemies"`
+	EnemyOrder  []string `json:"enemy_order"`
+	Dead        []string `json:"dead,omitempty"`
+	Routed      []string `json:"routed,omitempty"`
+	Broke       []string `json:"broke,omitempty"`
+	Round       int      `json:"round"`
+	SinceTurn   float64  `json:"since_turn"`
+	Initiator   string   `json:"initiator"`
+	Surprised   bool     `json:"surprised"`
+	SurpriseWhy string   `json:"surprise_why"`
 }
 
 // CombatRoundSnapshot is RoundRow, the last closed round's record.
@@ -126,12 +193,20 @@ type CombatBlowSnapshot struct {
 // Snapshot is the combat model between fights. It returns ErrCombatFighting
 // during one, and an error naming the field if anything a fight leaves for
 // the game screen, or its pace window, has not been emptied.
+//
+// A FIGHT HE IS NOT IN NEVER STOPS A SAVE (the raid's Q5, default (a)): only
+// his refuses (Fighting). The clock fights are written into the clock block.
 func (c *Combat) Snapshot() (CombatSnapshot, error) {
 	if c.Fighting() {
 		return CombatSnapshot{}, ErrCombatFighting
 	}
 
 	if err := c.checkBetweenFights(); err != nil {
+		return CombatSnapshot{}, err
+	}
+
+	clock, err := c.clockSnapshot()
+	if err != nil {
 		return CombatSnapshot{}, err
 	}
 
@@ -158,6 +233,7 @@ func (c *Combat) Snapshot() (CombatSnapshot, error) {
 		ActionsRound: c.actionsRound,
 		LastActions:  make([]CombatActionSnapshot, 0, len(c.lastActions)),
 		BlowLog:      make([]CombatBlowSnapshot, 0, len(c.blowLog)),
+		Clock:        clock,
 	}
 
 	for _, a := range c.lastActions {
@@ -209,9 +285,20 @@ func (c *Combat) checkBetweenFights() error {
 // dials, and the harness's writes to them are test setup. Load order (B4):
 // with the other systems' counters, after the entities are rebuilt; nothing it
 // restores names a live entity except as a record (the last round's blows).
+//
+// THE CLOCK FIGHTS ARE RESTORED WITH IT (the raid's R1, Q5 (a)), their quarry
+// and enemies resolved through the Resolver the game attached (SetResolver);
+// a snapshot holding one with no Resolver is refused. They replace whatever
+// clock fights the model held: a restore is the saved moment, and the load
+// restores into CreateGame's fresh model, which holds none.
 func (c *Combat) Restore(s CombatSnapshot, worldSeed int64) error {
 	if err := c.Validate(s, worldSeed); err != nil {
 		return err
+	}
+
+	clockFights, err := c.clockFightsOf(s.Clock)
+	if err != nil {
+		return err // Validate built the same fights; unreachable
 	}
 
 	c.nextID = s.NextID
@@ -256,6 +343,9 @@ func (c *Combat) Restore(s CombatSnapshot, worldSeed int64) error {
 
 	s.RNG.RestoreInto(c.rng)
 
+	// The clock's half (the raid's R1): Validate built its fights already.
+	c.restoreClock(s.Clock, clockFights)
+
 	return nil
 }
 
@@ -283,6 +373,23 @@ func (c *Combat) Validate(s CombatSnapshot, worldSeed int64) error {
 
 	if err := s.RNG.Check(worldSeed, d2rand.StreamCombat); err != nil {
 		return fmt.Errorf("combat snapshot: %w", err)
+	}
+
+	// The clock's block (the raid's R1): its counts and ids, its stream --
+	// combat-clock's, of the same game -- and every live fight whole, its refs
+	// resolved. A clock fight live in the model is NOT refused: B3's save
+	// validates the live model's own snapshot with this (validateSnapshots),
+	// and at a save the village may be fighting (Q5 (a)).
+	if err := checkClockSnapshot(s.Clock); err != nil {
+		return err
+	}
+
+	if err := s.Clock.RNG.Check(worldSeed, d2rand.StreamCombatClock); err != nil {
+		return fmt.Errorf("combat snapshot: clock: %w", err)
+	}
+
+	if _, err := c.clockFightsOf(s.Clock); err != nil {
+		return err
 	}
 
 	return nil

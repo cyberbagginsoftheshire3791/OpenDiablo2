@@ -49,6 +49,9 @@ import (
 // edit the hash of a version that has shipped.
 var b3ShapeHashes = map[int]string{
 	1: "3f7fb4b1b510b802fd0c7c6f2da0dd5c0f161921275ba0b26a81cd490c97087a",
+	// The raid's R1 (29 Sep 2026): combat.clock and rng.combat_clock. The
+	// merge with M4.6 B4b recomputes this once, if B4b changed a shape too.
+	2: "fa82243b4569ce29eb4b2a5c7179f36489d4a90accf8800fa1fe61c586b71565",
 }
 
 var b3UpdateGolden = flag.Bool("update-golden", false, "write testdata/world-v<Version>.json from the fixture and print the shape hash")

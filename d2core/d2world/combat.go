@@ -82,6 +82,18 @@ type Combat struct {
 	encounter *encounter
 	nextID    int
 
+	// The fights he is not in (the raid's R1; combat_clock.go). player is his
+	// entity id, bound by the game every frame ("" in every unit fixture: the
+	// legacy rule). clockFights are the clock-driven encounters, clockBook
+	// their per-fight records, swapped onto the struct for a clock step.
+	// resolver turns a saved clock fight's ids back into live things, and
+	// protected names who is no quarry (S0-1 (a): the four speakers).
+	player      string
+	clockFights []*encounter
+	clockBook   *fightBook
+	resolver    Resolver
+	protected   func(id string) bool
+
 	// lastActions is every blow of the most recently RESOLVED ROUND, and
 	// actionsRound is which round that was.
 	//
@@ -531,6 +543,11 @@ type encounter struct {
 	target  Quarry
 	enemies []Combatant
 
+	// driver is who drives the fight (the raid's R1): driverPlayer, the zero
+	// value, for his -- or, with no player bound, the one fight -- and
+	// driverClock for a fight he is not in (combat_clock.go).
+	driver string
+
 	// enemyOrder is the ENEMY half of the activation sequence: packs in
 	// descending authored Speed, ties broken once at fight start by the
 	// seeded RNG, members within a pack in sorted id order.
@@ -675,6 +692,10 @@ func NewCombat(clock *Clock, notice *Notice, fitness FitnessSource, illum Illumi
 		chases:   chases,
 		rng:      d2rand.NewStream(seed),
 		nextID:   1,
+
+		// The fights he is not in draw from the combat-clock stream of the
+		// same game (the raid's R1): derived from seed, so no new argument.
+		clockBook: newFightBook(seed),
 	}
 
 	d2harness.Register(c)
@@ -712,6 +733,19 @@ func (c *Combat) Advance(worldMinutes float64) {
 		return
 	}
 
+	c.advancePlayer(worldMinutes)
+
+	// THE SECOND DRIVER (the raid's R1): the fights he is not in, on the same
+	// world minutes. With no player bound -- every unit fixture -- it never
+	// runs, and Advance is what it was: the legacy rule.
+	if c.player != "" {
+		c.advanceClock(worldMinutes)
+	}
+}
+
+// advancePlayer is Advance as it stood before the raid's R1, for his
+// encounter -- or, with no player bound, the one encounter.
+func (c *Combat) advancePlayer(worldMinutes float64) {
 	if c.encounter == nil {
 		c.tryStart()
 
@@ -923,7 +957,9 @@ func (c *Combat) playerHealth() int {
 // Awaiting reports whether the player's turn is open. Game.worldRunning() is
 // its one live reader, and the harness reports it.
 func (c *Combat) Awaiting() bool {
-	return c.encounter != nil && c.encounter.awaiting
+	e := c.his()
+
+	return e != nil && e.awaiting
 }
 
 // CommitsRefused counts commits that arrived with no turn waiting, or with the
@@ -1149,6 +1185,21 @@ func (c *Combat) scanAware(target Quarry) (enemies []Combatant, chosen Quarry, d
 			continue
 		}
 
+		// A DEAD QUARRY IS SKIPPED PER PAIR, NOT PER SCAN (the raid's R1; B2's
+		// wedge, BUG-65). Before it, the first pair's target was chosen even
+		// when it was dead, tryStart refused it, and every other aware pair
+		// waited behind a watch on a corpse -- measured, probe-wedge.txt. After
+		// the reach test, so declined_reach counts exactly as it did.
+		if c.deadByBody(pair.Target.QuarryID()) {
+			continue
+		}
+
+		// A PROTECTED QUARRY IS NO QUARRY (S0-1 (a), SetProtected): no fight
+		// opens on one, and none takes one in.
+		if c.protected != nil && c.protected(pair.Target.QuarryID()) {
+			continue
+		}
+
 		if target == nil {
 			target = pair.Target
 		}
@@ -1270,11 +1321,29 @@ func insertBySpeed(order []string, id string, speed int, speedOf func(string) in
 // group's awareness alone; the asymmetry is in the milestone's DoD, and the
 // second direction is additive to a model that already exists.
 func (c *Combat) tryStart() {
+	// With a player bound, HIS fight opens only on a pair whose target is he
+	// (the raid's R1). Anyone else's watchers are the clock driver's. With none
+	// bound, the first aware pair names the quarry, as it always has.
+	var want Quarry
+
+	if c.player != "" {
+		if want = c.quarryNamed(c.player); want == nil {
+			return
+		}
+	}
+
+	c.tryStartFor(want)
+}
+
+// tryStartFor is tryStart's body with the quarry named: nil means the first
+// aware pair's target (the legacy rule). The clock driver calls it under the
+// clock's book, once per quarry, so both drivers open fights with one code.
+func (c *Combat) tryStartFor(want Quarry) {
 	if c.notice == nil {
 		return
 	}
 
-	enemies, target, declined := c.scanAware(nil)
+	enemies, target, declined := c.scanAware(want)
 
 	// DECLINES STILL MEAN WHAT THEY MEANT. The scan is now run in two places
 	// -- here, and once per tick during a live fight to find reinforcements
@@ -1503,6 +1572,30 @@ func (c *Combat) stillIn(e *encounter, id string) bool {
 // row goes with the remains the game takes off the map. It reports whether
 // the old member was in the fight.
 func (c *Combat) Rejoin(oldID string, stood Combatant) bool {
+	if c.rejoinOne(oldID, stood) {
+		return true
+	}
+
+	// The raid's R1: a Downed man in a fight he is not in stands again into
+	// it, under its own book.
+	for i, e := range c.clockFights {
+		in := false
+		c.clockFights[i] = c.withClock(e, func() { in = c.rejoinOne(oldID, stood) })
+
+		if in {
+			c.dropEndedClock()
+
+			return true
+		}
+	}
+
+	c.dropEndedClock()
+
+	return false
+}
+
+// rejoinOne is Rejoin for the encounter on the struct.
+func (c *Combat) rejoinOne(oldID string, stood Combatant) bool {
 	e := c.encounter
 	if e == nil || stood == nil || oldID == "" {
 		return false
@@ -1559,6 +1652,22 @@ func (c *Combat) onlyTheDead(enemies []Combatant) bool {
 // with nothing in it ends "dawn". A beast in the same fight fights on. It
 // reports how many broke off.
 func (c *Combat) BreakOff(leave func(id string) bool) int {
+	n := c.breakOffOne(leave)
+
+	// The raid's R1: first light breaks the dead off in every fight, his and
+	// the village's alike; a clock fight it empties ends dawn in the clock's
+	// book.
+	for i, e := range c.clockFights {
+		c.clockFights[i] = c.withClock(e, func() { n += c.breakOffOne(leave) })
+	}
+
+	c.dropEndedClock()
+
+	return n
+}
+
+// breakOffOne is BreakOff for the encounter on the struct.
+func (c *Combat) breakOffOne(leave func(id string) bool) int {
 	e := c.encounter
 	if e == nil || leave == nil {
 		return 0
@@ -1753,7 +1862,12 @@ func (c *Combat) Adjacent(ax, ay, bx, by float64) bool {
 // a HUD or a script asks about, and it exists so that the answer does not
 // have to be read out of the harness state -- the mistake Pursuit's `arrived`
 // made, where the fact is reported and no Go caller can reach it.
-func (c *Combat) Fighting() bool { return c.encounter != nil }
+//
+// It means HIS fight (the raid's R1): a fight he is not in is a clock fight,
+// in the provider's clock block, and never makes this true -- so every reader
+// of it (the sleep loop, the stake, the save's gate, the meters) keeps its
+// meaning. Read through his, so it holds mid clock step too.
+func (c *Combat) Fighting() bool { return c.his() != nil }
 
 // Encounter reports the LIVE encounter's id, or "" when nothing is happening.
 //
@@ -1763,11 +1877,12 @@ func (c *Combat) Fighting() bool { return c.encounter != nil }
 // note needs the fight the player is IN at the moment he writes, which is the
 // only fight he could be writing about.
 func (c *Combat) Encounter() string {
-	if c.encounter == nil {
+	e := c.his()
+	if e == nil {
 		return ""
 	}
 
-	return c.encounter.id
+	return e.id
 }
 
 // Round reports the current round, or 0 when nothing is happening.
@@ -1960,6 +2075,10 @@ func (c *Combat) HarnessState() map[string]interface{} {
 	if c.clock != nil {
 		state["stage"] = c.clock.Stage().String()
 	}
+
+	// The raid's R1: the fights he is not in. Every key above keeps meaning his
+	// fight; this block is theirs.
+	state["clock"] = c.clockState()
 
 	if c.encounter == nil {
 		return state

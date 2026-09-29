@@ -39,7 +39,7 @@ const StreamWorld = "world"
 // is the list, not a copy of it: SeedFor refuses a name that is not on it, so a
 // stream added to the game must be added here before its save can be checked,
 // and TestDeriveStreamsNeverCoincide iterates exactly this.
-var Derived = []string{StreamSpawns, StreamCombat, StreamRising}
+var Derived = []string{StreamSpawns, StreamCombat, StreamRising, StreamCombatClock}
 
 // SeedFor is the seed the stream name runs on in a game seeded with
 // worldSeed: the game seed itself for the world stream, Derive for the rest.

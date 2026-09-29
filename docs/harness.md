@@ -84,7 +84,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 46 playtest scripts.** That count, the harness version below and the
+**The 47 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -598,6 +598,46 @@ this doc fails until it agrees.
   20 kept. **6g** (the review's B1 probe, Windows): the file held open so it
   cannot be set aside -- one teardown, one dawn, `load.ignored`, the file
   whole where it was.
+* `fight_he_is_not_in_test.go` — the forty-seventh, the raid milestone's R1
+  ("the village at night", 29 Sep 2026): **a fight he is not in**, at the
+  SHIPPED combat dials (`player_control` set back to `human` after
+  `start_game`). It is the separation's only guard: every other
+  `strigoi_watch` in `playtest/` targets him. Seed 1462. **`TestAFightHeIsNotIn`**:
+  C1, `fallen1` (A, 61 HP) and `zombie1` (B) fifteen tiles off with no watch,
+  two world minutes, no fight; act 1, `strigoi_watch{B -> A}` opens a CLOCK
+  fight (`combat.clock.live`, id `c:1`) on the first frame, and his
+  `fighting`, `world_held`, `awaiting`, `encounter` and `ui.world_held_by`
+  stay false or empty, A at full health (C1's second half); act 2, five
+  `step_world(1.0)` are not refused and buy exactly the whole minutes that
+  passed as rounds (7.667 minutes from 0.0 into the round: +7), every clock
+  blow about A, A hurt, his health, `encounters` and `actions_total` unmoved;
+  C2, a frozen clock and 120 frames buy none; **the save** (Q5 (a)) with the
+  clock fight live is not refused, moves nothing in the digest, and its file
+  decodes (`d2save.Decode`, version `d2save.Version`) with the fight in
+  `combat.clock.live`; C4, the fight run to its end -- B killed -- counts
+  `ended_enemies_dead` and `xp_suppressed` in the clock block and pays him no
+  experience and no journal `slain`; act 3, a second clock fight and his own
+  paced fight (`zombie1` beside him): his fight is `e:1` with `next_id` one
+  past it however many clock fights opened first, 600 frames of his open turn
+  buy the clock fight no round (C3), and three committed turns buy it exactly
+  three; act 4, A3 (`fallen1`) cut down by three zombies under the forced crit
+  band: a fresh human body at his tile, his death played (`DT`), the clock's
+  `ended_quarry_dead` +1 and every killer's watch released in the frame
+  (`released` +3), his `ended_player_dead`, `ended_reason`, experience and
+  journal unmoved (screenshot `raid-r1-quarry-dead`); **the four speakers**
+  (S0-1 (a)), each watched by a `fallen1` beside him for three minutes: no
+  fight opens, no body falls; and at the end no ROUND or PACE line names a
+  `c:` fight, `clock.reentrant_reads` is 0 (no game callback read his fight
+  mid clock step) and his `next_id` is one past his fights.
+  **`TestAFightHeIsNotInWhileHeSleeps`** (act 5): at night, the headman's
+  "sleep inside" runs its whole 240 minutes while a clock fight twelve tiles
+  off runs rounds -- the sleep loop reads `inFight`, his fight. C5 is a source
+  mutation (no separation). **`TestAFightHeIsNotInReplays`** (act 6): two
+  launches on seed 1462 fight the village's fight blow for blow (ids written
+  A and B); C6, a third launch on seed 7, does not. Every assertion is
+  `t.Errorf` so a negative-control run shows every act it turns red; the
+  controls and their logs are in the raid's R1 build note
+  (`strigoi-harness-runs\wt-raid-r1\`).
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -1067,6 +1107,35 @@ Settable: `adjacent_tiles`, `advantage_shift`, `crit_band`, `crit_factor`,
 `lit_level`, `player_action`, `round`, `round_minutes`, `shaken_penalty` —
 and every one of them is read back under `dials`, so an assertion can prove
 the write took rather than trusting it.
+
+**The fights he is not in: the `clock` block (the raid's R1, 29 Sep 2026).**
+One resolver, two drivers (ruling 1 of 28 Sep): a fight whose quarry is not
+he -- a villager, or any entity a hostile has noticed -- is a CLOCK fight. It
+runs the same resolver on world minutes, one round per `round_minutes`, never
+paced and never waiting, and **every top-level key above keeps meaning HIS
+fight** (`fighting`, `encounter`, `encounters`, `next_id`, `participants`,
+`actions`, `round_row`, `pace`, `ended_*`, `world_held`, `awaiting`, ...): a
+clock fight never makes one of them move. The clock fights are reported in
+`clock`: `live` -- one row per clock fight, `{id, quarry, quarry_health,
+quarry_max_health, round, minutes_into_round, enemies[{id, dead, routed,
+broke, health}], enemy_order, order, dead, routed, broke, initiator,
+surprised, surprise_why}` -- and the clock book's own records: `next_id` (the
+clock's id sequence, `c:<n>`, never his `e:<n>`), `started`, `ended`,
+`rounds`, `declined_reach`, `actions_total`, `actions_round` and `actions`
+(the last round any clock fight resolved, rows as his), `joined`,
+`quick_resolved`, `last_quick_advantage`, `ended_reason` and
+`ended_quarry_dead` / `ended_enemies_dead` / `ended_player_dead` /
+`ended_routed` / `ended_disengaged` / `ended_dawn`, `xp_suppressed` (kills and
+routs in clock fights, which pay him nothing), `released` (watches let go on
+a dead clock quarry in the frame he died), `reentrant_reads` (reads of
+`Fighting`, `Encounter` or `Awaiting` made from a callback during a clock step
+-- asserted 0), and `rng` (the `combat-clock` stream, `d2rand.Derived`'s
+fourth). A clock quarry at 0 drops a man's body (`class: human`, `was:
+villager`), plays his death, and ends `quarry_dead`. The four speakers are no
+quarry (S0-1 (a)): no fight opens on one. The world save carries the whole
+block, live fights included (`combat.clock`; the raid's Q5 (a): a fight he is
+not in never stops a save), which is the world file's version 2. Nothing new
+is settable.
 
 **There is deliberately no start verb, no set-health verb, no land-a-blow
 verb and no set-animation verb** — the same call spawns made about spawning.
