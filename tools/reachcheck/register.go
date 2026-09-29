@@ -818,6 +818,17 @@ var Register = []Entry{
 		"The bodies block against the resumed map at step 4 (D4), and Game.restoreBodies' own check: no body known yet, every body a monster on the map.", ""},
 	{sym(pkgScreen, "Game.checkSquadModels"), BucketWire, VerdictLive,
 		"The squads block's half that needs the map (D3): every deployed squad's model an NPC on the resumed map (Game.checkLoad).", ""},
+	// THE B4b REVIEW FIXES (29 Sep 2026): a death ends the walk where it
+	// begins; no held action is saved or loaded; the load says what it did
+	// that is not a refusal.
+	{sym(pkgEntity, "mapEntity.halt"), BucketWire, VerdictLive,
+		"A monster's death ends its walk where it begins, without turning it (Creature.StartAction, NPC.StartAction, from Game.Animate as the resolver lays a monster dead). If it went dark a monster slain on its way in would walk on through its death, and its corpse come to rest away from where Combat.fallCorpse recorded the fall (BUG-75).", ""},
+	{sym(pkgScreen, "heldInFile"), BucketWire, VerdictLive,
+		"The load refuses an entity saved while it held an action -- ENTITY for a monster, NATIVES for a villager -- which it could only play again from its first frame (BUG-76). Game.rebuildEntity and Game.rekeyNatives call it.", ""},
+	{sym(pkgScreen, "Game.loadNote"), BucketWire, VerdictLive,
+		"What the load did that is not a refusal, in the load report and the log: a villager the file lacks taken off the map (BUG-79), an entity whose name this build gives otherwise (BUG-80). Game.rekeyNatives and Game.rebuildEntity call it.", ""},
+	{sym(pkgScreen, "Game.heldAction"), BucketDefer, VerdictHarnessOnly,
+		"The save's refusal while a monster or villager holds an action -- a swing, a blow taken, a death -- whose frame the file cannot carry (BUG-76). Game.SaveWorld reaches it through fightUnsettled.", "M4.6 B5"},
 	{sym(pkgScreen, "gameSpawner.Snapshot"), BucketDefer, VerdictHarnessOnly,
 		"The arrival count, which sets where the next pack comes from. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgScreen, "gameSpawner.Restore"), BucketWire, VerdictLive,

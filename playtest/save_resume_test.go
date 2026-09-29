@@ -55,8 +55,11 @@ import (
 //	   and the file holds the packs, watches, chases, bodies, the entities the
 //	   map does not build and the deployed squad.
 //	3  120 world minutes more: the pack walks in and its fight is played
-//	   (quick-resolved: a dial at T, so he lives -- the act is about the
-//	   resume, not the dice), dawn comes (the night paid, the watch kept, the
+//	   BLOW BY BLOW (the B4b review fixes, BUG-77: B4b quick-resolved it
+//	   before its first blow, so no roll or blow after T was ever compared;
+//	   now the quick resolve is off and every blow a graze both ways -- dials
+//	   at T -- so he lives, and act 3 requires blows and rounds after T and no
+//	   quick resolve), dawn comes (the night paid, the watch kept, the
 //	   rite, the soul pressure's count) and the torch burns out; S_U. Then he
 //	   is wounded and leaves through the menu, which writes his .od2 and his
 //	   sidecar and not the world file (B5's): the files a load finds beside
@@ -104,6 +107,12 @@ import (
 //	8  RULE 4 (B4b): he is walked, saved mid-stride, and loaded; he stands
 //	   where he was saved, and every system, entity and part is the saved
 //	   moment's but his walk (sameWorldExcept, hisWalk).
+//	6i A SAVE IN THE DEATH WINDOW (the B4b review fixes, BUG-75 and BUG-76;
+//	   the review's real-game probe, run after act 8): T resumed with B4b's
+//	   quick-resolving dials, the pack's fight quick-resolved; each member it
+//	   slew lies where his fall was recorded; the save is refused while any
+//	   still plays his death, then made the moment the last lies, and that
+//	   moment resumes exactly and runs on the same.
 //
 // THE COMPARISON (BUG-58 fixed, 29 Sep 2026): the digest's resume_digest is
 // every part a resumed game must reproduce -- not sim (the harness's clock)
@@ -123,6 +132,52 @@ func TestSaveResume(t *testing.T) {
 
 	ev := eveningActs1to3(t)
 	eveningActs4to6(t, ev)
+}
+
+// TestSaveResumeInTheFirstSecond is BUG-86 (the merge scout's; the B4b review
+// fixes): a save made in a new game's first second resumes as the saved
+// moment. A new game first reads its region a second into play, and a load
+// reads it at once, so the resumed game had the village's sound environment
+// and song where the saved one had neither -- in the digest's world part,
+// which a resume compares: S_R0 differed from S_T on village.sound_env and
+// village.music alone. They are this process's presentation now (the village
+// provider's process part, as BUG-63 moved the ui's), and the premise is
+// asserted both ways: at T the region is not read yet, and the resumed game
+// has read it.
+func TestSaveResumeInTheFirstSecond(t *testing.T) {
+	s := start(t)
+	s.call("strigoi_pause", map[string]any{})
+
+	game := s.call("strigoi_start_game", map[string]any{
+		"hero_name": "Early", "hero_class": "amazon", "seed": 99, "wait_seconds": 90,
+	})
+	save := str(game, "save_path")
+
+	s.call("strigoi_step", map[string]any{"frames": 30}) // half a second
+
+	if v := villageState(s); str(v, "music") != "" || mustNum(t, v, "sound_env") != 0 {
+		t.Fatalf("the premise: half a second in, the region is not read yet (no song, no sound environment): %v", v)
+	}
+
+	sT := snapWorld(t, s)
+	s.call("strigoi_save_game", map[string]any{})
+	sameWorld(t, "the save moved nothing", sT, snapWorld(t, s))
+
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	g := s.call("strigoi_start_game", map[string]any{"save_path": save, "wait_seconds": 90})
+	if load := sub(g, "load"); !flag(t, load, "resumed") {
+		t.Fatalf("the save made half a second in resumes: %v", load)
+	}
+
+	sameWorld(t, "S_R0 = S_T (a save in the first second)", sT, snapWorld(t, s))
+
+	if v := villageState(s); str(v, "music") == "" {
+		t.Fatalf("the premise's other half: the load read the region at once, so the resumed game has the song the saved one had not yet: %v", v)
+	}
+
+	t.Logf("PASS: saved half a second into a new game, resumed as the saved moment (the village's sound differs and is this process's)")
 }
 
 // evening is what acts 1-3 hand acts 4-6: the hero's files at T and the two
@@ -163,17 +218,48 @@ var startDials = []dialWrite{
 }
 
 // The hunted night's dials (B4b): the notice radius opened so the pack sees
-// him from where it arrives, room on the tables for its group, and a fight
-// against a mundane pack finished before its first blow.
+// him from where it arrives, room on the tables for its group; and (the B4b
+// review fixes, BUG-77) the fight after T fought blow by blow, every blow a
+// graze, so he lives through it.
 const (
 	huntedNoticeRadius = 24.0
 	huntedMaxGroups    = 4
+
+	// quickResolveOff: above 1 the quick resolve can never fire (Combat's
+	// own dial, "how quick-resolve is turned OFF").
+	quickResolveOff = 2.0
 )
 
 // huntedDials are the dials acts 1-3 leave set at T. A dial is never saved
 // (trap 7): a relaunched game has the defaults until the script sets them
 // again, and "load last save" in one process has them re-applied by the load.
+//
+// THE FIGHT AFTER T LANDS BLOWS (the B4b review fixes, BUG-77; the review's
+// B2). B4b finished it before its first blow (quickResolvedDials, decision
+// B4b-10), so after T no combat roll was drawn, no rebuilt monster swung or
+// was struck, no restored speed was paced and no restored pack profile read:
+// a divergence only a blow shows passed acts 4-8 green. Now the quick resolve
+// is off and every blow is a graze, both ways: measured on evening-2
+// (wt-b4b-fix\measure-1.txt), the two hours after T hold two fights of 13
+// rounds and 45 blows, ending enemies_routed, and he lives at 214 of 237 --
+// in the same 9 s of wall time, and two resumes of T agree to the digest.
 var huntedDials = []dialWrite{
+	{"spawns", "chance", 0},
+	{"spawns", "notice_radius", huntedNoticeRadius},
+	{"spawns", "max_groups", huntedMaxGroups},
+	{"rising", "edge_floor", 0},
+	{"rising", "hasty_weight", 0.0},
+	{"rising", "p", 0.0},
+	{"combat", "forced_band", "graze"},
+	{"combat", "quick_resolve_advantage", quickResolveOff},
+}
+
+// quickResolvedDials are B4b's dials at T (decision B4b-10): the fight after T
+// finished before its first blow. An evening kept before the review fixes
+// (evening-2) was made with them -- keptEvening falls back to them when the
+// evening names none -- and act 6i uses them: a quick resolve is where a save
+// finds the slain still falling.
+var quickResolvedDials = []dialWrite{
 	{"spawns", "chance", 0},
 	{"spawns", "notice_radius", huntedNoticeRadius},
 	{"spawns", "max_groups", huntedMaxGroups},
@@ -612,12 +698,12 @@ func eveningActs1to3(t *testing.T) evening {
 	// The table forced (certain odds), then shut; then the notice radius
 	// opened so the pack sees him. T is the first frames of the chase: the
 	// pack is walking. The two hours after T hold its fight -- the walk in,
-	// the engage, the resolve -- which the resumed game must play the same,
-	// on the same dice. quick_resolve_advantage 0 finishes a fight against a
-	// mundane pack before its first blow (R2 section 2B's quick resolve, at
-	// no advantage needed), so he lives through it whatever the pack: a death
-	// there would end the evening's later acts, and the dice the fight would
-	// have spent are not what this act is about.
+	// the engage, the rounds, the rout -- which the resumed game must play
+	// the same, on the same dice. The fight is fought blow by blow (the B4b
+	// review fixes, BUG-77: B4b quick-resolved it before its first blow, and
+	// no roll or blow after T was ever compared), every blow a graze both
+	// ways, so he lives through it whatever the pack: a death there would end
+	// the evening's later acts.
 	groupsBefore := map[string]bool{}
 	for _, raw := range asList(spawnsState(s)["group_list"]) {
 		g, _ := raw.(map[string]any)
@@ -645,7 +731,8 @@ func eveningActs1to3(t *testing.T) evening {
 		t.Fatalf("act 1 (B4b): a certain table never placed a pack: %v", spawnsState(s))
 	}
 
-	setField(s, "combat", "quick_resolve_advantage", 0.0)
+	setField(s, "combat", "quick_resolve_advantage", quickResolveOff)
+	setField(s, "combat", "forced_band", "graze")
 	setField(s, "spawns", "notice_radius", huntedNoticeRadius)
 
 	for i := 0; i < 200 && !packChasing(t, s, pack); i++ {
@@ -669,6 +756,7 @@ func eveningActs1to3(t *testing.T) evening {
 	heroNotFresh(t, s, fresh)
 
 	// --- 2: the save at T --------------------------------------------------
+	atT := combatState(s)
 	ev.sT = snapWorld(t, s)
 	out := s.call("strigoi_save_game", map[string]any{})
 	sameWorld(t, "act 2 (the save moved nothing)", ev.sT, snapWorld(t, s))
@@ -716,6 +804,20 @@ func eveningActs1to3(t *testing.T) evening {
 
 	t.Logf("act 3: in the two hours the fights ran to %v encounters (%q the last's end)",
 		combatState(s)["encounters"], str(combatState(s), "ended_reason"))
+
+	// The B4b review fixes (BUG-77): the fight after T landed blows -- rolls
+	// drawn, rebuilt monsters swinging and struck -- and none was
+	// quick-resolved, so act 6 compares a fight, not its absence.
+	atU := combatState(s)
+	if blows := mustNum(t, atU, "actions_total") - mustNum(t, atT, "actions_total"); blows <= 0 ||
+		mustNum(t, atU, "rounds") <= mustNum(t, atT, "rounds") ||
+		mustNum(t, atU, "quick_resolved") != mustNum(t, atT, "quick_resolved") {
+		t.Fatalf("act 3: the fight after T is fought blow by blow: %v blows, rounds %v -> %v, quick_resolved %v -> %v",
+			blows, atT["rounds"], atU["rounds"], atT["quick_resolved"], atU["quick_resolved"])
+	}
+
+	t.Logf("act 3: after T, %v rounds and %v blows, none quick-resolved",
+		mustNum(t, atU, "rounds")-mustNum(t, atT, "rounds"), mustNum(t, atU, "actions_total")-mustNum(t, atT, "actions_total"))
 
 	c := clockState(s)
 	if str(c, "stage") == "night" || flag(t, lightState(s), "carried_lit") {
@@ -1022,10 +1124,12 @@ func keepEvening(t *testing.T, s *session, ev evening) {
 	}
 
 	states, _ := json.MarshalIndent(map[string]worldSnap{"t": ev.sT, "u": ev.sU}, "", " ")
+	dials, _ := json.MarshalIndent(ev.savedDial, "", " ")
 
 	for name, data := range map[string][]byte{
 		"hero.od2": ev.od2Left, "hero.od2.strigoi.json": ev.sidecarLeft, "hero.od2.world.json": ev.fileT,
 		"hero-at-t.od2": ev.od2T, "hero-at-t.od2.strigoi.json": ev.sidecarT, "states.json": states,
+		"dials.json": dials,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
 			t.Logf("keeping the evening: %v", err)
@@ -1036,11 +1140,25 @@ func keepEvening(t *testing.T, s *session, ev evening) {
 }
 
 // keptEvening is an evening a green run kept: its hero's files are copied
-// into this test's home, where a relaunch finds them.
+// into this test's home, where a relaunch finds them. Its dials are the ones
+// it was made with (dials.json, since the B4b review fixes); an evening kept
+// before then names none, and was made with B4b's quickResolvedDials.
 func keptEvening(t *testing.T, from string) evening {
 	t.Helper()
 
-	ev := evening{savedDial: huntedDials}
+	// Read into a slice of its own: unmarshalled into one that shares
+	// quickResolvedDials' array, the evening's dials overwrote act 6i's (the
+	// first kept run of act 6i found the pack never quick-resolved).
+	ev := evening{savedDial: quickResolvedDials}
+
+	if data, err := os.ReadFile(filepath.Join(from, "dials.json")); err == nil {
+		var dials []dialWrite
+		if err := json.Unmarshal(data, &dials); err != nil {
+			t.Fatalf("the kept evening's dials: %v", err)
+		}
+
+		ev.savedDial = dials
+	}
 	ev.od2Left, ev.sidecarLeft, ev.fileT = mustRead(t, filepath.Join(from, "hero.od2")),
 		mustRead(t, filepath.Join(from, "hero.od2.strigoi.json")), mustRead(t, filepath.Join(from, "hero.od2.world.json"))
 	ev.od2T, ev.sidecarT = mustRead(t, filepath.Join(from, "hero-at-t.od2")), mustRead(t, filepath.Join(from, "hero-at-t.od2.strigoi.json"))
@@ -1212,6 +1330,9 @@ func eveningActs4to6(t *testing.T, ev evening) {
 
 	// --- 6h and 8 (B4b): the re-key, and rule 4 -----------------------------
 	huntedActs6h8(t, s, ev)
+
+	// --- 6i (the B4b review fixes): a save in the death window --------------
+	deathWindowAct6i(t, s, ev)
 }
 
 // actThree puts his files back as act 3 left them -- his .od2 and sidecar two
@@ -1468,17 +1589,181 @@ func huntedActs6h8(t *testing.T, s *session, ev evening) {
 	t.Logf("act 8 PASS: saved mid-walk, he resumes standing where he was, and the world is the saved one but his walk")
 }
 
+// deathWindowAct6i is THE REVIEW'S REAL-GAME B1 PROBE AS AN ACT (the B4b
+// review fixes, BUG-75 and BUG-76; the probe was TestZZRevMidDeath, on
+// evening-2). The review resumed T with the fight after it quick-resolved,
+// stepped to the frame the quick resolve fired and saved there, while the
+// slain still played their deaths: sixty frames later two opportunists lay
+// dead in the saved game and were still falling in the resumed one. And a
+// member quick-resolved while he walked in walked on through his death, his
+// corpse coming to rest away from where the resolver recorded his fall.
+//
+// Here, on the same T (the evening's file beside his act-3 files, as act 4
+// loads it) with B4b's dials (quickResolvedDials): the quick resolve fires;
+// every member it slew lies where his fall was recorded -- at once, and still
+// when the save is made (BUG-75); the save is refused while any of them is
+// still playing his death, and names it (BUG-76); it is made the moment the
+// last lies, with none of them holding an action; and that moment T' resumes
+// exactly, and sixty frames on is the same world (S_R0 = S_T', S_R = S_U').
+func deathWindowAct6i(t *testing.T, s *session, ev evening) {
+	t.Helper()
+
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+	actThree(t, ev, ev.fileT)
+
+	g := s.call("strigoi_start_game", map[string]any{"save_path": ev.save, "wait_seconds": 90})
+	if load := sub(g, "load"); !flag(t, load, "resumed") {
+		t.Fatalf("act 6i: T resumes: %v", load)
+	}
+
+	for _, d := range quickResolvedDials {
+		setField(s, d.System, d.Field, d.Value)
+	}
+
+	t.Logf("act 6i: the combat dials after the resume: %v", sub(combatState(s), "dials"))
+
+	fallen := map[string]bool{}
+	for _, raw := range asList(corpsesState(s)["bodies"]) {
+		b, _ := raw.(map[string]any)
+		fallen[str(b, "id")] = true
+	}
+
+	q0 := mustNum(t, combatState(s), "quick_resolved")
+	frames := 0
+
+	for frames < 6000 && mustNum(t, combatState(s), "quick_resolved") == q0 {
+		s.call("strigoi_step", map[string]any{"frames": 10})
+		frames += 10
+	}
+
+	if mustNum(t, combatState(s), "quick_resolved") == q0 {
+		t.Fatalf("act 6i: the pack walks in and its fight is quick-resolved within %d frames (dials %v): %v",
+			frames, sub(combatState(s), "dials"), combatState(s))
+	}
+
+	// The slain: every body the quick resolve laid, and where it lay.
+	slain := map[string][2]float64{}
+	for _, raw := range asList(corpsesState(s)["bodies"]) {
+		b, _ := raw.(map[string]any)
+		if id := str(b, "id"); !fallen[id] {
+			slain[id] = [2]float64{mustNum(t, b, "x"), mustNum(t, b, "y")}
+		}
+	}
+
+	if len(slain) == 0 {
+		t.Fatalf("act 6i: the quick resolve slew someone: %v", corpsesState(s))
+	}
+
+	lieWhereTheyFell(t, s, "act 6i (the first look after the quick resolve)", slain)
+
+	var refusals []string
+
+	saved := -1
+
+	for i := 0; i < 240 && saved < 0; i++ {
+		if e := s.callErr("strigoi_save_game", map[string]any{}); e == "" {
+			saved = i
+		} else {
+			refusals = append(refusals, e)
+			s.call("strigoi_step", map[string]any{"frames": 1})
+		}
+	}
+
+	if saved < 0 {
+		t.Fatalf("act 6i: the save is made once the slain lie: refused %d times, last %q", len(refusals), refusals[len(refusals)-1])
+	}
+
+	dying := 0
+	for _, r := range refusals {
+		if strings.Contains(r, "FIGHTING") && strings.Contains(r, "is still playing its death") {
+			dying++
+		}
+	}
+
+	if dying == 0 {
+		t.Fatalf("act 6i: a save while the slain still fall is refused, naming the death: %v", refusals)
+	}
+
+	kinds := map[string]int{}
+	for _, r := range refusals {
+		kinds[regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f-]{27}`).ReplaceAllString(r, "<id>")]++
+	}
+
+	t.Logf("act 6i: the refusals, by reason: %v", kinds)
+
+	sT := snapWorld(t, s)
+
+	for id := range slain {
+		var e map[string]any
+		_ = json.Unmarshal(sT.Entities[id], &e)
+
+		if st := sub(e, "state"); str(st, "held") != "" || !flag(t, st, "corpse") {
+			t.Fatalf("act 6i: at T' the slain %s lies dead, holding no action: %v", id, st)
+		}
+	}
+
+	lieWhereTheyFell(t, s, "act 6i (at T')", slain)
+
+	s.call("strigoi_step", map[string]any{"frames": 60})
+	sU := snapWorld(t, s)
+
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	g = s.call("strigoi_start_game", map[string]any{"save_path": ev.save, "wait_seconds": 90})
+	if load := sub(g, "load"); !flag(t, load, "resumed") {
+		t.Fatalf("act 6i: T' resumes: %v", load)
+	}
+
+	for _, d := range quickResolvedDials {
+		setField(s, d.System, d.Field, d.Value)
+	}
+
+	sameWorld(t, "act 6i (S_R0 = S_T', a save the moment the slain lie)", sT, snapWorld(t, s))
+
+	s.call("strigoi_step", map[string]any{"frames": 60})
+	sameWorld(t, "act 6i (S_R = S_U', sixty frames on)", sU, snapWorld(t, s))
+	lieWhereTheyFell(t, s, "act 6i (resumed)", slain)
+
+	t.Logf("act 6i PASS: the quick resolve after %d frames slew %d; the save was refused %d times (%d on a death still playing) "+
+		"and made %d frames later; each lies where he fell; S_R0 = S_T' and S_R = S_U'", frames, len(slain), len(refusals), dying, saved)
+}
+
+// lieWhereTheyFell requires each slain entity to stand exactly where his fall
+// was recorded (the corpses block's x, y; Combat.fallCorpse): BUG-75.
+func lieWhereTheyFell(t *testing.T, s *session, act string, slain map[string][2]float64) {
+	t.Helper()
+
+	at := map[string][2]float64{}
+
+	for _, raw := range asList(s.call("strigoi_get_entities", map[string]any{"limit": 500})["items"]) {
+		e, _ := raw.(map[string]any)
+		if _, ok := slain[str(e, "id")]; ok {
+			at[str(e, "id")] = [2]float64{num(e, "x"), num(e, "y")}
+		}
+	}
+
+	for id, fell := range slain {
+		got, ok := at[id]
+		if !ok || got != fell {
+			t.Fatalf("%s: the slain %s lies where his fall was recorded, %v; he is at %v (on the map: %v)", act, id, fell, got, ok)
+		}
+	}
+}
+
 // hisWalk is rule 4's exemption: the player's own walk, which a load does not
 // continue -- the point he was stepping to, the waypoints ahead, the path's
-// length, and the walk's animation (the mode, and the PNG hero's sheet it
-// draws: "run" saved, "idle" resumed; measured, the only field beyond the
-// first four that differed).
+// length, the walk's animation (the mode, and the PNG hero's sheet it draws:
+// "run" saved, "idle" resumed; measured, the only field beyond the first four
+// that differed), and, since the entities report it (the B4b review fixes,
+// BUG-82), the velocity he was stepping with.
 func hisWalk(playerID string) func(where string) bool {
 	return func(where string) bool {
 		switch where {
 		case "entity " + playerID + ".target", "entity " + playerID + ".waypoints",
 			"entity " + playerID + ".path_len", "entity " + playerID + ".animation_mode",
-			"entity " + playerID + ".body_sheet":
+			"entity " + playerID + ".body_sheet", "entity " + playerID + ".velocity":
 			return true
 		}
 
@@ -1489,7 +1774,16 @@ func hisWalk(playerID string) func(where string) bool {
 // sameWorldExcept is sameWorld with named differences allowed: "system
 // <name>.<field>" or "entity <id>.<key>". Any other difference fails, named;
 // so does an allowed one that is not there (the exemption must be needed).
-func sameWorldExcept(t *testing.T, act string, a, b worldSnap, allowed func(where string) bool) {
+//
+// AND A HASH THAT DIFFERS WITH NOTHING TO EXPLAIN IT FAILS (the B4b review
+// fixes, BUG-81; the review's C4). The systems and entities are compared field
+// by field, but their hashes are the digest's: a system whose hash differed
+// while every field of its report agreed -- a field the digest hashes and
+// the report does not show -- passed silently, where sameWorld would have
+// failed. So each system whose hash differs must show a differing field, and
+// the systems and entities parts must each show a differing system or
+// entity line.
+func sameWorldExcept(t testing.TB, act string, a, b worldSnap, allowed func(where string) bool) {
 	t.Helper()
 
 	var why []string
@@ -1503,6 +1797,8 @@ func sameWorldExcept(t *testing.T, act string, a, b worldSnap, allowed func(wher
 		}
 	}
 
+	systemsDiffer := 0
+
 	for _, n := range keysOfSnap(a.Systems, b.Systems) {
 		var ma, mb map[string]any
 		_ = json.Unmarshal(a.States[n], &ma)
@@ -1512,17 +1808,35 @@ func sameWorldExcept(t *testing.T, act string, a, b worldSnap, allowed func(wher
 			continue
 		}
 
+		systemsDiffer++
+		explained := false
+
 		for _, k := range keysOfAny(ma, mb) {
 			ja, _ := json.Marshal(ma[k])
 			jb, _ := json.Marshal(mb[k])
 
-			if string(ja) != string(jb) && !allowed("system "+n+"."+k) {
+			if string(ja) == string(jb) {
+				continue
+			}
+
+			explained = true
+
+			if !allowed("system " + n + "." + k) {
 				why = append(why, fmt.Sprintf("  %s.%s\n      was: %s\n      now: %s", n, k, cut(string(ja)), cut(string(jb))))
 			}
 		}
+
+		if !explained {
+			why = append(why, fmt.Sprintf("  system %s: its hash differs (%s, %s) and no field of its report does -- "+
+				"the difference is in something the comparison cannot see", n, a.Systems[n], b.Systems[n]))
+		}
 	}
 
-	exempted := 0
+	if a.Parts["systems"] != b.Parts["systems"] && systemsDiffer == 0 {
+		why = append(why, "part systems: it differs and no system's hash does")
+	}
+
+	exempted, entitiesDiffer := 0, 0
 
 	for _, id := range keysOfRaw(a.Entities, b.Entities) {
 		var ea, eb map[string]any
@@ -1538,6 +1852,8 @@ func sameWorldExcept(t *testing.T, act string, a, b worldSnap, allowed func(wher
 			jb, _ := json.Marshal(eb[k])
 
 			if string(ja) != string(jb) {
+				entitiesDiffer++
+
 				why = append(why, fmt.Sprintf("  entity %s.%s\n      was: %s\n      now: %s", id, k, cut(string(ja)), cut(string(jb))))
 			}
 		}
@@ -1550,6 +1866,8 @@ func sameWorldExcept(t *testing.T, act string, a, b worldSnap, allowed func(wher
 				continue
 			}
 
+			entitiesDiffer++
+
 			if allowed("entity " + id + "." + k) {
 				exempted++
 
@@ -1558,6 +1876,10 @@ func sameWorldExcept(t *testing.T, act string, a, b worldSnap, allowed func(wher
 
 			why = append(why, fmt.Sprintf("  entity %s.%s\n      was: %s\n      now: %s", id, k, cut(string(ja)), cut(string(jb))))
 		}
+	}
+
+	if a.Parts["entities"] != b.Parts["entities"] && entitiesDiffer == 0 {
+		why = append(why, "part entities: it differs and no entity line does")
 	}
 
 	if len(why) > 0 {
@@ -1570,6 +1892,80 @@ func sameWorldExcept(t *testing.T, act string, a, b worldSnap, allowed func(wher
 
 	t.Logf("%s: every system and entity equal; %d exempt field(s) differ", act, exempted)
 }
+
+// THE CONTROL FOR sameWorldExcept (the B4b review fixes, BUG-81): no game.
+// Rule 4's comparison allows named fields to differ, and compared the systems
+// and entities field by field -- so a system whose hash differed while its
+// report agreed passed, where sameWorld would have failed (the review's C4).
+// Three pairs: a walk that differs only where the exemption allows (passes:
+// the control of the control), the same with a system's hash differing and
+// nothing in its report to say why (fails, naming the system), and with the
+// entities part differing and no entity line (fails).
+func TestSameWorldExceptFailsAnUnexplainedHash(t *testing.T) {
+	saved := worldSnap{
+		Resume:  "r-saved",
+		Parts:   map[string]string{"world": "w", "rng": "g", "systems": "s1", "entities": "e1"},
+		Systems: map[string]string{"combat": "c1"},
+		States:  map[string]json.RawMessage{"combat": json.RawMessage(`{"round":3}`)},
+		Entities: map[string]json.RawMessage{
+			"0him": json.RawMessage(`{"id":"0him","kind":"player","state":{"target":[3,4]}}`),
+		},
+	}
+
+	walked := saved
+	walked.Resume, walked.Parts = "r-walked", map[string]string{"world": "w", "rng": "g", "systems": "s1", "entities": "e2"}
+	walked.Entities = map[string]json.RawMessage{
+		"0him": json.RawMessage(`{"id":"0him","kind":"player","state":{"target":[5,4]}}`),
+	}
+
+	allowed := func(where string) bool { return where == "entity 0him.target" }
+
+	f := &sameWorldTB{}
+	sameWorldExcept(f, "the control", saved, walked, allowed)
+
+	if f.failed {
+		t.Fatalf("an exempt difference alone must pass: %s", f.msg)
+	}
+
+	hidden := walked
+	hidden.Parts = map[string]string{"world": "w", "rng": "g", "systems": "s2", "entities": "e2"}
+	hidden.Systems = map[string]string{"combat": "c2"}
+
+	f = &sameWorldTB{}
+	sameWorldExcept(f, "a hidden system difference", saved, hidden, allowed)
+
+	if !f.failed || !contains(f.msg, "combat") {
+		t.Fatalf("a system whose hash differs with no field to explain it must fail, naming it: failed %v, %q", f.failed, f.msg)
+	}
+
+	part := walked
+	part.Entities = saved.Entities
+
+	f = &sameWorldTB{}
+	sameWorldExcept(f, "a hidden entity difference", saved, part, allowed)
+
+	if !f.failed || !contains(f.msg, "part entities") {
+		t.Fatalf("an entities part that differs with no entity line to explain it must fail: failed %v, %q", f.failed, f.msg)
+	}
+}
+
+// sameWorldTB is flag_test's fakeTB with Logf: sameWorldExcept logs on a pass.
+type sameWorldTB struct {
+	testing.TB
+
+	failed bool
+	msg    string
+}
+
+func (f *sameWorldTB) Helper() {}
+
+func (f *sameWorldTB) Fatalf(format string, args ...any) {
+	if !f.failed {
+		f.failed, f.msg = true, fmt.Sprintf(format, args...)
+	}
+}
+
+func (f *sameWorldTB) Logf(string, ...any) {}
 
 // tornDowns counts the teardowns of refused loads in the game's log.
 func tornDowns(t *testing.T, s *session) int {

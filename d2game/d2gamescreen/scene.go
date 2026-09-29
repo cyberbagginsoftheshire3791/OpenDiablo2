@@ -3,6 +3,7 @@ package d2gamescreen
 import (
 	"sort"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
 )
@@ -87,13 +88,26 @@ func (p sceneProvider) HarnessState() map[string]interface{} {
 	}
 
 	// Each native by the id his entity has NOW (B4b's re-key changes it), and
-	// "" for a key two entities share, which the save refuses.
+	// "" for a key two entities share, which the save refuses. A native taken
+	// off the map is not reported (the B4b review fixes, BUG-79): the save
+	// does not carry him (saveEntities walks the map), and the load drops him
+	// from the natives, so the game that took him off and the game resumed
+	// from its save must agree that he is gone.
 	natives := make([]map[string]interface{}, 0, len(v.natives))
+
+	var onMap map[string]d2interface.MapEntity
+	if v.gameClient != nil && v.gameClient.MapEngine != nil {
+		onMap = v.gameClient.MapEngine.Entities()
+	}
 
 	for k, e := range v.natives {
 		id := ""
 		if e != nil {
 			id = e.ID()
+
+			if onMap != nil && onMap[id] != e {
+				continue
+			}
 		}
 
 		natives = append(natives, map[string]interface{}{

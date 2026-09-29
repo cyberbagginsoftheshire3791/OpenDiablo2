@@ -158,3 +158,124 @@ func walkTo(t *testing.T, s *session, x, y float64) {
 		t.Fatalf("could not walk to %.1f,%.1f: %.1f tiles short (%s)", x, y, d, strings.TrimSpace(str(p, "handle")))
 	}
 }
+
+// TestASlainWalkerLiesWhereHeFell is BUG-75's playtest (the B4b review fixes,
+// 29 Sep 2026), on the kind only a playtest can build: an inherited monster,
+// an NPC. The review found a monster slain while he walked in -- the quick
+// resolve's last quarter, still on his chase -- walking on through his whole
+// death, his corpse coming to rest up to a tile further along his route than
+// where the resolver recorded his fall (Combat.fallCorpse). Here a dog nine
+// tiles off notices him and walks in; the fight opens at six tiles (the
+// adjacency dial, which is also a blow's reach) and his first blow, a forced
+// crit, kills it there -- mid-walk, well short of the route's end beside the
+// player. (A quick resolve would be the review's case, but it takes only a
+// pack's members, and a spawned dog is in no pack.) From the first look to
+// the corpse he does not move, and the corpse lies exactly where the fall was
+// recorded.
+func TestASlainWalkerLiesWhereHeFell(t *testing.T) {
+	s := start(t)
+	s.call("strigoi_pause", map[string]any{})
+
+	s.call("strigoi_start_game", map[string]any{
+		"hero_name": "Walker", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
+	})
+	setField(s, "spawns", "chance", 0)
+	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0)
+	setField(s, "spawns", "notice_radius", 12.0)
+	setField(s, "combat", "adjacent_tiles", 6)
+	setField(s, "combat", "forced_band", "crit")
+
+	// The game begins before dawn: unlit, he is seen by nothing further off
+	// than the dark allows. His torch lit (L), the dog sees him from where it
+	// stands.
+	s.call("strigoi_key", map[string]any{"key": "l"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if !flag(t, lightState(s), "carried_lit") {
+		t.Fatalf("his torch is lit: %v", lightState(s))
+	}
+
+	// Nine tiles off, where the straight line to him is clear: the dog must
+	// see him to notice him (the first run placed it due east, behind a
+	// house, and it never did).
+	p := s.call("strigoi_get_player", map[string]any{})
+	spot, clear := [2]float64{}, false
+
+	for _, d := range [][2]float64{{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7, 0.7}, {-0.7, 0.7}, {0.7, -0.7}, {-0.7, -0.7}} {
+		spot = [2]float64{num(p, "x") + 9*d[0], num(p, "y") + 9*d[1]}
+
+		path := s.call("strigoi_find_path", map[string]any{"to_x": spot[0], "to_y": spot[1]})
+		if flag(t, path, "reachable") && flag(t, path, "straight_line_clear") {
+			clear = true
+
+			break
+		}
+	}
+
+	if !clear {
+		t.Fatalf("no spot nine tiles from %v,%v has a clear line to him", p["x"], p["y"])
+	}
+
+	dog := spawnNPC(t, s, "fallen1", spot[0], spot[1])
+	id := entityID(t, s, dog)
+	s.call("strigoi_watch", map[string]any{"watcher": dog, "target": str(p, "handle")})
+
+	frames := 0
+	for ; frames < 1200 && mustNum(t, combatState(s), "ended_enemies_dead") == 0; frames += 2 {
+		s.call("strigoi_step", map[string]any{"frames": 2})
+	}
+
+	if mustNum(t, combatState(s), "ended_enemies_dead") != 1 {
+		t.Fatalf("the dog walks in and is slain in the fight's first blow: %v", combatState(s))
+	}
+
+	var fell [2]float64
+
+	found := false
+
+	for _, raw := range asList(corpsesState(s)["bodies"]) {
+		if b := raw.(map[string]any); str(b, "id") == id {
+			fell, found = [2]float64{mustNum(t, b, "x"), mustNum(t, b, "y")}, true
+		}
+	}
+
+	if !found {
+		t.Fatalf("the dog's fall is recorded: %v", corpsesState(s))
+	}
+
+	// The premise: he fell on his way in, not at his route's end beside the
+	// player -- so a walk that went on would carry him.
+	if d := math.Hypot(fell[0]-num(p, "x"), fell[1]-num(p, "y")); d < 2 {
+		t.Fatalf("the premise: the dog is slain still walking in, not beside him; he fell %.2f tiles off", d)
+	}
+
+	dying := 0
+
+	for i := 0; i < 200; i++ {
+		e := s.call("strigoi_get_entity", map[string]any{"handle": dog})
+		st := sub(e, "state")
+
+		if got := [2]float64{num(e, "x"), num(e, "y")}; got != fell {
+			t.Fatalf("frame %d after his fall: the dog lies where it was recorded, %v; he is at %v (%v)", i*2, fell, got, st)
+		}
+
+		if flag(t, st, "corpse") {
+			break
+		}
+
+		if str(st, "held") == "DT" {
+			dying++
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 2})
+	}
+
+	e := s.call("strigoi_get_entity", map[string]any{"handle": dog})
+	if !flag(t, sub(e, "state"), "corpse") || dying == 0 {
+		t.Fatalf("the dog played his death (seen %d times) and lies a corpse: %v", dying, sub(e, "state"))
+	}
+
+	t.Logf("slain after %d frames, %.2f tiles off; seen dying %d times and never moved; the corpse at %v, where he fell",
+		frames, math.Hypot(fell[0]-num(p, "x"), fell[1]-num(p, "y")), dying, fell)
+}

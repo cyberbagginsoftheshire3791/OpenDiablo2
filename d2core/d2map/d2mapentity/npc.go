@@ -130,7 +130,13 @@ func (v *NPC) Advance(tickTime float64) {
 	// deliberate rather than as a bug.
 	//
 	// The composite still advances, so the death animation finishes on screen.
-	if !v.corpse {
+	//
+	// AND A MONSTER PLAYING ITS DEATH DOES NOT WALK EITHER (the B4b review
+	// fixes, BUG-75): StartAction ends the walk when the death begins (halt),
+	// and this keeps it ended, so the corpse lies where the death began --
+	// where Combat.fallCorpse recorded the fall -- and not up to a tile
+	// further along the route it was walking.
+	if !v.corpse && !v.dying() {
 		v.Step(tickTime)
 	}
 
@@ -374,8 +380,16 @@ func (v *NPC) StartAction(mode d2enum.MonsterAnimationMode, onFinished func()) e
 	v.heldMode = mode
 	v.onHeldFinished = onFinished
 
+	// A death ends the walk where it begins (BUG-75; mapEntity.halt).
+	if mode == d2enum.MonsterAnimationModeDeath {
+		v.halt()
+	}
+
 	return nil
 }
+
+// dying is a death being played: held, and not yet a corpse.
+func (v *NPC) dying() bool { return v.held && v.heldMode == d2enum.MonsterAnimationModeDeath }
 
 // finishHeldAction ends a held action. Advance calls it when the composite has
 // played the mode through once.

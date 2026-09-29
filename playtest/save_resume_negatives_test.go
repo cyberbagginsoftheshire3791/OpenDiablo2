@@ -30,6 +30,13 @@ import (
 //     saved moment anyway and this act would go red. That is the half with
 //     teeth; the omitted half is the plan's.
 //
+// THE OMITTED HALF IS GREEN BY DESIGN, whatever the load does (the B4b review,
+// its C6; BUG-83 in the fixes): Decode refuses every missing block before
+// the load's own steps run, so no change to B4b's load could turn one of
+// those rows red. They pin Decode's rule, not the load. Read the emptied half
+// as this test's evidence that each block is RESTORED; the omitted half only
+// that a file without it is never resumed.
+//
 // And two more of the brief's: two entities' ids swapped (refused, or
 // divergent), and the untouched file -- the control of the controls, which
 // must resume the saved moment exactly.

@@ -365,7 +365,10 @@ func TestARebuildThatCannotBeExactIsRefused(t *testing.T) {
 		}},
 		"a kind no load rebuilds":         {LoadRefusedEntity, func(w *d2save.World) { first(w, false).Kind = "missile" }},
 		"a motion a creature cannot have": {LoadRefusedEntity, func(w *d2save.World) { first(w, false).Motion.Mode = "WL" }},
-		"a name the entry does not give":  {LoadRefusedEntity, func(w *d2save.World) { first(w, false).NameKey = "A bear" }},
+		// "a name the entry does not give" was refused here until the B4b
+		// review fixes (BUG-80): a name is a label, the entry is matched by
+		// its creature_id, and a rename resumes with a note
+		// (TestARenamedEntryResumesUnderItsNewName).
 		"an id the villager takes first": {LoadRefusedEntity, func(w *d2save.World) {
 			first(w, false).ID = first(w, true).ID
 		}},

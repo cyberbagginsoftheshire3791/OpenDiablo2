@@ -168,6 +168,12 @@ type LoadReport struct {
 	// judged and was moved to .preload.kept, never offered and never deleted.
 	Preload string `json:"preload,omitempty"`
 
+	// Notes are what the load did or found that is not a refusal and that a
+	// player could ask about (the B4b review fixes): a villager the file
+	// lacks taken off the map (BUG-79), an entity whose name this build gives
+	// otherwise than the save did (BUG-80). Each is in the log too.
+	Notes []string `json:"notes,omitempty"`
+
 	// Ignored: the file was refused earlier in this process and could not be
 	// set aside, so no load reads it again until it changes (the B4a review,
 	// B1: without this the dawn that replaced it found it again, refused it
@@ -193,6 +199,10 @@ func LastLoad() LoadReport {
 
 	r := lastLoad.r
 	r.Steps = append([]string{}, r.Steps...)
+
+	if r.Notes != nil {
+		r.Notes = append([]string{}, r.Notes...)
+	}
 
 	return r
 }
@@ -486,6 +496,16 @@ func (v *Game) loadStep(name string) {
 	updateLastLoad(func(r *LoadReport) { r.Steps = steps })
 }
 
+// loadNote records something the load did or found that is not a refusal
+// (LoadReport.Notes), and logs it: the B4b review found a villager the file
+// lacked taken off the map with no line anywhere (its C2).
+func (v *Game) loadNote(format string, args ...interface{}) {
+	note := fmt.Sprintf(format, args...)
+
+	v.Warningf("LOAD %s", note)
+	updateLastLoad(func(r *LoadReport) { r.Notes = append(r.Notes, note) })
+}
+
 // restoreClock is the load's step 2: right after NewClock, the clock checked
 // and put at the saved minute, before anything is built that samples it.
 func (v *Game) restoreClock(w *d2save.World) *LoadRefusal {
@@ -609,11 +629,19 @@ func (v *Game) rebuildEntities(w *d2save.World) *LoadRefusal {
 //   - given the walk and pose he was saved in (RestoreMotion), read back and
 //     required equal. (B4a refused a villager saved mid-walk, NATIVES; B4b
 //     restores him. What is NOT carried is a patrol's place -- path index,
-//     repetitions, the arrival that starts his next leg -- and only the
-//     generated Act 1's villagers patrol: the authored village's stand.)
+//     repetitions, the arrival that starts his next leg, his own rng -- and
+//     only the generated Act 1's villagers patrol: the authored village's
+//     stand. B4b-2 said a patrolling villager resumed mid-leg "finishes his
+//     leg and stands"; the B4b review read otherwise and it was right (its
+//     C1; BUG-78): the map's SetPaths leaves him isDone, so on his first
+//     animation loop Advance gives him the next path -- path[1] -- and he
+//     abandons the restored leg. A -classic resume of a patrolling villager
+//     is not exact.)
 //
 // A villager the map builds and the file lacks was taken off the map before
-// the save (B3-6), and is taken off again here. A villager the file has and
+// the save (B3-6), and is taken off again here, noted in the load report and
+// the log, and dropped from the screen's natives (BUG-79). A villager or an
+// entity saved while it held an action is refused (BUG-76). A villager the file has and
 // the map does not build, or two the map built on one key, or one of another
 // kind or monstat than saved, is a world this build cannot resume: NATIVES.
 func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
@@ -659,8 +687,18 @@ func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
 
 		se, ok := saved[k]
 		if !ok {
-			// B3-6: taken off the map before the save, so taken off now.
+			// B3-6: taken off the map before the save, so taken off now --
+			// and said so, and no longer held as a native (the B4b review
+			// fixes, BUG-79: he was removed with no log line and no report,
+			// and stayed in the screen's natives). A generated map has no
+			// SHA for D5 to hold to the file, so a build whose -classic
+			// village gained a villager would drop him here: the note is
+			// how anyone would know.
 			engine.RemoveEntity(e)
+			delete(v.natives, k)
+			v.loadNote("the villager %q born at %v,%v (%s here) is not in the file, which was saved after he was "+
+				"taken off the map: taken off it again", k.nameKey, k.x, k.y, e.ID())
+
 			continue
 		}
 
@@ -671,6 +709,10 @@ func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
 
 		if npc, isNPC := e.(*d2mapentity.NPC); isNPC && (npc.MonStat() == nil || npc.MonStat().Key != se.Monstat) {
 			return refuseLoad(LoadRefusedNatives, "%q (born %v,%v) was saved as monstat %q and the map builds another", k.nameKey, k.x, k.y, se.Monstat)
+		}
+
+		if why := heldInFile(se); why != "" {
+			return refuseLoad(LoadRefusedNatives, "%q (born %v,%v) %s", k.nameKey, k.x, k.y, why)
 		}
 
 		pairs = append(pairs, pair{live: live, saved: se})
@@ -718,6 +760,10 @@ func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
 func (v *Game) rebuildEntity(se d2save.Entity) *LoadRefusal {
 	engine := v.gameClient.MapEngine
 
+	if why := heldInFile(se); why != "" {
+		return refuseLoad(LoadRefusedEntity, "%s (%s) %s", se.ID, se.Kind, why)
+	}
+
 	build, r := v.entityBuilder(se)
 	if r != nil {
 		return r
@@ -744,8 +790,16 @@ func (v *Game) rebuildEntity(se d2save.Entity) *LoadRefusal {
 		return refuseLoad(LoadRefusedEntity, "%s (%s): %v", se.ID, se.Kind, err)
 	}
 
+	// ITS NAME IS A LABEL, NOT ITS KEY (the B4b review fixes, BUG-80;
+	// decision B4b-5 overturned). The entity was matched on its kind and its
+	// record -- the bestiary entry by creature_id, the monstat by its key --
+	// in entityBuilder. B4b refused a name other than the saved one, so a
+	// bestiary label renamed ("Wolf" to "Grey wolf") threw away every save
+	// with a wolf in it. A rename is noted and logged, and the pack resumes
+	// under the new name.
 	if got := d2mapentity.NameKey(e); got != se.NameKey {
-		return refuseLoad(LoadRefusedEntity, "%s (%s) is rebuilt as %q and was saved as %q", se.ID, se.Kind, got, se.NameKey)
+		v.loadNote("%s (%s %s%s) was saved named %q and this build names it %q: resumed under the new name",
+			se.ID, se.Kind, se.Monstat, se.Creature, se.NameKey, got)
 	}
 
 	engine.AddEntity(e)
@@ -827,6 +881,21 @@ func kindOf(e d2interface.MapEntity) string {
 	}
 
 	return ""
+}
+
+// heldInFile is why a saved entity's motion cannot be resumed exactly because
+// it holds an action, or "" (the B4b review fixes, BUG-76). The file carries
+// the held mode and not its frame, so the action would play again from its
+// first frame: a death saved half-played fell again after the load. The save
+// refuses that moment (Game.heldAction), so no file this build writes holds
+// one; a file that does is refused rather than resumed inexactly.
+func heldInFile(se d2save.Entity) string {
+	if se.Motion.Action == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("was saved while its %s played: the file carries no animation's frame, so it would play again "+
+		"from its first, and a save refuses that moment", se.Motion.Action)
 }
 
 // restoreMotionExactly puts a walk and pose back and reads it back: a Motion

@@ -374,6 +374,26 @@ func (p villageProvider) HarnessState() map[string]interface{} {
 	return state
 }
 
+// HarnessDigest splits the village's report for the state digest
+// (d2harness.Digester): the sound environment and the song it started are
+// this process's presentation, in the process part; the rest is the world's
+// (BUG-86, found by the merge scout; the shape BUG-63 gave the ui provider).
+// A new game first reads its region a second into play
+// (ticksSinceLevelCheck), while a load reads it at once (the hero step: "its
+// sound environment is derived"), so a save made in the first second of a
+// new game resumed with both set where the saved game had neither -- the
+// only difference, and a false one: neither is saved, both are derived from
+// the map he stands on. The determinism proof still compares them.
+func (p villageProvider) HarnessDigest() (world, process map[string]interface{}) {
+	world = p.HarnessState()
+	process = map[string]interface{}{"sound_env": world["sound_env"], "music": world["music"]}
+
+	delete(world, "sound_env")
+	delete(world, "music")
+
+	return world, process
+}
+
 func (p villageProvider) HarnessSettableFields() []string {
 	return []string{"rep", "rite_radius", "seen_radius", "watch_radius"}
 }
