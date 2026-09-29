@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 )
 
 // M4.6 B2b: the spawn tables' snapshot, and the three closing tests for all
@@ -34,7 +36,7 @@ func TestEntitySnapshotsRoundTripThroughARelaunch(t *testing.T) {
 	require.JSONEq(t, string(want), string(got), "saving the resumed world must write what was loaded")
 
 	// The resumed tables draw from the saved stream, not the relaunch's seed.
-	require.Equal(t, int64(1462), b.spawns.rng.Seeded())
+	require.Equal(t, d2rand.Derive(sv.seed, d2rand.StreamSpawns), b.spawns.rng.Seeded())
 	require.Equal(t, a.spawns.rng.Draws(), b.spawns.rng.Draws())
 }
 
@@ -152,7 +154,7 @@ func TestSpawnsSnapshotEveryFieldIsSeen(t *testing.T) {
 		}}
 	}
 
-	b2bSweep(t, sv, want, []b2bMutation{
+	outcomes := b2bSweep(t, sv, want, []b2bMutation{
 		top("next_id", func(sp *SpawnsSnapshot) { sp.NextID++ }),
 		{"spawns.next_id zero", b2bRefuse, func(_ *testing.T, s *b2bSnap) { s.Spawns.NextID = 0 }},
 		top("since_check_minutes", func(sp *SpawnsSnapshot) { sp.SinceCheck = 0 }),
@@ -165,7 +167,13 @@ func TestSpawnsSnapshotEveryFieldIsSeen(t *testing.T) {
 		top("despawned", func(sp *SpawnsSnapshot) { sp.Despawned = 0 }),
 		top("cleared", func(sp *SpawnsSnapshot) { sp.Cleared = 0 }),
 		top("released", func(sp *SpawnsSnapshot) { sp.Released = 0 }),
-		top("rng.seed", func(sp *SpawnsSnapshot) { sp.RNG.Seed = 0 }),
+		// The seed is checked against the game's (the B2a review's B1): lost,
+		// or another stream's, it is refused rather than rolled on.
+		{"spawns.rng.seed lost", b2bRefuse, func(_ *testing.T, s *b2bSnap) { s.Spawns.RNG.Seed = 0 }},
+		{"spawns.rng.seed the combat stream's", b2bRefuse, func(_ *testing.T, s *b2bSnap) {
+			s.Spawns.RNG.Seed = d2rand.Derive(sv.seed, d2rand.StreamCombat)
+		}},
+		{"spawns.rng.draws past the cap", b2bRefuse, func(_ *testing.T, s *b2bSnap) { s.Spawns.RNG.Draws = d2rand.MaxDraws + 1 }},
 		top("rng.draws", func(sp *SpawnsSnapshot) { sp.RNG.Draws = 0 }),
 		{"spawns.groups lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Spawns.Groups = nil }},
 
@@ -227,6 +235,71 @@ func TestSpawnsSnapshotEveryFieldIsSeen(t *testing.T) {
 		// positions of the dead's row alone. It is saved so the stand-in
 		// answers WatcherAt as the saved chaser did.
 		{"spawns.gone member x moved", b2bCarried, func(t *testing.T, s *b2bSnap) { _, m := gone(t, s); m.X += 0.5 }},
+		{"spawns.gone member y moved", b2bCarried, func(t *testing.T, s *b2bSnap) { _, m := gone(t, s); m.Y += 0.5 }},
+	})
+
+	b2aExercised(t, outcomes, b2bSpawnsClasses()...)
+}
+
+// b2bSpawnsClasses is every field of the spawn tables and of a group,
+// labelled at its path in the saved moment (b2bSnap) -- the B2b review's B5:
+// B2b's systems had no reflection check, so a field added to one was saved or
+// not by chance.
+func b2bSpawnsClasses() []b2aClass {
+	return []b2aClass{
+		{Spawns{}, map[string]string{
+			"sheltered":  "T: true only inside a sleep (talk.go sets it and defers it back); Snapshot refuses while set",
+			"dials":      "D: DefaultSpawnDials; a dial a script moved is the script's, not the save's (trap 7)",
+			"clock":      "W: the clock the tables read; restored on its own",
+			"notice":     "W: the notice model the tables watch through; restored on its own",
+			"illum":      "W: the light model a spawn position is judged by",
+			"spawner":    "W: the game spawner that puts members on the map (its arrival is saved on its own)",
+			"target":     "W: the player, set by SetTarget when the game is built",
+			"chases":     "W: pursuit, which a despawn releases",
+			"rng":        "S:spawns.rng",
+			"groups":     "S:spawns.groups",
+			"nextID":     "S:spawns.next_id",
+			"sinceCk":    "S:spawns.since_check_minutes",
+			"openBodies": "S:spawns.open_bodies",
+			"layDead":    "W: the game screen's hook for a risen man lying down",
+			"checks":     "S:spawns.checks",
+			"rolls":      "S:spawns.rolls",
+			"spawned":    "S:spawns.spawned",
+			"failures":   "S:spawns.failures",
+			"dropped":    "S:spawns.dropped",
+			"despawned":  "S:spawns.despawned",
+			"cleared":    "S:spawns.cleared",
+			"released":   "S:spawns.released",
+		}},
+		{group{}, map[string]string{
+			"id":        "S:spawns.groups[0].id",
+			"row":       "S:spawns.groups[0].row",
+			"code":      "S:spawns.groups[0].code",
+			"members":   "S:spawns.groups[0].members",
+			"morale":    "S:spawns.groups[0].morale",
+			"bornAt":    "S:spawns.groups[0].born_at",
+			"band":      "S:spawns.groups[0].band",
+			"stage":     "S:spawns.groups[0].stage",
+			"weight":    "S:spawns.groups[0].weight",
+			"spawned":   "S:spawns.groups[0].spawned",
+			"bornWhere": "S:spawns.groups[0].born_where",
+		}},
+	}
+}
+
+func TestSpawnsSnapshotFieldsClassified(t *testing.T) {
+	a := b2bFilledWorld(t)
+	snap := a.snapshot(t)
+
+	for _, c := range b2bSpawnsClasses() {
+		b2aClassified(t, c.kind, snap, c.fields)
+	}
+
+	// The one transient: set, the snapshot is refused (the B3 check).
+	b2aTransientsRefused(t, b2bSpawnsClasses()[0], func() (interface{}, func() error) {
+		w := b2bFilledWorld(t)
+
+		return w.spawns, func() error { _, err := w.spawns.Snapshot(b2bResolver{w}); return err }
 	})
 }
 
@@ -276,7 +349,9 @@ func TestSpawnsRestoreIsAllOrNothing(t *testing.T) {
 	a := b2bFilledWorld(t)
 	sv := a.save(t)
 
-	b, err := b2bResume(t, sv, sv.snap)
+	// A relaunch whose tables are still as built: the only tables a Restore
+	// takes.
+	b, err := b2bResumeSkipping(t, sv, sv.snap, "spawns")
 	require.NoError(t, err)
 
 	before := b.observe(t)
@@ -287,9 +362,31 @@ func TestSpawnsRestoreIsAllOrNothing(t *testing.T) {
 	last := &bad.Spawns.Groups[len(bad.Spawns.Groups)-1]
 	last.Members[0].ID, last.Members[0].Gone = "e:999", false // refused only after the first groups were read
 
-	err = b.spawns.Restore(bad.Spawns, b2bResolver{b})
+	require.True(t, errors.Is(b.spawns.Validate(bad.Spawns, b2bResolver{b}, sv.seed), ErrUnresolvedRef), "Validate")
+
+	err = b.spawns.Restore(bad.Spawns, b2bResolver{b}, sv.seed)
 	require.True(t, errors.Is(err, ErrUnresolvedRef), "%v", err)
 	require.Equal(t, before, b.observe(t), "a refused restore must leave the tables exactly as they were")
+
+	require.NoError(t, b.spawns.Validate(sv.snap.Spawns, b2bResolver{b}, sv.seed), "the control: the saved one validates")
+	require.Equal(t, before, b.observe(t), "and Validate changes nothing")
+}
+
+// A restore into tables that already hold a group is refused (the B2b
+// review's B4, as B2a's corpses and squads refuse): the live group's members
+// would be left on the map, watched and chasing, in no pack.
+func TestSpawnsRestoreRefusesTablesInUse(t *testing.T) {
+	a := b2bFilledWorld(t)
+	sv := a.save(t)
+
+	b, err := b2bResume(t, sv, sv.snap)
+	require.NoError(t, err)
+
+	before := b.observe(t)
+
+	require.Error(t, b.spawns.Validate(sv.snap.Spawns, b2bResolver{b}, sv.seed))
+	require.Error(t, b.spawns.Restore(sv.snap.Spawns, b2bResolver{b}, sv.seed), "the very snapshot, over itself")
+	require.Equal(t, before, b.observe(t))
 }
 
 // Saving is refused while he shelters; the flag is transient.
@@ -338,43 +435,41 @@ func TestSpawnsSnapshotKeepsTheDeadInThePack(t *testing.T) {
 	require.True(t, b.spawns.Despawn(g.ID))
 }
 
-// The seed is written as a string, exact past 2^53, and the restored stream
-// hands out the value the saved one would have.
+// A wall-clock GAME seed is past 2^53. The tables' stream runs on the seed
+// Derive gives it; the restore checks it against the game seed, read as an
+// int64, and the restored stream hands out the value the saved one would have.
+// (The stream state's own trip through JSON at a seed past 2^53 is d2rand's
+// TestStreamStateSeedSurvivesJSON, which the three systems now share.)
 func TestSpawnsSnapshotSeedIsExactPast2to53(t *testing.T) {
-	const seed = int64(1)<<62 + 1
+	const world = int64(1)<<62 + 1
 
-	b, err := json.Marshal(SpawnsSnapshot{NextID: 1, RNG: b2bStream{Seed: seed, Draws: 5}})
+	require.NotEqual(t, world, int64(float64(world)), "the control: float64 loses this seed")
+
+	seed := d2rand.Derive(world, d2rand.StreamSpawns)
+
+	b, err := json.Marshal(SpawnsSnapshot{NextID: 1, RNG: d2rand.StreamState{Seed: seed, Draws: 5}})
 	require.NoError(t, err)
 
 	var loose map[string]interface{}
 	require.NoError(t, json.Unmarshal(b, &loose))
 	rng, ok := loose["rng"].(map[string]interface{})
 	require.True(t, ok, "the stream is written as {seed, draws}: %s", b)
-	require.Equal(t, "4611686018427387905", rng["seed"], "a reader decoding into interface{} still gets it exactly")
+	require.IsType(t, "", rng["seed"], "the seed is a string")
 	require.Equal(t, 5.0, rng["draws"])
 
 	var back SpawnsSnapshot
 	require.NoError(t, json.Unmarshal(b, &back))
 	require.Equal(t, seed, back.RNG.Seed)
 
-	// The control: the same field without ",string" is a JSON number, and a
-	// float64 reader gets a different seed.
-	type plain struct {
-		Seed int64 `json:"seed"`
-	}
-
-	pb, err := json.Marshal(plain{seed})
-	require.NoError(t, err)
-
-	var pl map[string]interface{}
-	require.NoError(t, json.Unmarshal(pb, &pl))
-	require.NotEqual(t, seed, int64(pl["seed"].(float64)), "the control: a number past 2^53 does not survive float64")
-
 	s, _, _, _, _ := newTestSpawns(t)
-	require.NoError(t, s.Restore(back, b2bResolver{&b2bWorld{entities: map[string]*b2bEntity{}}}))
+	require.NoError(t, s.Restore(back, b2bResolver{&b2bWorld{entities: map[string]*b2bEntity{}}}, world))
 	require.Equal(t, seed, s.rng.Seeded())
 	require.Equal(t, uint64(5), s.rng.Draws())
 	require.Equal(t, nextAfter(seed, 5), s.rng.Int63(), "the next value is the saved stream's sixth")
+
+	lost, _, _, _, _ := newTestSpawns(t)
+	require.Error(t, lost.Restore(back, b2bResolver{&b2bWorld{entities: map[string]*b2bEntity{}}}, int64(float64(world))),
+		"the game seed read through float64 is another game, and its tables another stream")
 }
 
 // Losing the minutes run toward the next table check moves WHEN the tables

@@ -366,7 +366,12 @@ func (m *Meters) HarnessState() map[string]interface{} {
 		"dying":              m.Dying(),
 		"dead":               m.Dead(),
 		"neglect_damage":     m.dials.NeglectDamage,
-		"has_body":           m.body != nil,
+
+		// M4.6 B2a review, C7 (observability first): the fraction of a
+		// health point neglect owes between steps -- the snapshot's
+		// meters.damage. Saved, so reported.
+		"damage_owed": m.damage,
+		"has_body":    m.body != nil,
 	}
 
 	if m.body != nil {

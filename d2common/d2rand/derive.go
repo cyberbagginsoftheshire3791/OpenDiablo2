@@ -30,13 +30,23 @@ const zeroSeed = 89482311
 // WHY IT WORKS IN math/rand's RESIDUE SPACE rather than hashing to an int64.
 // rngSource.Seed reduces every seed modulo 2^31-1 (and replaces a zero residue
 // with 89482311), so two int64 seeds that agree modulo it ARE the same stream.
-// A hash to 64 bits would make a collision unlikely; this makes it impossible:
-// the derived seed is the game's effective seed moved by a per-stream offset in
-// [1, 2^31-3] around the ring of the 2^31-2 non-zero residues, so for ANY game
-// seed each derived stream differs from the world stream and from every other
-// named stream whose offset differs (TestDeriveStreamsNeverCoincide pins that
-// the three names' offsets do). The offset is a fixed function of the name
+// A hash to 64 bits would make two streams sharing an effective seed unlikely;
+// this rules it out: the derived seed is the game's effective seed moved by a
+// per-stream offset in [1, 2^31-3] around the ring of the 2^31-2 non-zero
+// residues, so for ANY game seed each derived stream runs on an effective seed
+// different from the world stream's and from every other named stream whose
+// offset differs (TestDeriveStreamsNeverCoincide pins that the offsets of
+// every name on Derived do). The offset is a fixed function of the name
 // (FNV-1a), so it is the same on every build and platform.
+//
+// WHAT IS PROVED, AND WHAT IS ONLY CHECKED (softened at the B2a review, 28
+// Sep 2026, from "impossible"). Proved: four different effective seeds, for
+// every game seed. Checked, not proved: that different effective seeds hand
+// out different values. The test compares each stream's first three values at
+// sixteen game seeds; math/rand's seeding makes a shared prefix vanishingly
+// unlikely, but nothing here rules it out for every seed, nor rules out one
+// stream's sequence turning up later inside another's. A swapped restore is
+// refused by the seed itself (StreamState.Check), which does not rest on this.
 //
 // A derived seed is in [1, 2^31-1]: it survives a float64 JSON reader exactly,
 // though a reader should still take seed_str, because the world seed is the

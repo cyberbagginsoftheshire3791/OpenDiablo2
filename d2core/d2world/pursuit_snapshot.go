@@ -87,9 +87,39 @@ func (p *Pursuit) Snapshot(r Resolver) (PursuitSnapshot, error) {
 // and quarry through r. A chase that does not resolve is an ERROR, not a
 // silent drop. It is all-or-nothing, and it solves no route and hands no
 // hunter a path: the walk is the entity's, restored with its motion.
+//
+// It restores only into a pursuit that runs NO CHASE (the B2b review's B4, as
+// B2a's corpses and squads refuse a used target): a live chase replaced would
+// leave a hunter walking a route no saved chase owns.
 func (p *Pursuit) Restore(snap PursuitSnapshot, r Resolver) error {
-	if err := b2bCheckNumbers("pursuit", true, b2bNum{"solves", float64(snap.Solves)}); err != nil {
+	chases, err := p.b2bValidate(snap, r)
+	if err != nil {
 		return err
+	}
+
+	p.chases = chases
+	p.solves = snap.Solves
+
+	return nil
+}
+
+// Validate is Restore's check and nothing else (D4): every refusal Restore
+// would make, through the same Resolver, without changing the pursuit.
+func (p *Pursuit) Validate(snap PursuitSnapshot, r Resolver) error {
+	_, err := p.b2bValidate(snap, r)
+
+	return err
+}
+
+// b2bValidate checks the whole snapshot and returns the chases it would
+// restore. Nothing in p is changed.
+func (p *Pursuit) b2bValidate(snap PursuitSnapshot, r Resolver) (map[string]*chase, error) {
+	if len(p.chases) != 0 {
+		return nil, fmt.Errorf("d2world: pursuit: restore into a pursuit that runs no chase; this one runs %d", len(p.chases))
+	}
+
+	if err := b2bCheckNumbers("pursuit", true, b2bNum{"solves", float64(snap.Solves)}); err != nil {
+		return nil, err
 	}
 
 	chases := make(map[string]*chase, len(snap.Chases))
@@ -98,28 +128,28 @@ func (p *Pursuit) Restore(snap PursuitSnapshot, r Resolver) error {
 		cs := snap.Chases[i]
 
 		if _, dup := chases[cs.Hunter]; dup {
-			return fmt.Errorf("d2world: pursuit: hunter %s is saved twice", cs.Hunter)
+			return nil, fmt.Errorf("d2world: pursuit: hunter %s is saved twice", cs.Hunter)
 		}
 
 		what := "pursuit chase " + cs.Hunter
 
 		if err := b2bCheckNumbers(what, false, b2bNum{"solved_at_x", cs.SolvedAtX}, b2bNum{"solved_at_y", cs.SolvedAtY}); err != nil {
-			return err
+			return nil, err
 		}
 
 		if err := b2bCheckNumbers(what, true, b2bNum{"solved_distance", cs.SolvedDistance},
 			b2bNum{"since_solve_minutes", cs.SinceSolve}, b2bNum{"solves", float64(cs.Solves)}); err != nil {
-			return err
+			return nil, err
 		}
 
 		hunter, err := b2bResolveHunter(r, cs.Hunter)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		quarry, err := b2bResolveQuarry(r, cs.Quarry)
 		if err != nil {
-			return fmt.Errorf("pursuit: hunter %s: %w", cs.Hunter, err)
+			return nil, fmt.Errorf("pursuit: hunter %s: %w", cs.Hunter, err)
 		}
 
 		chases[cs.Hunter] = &chase{
@@ -135,10 +165,7 @@ func (p *Pursuit) Restore(snap PursuitSnapshot, r Resolver) error {
 		}
 	}
 
-	p.chases = chases
-	p.solves = snap.Solves
-
-	return nil
+	return chases, nil
 }
 
 // b2bResolveHunter resolves a hunter: a watcher by id that can also walk --

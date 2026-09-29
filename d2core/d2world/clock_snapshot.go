@@ -26,8 +26,16 @@ import (
 // decides which it is.
 //
 // A snapshot is data, not the load. The ORDER things are restored in is B4's
-// (plan section 5), and each Restore's doc comment names the part of that
-// order it depends on.
+// (plan section 5, and the one authoritative list in
+// docs/m4.6-world-save-notes.md), and each Restore's doc comment names the part
+// of that order it depends on.
+//
+// EVERY RESTORE HAS A VALIDATE TWIN (D4, 28 Sep 2026), on all nine systems --
+// these six and B2b's spawns, notice and pursuit: the same checks, run without
+// changing anything, so a load checks every block of the file before it
+// restores any, and a refusal anywhere sets the whole file aside (rule 7)
+// rather than leaving a world half restored. Restore calls Validate first, so
+// the two can never disagree.
 
 // ClockSnapshot is the clock's saved state: the world minutes since the epoch,
 // which is the whole of it. The date, weekday, stage, rate and moon are
@@ -49,11 +57,21 @@ func (c *Clock) Snapshot() ClockSnapshot { return ClockSnapshot{Elapsed: c.elaps
 // NewClock, before bindProgress seeds lastStage and dawnPaidDay from it --
 // restored later, the first frame reads a stage change and pays a night.
 func (c *Clock) Restore(s ClockSnapshot) error {
-	if math.IsNaN(s.Elapsed) || math.IsInf(s.Elapsed, 0) || s.Elapsed < 0 {
-		return fmt.Errorf("clock snapshot: elapsed %v is not a number of world minutes since the epoch", s.Elapsed)
+	if err := c.Validate(s); err != nil {
+		return err
 	}
 
 	c.elapsed = s.Elapsed
+
+	return nil
+}
+
+// Validate is Restore's check and nothing else (D4): elapsed is a number of
+// world minutes, not before the epoch.
+func (c *Clock) Validate(s ClockSnapshot) error {
+	if math.IsNaN(s.Elapsed) || math.IsInf(s.Elapsed, 0) || s.Elapsed < 0 {
+		return fmt.Errorf("clock snapshot: elapsed %v is not a number of world minutes since the epoch", s.Elapsed)
+	}
 
 	return nil
 }

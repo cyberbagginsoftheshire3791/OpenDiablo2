@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 )
 
 // M4.6 B2b: the fake world the three entity-keyed snapshots are tested in.
@@ -201,6 +203,7 @@ func (s *b2bSpawner) Despawn(members []Watcher) {
 
 // b2bWorld is the miniature advanceWorld.
 type b2bWorld struct {
+	seed     int64 // the game seed; the tables' stream is derived from it, as CreateGame derives it
 	clock    *Clock
 	notice   *Notice
 	spawns   *Spawns
@@ -215,6 +218,7 @@ func b2bNewWorld(t *testing.T, seed int64, playerID string) *b2bWorld {
 	t.Helper()
 
 	w := &b2bWorld{
+		seed:     seed,
 		player:   &b2bPlayer{id: playerID},
 		entities: make(map[string]*b2bEntity),
 	}
@@ -233,7 +237,7 @@ func b2bNewWorld(t *testing.T, seed int64, playerID string) *b2bWorld {
 
 	w.notice = NewNotice(b2bSight{}, b2bLight{0.2}, notice)
 	w.pursuit = NewPursuit(b2bRouter{}, DefaultPursuitDials())
-	w.spawns = NewSpawns(w.clock, w.notice, w.spawner, w.pursuit, b2bLight{0.2}, seed, dials)
+	w.spawns = NewSpawns(w.clock, w.notice, w.spawner, w.pursuit, b2bLight{0.2}, d2rand.Derive(seed, d2rand.StreamSpawns), dials)
 	w.spawns.SetTarget(w.player)
 
 	t.Cleanup(w.clock.Close)
@@ -384,6 +388,7 @@ func b2bThroughJSON(t *testing.T, s b2bSnap) b2bSnap {
 // the uuid stream and every entity's id and motion -- as the fake world has
 // them.
 type b2bSaved struct {
+	seed     int64 // the saved game's seed, which every Restore checks its stream against
 	snap     b2bSnap
 	ticks    int
 	px, py   float64
@@ -396,6 +401,7 @@ func (w *b2bWorld) save(t *testing.T) b2bSaved {
 	t.Helper()
 
 	sv := b2bSaved{
+		seed:     w.seed,
 		snap:     b2bThroughJSON(t, w.snapshot(t)),
 		ticks:    w.ticks,
 		px:       w.player.x,
@@ -418,6 +424,16 @@ func (w *b2bWorld) save(t *testing.T) b2bSaved {
 func b2bResume(t *testing.T, sv b2bSaved, s b2bSnap) (*b2bWorld, error) {
 	t.Helper()
 
+	return b2bResumeSkipping(t, sv, s, "")
+}
+
+// b2bResumeSkipping is b2bResume with one system ("spawns", "notice" or
+// "pursuit") left as a relaunch builds it -- empty -- so a test can restore
+// into it by hand: every Restore refuses a system that already holds state
+// (the B2b review's B4).
+func b2bResumeSkipping(t *testing.T, sv b2bSaved, s b2bSnap, skip string) (*b2bWorld, error) {
+	t.Helper()
+
 	b := b2bNewWorld(t, 7, "p:resumed")
 
 	// The clock is B2a's to restore; here it is rebuilt the long way, by the
@@ -436,16 +452,22 @@ func b2bResume(t *testing.T, sv b2bSaved, s b2bSnap) (*b2bWorld, error) {
 
 	r := b2bResolver{b}
 
-	if err := b.spawns.Restore(s.Spawns, r); err != nil {
-		return nil, err
+	if skip != "spawns" {
+		if err := b.spawns.Restore(s.Spawns, r, sv.seed); err != nil {
+			return nil, err
+		}
 	}
 
-	if err := b.notice.Restore(s.Notice, r); err != nil {
-		return nil, err
+	if skip != "notice" {
+		if err := b.notice.Restore(s.Notice, r); err != nil {
+			return nil, err
+		}
 	}
 
-	if err := b.pursuit.Restore(s.Pursuit, r); err != nil {
-		return nil, err
+	if skip != "pursuit" {
+		if err := b.pursuit.Restore(s.Pursuit, r); err != nil {
+			return nil, err
+		}
 	}
 
 	return b, nil
@@ -504,12 +526,29 @@ type b2bMutation struct {
 
 // b2bSweep resumes the saved moment once per mutation and holds each to its
 // expectation against want, the unmutated world's recording.
-func b2bSweep(t *testing.T, sv b2bSaved, want []string, muts []b2bMutation) {
+//
+// It returns what each mutation exercised, for the classification's check
+// that every saved path is seen (b2aExercised, the B2 review's B3/B5): the
+// paths at which the mutated snapshot's JSON differs from the saved one's, and
+// whether it was seen (refused or diverged; a carried one is not).
+func b2bSweep(t *testing.T, sv b2bSaved, want []string, muts []b2bMutation) []b2aOutcome {
 	t.Helper()
+
+	var outcomes []b2aOutcome
+
+	base := b2aTree(t, sv.snap)
 
 	for _, m := range muts {
 		s := b2bThroughJSON(t, sv.snap)
 		m.mutate(t, &s)
+
+		var paths []string
+		b2aTreeDiff(base, b2aTree(t, s), "", &paths)
+		require.NotEmpty(t, paths, "%s: the mutation changed nothing in the snapshot", m.name)
+
+		for _, p := range paths {
+			outcomes = append(outcomes, b2aOutcome{path: p, seen: m.expect != b2bCarried})
+		}
 
 		w, err := b2bResume(t, sv, s)
 
@@ -545,6 +584,8 @@ func b2bSweep(t *testing.T, sv b2bSaved, want []string, muts []b2bMutation) {
 			}
 		}
 	}
+
+	return outcomes
 }
 
 // b2bFull is a world in which every saved field has something to say: two

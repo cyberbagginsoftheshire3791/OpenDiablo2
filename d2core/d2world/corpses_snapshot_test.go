@@ -124,32 +124,40 @@ func b2aCorpsesSteps(t *testing.T, w *b2aCorpsesWorld) string {
 	return trace.String()
 }
 
+// b2aCorpsesClasses is every field of the registry and of a body, labelled.
+func b2aCorpsesClasses() []b2aClass {
+	return []b2aClass{
+		{Corpses{}, map[string]string{
+			"byID":    "S:bodies",
+			"order":   "S:bodies",
+			"risenAs": "S:risen_as",
+			"walker":  "S:walker",
+			"last":    "S:last",
+			"now":     "W: the world minutes a Downed man is stamped with (SetClock)",
+			"isHuman": "W: the spawn tables' row classifier, given at construction",
+			"was":     "W: the row's live name, given at construction",
+			"changed": "W: the open-count callback; Restore never calls it (trap 5)",
+		}},
+		{Corpse{}, map[string]string{
+			"ID":       "S:bodies[0].id",
+			"Row":      "S:bodies[0].row",
+			"Class":    "S:bodies[0].class",
+			"State":    "S:bodies[0].state",
+			"X":        "S:bodies[0].x",
+			"Y":        "S:bodies[0].y",
+			"Was":      "S:bodies[0].was",
+			"DownedAt": "S:bodies[0].downed_at",
+		}},
+	}
+}
+
 func TestCorpsesSnapshotFieldsClassified(t *testing.T) {
 	w := b2aCorpsesFixture(t)
 	snap := w.c.Snapshot()
 
-	b2aClassified(t, Corpses{}, snap, map[string]string{
-		"byID":    "S:bodies",
-		"order":   "S:bodies",
-		"risenAs": "S:risen_as",
-		"walker":  "S:walker",
-		"last":    "S:last",
-		"now":     "W: the world minutes a Downed man is stamped with (SetClock)",
-		"isHuman": "W: the spawn tables' row classifier, given at construction",
-		"was":     "W: the row's live name, given at construction",
-		"changed": "W: the open-count callback; Restore never calls it (trap 5)",
-	})
-
-	b2aClassified(t, Corpse{}, snap, map[string]string{
-		"ID":       "S:bodies[0].id",
-		"Row":      "S:bodies[0].row",
-		"Class":    "S:bodies[0].class",
-		"State":    "S:bodies[0].state",
-		"X":        "S:bodies[0].x",
-		"Y":        "S:bodies[0].y",
-		"Was":      "S:bodies[0].was",
-		"DownedAt": "S:bodies[0].downed_at",
-	})
+	for _, c := range b2aCorpsesClasses() {
+		b2aClassified(t, c.kind, snap, c.fields)
+	}
 }
 
 func TestCorpsesSnapshotRoundTrip(t *testing.T) {
@@ -199,6 +207,20 @@ func TestCorpsesSnapshotRefusesWhatCannotBe(t *testing.T) {
 		"a walker of a body not risen": func(s *CorpsesSnapshot) { s.Walker["b:1"] = "r:1" },
 		"a walker not walking back":    func(s *CorpsesSnapshot) { s.Walker["b:5"] = "r:2" },
 		"a last not walking back":      func(s *CorpsesSnapshot) { s.Last["b:6"] = "r:1" },
+
+		// The B2a review's B2: only what the machine could have written.
+		// Bodies[1] is b:2, an open carcass; [2] b:3, a hasty grave; [0] b:1,
+		// an open man; [4] b:5, risen as r:1.
+		"a beast risen": func(s *CorpsesSnapshot) {
+			s.Bodies[1].State = CorpseRisen
+			s.Walker["b:2"] = "r:9"
+			s.RisenAs["r:9"] = "b:2"
+		},
+		"a beast downed":                 func(s *CorpsesSnapshot) { s.Bodies[1].State = CorpseDowned },
+		"a risen man walking as no one":  func(s *CorpsesSnapshot) { delete(s.Walker, "b:5") },
+		"an open man with a downed_at":   func(s *CorpsesSnapshot) { s.Bodies[0].DownedAt = 12 },
+		"a hasty grave with a downed_at": func(s *CorpsesSnapshot) { s.Bodies[2].DownedAt = 12 },
+		"a carcass with a downed_at":     func(s *CorpsesSnapshot) { s.Bodies[1].DownedAt = 12 },
 	} {
 		var s CorpsesSnapshot
 
@@ -207,6 +229,7 @@ func TestCorpsesSnapshotRefusesWhatCannotBe(t *testing.T) {
 		bad(&s)
 
 		w := newB2aCorpses()
+		require.Error(t, w.c.Validate(s), "%s: Validate", name)
 		require.Error(t, w.c.Restore(s), name)
 		require.Empty(t, w.c.All(), "%s: a refused restore changes nothing", name)
 	}
@@ -238,7 +261,7 @@ func TestCorpsesSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		return b2aCorpsesSteps(t, w2), nil
 	}
 
-	b2aSweep(t, snap, ref, nil, try)
+	b2aExercised(t, b2aSweep(t, snap, ref, nil, try), b2aCorpsesClasses()...)
 
 	// A body's id, class and state are only ever refused when zeroed (no id,
 	// no class, no state); a valid other one must show.
@@ -246,5 +269,57 @@ func TestCorpsesSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		"a man's body a beast's": func(s *CorpsesSnapshot) { s.Bodies[0].Class = CorpseBeast },
 		"an open body staked":    func(s *CorpsesSnapshot) { s.Bodies[0].State = CorpseClosed },
 		"a body renamed":         func(s *CorpsesSnapshot) { s.Bodies[8].ID = "b:88" },
+
+		// The B2a review's C2: the member maps' VALUES were only ever
+		// refused. b:7 stood twice, as r:4 and then r:5, so either is a
+		// member that walks back to it -- a valid other value, which must show.
+		"b:7 walking as its older member": func(s *CorpsesSnapshot) { s.Walker["b:7"] = "r:4" },
+		"b:7 last walked as r:4":          func(s *CorpsesSnapshot) { s.Last["b:7"] = "r:4" },
 	}, try)
+}
+
+// The machine writes these, so a load takes them (the positive half of the
+// B2a review's B2, where the review's own list was wrong twice): a carcass in
+// a hasty grave -- the dig verb buries any open body -- and a man cut down who
+// stood again, or was staked, keeping the minute he went down.
+func TestCorpsesSnapshotTakesWhatTheMachineWrites(t *testing.T) {
+	w := newB2aCorpses()
+	c := w.c
+
+	c.Fall("dog", "dogs", 1, 1)
+	require.True(t, c.Bury("dog"), "a carcass can be buried")
+
+	c.Fall("m:1", "men", 2, 2)
+	require.True(t, c.Rise("m:1"))
+	c.Raised("m:1", "r:1")
+
+	w.minute = 33
+	c.Fall("r:1", "", 2.5, 2)
+	require.True(t, c.Rise("m:1"), "he stands again")
+	c.Raised("m:1", "r:2")
+
+	c.Fall("m:2", "men", 3, 3)
+	require.True(t, c.Rise("m:2"))
+	c.Raised("m:2", "r:3")
+
+	w.minute = 34
+	c.Fall("r:3", "", 3.5, 3)
+	require.True(t, c.Close("m:2"), "staked where he lay Downed")
+
+	snap := b2aThroughJSON(t, c.Snapshot())
+
+	dog, _ := c.Get("dog")
+	stood, _ := c.Get("m:1")
+	staked, _ := c.Get("m:2")
+
+	require.Equal(t, CorpseHasty, dog.State)
+	require.Equal(t, CorpseBeast, dog.Class)
+	require.Equal(t, CorpseRisen, stood.State)
+	require.Equal(t, 33.0, stood.DownedAt, "risen again, with the minute he went down")
+	require.Equal(t, CorpseClosed, staked.State)
+	require.Equal(t, 34.0, staked.DownedAt, "staked, with the minute he went down")
+
+	w2 := newB2aCorpses()
+	require.NoError(t, w2.c.Restore(snap))
+	require.Equal(t, b2aJSON(t, c.HarnessState()), b2aJSON(t, w2.c.HarnessState()))
 }

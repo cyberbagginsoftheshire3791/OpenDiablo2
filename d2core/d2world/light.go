@@ -165,13 +165,15 @@ func (l *Light) Add(kind SourceKind, carried bool, x, y float64) *Source {
 	s := &Source{ID: l.nextID, Kind: kind, Carried: carried, X: x, Y: y, Lit: true}
 	l.nextID++
 
+	// The radius is the kind's dial, set here and at a restore by radiusOf
+	// alone (D2: a value derived from dials is never saved).
+	s.Radius = l.radiusOf(kind)
+
 	switch kind {
 	case SourceHearth:
-		s.Radius, s.Burn = l.dials.HearthRadius, -1
-	case SourceTorch:
-		s.Radius, s.Burn = l.dials.TorchRadius, l.dials.TorchBurn
+		s.Burn = -1
 	default:
-		s.Radius, s.Burn = l.dials.TorchRadius, l.dials.TorchBurn
+		s.Burn = l.dials.TorchBurn
 	}
 
 	l.sources = append(l.sources, s)
@@ -464,6 +466,15 @@ func (l *Light) HarnessSet(field string, value interface{}) error {
 		c := l.Carried()
 		if c == nil {
 			return fmt.Errorf("the player carries no light; set carried_source first")
+		}
+
+		// Never a burn the world save would refuse (Validate): a torch's is
+		// minutes left, never negative; a hearth does not burn down at all.
+		switch {
+		case !c.burns():
+			return fmt.Errorf("the carried %s does not burn down; carried_burn is a torch's", c.Kind)
+		case f < 0 || math.IsNaN(f) || math.IsInf(f, 0):
+			return fmt.Errorf("carried_burn is minutes left, 0 or more, got %v", f)
 		}
 
 		c.Burn = f

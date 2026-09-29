@@ -11,9 +11,15 @@ import (
 // b2aLightWorld is a clock in the deep night and a light model with every kind
 // of source the game makes: a carried torch lit and burning, a placed hearth,
 // a placed torch burning, a placed torch burnt out, a removed source, and a
-// newest torch doused and removed -- so next_id is not one past the last
-// source, as in a game after any douse (the carried torch is re-added on each
-// light).
+// newest torch removed -- so next_id is not one past the last source, as in a
+// game after his torch has left the model and been lit again.
+//
+// WHAT TAKES A TORCH OUT OF THE MODEL (corrected at the B2a review, C6: this
+// said "a douse"). A douse does NOT: L on a lit torch only unlights it, and the
+// source keeps its id and its minutes. A torch leaves the model when it BURNS
+// OUT (the game spends it from his hand, Light.Remove) or is PUT AWAY
+// (UnequipSlot -> returnTorchToPack moves its minutes back into the kit and
+// removes the source); the next light Adds a new source with a new id.
 func b2aLightWorld(t *testing.T) (*Clock, *Light) {
 	t.Helper()
 
@@ -86,30 +92,38 @@ func b2aLightSteps(t *testing.T, c *Clock, l *Light) string {
 	return trace.String()
 }
 
+// b2aLightClasses is every field of the light model and of a source, labelled.
+func b2aLightClasses() []b2aClass {
+	return []b2aClass{
+		{Light{}, map[string]string{
+			"carriedBurnRate": "D: his talents (T3), set again when the load applies his progress",
+			"dials":           "W: construction dials; the game builds the model with the defaults",
+			"clock":           "W: the clock it reads; restored on its own",
+			"sources":         "S:sources",
+			"nextID":          "S:next_id",
+			"playerX":         "D: the player's position, set by SetPlayer every frame",
+			"playerY":         "D: the player's position, set by SetPlayer every frame",
+		}},
+		{Source{}, map[string]string{
+			"ID":      "S:sources[0].id",
+			"Kind":    "S:sources[0].kind",
+			"Radius":  "D: the kind's dial (TorchRadius, HearthRadius), set by radiusOf at Add and at Restore (D2)",
+			"Burn":    "S:sources[0].burn",
+			"Lit":     "S:sources[0].lit",
+			"Carried": "S:sources[0].carried",
+			"X":       "S:sources[0].x",
+			"Y":       "S:sources[0].y",
+		}},
+	}
+}
+
 func TestLightSnapshotFieldsClassified(t *testing.T) {
 	_, l := b2aLightWorld(t)
 	snap := l.Snapshot()
 
-	b2aClassified(t, Light{}, snap, map[string]string{
-		"carriedBurnRate": "D: his talents (T3), set again when the load applies his progress",
-		"dials":           "W: construction dials; the game builds the model with the defaults",
-		"clock":           "W: the clock it reads; restored on its own",
-		"sources":         "S:sources",
-		"nextID":          "S:next_id",
-		"playerX":         "D: the player's position, set by SetPlayer every frame",
-		"playerY":         "D: the player's position, set by SetPlayer every frame",
-	})
-
-	b2aClassified(t, Source{}, snap, map[string]string{
-		"ID":      "S:sources[0].id",
-		"Kind":    "S:sources[0].kind",
-		"Radius":  "S:sources[0].radius",
-		"Burn":    "S:sources[0].burn",
-		"Lit":     "S:sources[0].lit",
-		"Carried": "S:sources[0].carried",
-		"X":       "S:sources[0].x",
-		"Y":       "S:sources[0].y",
-	})
+	for _, c := range b2aLightClasses() {
+		b2aClassified(t, c.kind, snap, c.fields)
+	}
 }
 
 func TestLightSnapshotRoundTrip(t *testing.T) {
@@ -157,13 +171,19 @@ func TestLightSnapshotRefusesWhatCannotBe(t *testing.T) {
 	good := l.Snapshot()
 
 	for name, bad := range map[string]func(s *LightSnapshot){
-		"next_id zero":           func(s *LightSnapshot) { s.NextID = 0 },
-		"an id at next_id":       func(s *LightSnapshot) { s.NextID = s.Sources[len(s.Sources)-1].ID },
-		"ids out of order":       func(s *LightSnapshot) { s.Sources[0], s.Sources[1] = s.Sources[1], s.Sources[0] },
-		"a kind with no name":    func(s *LightSnapshot) { s.Sources[1].Kind = "" },
-		"two carried":            func(s *LightSnapshot) { s.Sources[1].Carried = true },
-		"a radius below nothing": func(s *LightSnapshot) { s.Sources[1].Radius = -1 },
-		"a repeated id":          func(s *LightSnapshot) { s.Sources[1].ID = s.Sources[0].ID },
+		"next_id zero":        func(s *LightSnapshot) { s.NextID = 0 },
+		"an id at next_id":    func(s *LightSnapshot) { s.NextID = s.Sources[len(s.Sources)-1].ID },
+		"ids out of order":    func(s *LightSnapshot) { s.Sources[0], s.Sources[1] = s.Sources[1], s.Sources[0] },
+		"a kind with no name": func(s *LightSnapshot) { s.Sources[1].Kind = "" },
+		"two carried":         func(s *LightSnapshot) { s.Sources[1].Carried = true },
+		"a repeated id":       func(s *LightSnapshot) { s.Sources[1].ID = s.Sources[0].ID },
+
+		// The B2a review's B2: only what Snapshot could have written. Source
+		// 1 is his lit torch, 2 the hearth, 4 a placed torch burnt out.
+		"a torch that never burns down": func(s *LightSnapshot) { s.Sources[0].Burn = -1 },
+		"a lit torch with nothing left": func(s *LightSnapshot) { s.Sources[0].Burn = 0 },
+		"a hearth that burns down":      func(s *LightSnapshot) { s.Sources[1].Burn = 30 },
+		"a hearth at zero":              func(s *LightSnapshot) { s.Sources[1].Burn = 0 },
 	} {
 		var s LightSnapshot
 
@@ -210,14 +230,101 @@ func TestLightSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		return b2aLightSteps(t, c2, l2), nil
 	}
 
-	b2aSweep(t, snap, ref, exempt, try)
+	b2aExercised(t, b2aSweep(t, snap, ref, exempt, try), b2aLightClasses()...)
 
 	// next_id, the ids and the kinds are only ever refused when zeroed; a valid
-	// other value must show. The fixture doused its newest torch, so the saved
-	// next_id is NOT one past the last source, as a game's is after any douse.
+	// other value must show. The fixture removed its newest torch, so the saved
+	// next_id is NOT one past the last source, as a game's is after his torch
+	// burns out or is put away and is lit again.
+	//
+	// A kind changes with its burn, since the two must agree (Validate): a
+	// hearth is fuel-fed (-1), a torch has its minutes. The radius follows the
+	// kind from the dials (D2), so a kind that is ignored is seen in the light.
 	b2aMustDiverge(t, snap, ref, map[string]func(s *LightSnapshot){
 		"next_id one past the last source": func(s *LightSnapshot) { s.NextID = s.Sources[len(s.Sources)-1].ID + 1 },
 		"a source renumbered":              func(s *LightSnapshot) { s.Sources[3].ID++ },
-		"the hearth a torch":               func(s *LightSnapshot) { s.Sources[1].Kind = SourceTorch },
+		"the hearth a torch":               func(s *LightSnapshot) { s.Sources[1].Kind, s.Sources[1].Burn = SourceTorch, 60 },
+		"a placed torch a hearth":          func(s *LightSnapshot) { s.Sources[2].Kind, s.Sources[2].Burn = SourceHearth, -1 },
 	}, try)
+}
+
+// D1 (28 Sep 2026): THE LIGHT MODEL IS THE TRUTH ON LOAD. His carried torch
+// comes back exactly as it was -- the same id, the same next_id, lit or doused,
+// its minutes to the hundredth -- and burns on in step. Both states matter: a
+// douse keeps the source and its minutes (L only unlights it), and a load that
+// "re-lit through the L path", as trap 4 first prescribed, would have given
+// the torch a new id, moved next_id, and LIT the doused one.
+func TestLightRestoresTheCarriedTorchExactly(t *testing.T) {
+	for _, lit := range []bool{true, false} {
+		c, l := b2aLightWorld(t)
+
+		carried := l.Carried()
+		require.NotNil(t, carried)
+		carried.Lit = lit
+
+		snap := b2aThroughJSON(t, l.Snapshot())
+		burnAtSave := carried.Burn
+
+		c2 := NewClock(DefaultClockDials())
+		t.Cleanup(c2.Close)
+		require.NoError(t, c2.Restore(c.Snapshot()))
+
+		l2 := NewLight(c2, DefaultLightDials())
+		t.Cleanup(l2.Close)
+		require.NoError(t, l2.Restore(snap))
+		l2.SetPlayer(12.5, 11.5)
+
+		got := l2.Carried()
+		require.NotNil(t, got, "lit=%v: the carried torch is restored, not left for the L key to re-add", lit)
+		require.Equal(t, *carried, *got, "lit=%v: id, kind, radius, burn, lit and carried, exactly", lit)
+		require.Equal(t, l.nextID, l2.nextID, "lit=%v: next_id unchanged", lit)
+
+		for i := 0; i < 5; i++ {
+			l.Advance(c.Advance(6))
+			l2.Advance(c2.Advance(6))
+			require.Equal(t, *l.Carried(), *l2.Carried(), "lit=%v, step %d: they burn on in step", lit, i)
+		}
+
+		if lit {
+			require.Less(t, l2.Carried().Burn, burnAtSave, "the lit one burned on")
+		} else {
+			require.Equal(t, burnAtSave, l2.Carried().Burn, "the doused one kept its minutes")
+		}
+
+		require.Equal(t, b2aJSON(t, l.HarnessState()), b2aJSON(t, l2.HarnessState()), "lit=%v", lit)
+	}
+}
+
+// D2 (28 Sep 2026): a value derived from dials is not saved. A source's radius
+// is its kind's dial, so the snapshot carries no radius and a restore takes
+// the radius from the dials of the model it restores into -- a save made
+// before a retune loads with the new tuning, never the old one.
+func TestLightRadiusIsTheDialsNotTheSave(t *testing.T) {
+	_, l := b2aLightWorld(t)
+	snap := l.Snapshot()
+
+	tree := b2aTree(t, snap)
+	for i := range snap.Sources {
+		_, has := b2aResolve(tree, "sources["+itoa(i)+"].radius")
+		require.False(t, has, "source %d: no radius in the save", i)
+	}
+
+	c2 := NewClock(DefaultClockDials())
+	t.Cleanup(c2.Close)
+
+	dials := DefaultLightDials()
+	dials.TorchRadius, dials.HearthRadius = 7, 11
+
+	l2 := NewLight(c2, dials)
+	t.Cleanup(l2.Close)
+	require.NoError(t, l2.Restore(snap))
+
+	for _, src := range l2.sources {
+		want := 7.0
+		if src.Kind == SourceHearth {
+			want = 11
+		}
+
+		require.Equal(t, want, src.Radius, "source %d (%s) takes its radius from the restoring model's dials", src.ID, src.Kind)
+	}
 }

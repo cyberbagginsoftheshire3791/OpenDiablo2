@@ -50,7 +50,7 @@ func TestNoticeSnapshotEveryFieldIsSeen(t *testing.T) {
 	// the word would name a man the relaunch does not have.
 	oldPlayer := a.player.id
 
-	b2bSweep(t, sv, want, []b2bMutation{
+	outcomes := b2bSweep(t, sv, want, []b2bMutation{
 		{"notice.checks lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Notice.Checks = 0 }},
 		{"notice.notices lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Notice.Notices = 0 }},
 		{"notice.watches lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Notice.Watches = nil }},
@@ -92,6 +92,69 @@ func TestNoticeSnapshotEveryFieldIsSeen(t *testing.T) {
 			t.Fatal("one watch only")
 		}},
 	})
+
+	b2aExercised(t, outcomes, b2bNoticeClasses()...)
+}
+
+// b2bNoticeClasses is every field of the notice model and of a watch,
+// labelled at its path in the saved moment (the B2b review's B5).
+func b2bNoticeClasses() []b2aClass {
+	return []b2aClass{
+		{Notice{}, map[string]string{
+			"hidden":  "T: true only inside a sleep (talk.go sets it and defers it back); Snapshot refuses while set",
+			"dials":   "D: the notice dials, the radius above all -- Quiet Step's bonus is applied to them when the game is built (trap 7)",
+			"sight":   "W: the map's line of sight",
+			"illum":   "W: the light model a target is lit by",
+			"watches": "S:notice.watches",
+			"checks":  "S:notice.checks",
+			"notices": "S:notice.notices",
+		}},
+		{watch{}, map[string]string{
+			"watcher":       "S:notice.watches[0].watcher",
+			"target":        "S:notice.watches[0].target",
+			"noticed":       "S:notice.watches[0].noticed",
+			"sees":          "S:notice.watches[0].sees",
+			"distance":      "S:notice.watches[0].distance",
+			"lightAtTarget": "S:notice.watches[0].light_at_target",
+			"reach":         "S:notice.watches[0].reach",
+			"sinceCheck":    "S:notice.watches[0].since_check_minutes",
+			"sinceSeen":     "S:notice.watches[0].since_seen_minutes",
+			"checks":        "S:notice.watches[0].checks",
+			"notices":       "S:notice.watches[0].notices",
+		}},
+	}
+}
+
+func TestNoticeSnapshotFieldsClassified(t *testing.T) {
+	a := b2bFilledWorld(t)
+	snap := a.snapshot(t)
+
+	for _, c := range b2bNoticeClasses() {
+		b2aClassified(t, c.kind, snap, c.fields)
+	}
+
+	b2aTransientsRefused(t, b2bNoticeClasses()[0], func() (interface{}, func() error) {
+		w := b2bFilledWorld(t)
+
+		return w.notice, func() error { _, err := w.notice.Snapshot(b2bResolver{w}); return err }
+	})
+}
+
+// A restore into a model that already watches someone is refused (the B2b
+// review's B4): the live watch would be forgotten mid-hunt, or kept as a watch
+// no saved moment had.
+func TestNoticeRestoreRefusesAModelInUse(t *testing.T) {
+	a := b2bFilledWorld(t)
+	sv := a.save(t)
+
+	b, err := b2bResume(t, sv, sv.snap)
+	require.NoError(t, err)
+
+	before := b.observe(t)
+
+	require.Error(t, b.notice.Validate(sv.snap.Notice, b2bResolver{b}))
+	require.Error(t, b.notice.Restore(sv.snap.Notice, b2bResolver{b}), "the very snapshot, over itself")
+	require.Equal(t, before, b.observe(t))
 }
 
 // A save that cannot name the player is refused before it is written: every
@@ -146,15 +209,22 @@ func TestNoticeRestoreEvaluatesNothingAndIsAllOrNothing(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sv.snap.Notice.Checks, b.notice.Checks(), "a restore runs no sight test")
 
-	before := b.observe(t)
+	// A relaunch whose notice model is still as built: the only one a Restore
+	// takes.
+	c, err := b2bResumeSkipping(t, sv, sv.snap, "notice")
+	require.NoError(t, err)
+
+	before := c.observe(t)
 
 	bad := b2bThroughJSON(t, sv.snap)
 	bad.Notice.Checks += 100
 	bad.Notice.Watches[len(bad.Notice.Watches)-1].Watcher = "e:999"
 
-	err = b.notice.Restore(bad.Notice, b2bResolver{b})
+	require.True(t, errors.Is(c.notice.Validate(bad.Notice, b2bResolver{c}), ErrUnresolvedRef), "Validate")
+
+	err = c.notice.Restore(bad.Notice, b2bResolver{c})
 	require.True(t, errors.Is(err, ErrUnresolvedRef), "%v", err)
-	require.Equal(t, before, b.observe(t), "a refused restore must leave the watches exactly as they were")
+	require.Equal(t, before, c.observe(t), "a refused restore must leave the watches exactly as they were")
 }
 
 // The quiet step's radius is a dial and is not saved, so a restore cannot

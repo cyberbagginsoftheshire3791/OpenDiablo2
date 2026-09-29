@@ -3,6 +3,7 @@ package d2mapentity
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -53,7 +54,11 @@ type MapEntityFactory struct {
 
 	// The next-id seam (M4.6 B2b, entity_id.go): the id the next NewNPC or
 	// NewCreature takes, and every id handed out through it, so none is
-	// handed out twice.
+	// handed out twice. seamMu guards both (the B2b review: the factory is
+	// reached from the game's goroutine and, in a harness build, the MCP
+	// handler's; a load sets and a construction takes, and neither may see
+	// the other half-done).
+	seamMu       sync.Mutex
 	nextEntityID string
 	givenIDs     map[string]bool
 }
@@ -407,6 +412,13 @@ func (f *MapEntityFactory) NewCastOverlay(x, y int, overlayRecord *d2records.Ove
 // NewObject creates an instance of AnimatedComposite
 func (f *MapEntityFactory) NewObject(x, y int, objectRec *d2records.ObjectDetailRecord,
 	palettePath string) (*Object, error) {
+	// The next-id seam (entity_id.go): an object mints its own id from the
+	// uuid stream, so a waiting id is spent here, first, and never worn --
+	// objects are stamped by the map and never saved. (Until the B2b review
+	// NewObject took no part; the seam test now reads an inline uuid.New as
+	// a birth, and the rule is every construction, no exceptions.)
+	f.spendEntityID()
+
 	locX, locY := float64(x), float64(y)
 	entity := &Object{
 		uuid:         uuid.New().String(),

@@ -109,10 +109,42 @@ func (n *Notice) Snapshot(r Resolver) (NoticeSnapshot, error) {
 // It evaluates nothing. Watch() runs a sight test at once, which would move
 // every counter and reset every since-check; a restored watch looks again
 // when its own saved clock says so.
+//
+// It restores only into a model that watches NO ONE (the B2b review's B4, as
+// B2a's corpses and squads refuse a used target): a live watch replaced by a
+// saved one would leave its watcher forgotten mid-hunt, and one kept beside
+// the saved ones would be a watch no saved moment had.
 func (n *Notice) Restore(snap NoticeSnapshot, r Resolver) error {
+	watches, err := n.b2bValidate(snap, r)
+	if err != nil {
+		return err
+	}
+
+	n.watches = watches
+	n.checks = snap.Checks
+	n.notices = snap.Notices
+
+	return nil
+}
+
+// Validate is Restore's check and nothing else (D4): every refusal Restore
+// would make, through the same Resolver, without changing the model.
+func (n *Notice) Validate(snap NoticeSnapshot, r Resolver) error {
+	_, err := n.b2bValidate(snap, r)
+
+	return err
+}
+
+// b2bValidate checks the whole snapshot and returns the watches it would
+// restore. Nothing in n is changed.
+func (n *Notice) b2bValidate(snap NoticeSnapshot, r Resolver) (map[string]*watch, error) {
+	if len(n.watches) != 0 {
+		return nil, fmt.Errorf("d2world: notice: restore into a model that watches no one; this one watches %d", len(n.watches))
+	}
+
 	if err := b2bCheckNumbers("notice", true,
 		b2bNum{"checks", float64(snap.Checks)}, b2bNum{"notices", float64(snap.Notices)}); err != nil {
-		return err
+		return nil, err
 	}
 
 	watches := make(map[string]*watch, len(snap.Watches))
@@ -121,7 +153,7 @@ func (n *Notice) Restore(snap NoticeSnapshot, r Resolver) error {
 		ws := snap.Watches[i]
 
 		if _, dup := watches[ws.Watcher]; dup {
-			return fmt.Errorf("d2world: notice: watcher %s is saved twice", ws.Watcher)
+			return nil, fmt.Errorf("d2world: notice: watcher %s is saved twice", ws.Watcher)
 		}
 
 		if err := b2bCheckNumbers("notice watch "+ws.Watcher, true,
@@ -129,17 +161,17 @@ func (n *Notice) Restore(snap NoticeSnapshot, r Resolver) error {
 			b2bNum{"reach", ws.Reach}, b2bNum{"since_check_minutes", ws.SinceCheck},
 			b2bNum{"since_seen_minutes", ws.SinceSeen}, b2bNum{"checks", float64(ws.Checks)},
 			b2bNum{"notices", float64(ws.Notices)}); err != nil {
-			return err
+			return nil, err
 		}
 
 		watcher, err := b2bResolveWatcher(r, ws.Watcher)
 		if err != nil {
-			return fmt.Errorf("notice: %w", err)
+			return nil, fmt.Errorf("notice: %w", err)
 		}
 
 		target, err := b2bResolveQuarry(r, ws.Target)
 		if err != nil {
-			return fmt.Errorf("notice: watcher %s: %w", ws.Watcher, err)
+			return nil, fmt.Errorf("notice: watcher %s: %w", ws.Watcher, err)
 		}
 
 		watches[ws.Watcher] = &watch{
@@ -157,9 +189,5 @@ func (n *Notice) Restore(snap NoticeSnapshot, r Resolver) error {
 		}
 	}
 
-	n.watches = watches
-	n.checks = snap.Checks
-	n.notices = snap.Notices
-
-	return nil
+	return watches, nil
 }

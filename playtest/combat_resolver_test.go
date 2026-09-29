@@ -258,6 +258,16 @@ func TestCombatResolver(t *testing.T) {
 		t.Fatalf("act 3: eight forced crits must finish the dog: %v", participant(t, combatState(s), dogID))
 	}
 
+	// AND IT ENDED BECAUSE HE DIED (M4.6 B2a review, B4). "Not fighting" is
+	// every way a fight ends -- a disengage, a rout, the dawn -- and act 4
+	// reads a CORPSE: a fight that ended any other way leaves a live dog, and
+	// act 4 would read its bar as missing for the wrong reason. The fight's
+	// own word for it is the premise.
+	if got := str(combatState(s), "ended_reason"); got != "enemies_dead" {
+		t.Fatalf("act 3: the fight must end because the dog died (ended_reason %q, want enemies_dead) -- "+
+			"act 4 reads a corpse: %v", got, combatState(s))
+	}
+
 	s.call("strigoi_set_system_field", map[string]any{
 		"system": "combat", "field": "forced_band", "value": "",
 	})

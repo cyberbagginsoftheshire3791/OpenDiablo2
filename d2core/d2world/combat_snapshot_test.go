@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 )
 
 // b2aCombatAdd puts an enemy at (x, y) with a body and a profile and steps the
@@ -32,7 +34,13 @@ func b2aCombatAdd(t *testing.T, f *resolverFight, id string, x, y float64, healt
 func b2aCombatFixture(t *testing.T) *resolverFight {
 	t.Helper()
 
-	f := humanFight(t, 1462, nil)
+	return b2aCombatFixtureOn(t, d2rand.Derive(b2aWorldSeed, d2rand.StreamCombat))
+}
+
+func b2aCombatFixtureOn(t *testing.T, seed int64) *resolverFight {
+	t.Helper()
+
+	f := humanFight(t, seed, nil)
 
 	require.Error(t, f.c.Commit(CommitStrike, ""), "no turn is waiting")
 
@@ -76,8 +84,8 @@ func b2aCombatFixture(t *testing.T) *resolverFight {
 }
 
 // b2aCombatCopy is the same world with its combat model replaced by a FRESH
-// one -- on another seed, so its dice can only be the snapshot's -- into which
-// snap is restored.
+// one -- on another game's stream, so its dice can only be the snapshot's --
+// into which snap is restored as the saved game's (b2aWorldSeed).
 func b2aCombatCopy(t *testing.T, snap CombatSnapshot) (*resolverFight, error) {
 	t.Helper()
 
@@ -90,10 +98,10 @@ func b2aCombatCopy(t *testing.T, snap CombatSnapshot) (*resolverFight, error) {
 	t.Cleanup(clock.Close)
 
 	f.c = NewCombat(clock, f.notice, f.fitness, f.illum, f.bodies,
-		f.profiles, f.animator, f.morale, f.chases, 99, dials)
+		f.profiles, f.animator, f.morale, f.chases, d2rand.Derive(99, d2rand.StreamCombat), dials)
 	t.Cleanup(f.c.Close)
 
-	return f, f.c.Restore(snap)
+	return f, f.c.Restore(snap, b2aWorldSeed)
 }
 
 // b2aCombatSteps is the next fight, under the policy (the harness's
@@ -134,98 +142,117 @@ func b2aCombatSteps(t *testing.T, f *resolverFight) string {
 	return trace.String()
 }
 
+// b2aCombatClasses is every field of the combat model and of the records it
+// keeps, labelled.
+func b2aCombatClasses() []b2aClass {
+	const fightOnly = "T: reset by end(); Snapshot refuses unless it is"
+
+	return []b2aClass{
+		{Combat{}, map[string]string{
+			"dials":    "W: the shipped dials, set by the game at construction; harness writes are test setup",
+			"clock":    "W: the clock it reads; restored on its own",
+			"notice":   "W: the notice model it asks who is aware",
+			"fitness":  "W: the squads, looked up by id",
+			"illum":    "W: the light model it samples",
+			"bodies":   "W: the body registry (B2b/B4 restore the bodies)",
+			"profiles": "W: the spawn tables' profiles",
+			"animator": "W: the game screen's sprites",
+			"morale":   "W: the spawn tables' morale",
+			"chases":   "W: pursuit, which a death releases",
+			"kits":     "W: what each combatant carries (the sidecar kit)",
+			"edges":    "W: his talents as numbers, applied again from his progress",
+			"corpses":  "W: the registry the dead fall into, restored on its own",
+			"stepper":  "W: the game screen's walk for a paced fight",
+
+			"xpEvents":       "T: the game takes them every frame (TakeXPEvents); Snapshot refuses unless empty",
+			"killerIsPlayer": "T: set and cleared inside one blow's resolution; Snapshot refuses unless clear",
+			"owedMinutes":    "T: the game takes them every frame (TakeRoundMinutes); Snapshot refuses unless zero",
+			"encounter":      "T: the fight itself; Snapshot refuses during one (ErrCombatFighting)",
+
+			"decisionSeconds":      fightOnly,
+			"decisionSecondsRound": fightOnly,
+			"paceOpen":             fightOnly,
+			"wallSeconds":          fightOnly,
+			"paceHealthOpen":       fightOnly,
+			"paceCommits":          fightOnly,
+
+			"blowLog":            "S:blow_log",
+			"stepsOrdered":       "S:steps_ordered",
+			"rng":                "S:rng",
+			"nextID":             "S:next_id",
+			"lastActions":        "S:last_actions",
+			"actionsRound":       "S:actions_round",
+			"started":            "S:started",
+			"ended":              "S:ended",
+			"rounds":             "S:rounds",
+			"commitsRefused":     "S:commits_refused",
+			"commitsByInput":     "S:commits_by_input",
+			"commitsByField":     "S:commits_by_field",
+			"lastActionVerb":     "S:last_action_verb",
+			"lastRound":          "S:last_round",
+			"lastPace":           "S:last_pace",
+			"declines":           "S:declines",
+			"actions":            "S:actions",
+			"endedReason":        "S:ended_reason",
+			"endedEnemiesDead":   "S:ended_enemies_dead",
+			"endedDawn":          "S:ended_dawn",
+			"endedPlayerDead":    "S:ended_player_dead",
+			"endedDisengaged":    "S:ended_disengaged",
+			"endedRouted":        "S:ended_routed",
+			"joined":             "S:joined",
+			"quickResolved":      "S:quick_resolved",
+			"lastQuickAdvantage": "S:last_quick_advantage",
+		}},
+		{action{}, map[string]string{
+			"round": "S:last_actions[0].round", "attacker": "S:last_actions[0].attacker",
+			"target": "S:last_actions[0].target", "roll": "S:last_actions[0].roll", "mod": "S:last_actions[0].mod",
+			"score": "S:last_actions[0].score", "band": "S:last_actions[0].band", "base": "S:last_actions[0].base",
+			"damage": "S:last_actions[0].damage", "targetHealthAfter": "S:last_actions[0].target_health_after",
+			"targetHasBody": "S:last_actions[0].target_has_body", "advantageWhy": "S:last_actions[0].advantage_why",
+			"reaction": "S:last_actions[0].reaction", "bandRolled": "S:last_actions[0].band_rolled",
+			"blocked": "S:last_actions[0].blocked", "absorbed": "S:last_actions[0].absorbed",
+			"class": "S:last_actions[0].class", "weapon": "S:last_actions[0].weapon",
+		}},
+		{RoundRow{}, map[string]string{
+			"Encounter": "S:last_round.encounter", "Round": "S:last_round.round",
+			"DecideSeconds": "S:last_round.decide_seconds", "Action": "S:last_round.action", "Move": "S:last_round.move",
+		}},
+		{PaceRow{}, map[string]string{
+			"Encounter": "S:last_pace.encounter", "Rounds": "S:last_pace.rounds",
+			"WallSeconds": "S:last_pace.wall_seconds", "DecideSeconds": "S:last_pace.decide_seconds",
+			"HealthOpen": "S:last_pace.health_open", "HealthClose": "S:last_pace.health_close",
+			"EndReason": "S:last_pace.end_reason", "Enemies": "S:last_pace.enemies", "Kinds": "S:last_pace.kinds",
+			"Initiator": "S:last_pace.initiator", "Surprised": "S:last_pace.surprised",
+			"Control": "S:last_pace.control", "Commits": "S:last_pace.commits",
+		}},
+		{BlowLine{}, map[string]string{
+			"Round": "S:blow_log[0].round", "Attacker": "S:blow_log[0].attacker", "Target": "S:blow_log[0].target",
+			"Band": "S:blow_log[0].band", "Damage": "S:blow_log[0].damage", "Reaction": "S:blow_log[0].reaction",
+			"Killed": "S:blow_log[0].killed",
+		}},
+	}
+}
+
 func TestCombatSnapshotFieldsClassified(t *testing.T) {
 	f := b2aCombatFixture(t)
 	snap, err := f.c.Snapshot()
 	require.NoError(t, err)
 
-	const fightOnly = "T: reset by end(); Snapshot refuses unless it is"
+	for _, c := range b2aCombatClasses() {
+		b2aClassified(t, c.kind, snap, c.fields)
+	}
+}
 
-	b2aClassified(t, Combat{}, snap, map[string]string{
-		"dials":    "W: the shipped dials, set by the game at construction; harness writes are test setup",
-		"clock":    "W: the clock it reads; restored on its own",
-		"notice":   "W: the notice model it asks who is aware",
-		"fitness":  "W: the squads, looked up by id",
-		"illum":    "W: the light model it samples",
-		"bodies":   "W: the body registry (B2b/B4 restore the bodies)",
-		"profiles": "W: the spawn tables' profiles",
-		"animator": "W: the game screen's sprites",
-		"morale":   "W: the spawn tables' morale",
-		"chases":   "W: pursuit, which a death releases",
-		"kits":     "W: what each combatant carries (the sidecar kit)",
-		"edges":    "W: his talents as numbers, applied again from his progress",
-		"corpses":  "W: the registry the dead fall into, restored on its own",
-		"stepper":  "W: the game screen's walk for a paced fight",
+// Every field labelled T (transient: empty at every save) makes Snapshot
+// refuse while it is set -- checked by setting each on its own, on a model
+// between fights that saves (the B2a review's B3). A field labelled T that
+// checkBetweenFights (or Fighting) does not look at would be dropped by a save
+// in silence, and fails here.
+func TestCombatSnapshotRefusesEveryTransient(t *testing.T) {
+	b2aTransientsRefused(t, b2aCombatClasses()[0], func() (interface{}, func() error) {
+		f := b2aCombatFixture(t)
 
-		"xpEvents":       "T: the game takes them every frame (TakeXPEvents); Snapshot refuses unless empty",
-		"killerIsPlayer": "T: set and cleared inside one blow's resolution; Snapshot refuses unless clear",
-		"owedMinutes":    "T: the game takes them every frame (TakeRoundMinutes); Snapshot refuses unless zero",
-		"encounter":      "T: the fight itself; Snapshot refuses during one (ErrCombatFighting)",
-
-		"decisionSeconds":      fightOnly,
-		"decisionSecondsRound": fightOnly,
-		"paceOpen":             fightOnly,
-		"wallSeconds":          fightOnly,
-		"paceHealthOpen":       fightOnly,
-		"paceCommits":          fightOnly,
-
-		"blowLog":            "S:blow_log",
-		"stepsOrdered":       "S:steps_ordered",
-		"rng":                "S:rng",
-		"nextID":             "S:next_id",
-		"lastActions":        "S:last_actions",
-		"actionsRound":       "S:actions_round",
-		"started":            "S:started",
-		"ended":              "S:ended",
-		"rounds":             "S:rounds",
-		"commitsRefused":     "S:commits_refused",
-		"commitsByInput":     "S:commits_by_input",
-		"commitsByField":     "S:commits_by_field",
-		"lastActionVerb":     "S:last_action_verb",
-		"lastRound":          "S:last_round",
-		"lastPace":           "S:last_pace",
-		"declines":           "S:declines",
-		"actions":            "S:actions",
-		"endedReason":        "S:ended_reason",
-		"endedEnemiesDead":   "S:ended_enemies_dead",
-		"endedDawn":          "S:ended_dawn",
-		"endedPlayerDead":    "S:ended_player_dead",
-		"endedDisengaged":    "S:ended_disengaged",
-		"endedRouted":        "S:ended_routed",
-		"joined":             "S:joined",
-		"quickResolved":      "S:quick_resolved",
-		"lastQuickAdvantage": "S:last_quick_advantage",
-	})
-
-	b2aClassified(t, action{}, snap, map[string]string{
-		"round": "S:last_actions[0].round", "attacker": "S:last_actions[0].attacker",
-		"target": "S:last_actions[0].target", "roll": "S:last_actions[0].roll", "mod": "S:last_actions[0].mod",
-		"score": "S:last_actions[0].score", "band": "S:last_actions[0].band", "base": "S:last_actions[0].base",
-		"damage": "S:last_actions[0].damage", "targetHealthAfter": "S:last_actions[0].target_health_after",
-		"targetHasBody": "S:last_actions[0].target_has_body", "advantageWhy": "S:last_actions[0].advantage_why",
-		"reaction": "S:last_actions[0].reaction", "bandRolled": "S:last_actions[0].band_rolled",
-		"blocked": "S:last_actions[0].blocked", "absorbed": "S:last_actions[0].absorbed",
-		"class": "S:last_actions[0].class", "weapon": "S:last_actions[0].weapon",
-	})
-
-	b2aClassified(t, RoundRow{}, snap, map[string]string{
-		"Encounter": "S:last_round.encounter", "Round": "S:last_round.round",
-		"DecideSeconds": "S:last_round.decide_seconds", "Action": "S:last_round.action", "Move": "S:last_round.move",
-	})
-
-	b2aClassified(t, PaceRow{}, snap, map[string]string{
-		"Encounter": "S:last_pace.encounter", "Rounds": "S:last_pace.rounds",
-		"WallSeconds": "S:last_pace.wall_seconds", "DecideSeconds": "S:last_pace.decide_seconds",
-		"HealthOpen": "S:last_pace.health_open", "HealthClose": "S:last_pace.health_close",
-		"EndReason": "S:last_pace.end_reason", "Enemies": "S:last_pace.enemies", "Kinds": "S:last_pace.kinds",
-		"Initiator": "S:last_pace.initiator", "Surprised": "S:last_pace.surprised",
-		"Control": "S:last_pace.control", "Commits": "S:last_pace.commits",
-	})
-
-	b2aClassified(t, BlowLine{}, snap, map[string]string{
-		"Round": "S:blow_log[0].round", "Attacker": "S:blow_log[0].attacker", "Target": "S:blow_log[0].target",
-		"Band": "S:blow_log[0].band", "Damage": "S:blow_log[0].damage", "Reaction": "S:blow_log[0].reaction",
-		"Killed": "S:blow_log[0].killed",
+		return f.c, func() error { _, err := f.c.Snapshot(); return err }
 	})
 }
 
@@ -238,6 +265,11 @@ func TestCombatSnapshotRoundTrip(t *testing.T) {
 	snap := b2aThroughJSON(t, s)
 	require.Equal(t, s, snap, "the snapshot survives JSON exactly")
 	require.Positive(t, snap.RNG.Draws, "the fight drew")
+
+	// Observability first (the B2a review's C7): what the save carries, the
+	// provider reports.
+	require.Equal(t, CommitStrike, snap.LastActionVerb)
+	require.Equal(t, snap.LastActionVerb, orig.c.HarnessState()["last_action_verb"], "the provider reports the saved verb")
 	require.NotEmpty(t, snap.LastActions)
 	require.NotEmpty(t, snap.BlowLog)
 
@@ -255,30 +287,31 @@ func TestCombatSnapshotRoundTrip(t *testing.T) {
 // enemy writes []. Both must come back as they went.
 func TestCombatSnapshotOfANewGame(t *testing.T) {
 	for _, kinds := range [][]string{nil, {}} {
-		orig := newResolverFight(t, 1462)
+		orig := newResolverFight(t, d2rand.Derive(b2aWorldSeed, d2rand.StreamCombat))
 		orig.c.lastPace.Kinds = kinds
 
-		cp := newResolverFight(t, 7)
+		cp := newResolverFight(t, d2rand.Derive(7, d2rand.StreamCombat))
 
 		s, err := orig.c.Snapshot()
 		require.NoError(t, err)
-		require.NoError(t, cp.c.Restore(b2aThroughJSON(t, s)))
+		require.NoError(t, cp.c.Restore(b2aThroughJSON(t, s), b2aWorldSeed))
 
 		require.Equal(t, b2aJSON(t, orig.c.HarnessState()), b2aJSON(t, cp.c.HarnessState()), "kinds %#v", kinds)
 		require.Equal(t, b2aJSON(t, orig.c.Tactical()), b2aJSON(t, cp.c.Tactical()))
 	}
 }
 
-// Combat's stream through the same trip at a wall-clock-sized seed: past 2^53,
-// where a float64 reader cannot hold it (B1 notes, section 2). Rising's test
-// holds the shared stream type; this holds combat's own Snapshot and Restore
-// to it, drawn part way so the count matters too.
+// A wall-clock GAME seed is past 2^53. Combat's stream runs on the seed Derive
+// gives it; what must survive is the check against the game seed, read as an
+// int64 (B1 notes, section 2), with the stream drawn part way so the count
+// matters too. The stream state's own trip through JSON at a seed past 2^53
+// is d2rand's TestStreamStateSeedSurvivesJSON.
 func TestCombatSnapshotSeedSurvivesJSON(t *testing.T) {
-	const seed = int64(1)<<62 + 54321
+	const world = int64(1)<<62 + 54321
 
-	require.NotEqual(t, seed, int64(float64(seed)), "the control: float64 loses this seed")
+	require.NotEqual(t, world, int64(float64(world)), "the control: float64 loses this seed")
 
-	orig := newResolverFight(t, seed)
+	orig := newResolverFight(t, d2rand.Derive(world, d2rand.StreamCombat))
 	for i := 0; i < 5; i++ {
 		orig.c.rng.Float64()
 	}
@@ -295,18 +328,49 @@ func TestCombatSnapshotSeedSurvivesJSON(t *testing.T) {
 
 	var typed CombatSnapshot
 	require.NoError(t, json.Unmarshal(raw, &typed))
-	require.Equal(t, seed, typed.RNG.Seed, "and read back exactly")
+	require.Equal(t, s, typed, "and read back exactly")
 
-	cp := newResolverFight(t, 7)
-	require.NoError(t, cp.c.Restore(typed))
-	require.Equal(t, orig.c.rng.Float64(), cp.c.rng.Float64(), "the restored stream is the seed's, at its sixth value")
+	cp := newResolverFight(t, d2rand.Derive(7, d2rand.StreamCombat))
+	require.NoError(t, cp.c.Restore(typed, world))
+	require.Equal(t, orig.c.rng.Float64(), cp.c.rng.Float64(), "the restored stream is the game's, at its sixth value")
+
+	lost := newResolverFight(t, d2rand.Derive(7, d2rand.StreamCombat))
+	require.Error(t, lost.c.Restore(typed, int64(float64(world))), "the game seed read through float64 is another game")
+}
+
+// THE MUTATION THE B2a REVIEW NAMED (B1): the rising's and combat's stream
+// blocks swapped. Each restored into the other's system is refused -- before
+// this, both restored and each ran on the other's dice from its first roll.
+func TestCombatAndRisingRefuseEachOthersStream(t *testing.T) {
+	good, err := b2aCombatFixture(t).c.Snapshot()
+	require.NoError(t, err)
+
+	rw := b2aRisingFixture(t)
+	rising, corpses := rw.r.Snapshot(), rw.w.c.Snapshot()
+
+	good.RNG, rising.RNG = rising.RNG, good.RNG
+
+	_, err = b2aCombatCopy(t, good)
+	require.ErrorIs(t, err, d2rand.ErrStreamState, "combat with the rising's stream")
+
+	_, err = b2aRisingCopy(rw, corpses, rising)
+	require.ErrorIs(t, err, d2rand.ErrStreamState, "the rising with combat's stream")
+
+	// The control: swapped back, both restore.
+	good.RNG, rising.RNG = rising.RNG, good.RNG
+
+	_, err = b2aCombatCopy(t, good)
+	require.NoError(t, err)
+
+	_, err = b2aRisingCopy(rw, corpses, rising)
+	require.NoError(t, err)
 }
 
 // Saving is refused during a fight, and whenever something a fight leaves for
 // the game screen has not been taken -- a snapshot that dropped it would lose
 // experience or world minutes.
 func TestCombatSnapshotRefusals(t *testing.T) {
-	f := humanFight(t, 1462, nil)
+	f := humanFight(t, d2rand.Derive(b2aWorldSeed, d2rand.StreamCombat), nil)
 	b2aCombatAdd(t, f, "e:1", 41, 40, 50, Profile{Row: "wolves", Group: "g:1", Speed: 2, DamageMin: 2, DamageMax: 4})
 	f.open(t)
 
@@ -315,7 +379,8 @@ func TestCombatSnapshotRefusals(t *testing.T) {
 
 	good, err := b2aCombatFixture(t).c.Snapshot()
 	require.NoError(t, err)
-	require.Error(t, f.c.Restore(good), "and a fight is never restored into")
+	require.Error(t, f.c.Restore(good, b2aWorldSeed), "and a fight is never restored into")
+	require.Error(t, f.c.Validate(good, b2aWorldSeed), "nor validated into")
 
 	for name, dirty := range map[string]func(c *Combat){
 		"experience not taken": func(c *Combat) { c.xpEvents = append(c.xpEvents, XPEvent{Kind: "slain"}) },
@@ -343,9 +408,10 @@ func TestCombatSnapshotRefusals(t *testing.T) {
 		"minutes owed":         func(c *Combat) { c.owedMinutes = 1 },
 		"the pace window open": func(c *Combat) { c.paceOpen = true },
 	} {
-		fresh := newResolverFight(t, 7)
+		fresh := newResolverFight(t, d2rand.Derive(7, d2rand.StreamCombat))
 		dirty(fresh.c)
-		require.Error(t, fresh.c.Restore(good), "restore into a model with %s", name)
+		require.Error(t, fresh.c.Validate(good, b2aWorldSeed), "validate into a model with %s", name)
+		require.Error(t, fresh.c.Restore(good, b2aWorldSeed), "restore into a model with %s", name)
 		require.Equal(t, 1, fresh.c.nextID, "%s: a refused restore changes nothing", name)
 	}
 
@@ -353,6 +419,8 @@ func TestCombatSnapshotRefusals(t *testing.T) {
 		"next_id not one past started": func(s *CombatSnapshot) { s.NextID++ },
 		"a fight not ended":            func(s *CombatSnapshot) { s.Ended-- },
 		"a negative count":             func(s *CombatSnapshot) { s.Joined = -1 },
+		"another game's stream":        func(s *CombatSnapshot) { s.RNG.Seed = d2rand.Derive(7, d2rand.StreamCombat) },
+		"more draws than a save holds": func(s *CombatSnapshot) { s.RNG.Draws = d2rand.MaxDraws + 1 },
 	} {
 		s := good
 		bad(&s)
@@ -383,7 +451,7 @@ func TestCombatSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		return b2aCombatSteps(t, cp), nil
 	}
 
-	b2aSweep(t, snap, ref, nil, try)
+	b2aExercised(t, b2aSweep(t, snap, ref, nil, try), b2aCombatClasses()...)
 
 	// next_id, started and ended are only ever refused alone (each is checked
 	// against the others); lost together, consistently, they must still show.

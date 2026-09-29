@@ -287,6 +287,9 @@ this doc fails until it agrees.
   spade, and by morning both left open are gone while the grave and the stake
   held. The "rising" provider reports p, hasty_weight, pressure (never shown
   in game), band, rolls and risen; p, hasty_weight and pressure are settable.
+  (M4.6 review fixes: `pressure` is the dial's constant plus
+  `pressure_accrued`, the part the dawns and rites moved, which is what a save
+  carries; a script's `pressure` write moves the constant, a dial.)
   Step 3 amends act 3: the two that rose lie down again, open, at first light.
 * `dead_walk_test.go` — the thirty-first, M4.7 step 3 (23 Sep 2026): the risen
   stand up in the world, come for him, and break off at first light. At odds
@@ -663,7 +666,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_move_player_to` | MovePlayer packet toward a world-tile target; `wait`/`max_ticks` step until arrived / stuck / timeout |
 | `strigoi_set_system_field` | Write one allow-listed provider field (test setup); `FIELD_NOT_SETTABLE` otherwise |
 | `strigoi_spawn_entity` | npc (monstats Id) · item (item codes) · object (objects.txt index or name) at a world tile, through the engine's own factory; returns a handle |
-| `strigoi_remove_entity` | Remove by handle (never a player) |
+| `strigoi_remove_entity` | Remove by handle (never a player); a watcher is unwatched and its chase released with it, as a death does (M4.6 B2b review), reported as `unwatched`/`released` |
 | `strigoi_key` | tap · down · up, by name (`i`, `escape`, `f5`, `kp7`, `graveaccent`, …) |
 | `strigoi_click` | left/right/middle at screen pixels, optional shift/control/alt; walks the player like a real click |
 | `strigoi_move_cursor` | Place the scripted cursor (holds until the real mouse moves) |
@@ -847,6 +850,9 @@ compare `actions_round` to tell a new round from a retained one.
 `player_dead`, `disengaged`) persists after the encounter is gone, with
 `ended_enemies_dead` / `ended_player_dead` / `ended_disengaged` beside it,
 because a fight that begins and ends between two reads is otherwise invisible.
+`last_action_verb` is the verb of the round a fight ended on when his own blow
+ended it, which the next fight's first round row reads unless he acts first
+(the world save carries it; M4.6 review fixes).
 
 **The seam (M4.4c-2a).** A round STOPS at the player's slot when
 `player_control` is `human`, and the world clock stops with it. `awaiting` is
@@ -1027,8 +1033,9 @@ everything S1 §5's assertion is written in — `food`, `water`, `fatigue`,
 `activity`, the warning and death bands (`hungry` / `starving` / `thirsty` /
 `parched`), the two states R2's combat rules need (`reaction_available`,
 `shaken`, plus the `shaken_threshold` thirst lowers), `dying`, `dead`,
-`neglect_damage`, `has_body`, and `health` / `max_health` when a body is
-attached. Settable: `food`, `water`, `fatigue`, `activity`, and `consume`
+`neglect_damage`, `damage_owed` (the fraction of a health point neglect owes
+between steps, which the world save carries; M4.6 review fixes), `has_body`,
+and `health` / `max_health` when a body is attached. Settable: `food`, `water`, `fatigue`, `activity`, and `consume`
 (`{"kind": "food"|"water"|"rest", "amount": <points>}`).
 
 **Direction, because it is the easiest thing here to get backwards:** Food

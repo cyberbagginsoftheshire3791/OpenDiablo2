@@ -56,7 +56,12 @@ type Rising struct {
 	stage   func() Stage
 	rng     *d2rand.Stream // counted (M4.6 B1)
 
-	pressure  float64
+	// accrued is soul pressure's LOCAL part: what the dawns and the rites
+	// have added and taken since the game began. Pressure() is the dial's v0
+	// constant plus this, so the save carries this alone (D2, 28 Sep 2026: a
+	// value derived from a dial is not saved; the constant is re-read from
+	// the dials of the build that loads it).
+	accrued   float64
 	lastBand  int
 	lastStage Stage
 	rolls     int
@@ -101,12 +106,11 @@ func (r *Rising) SetFirstLight(fn func()) { r.firstLight = fn }
 // the last-seen value from the clock, never from zero).
 func NewRising(corpses *Corpses, band func() int, stage func() Stage, seed int64, dials RisingDials) *Rising {
 	r := &Rising{
-		dials:    dials,
-		corpses:  corpses,
-		band:     band,
-		stage:    stage,
-		rng:      d2rand.NewStream(seed),
-		pressure: dials.Pressure,
+		dials:   dials,
+		corpses: corpses,
+		band:    band,
+		stage:   stage,
+		rng:     d2rand.NewStream(seed),
 	}
 
 	r.lastBand, r.lastStage = band(), stage()
@@ -150,7 +154,7 @@ func (r *Rising) Advance() {
 }
 
 // Chance is the roll's odds for an open body now: P plus soul pressure, 0..1.
-func (r *Rising) Chance() float64 { return clamp01(r.dials.P + r.pressure) }
+func (r *Rising) Chance() float64 { return clamp01(r.dials.P + r.Pressure()) }
 
 // roll is one band. Every door draws, in the order the bodies fell, whether
 // or not an earlier one rose, so a run at one seed is the same every time.
@@ -261,16 +265,17 @@ func (r *Rising) dawn() {
 	for _, b := range r.corpses.All() {
 		// A Downed man is an unrited body too.
 		if b.Class == CorpseHuman && (b.State == CorpseFresh || b.State == CorpseDowned) {
-			r.pressure += r.dials.PerOpenAtDawn
+			r.accrued += r.dials.PerOpenAtDawn
 		}
 	}
 }
 
 // Rite lowers soul pressure: a body closed by the stake or the priest.
-func (r *Rising) Rite() { r.pressure -= r.dials.PerRite }
+func (r *Rising) Rite() { r.accrued -= r.dials.PerRite }
 
-// Pressure is soul pressure now. Never shown to the player.
-func (r *Rising) Pressure() float64 { return r.pressure }
+// Pressure is soul pressure now: the dial's v0 constant plus what the dawns
+// and rites have accrued. Never shown to the player.
+func (r *Rising) Pressure() float64 { return r.dials.Pressure + r.accrued }
 
 // HarnessName is the "rising" system.
 func (r *Rising) HarnessName() string { return "rising" }
@@ -278,7 +283,12 @@ func (r *Rising) HarnessName() string { return "rising" }
 // HarnessState reports the roll.
 func (r *Rising) HarnessState() map[string]interface{} {
 	return map[string]interface{}{
-		"p": r.dials.P, "hasty_weight": r.dials.HastyWeight, "pressure": r.pressure,
+		"p": r.dials.P, "hasty_weight": r.dials.HastyWeight, "pressure": r.Pressure(),
+
+		// D2 (28 Sep 2026): the part the save carries. pressure above is the
+		// dial plus this.
+		"pressure_accrued": r.accrued,
+
 		"chance": r.Chance(), "band": r.lastBand, "rolls": r.rolls, "risen": r.risen,
 		"stood_again": r.stoodAgain, "downed_minutes": r.dials.DownedMinutes,
 		"edge_floor": r.dials.EdgeFloor, "wandered": r.wandered,
@@ -316,7 +326,11 @@ func (r *Rising) HarnessSet(field string, value interface{}) error {
 			r.dials.HastyWeight = f
 		}
 	case "pressure":
-		r.pressure = f
+		// A script's pressure is a DIAL (D2): it moves the v0 constant so the
+		// total reads f, and leaves what the game accrued -- the part a save
+		// carries -- alone. A resumed game does not inherit it, like every
+		// other harness-set dial.
+		r.dials.Pressure = f - r.accrued
 	case "edge_floor":
 		if f < 0 {
 			return fmt.Errorf("edge_floor cannot be negative, got %v", f)

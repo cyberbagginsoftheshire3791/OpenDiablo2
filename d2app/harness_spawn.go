@@ -48,6 +48,12 @@ type harnessRemoveOut struct {
 	Removed bool   `json:"removed"`
 	Handle  string `json:"handle"`
 	Kind    string `json:"kind,omitempty"`
+
+	// Unwatched and Released report what the removal ended besides the
+	// entity: a watch the notice model held on it, a chase it was running
+	// (M4.6 B2b review: left, either would block every save).
+	Unwatched bool `json:"unwatched"`
+	Released  bool `json:"released"`
 }
 
 func (a *App) harnessSpawn(kind, code string, x, y float64) (d2interface.MapEntity, error) {
@@ -192,7 +198,7 @@ func (a *App) harnessAddSpawnTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_remove_entity",
-		Description: "Remove an entity by handle from the running map (npc, item, object, missile). Players cannot be removed. The handle stays known so a later get_entity reports it gone.",
+		Description: "Remove an entity by handle from the running map (npc, item, object, missile). Players cannot be removed. A watcher is unwatched and a hunter's chase released with it (unwatched/released say so), as a death does; its pack keeps it as a member. The handle stays known so a later get_entity reports it gone.",
 		Annotations: harnessAnnMut(true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessRemoveIn) (*mcp.CallToolResult, harnessRemoveOut, error) {
 		harnessLogCall("strigoi_remove_entity")
@@ -228,6 +234,23 @@ func (a *App) harnessAddSpawnTools(srv *mcp.Server) {
 			out.Kind = harnessEntityKind(e)
 
 			client.MapEngine.RemoveEntity(e)
+
+			// A pack member taken off the map by hand is no longer watched or
+			// chasing (the M4.6 B2b review). Left in the notice model, he
+			// would block every save from here on: Spawns.Snapshot refuses a
+			// member the live world cannot find while notice still watches
+			// him -- a living wolf the Resolver lost -- and pursuit's
+			// snapshot refuses a hunter that does not resolve. A death
+			// unwatches through Combat.withdraw; this is the harness's
+			// removal doing the same. His group keeps him, as a pack keeps
+			// its dead.
+			if _, game := harnessGame(); game != nil {
+				out.Unwatched = game.Unwatch(id)
+
+				if p := game.Pursuit(); p != nil {
+					out.Released = p.Release(id)
+				}
+			}
 
 			out.Removed = true
 		})

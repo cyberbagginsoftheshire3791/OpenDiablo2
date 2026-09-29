@@ -492,11 +492,93 @@ func TestSpawns(t *testing.T) {
 
 	checkWalkTarget(t, s) // M4.6 B1 review, C3
 
+	// --- act 8 (M4.6 B2b review): a harness removal forgets the man ------
+	removeAChasingWatcher(t, s)
+
 	t.Logf("M4.3b: %d table check(s), %d roll(s), %d spawned, %d failure(s); "+
 		"%d notice check(s), %d notice(s)",
 		int(num(after, "checks")), int(num(after, "rolls")), int(num(after, "spawned")),
 		int(num(after, "spawn_failures")), int(num(after, "notice_checks")),
 		int(num(after, "notices")))
+}
+
+// removeAChasingWatcher is act 8 (M4.6 B2b review): strigoi_remove_entity
+// takes a pack member that is watching and chasing the player off the map,
+// and he is unwatched and his chase released with him -- as a death does. His
+// group keeps him as a member, as a pack keeps its dead.
+//
+// Before the fix the removal took only the entity. The notice model went on
+// watching a man the map no longer had, and every save from then on would be
+// refused (Spawns.Snapshot takes a watched member the live world cannot find
+// for a living wolf the Resolver lost), as would pursuit's snapshot (a hunter
+// that does not resolve).
+func removeAChasingWatcher(t *testing.T, s *session) {
+	t.Helper()
+
+	pursuit := sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")
+
+	hunter := ""
+
+	for _, raw := range asList(pursuit["chase_list"]) {
+		if row, ok := raw.(map[string]any); ok && str(row, "hunter") != "" {
+			hunter = str(row, "hunter")
+
+			break
+		}
+	}
+
+	if hunter == "" {
+		t.Fatalf("act 8: act 7 left a chase, so there must be a hunter to remove: %v", pursuit)
+	}
+
+	isWatched := func() bool {
+		for _, raw := range asList(spawnsState(s)["notice_list"]) {
+			if row, ok := raw.(map[string]any); ok && str(row, "watcher") == hunter {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	isChasing := func() bool {
+		p := sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")
+		for _, raw := range asList(p["chase_list"]) {
+			if row, ok := raw.(map[string]any); ok && str(row, "hunter") == hunter {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	if !isWatched() || !isChasing() {
+		t.Fatalf("act 8: the premise -- %s is watched (%v) and chasing (%v)", hunter, isWatched(), isChasing())
+	}
+
+	group := ""
+
+	for _, raw := range asList(spawnsState(s)["group_list"]) {
+		if g, ok := raw.(map[string]any); ok && hasString(memberIDs(t, g), hunter) {
+			group = str(g, "group")
+		}
+	}
+
+	out := s.call("strigoi_remove_entity", map[string]any{"handle": handleFor(t, s, hunter)})
+	if out["removed"] != true || out["unwatched"] != true || out["released"] != true {
+		t.Fatalf("act 8: removing a watcher that hunts must unwatch him and release his chase: %v", out)
+	}
+
+	if isWatched() || isChasing() {
+		t.Fatalf("act 8: %s is off the map and still watched (%v) or chasing (%v) -- every save would be refused",
+			hunter, isWatched(), isChasing())
+	}
+
+	if group != "" && !hasString(memberIDs(t, groupByID(t, spawnsState(s), group)), hunter) {
+		t.Fatalf("act 8: his group %s must keep him as a member, as a pack keeps its dead", group)
+	}
+
+	t.Logf("act 8 PASS: removed %s -- unwatched, his chase released, still a member of %q", hunter, group)
 }
 
 // spawnsState reads the spawns provider. Read through "state" or every field

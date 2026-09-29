@@ -17,7 +17,27 @@ var deriveSeeds = []int64{
 	math.MaxInt64, math.MinInt64, math.MinInt64 + 1,
 }
 
-var streamNames = []string{StreamSpawns, StreamCombat, StreamRising}
+// TestDeriveStreamsNeverCoincide iterates Derived itself -- the list SeedFor
+// checks every saved stream against -- so a stream added to the game is
+// covered the moment it can be saved (the B2a review's C5: the test kept its
+// own copy of the three names). This pins that the constants are all on it.
+func TestDerivedListsEveryNamedStream(t *testing.T) {
+	seen := map[string]bool{}
+
+	for _, name := range Derived {
+		if seen[name] || name == "" || name == StreamWorld {
+			t.Fatalf("Derived holds %q twice, empty, or as the world stream: %v", name, Derived)
+		}
+
+		seen[name] = true
+	}
+
+	for _, name := range []string{StreamSpawns, StreamCombat, StreamRising} {
+		if !seen[name] {
+			t.Fatalf("stream %q is named but not on Derived %v", name, Derived)
+		}
+	}
+}
 
 // firstValues is what a plain stdlib stream at seed hands out first.
 func firstValues(seed int64) [3]int64 {
@@ -58,7 +78,7 @@ func TestDeriveEffectiveIsTheStdlibsSeed(t *testing.T) {
 func TestDeriveStreamsNeverCoincide(t *testing.T) {
 	offsets := map[int64]string{}
 
-	for _, name := range streamNames {
+	for _, name := range Derived {
 		off := streamOffset(name)
 		if off < 1 || off > int32max-2 {
 			t.Fatalf("offset of %q is %d, outside [1, 2^31-3]", name, off)
@@ -75,7 +95,7 @@ func TestDeriveStreamsNeverCoincide(t *testing.T) {
 		seen := map[int64]string{Effective(seed): "world"}
 		firsts := map[[3]int64]string{firstValues(seed): "world"}
 
-		for _, name := range streamNames {
+		for _, name := range Derived {
 			d := Derive(seed, name)
 			if d < 1 || d > int32max-1 || Effective(d) != d {
 				t.Fatalf("Derive(%d, %q) = %d is not its own effective seed in [1, 2^31-2]", seed, name, d)

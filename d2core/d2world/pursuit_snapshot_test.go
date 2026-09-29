@@ -66,7 +66,7 @@ func TestPursuitSnapshotEveryFieldIsSeen(t *testing.T) {
 
 	oldPlayer := a.player.id
 
-	b2bSweep(t, sv, want, []b2bMutation{
+	outcomes := b2bSweep(t, sv, want, []b2bMutation{
 		{"pursuit.solves lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.Solves = 0 }},
 		{"pursuit.chases lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.Chases = nil }},
 		{"pursuit.a chase lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.Chases = s.Pursuit.Chases[1:] }},
@@ -99,6 +99,57 @@ func TestPursuitSnapshotEveryFieldIsSeen(t *testing.T) {
 			c.Quarry = b2bIdleWatcher(t, s)
 		}},
 	})
+
+	b2aExercised(t, outcomes, b2bPursuitClasses()...)
+}
+
+// b2bPursuitClasses is every field of pursuit and of a chase, labelled at its
+// path in the saved moment (the B2b review's B5).
+func b2bPursuitClasses() []b2aClass {
+	return []b2aClass{
+		{Pursuit{}, map[string]string{
+			"dials":  "D: the pursuit dials, the game's numbers; a script's writes are test setup (trap 7)",
+			"router": "W: the map's router",
+			"chases": "S:pursuit.chases",
+			"solves": "S:pursuit.solves",
+		}},
+		{chase{}, map[string]string{
+			"hunter":         "S:pursuit.chases[0].hunter",
+			"quarry":         "S:pursuit.chases[0].quarry",
+			"solvedAtX":      "S:pursuit.chases[0].solved_at_x",
+			"solvedAtY":      "S:pursuit.chases[0].solved_at_y",
+			"solvedDistance": "S:pursuit.chases[0].solved_distance",
+			"sinceSolve":     "S:pursuit.chases[0].since_solve_minutes",
+			"reachable":      "S:pursuit.chases[0].reachable",
+			"solves":         "S:pursuit.chases[0].solves",
+			"arrived":        "S:pursuit.chases[0].arrived",
+		}},
+	}
+}
+
+func TestPursuitSnapshotFieldsClassified(t *testing.T) {
+	a := b2bFilledWorld(t)
+	snap := a.snapshot(t)
+
+	for _, c := range b2bPursuitClasses() {
+		b2aClassified(t, c.kind, snap, c.fields)
+	}
+}
+
+// A restore into a pursuit that already runs a chase is refused (the B2b
+// review's B4): the live chase's hunter would walk a route no saved chase owns.
+func TestPursuitRestoreRefusesAPursuitInUse(t *testing.T) {
+	a := b2bFilledWorld(t)
+	sv := a.save(t)
+
+	b, err := b2bResume(t, sv, sv.snap)
+	require.NoError(t, err)
+
+	before := b.observe(t)
+
+	require.Error(t, b.pursuit.Validate(sv.snap.Pursuit, b2bResolver{b}))
+	require.Error(t, b.pursuit.Restore(sv.snap.Pursuit, b2bResolver{b}), "the very snapshot, over itself")
+	require.Equal(t, before, b.observe(t))
 }
 
 // A hunter must be able to walk: a watcher that cannot hunt is refused, the
@@ -126,7 +177,7 @@ func TestPursuitRestoreRefusesAHunterThatCannotWalk(t *testing.T) {
 	a := b2bFilledWorld(t)
 	sv := a.save(t)
 
-	b, err := b2bResume(t, sv, sv.snap)
+	b, err := b2bResumeSkipping(t, sv, sv.snap, "pursuit")
 	require.NoError(t, err)
 
 	err = b.pursuit.Restore(sv.snap.Pursuit, b2bStillResolver{b2bResolver{b}})
@@ -167,15 +218,21 @@ func TestPursuitRestoreSolvesNothingAndIsAllOrNothing(t *testing.T) {
 		require.Equal(t, sv.entities[id].route, e.route, "a restore hands no hunter a path")
 	}
 
-	before := b.observe(t)
+	// A relaunch whose pursuit is still as built: the only one a Restore takes.
+	c, err := b2bResumeSkipping(t, sv, sv.snap, "pursuit")
+	require.NoError(t, err)
+
+	before := c.observe(t)
 
 	bad := b2bThroughJSON(t, sv.snap)
 	bad.Pursuit.Solves += 100
 	bad.Pursuit.Chases[len(bad.Pursuit.Chases)-1].Hunter = "e:999"
 
-	err = b.pursuit.Restore(bad.Pursuit, b2bResolver{b})
+	require.True(t, errors.Is(c.pursuit.Validate(bad.Pursuit, b2bResolver{c}), ErrUnresolvedRef), "Validate")
+
+	err = c.pursuit.Restore(bad.Pursuit, b2bResolver{c})
 	require.True(t, errors.Is(err, ErrUnresolvedRef), "%v", err)
-	require.Equal(t, before, b.observe(t), "a refused restore must leave the chases exactly as they were")
+	require.Equal(t, before, c.observe(t), "a refused restore must leave the chases exactly as they were")
 }
 
 // Losing a chase's since-solve moves WHEN it next re-paths, not just a number.

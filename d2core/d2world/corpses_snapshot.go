@@ -59,15 +59,9 @@ func (c *Corpses) Snapshot() CorpsesSnapshot {
 // forgot to skip placing them) have already moved the count, and replacing
 // them would leave the count describing bodies that are gone.
 //
-// It is checked whole before anything changes: every body is a man or a beast
-// in one of the machine's states, ids are unique, and every map names bodies
-// that are saved -- a walker's body is risen, and its member walks back to it.
+// It is checked whole first (Validate), so a refused snapshot changes nothing.
 func (c *Corpses) Restore(s CorpsesSnapshot) error {
-	if len(c.byID) != 0 || len(c.order) != 0 || len(c.risenAs) != 0 || len(c.walker) != 0 || len(c.last) != 0 {
-		return fmt.Errorf("corpses snapshot: restore into an empty registry; this one holds %d bodies", len(c.order))
-	}
-
-	if err := checkCorpsesSnapshot(s); err != nil {
+	if err := c.Validate(s); err != nil {
 		return err
 	}
 
@@ -85,6 +79,32 @@ func (c *Corpses) Restore(s CorpsesSnapshot) error {
 	c.risenAs, c.walker, c.last = copyStrings(s.RisenAs), copyStrings(s.Walker), copyStrings(s.Last)
 
 	return nil
+}
+
+// Validate is Restore's check and nothing else (D4): the registry must be
+// empty, every body a man or a beast in one of the machine's states, ids
+// unique, and every map naming bodies that are saved -- a walker's body is
+// risen, and its member walks back to it.
+//
+// It accepts only what the machine could have written (the B2a review's B2):
+//   - a beast never rises (Rise takes only a door, and a door is a man's), so
+//     it is never risen or Downed. A beast in a hasty grave IS possible -- the
+//     dig verb buries any open body, a carcass included (Corpses.Bury; the
+//     review listed hasty with the other two, and the game says otherwise);
+//   - a risen body walks as someone: the game stands a body up only when it
+//     has a member to walk as (raise), and Raised records him in walker;
+//   - downed_at is written when a man goes Downed and never cleared, so a
+//     body that stood again (risen) or was staked (closed) after it keeps its
+//     minute. What never went Downed -- an open body, a hasty grave, any
+//     beast -- has none. (The review said "a downed_at on a body that is not
+//     Downed"; the corpses fixture's b:7, cut down and standing again, is the
+//     machine writing exactly that.)
+func (c *Corpses) Validate(s CorpsesSnapshot) error {
+	if len(c.byID) != 0 || len(c.order) != 0 || len(c.risenAs) != 0 || len(c.walker) != 0 || len(c.last) != 0 {
+		return fmt.Errorf("corpses snapshot: restore into an empty registry; this one holds %d bodies", len(c.order))
+	}
+
+	return checkCorpsesSnapshot(s)
 }
 
 func checkCorpsesSnapshot(s CorpsesSnapshot) error {
@@ -108,6 +128,14 @@ func checkCorpsesSnapshot(s CorpsesSnapshot) error {
 			return fmt.Errorf("corpses snapshot: body %q is in no state the machine has (%q)", b.ID, b.State)
 		}
 
+		switch {
+		case b.Class == CorpseBeast && (b.State == CorpseRisen || b.State == CorpseDowned):
+			return fmt.Errorf("corpses snapshot: body %q is a beast %s; a beast never rises", b.ID, b.State)
+		case b.DownedAt != 0 && (b.Class == CorpseBeast || b.State == CorpseFresh || b.State == CorpseHasty):
+			return fmt.Errorf("corpses snapshot: body %q (%s %s) went down at minute %v; it never went Downed",
+				b.ID, b.Class, b.State, b.DownedAt)
+		}
+
 		state[b.ID] = b.State
 	}
 
@@ -127,6 +155,13 @@ func checkCorpsesSnapshot(s CorpsesSnapshot) error {
 	for body, member := range s.Last {
 		if state[body] == "" || s.RisenAs[member] != body {
 			return fmt.Errorf("corpses snapshot: body %q last walked as %q, which does not walk back to it", body, member)
+		}
+	}
+
+	for _, b := range s.Bodies {
+		if b.State == CorpseRisen && s.Walker[b.ID] == "" {
+			return fmt.Errorf("corpses snapshot: body %q is risen and walks as no one; the game stands a body up only "+
+				"as a member", b.ID)
 		}
 	}
 
