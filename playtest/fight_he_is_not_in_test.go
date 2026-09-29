@@ -16,14 +16,23 @@ package playtest
 //
 // Its assertions are t.Errorf, so a negative-control run (a source mutation;
 // the raid's R1 build note lists each, and the logs are
-// strigoi-harness-runs\wt-raid-r1\pt-ctl-<name>.txt) reports every act that
-// goes red, not only the first; setup failures are t.Fatalf.
+// strigoi-harness-runs\wt-raid-r1\pt-ctl-<name>.txt and, for the review
+// fixes, wt-raid-r1-fix\pt-ctl-<name>.txt) reports every act that goes red,
+// not only the first. That includes an act that finds no clock fight at all
+// (acts 1, 2 and 3: the R1 review's C3 found them t.Fatalf, so under the
+// no-separation control only act 1 reported); the acts after it read the
+// missing fight as absent and report red in their turn. What stays t.Fatalf is
+// setup the rest cannot stand on: a file the test wrote that cannot be read,
+// his own fight that will not end before act 4, a night that never comes, a
+// launch.
 //
-//   TestAFightHeIsNotIn             acts 1-4 (+ C1-C4), the save (Q5 (a)),
-//                                   the four speakers (S0-1 (a)), the lines,
-//                                   his ids, the re-entrancy probe in the game
+//   TestAFightHeIsNotIn              acts 1-4 (+ C1-C4), the save (Q5 (a)),
+//                                    the four speakers (S0-1 (a)), the lines,
+//                                    his ids, the re-entrancy probe in the game
 //   TestAFightHeIsNotInWhileHeSleeps act 5 (+ C5 by mutation)
 //   TestAFightHeIsNotInReplays       act 6 (+ C6): two launches, one seed
+//   TestAFightHeIsNotInOneFightEach  the R1 review's A1: one combatant, one
+//                                    live fight, whichever way its watch moves
 
 import (
 	"encoding/json"
@@ -132,7 +141,7 @@ func TestAFightHeIsNotIn(t *testing.T) {
 		aID, bID, frames, f, c["fighting"], c["world_held"], c["awaiting"], str(ui, "world_held_by"), str(c, "encounter"))
 
 	if f == nil {
-		t.Fatalf("RED act1: no clock fight for A (%s) after %d frames; combat %v", aID, frames, c)
+		t.Errorf("RED act1: no clock fight for A (%s) after %d frames; combat %v -- the acts that read it go on and report red", aID, frames, c)
 	}
 
 	afhCheck(t, strings.HasPrefix(str(f, "id"), "c:"), "act1: the clock fight's id %q is not of the clock's sequence", str(f, "id"))
@@ -159,7 +168,7 @@ func TestAFightHeIsNotIn(t *testing.T) {
 	c = combatState(s)
 
 	if f == nil {
-		t.Fatalf("RED act2: A's clock fight ended within five minutes: %v", afhClock(s))
+		t.Errorf("RED act2: A's clock fight ended within five minutes: %v", afhClock(s))
 	}
 
 	want := math.Floor(s0 + (w1 - w0) + 1e-9)
@@ -225,12 +234,23 @@ func TestAFightHeIsNotIn(t *testing.T) {
 		t.Logf("MEASURE save: %d bytes at %s, version %v, clock.live %v", len(data), to, file["version"], live)
 	}
 
-	// --- C4: the fight runs to its end; B's death pays him nothing -----------
+	// --- C4: B killed by the forced crit band; B's death pays him nothing -----
+	//
+	// Forced (forced_band, the one allowed steer), so the ending is the one
+	// the act asserts: B's death, ended_enemies_dead AND xp_suppressed each
+	// up by one. The R1 review's B4 found this act accepting either ending,
+	// so on A's death instead the XP-suppression half passed with nothing
+	// suppressed. At crit A lands 18-30 a blow on B and B 1.5 times its own
+	// on A, and A strikes first each round.
 	ck0 := afhClock(s)
+
+	setField(s, "combat", "forced_band", "crit")
 
 	for i := 0; i < 60 && afhFightFor(s, aID) != nil; i++ {
 		afhStepWorld(s, 1.0)
 	}
+
+	setField(s, "combat", "forced_band", "")
 
 	ck := afhClock(s)
 	xp1 := mustNum(t, progressState(s), "xp")
@@ -238,10 +258,10 @@ func TestAFightHeIsNotIn(t *testing.T) {
 		ck["ended"], str(ck, "ended_reason"), ck0["ended_enemies_dead"], ck["ended_enemies_dead"], ck["ended_quarry_dead"],
 		ck0["xp_suppressed"], ck["xp_suppressed"], xp0, xp1, slain0, afhSlain(s))
 	afhCheck(t, afhFightFor(s, aID) == nil, "C4: A's fight did not end in 60 world minutes")
-	afhCheck(t, num(ck, "ended_enemies_dead") == num(ck0, "ended_enemies_dead")+1 || num(ck, "ended_quarry_dead") == num(ck0, "ended_quarry_dead")+1,
-		"C4: the fight ended neither way: %v", ck)
-	afhCheck(t, num(ck, "xp_suppressed") > num(ck0, "xp_suppressed") || num(ck, "ended_quarry_dead") > num(ck0, "ended_quarry_dead"),
-		"C4: a kill in a clock fight was not counted as suppressed")
+	afhCheck(t, num(ck, "ended_enemies_dead") == num(ck0, "ended_enemies_dead")+1 && num(ck, "ended_quarry_dead") == num(ck0, "ended_quarry_dead"),
+		"C4: B's forced death did not end A's fight enemies_dead: %v", ck)
+	afhCheck(t, num(ck, "xp_suppressed") == num(ck0, "xp_suppressed")+1,
+		"C4: B's death in a clock fight was not counted as suppressed (xp_suppressed %v -> %v)", ck0["xp_suppressed"], ck["xp_suppressed"])
 	afhCheck(t, xp1 == xp0, "C4: his XP moved %.0f -> %.0f on a clock fight's kill", xp0, xp1)
 	afhCheck(t, afhSlain(s) == slain0, "C4: the journal noted a slaying he did not do")
 
@@ -256,7 +276,7 @@ func TestAFightHeIsNotIn(t *testing.T) {
 	}
 
 	if afhFightFor(s, a2ID) == nil {
-		t.Fatalf("RED act3: no clock fight for A2")
+		t.Errorf("RED act3: no clock fight for A2 -- the lockstep below reads it as round -1 and reports red")
 	}
 
 	foe := spawnNPC(t, s, "zombie1", px+1, py)
@@ -593,4 +613,207 @@ func TestAFightHeIsNotInReplays(t *testing.T) {
 	}
 
 	afhCheck(t, strings.Join(first, "\n") != strings.Join(other, "\n"), "C6: another seed fought the same fight: the instrument cannot see dice")
+}
+
+// afhHisRow is his fight's participant row of id, or nil.
+func afhHisRow(s *session, id string) map[string]any {
+	for _, p := range asList(combatState(s)["participants"]) {
+		if m, ok := p.(map[string]any); ok && str(m, "id") == id {
+			return m
+		}
+	}
+
+	return nil
+}
+
+// afhClockHolds reports a live clock fight holding id as a living enemy.
+func afhClockHolds(s *session, id string) bool {
+	for _, l := range asList(afhClock(s)["live"]) {
+		lm, _ := l.(map[string]any)
+
+		for _, e := range asList(lm["enemies"]) {
+			if em, _ := e.(map[string]any); str(em, "id") == id && em["dead"] != true {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// afhNewRows is the rows a side's last round wrote since its actions_total
+// was before -- none if it struck nothing since (a round's rows outlive it).
+func afhNewRows(block map[string]any, before float64) []map[string]any {
+	var out []map[string]any
+
+	if num(block, "actions_total") == before {
+		return out
+	}
+
+	for _, raw := range asList(block["actions"]) {
+		if m, ok := raw.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+
+	return out
+}
+
+// TestAFightHeIsNotInOneFightEach is the R1 review's A1 in the game (BUG-67):
+// one combatant is in one live fight, whichever way its watch moves. The
+// review's probe measured, at this seed, B struck twice a world minute (once
+// in each fight), the village killed B, the corpse struck him on for two
+// minutes, and his riposte on it paid him 5 XP and a journal "slain".
+//
+//	act 1: B watches the villager A: a clock fight on A.
+//	act 2: B's watch moves to him (strigoi_watch today; Seek's retarget from
+//	       R2): A's fight lets B go and ends; his fight takes B; on no frame
+//	       is B in both.
+//	act 3: six world minutes, him holding: no clock blow names B, no dead
+//	       body strikes, his XP and journal do not move.
+//	act 4: B's watch moves back to A: his fight keeps B -- his fight wins a
+//	       tie -- and no clock fight opens with B in it.
+//	act 5: he kills B himself: HIS kill pays him, once; the clock counts
+//	       nothing of it.
+//
+// The controls (source mutations, wt-raid-r1-fix\pt-ctl-<name>.txt): the
+// one-fight rule removed turns act 4 red; the retarget prune removed turns
+// act 2 red; the whole fix removed is the review's probe, red in acts 2-5.
+func TestAFightHeIsNotInOneFightEach(t *testing.T) {
+	s, _, playerHandle, px, py := handsStart(t)
+
+	// The policy, as handsStart leaves it: his fight runs on world minutes.
+	// He holds, so only the village could kill B (a graze on him still buys
+	// his riposte, which is his blow).
+	setField(s, "combat", "player_action", "hold")
+
+	a := spawnNPC(t, s, "fallen1", px+2, py)
+	b := spawnNPC(t, s, "zombie1", px+1, py)
+	aID, bID := entityID(t, s, a), entityID(t, s, b)
+
+	xp0, slain0 := mustNum(t, progressState(s), "xp"), afhSlain(s)
+
+	// --- act 1 -----------------------------------------------------------
+	s.call("strigoi_watch", map[string]any{"watcher": b, "target": a})
+
+	for i := 0; i < 60 && afhFightFor(s, aID) == nil; i++ {
+		afhFrames(s, 1)
+	}
+
+	if afhFightFor(s, aID) == nil {
+		t.Fatalf("act1: no clock fight on A (%s): %v", aID, afhClock(s))
+	}
+
+	afhCheck(t, !flag(t, combatState(s), "fighting"), "act1: A's fight is his")
+
+	// --- act 2: the watch moves to him ------------------------------------
+	dis0 := mustNum(t, afhClock(s), "ended_disengaged")
+	both, frames := 0, 0
+
+	s.call("strigoi_watch", map[string]any{"watcher": b, "target": playerHandle})
+
+	for ; frames < 120 && afhHisRow(s, bID) == nil; frames++ {
+		afhFrames(s, 1)
+
+		if afhHisRow(s, bID) != nil && afhClockHolds(s, bID) {
+			both++
+		}
+	}
+
+	ck, c := afhClock(s), combatState(s)
+	t.Logf("MEASURE act2: after %d frames his encounter %q holds B: %v; clock fight on A %v; ended_disengaged %.0f -> %v",
+		frames, str(c, "encounter"), afhHisRow(s, bID), afhFightFor(s, aID), dis0, ck["ended_disengaged"])
+	afhCheck(t, afhHisRow(s, bID) != nil, "act2: his fight never took B")
+	afhCheck(t, !afhClockHolds(s, bID) && afhFightFor(s, aID) == nil, "act2: a clock fight still holds B: %v", ck["live"])
+	afhCheck(t, num(ck, "ended_disengaged") == dis0+1, "act2: A's fight did not end when B left it")
+
+	// --- act 3: six minutes, him holding ------------------------------------
+	clockNamedB, deadBlows := 0, 0
+
+	minute := func() {
+		row := afhHisRow(s, bID)
+		dead := row != nil && num(row, "health") <= 0
+		his0, clk0 := mustNum(t, combatState(s), "actions_total"), mustNum(t, afhClock(s), "actions_total")
+
+		afhStepWorld(s, 1.0)
+
+		if afhHisRow(s, bID) != nil && afhClockHolds(s, bID) {
+			both++
+		}
+
+		for _, r := range afhNewRows(afhClock(s), clk0) {
+			if str(r, "attacker") == bID || str(r, "target") == bID {
+				clockNamedB++
+			}
+		}
+
+		if dead {
+			for _, r := range afhNewRows(combatState(s), his0) {
+				if str(r, "attacker") == bID {
+					deadBlows++
+				}
+			}
+		}
+	}
+
+	for m := 0; m < 6; m++ {
+		minute()
+	}
+
+	row := afhHisRow(s, bID)
+	t.Logf("MEASURE act3: B in his fight %v; clock blows naming B %d; dead blows %d; his xp %.0f -> %.0f; journal slain %.0f -> %.0f",
+		row, clockNamedB, deadBlows, xp0, mustNum(t, progressState(s), "xp"), slain0, afhSlain(s))
+	afhCheck(t, row != nil && num(row, "health") > 0, "act3: B is not alive in his fight: %v", row)
+	afhCheck(t, clockNamedB == 0, "act3: %d clock blow(s) named B after his fight took it", clockNamedB)
+	afhCheck(t, mustNum(t, progressState(s), "xp") == xp0 && afhSlain(s) == slain0,
+		"act3: his XP or journal moved for a kill he did not make")
+
+	// --- act 4: the watch moves back to A; his fight wins the tie -----------
+	started0 := mustNum(t, afhClock(s), "started")
+	s.call("strigoi_watch", map[string]any{"watcher": b, "target": a})
+
+	for m := 0; m < 4; m++ {
+		minute()
+	}
+
+	row = afhHisRow(s, bID)
+	t.Logf("MEASURE act4: B in his fight %v; clock started %.0f -> %v; live %v", row, started0, afhClock(s)["started"], afhClock(s)["live"])
+	afhCheck(t, row != nil && row["dead"] != true, "act4: his fight let B go: his fight must win the tie")
+	afhCheck(t, row != nil && num(row, "health") > 0, "act4: B lies at 0 in his fight -- a kill that was not his: %v", row)
+	afhCheck(t, !afhClockHolds(s, bID) && mustNum(t, afhClock(s), "started") == started0,
+		"act4: a clock fight opened with B, his enemy, in it: %v", afhClock(s)["live"])
+	afhCheck(t, clockNamedB == 0, "act4: %d clock blow(s) named B", clockNamedB)
+	afhCheck(t, mustNum(t, progressState(s), "xp") == xp0 && afhSlain(s) == slain0,
+		"act4: his XP or journal moved for a kill he did not make")
+
+	// --- act 5: he kills B; his kill is his -------------------------------
+	//
+	// B must be alive when it begins, or the XP below would be the review's
+	// leak -- the village's kill paid to him for striking a corpse -- and not
+	// his kill (the whole-fix control measured exactly that: B at 0 in his
+	// fight after act 4, and 5 XP in act 5).
+	sup0 := mustNum(t, afhClock(s), "xp_suppressed")
+	bAlive := row != nil && num(row, "health") > 0
+
+	setField(s, "combat", "player_action", "attack")
+	setField(s, "combat", "forced_band", "crit")
+
+	for i := 0; i < 20 && flag(t, combatState(s), "fighting"); i++ {
+		minute()
+	}
+
+	setField(s, "combat", "forced_band", "")
+
+	c, ck = combatState(s), afhClock(s)
+	t.Logf("MEASURE act5: his ended_reason %q; his xp %.0f -> %.0f; journal slain %.0f -> %.0f; clock xp_suppressed %.0f -> %v; reentrant_reads %v",
+		str(c, "ended_reason"), xp0, mustNum(t, progressState(s), "xp"), slain0, afhSlain(s), sup0, ck["xp_suppressed"], ck["reentrant_reads"])
+	afhCheck(t, !flag(t, c, "fighting") && str(c, "ended_reason") == "enemies_dead", "act5: he did not kill B: %v", c["ended_reason"])
+	afhCheck(t, bAlive && mustNum(t, progressState(s), "xp") > xp0 && afhSlain(s) == slain0+1,
+		"act5: his own kill did not pay him, once (B alive when it began: %v)", bAlive)
+	afhCheck(t, num(ck, "xp_suppressed") == sup0, "act5: the clock counted his kill")
+
+	// --- over the whole script ------------------------------------------------
+	afhCheck(t, both == 0, "B was in his fight and a clock fight at once on %d frame(s) or minute(s)", both)
+	afhCheck(t, deadBlows == 0, "a dead B struck him %d time(s)", deadBlows)
+	afhCheck(t, num(ck, "reentrant_reads") == 0, "a game callback read his fight during a clock step (%v)", ck["reentrant_reads"])
 }

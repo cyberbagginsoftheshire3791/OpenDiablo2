@@ -183,7 +183,8 @@ func checkClockFight(f CombatClockFightSnapshot, started int) error {
 	// Each list is a set of entity ids. The order and the three sets may name
 	// ids no longer among the enemies -- the dead that broke off at first light
 	// leave the rows (pruneOrEnd), and a Downed man who stood again leaves his
-	// old id behind (Rejoin) -- so only the enemies must resolve at a load.
+	// old id behind (Rejoin) -- so only the enemies are resolved at a load,
+	// and of them only the living must resolve (clockFightsOf).
 	for name, list := range map[string][]string{
 		"enemies": f.Enemies, "enemy_order": f.EnemyOrder, "dead": f.Dead, "routed": f.Routed, "broke": f.Broke,
 	} {
@@ -205,6 +206,18 @@ func checkClockFight(f CombatClockFightSnapshot, started int) error {
 // each quarry and enemy through the Resolver the game attached. It is
 // Validate's last check and Restore's build: one code for both, so what
 // Validate accepts is exactly what Restore makes.
+//
+// ONLY THE LIVING MUST RESOLVE (the raid R1 review's B1, BUG-68). A clock
+// fight keeps the rows of the enemies that left it -- dead, routed, broken off
+// -- for its whole life, and their entities can leave the map while it runs:
+// a slain opportunist's remains go when his body rises (takeOffTheMap), a pack
+// is sent home at daybreak. The save validates the live model with this very
+// function, so a row that had to resolve refused every save until that fight
+// ended -- a fight he is not in stopping a save, which Q5 (a) says never
+// happens. So a gone enemy is saved as its id alone (as enemy_order, dead,
+// routed and broke always were) and rebuilt from the map when its entity is
+// still there, as an id-only row (goneRow) when it is not; a LIVING enemy that
+// does not resolve is still refused (ErrUnresolvedRef).
 func (c *Combat) clockFightsOf(k CombatClockSnapshot) ([]*encounter, error) {
 	if len(k.Live) == 0 {
 		return nil, nil
@@ -226,15 +239,6 @@ func (c *Combat) clockFightsOf(k CombatClockSnapshot) ([]*encounter, error) {
 			initiator: f.Initiator, surprised: f.Surprised, surpriseWhy: f.SurpriseWhy,
 		}
 
-		for _, id := range f.Enemies {
-			w, err := b2bResolveWatcher(c.resolver, id)
-			if err != nil {
-				return nil, fmt.Errorf("combat snapshot: clock.live[%d] %s: %w", i, f.ID, err)
-			}
-
-			e.enemies = append(e.enemies, w)
-		}
-
 		for _, id := range f.Dead {
 			e.dead[id] = true
 		}
@@ -247,11 +251,44 @@ func (c *Combat) clockFightsOf(k CombatClockSnapshot) ([]*encounter, error) {
 			e.broke[id] = true
 		}
 
+		for _, id := range f.Enemies {
+			w, err := b2bResolveWatcher(c.resolver, id)
+
+			switch {
+			case err == nil:
+			case e.gone(id):
+				w = goneRow(id)
+			default:
+				return nil, fmt.Errorf("combat snapshot: clock.live[%d] %s: %w", i, f.ID, err)
+			}
+
+			e.enemies = append(e.enemies, w)
+		}
+
 		out = append(out, e)
 	}
 
 	return out, nil
 }
+
+// goneRow is a restored clock fight's row for an enemy that has left it --
+// dead, routed or broken off -- and whose entity is no longer on the map
+// (clockFightsOf). It answers to its id, which is all its row is ever read
+// for: the participant row, the order, the sets. It stands nowhere
+// (goneRowAt): the one reader that asks where a gone row stands is the Downed
+// test (pruneOrEnd, stillIn), and a Downed man's remains are on the map until
+// he stands again or is laid down, so his row resolves.
+type goneRow string
+
+// goneRowAt is where a goneRow stands: off any map, and finite, so the tile
+// arithmetic of within() puts it out of every reach.
+const goneRowAt = -1 << 20
+
+// WatcherID is the gone enemy's id.
+func (g goneRow) WatcherID() string { return string(g) }
+
+// WatcherAt is nowhere on any map.
+func (g goneRow) WatcherAt() (x, y float64) { return goneRowAt, goneRowAt }
 
 // restoreClock puts the clock book and its fights back (Restore, after
 // Validate has passed the whole snapshot).

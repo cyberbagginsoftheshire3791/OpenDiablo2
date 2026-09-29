@@ -53,10 +53,23 @@ import (
 // VERSION 2 (the raid's R1, 29 Sep 2026): the combat block gained its clock
 // -- the fights he is not in, their stream and records, and the clock fights
 // live at the save (the raid's Q5 (a)) -- and rng gained combat_clock. A
-// version-1 file is refused and set aside as .v1.unread (rule 7); none has
-// shipped (B5 has not). This is the raid milestone's one bump: its later
-// bursts amend version 2's shape while no build between them is played with
-// saves (the raid brief, section 4).
+// version-1 file is refused and set aside as .v1.unread (rule 7), never read
+// and never lost.
+//
+// THAT COSTS JOSH NOTHING, AND IT WAS MEASURED (the R1 review's B3, decision
+// (a), accepted): on 29 Sep his %APPDATA%\OpenDiablo2\Saves held no world file
+// at all, and the save verb is not a player's until B5, so no version-1 file
+// of his exists to be set aside -- the HUNTED nights B4a keeps for B4b
+// included.
+//
+// This is the raid milestone's one bump, and THE RULE UNTIL THE MILESTONE
+// SHIPS IS THIS: a later raid burst may amend version 2's shape without a
+// second bump. A world file written by a build between two such bursts is
+// then refused by the later build -- FILE, a shape it does not know (Decode
+// refuses a field missing or unknown at any depth) -- and set aside beside
+// his save, never read with a field at zero, never overwritten, never lost.
+// Josh plays between bursts, so this is his to know (the raid brief, section
+// 4; the R1 build note).
 const Version = 2
 
 // ErrWorldVersion is what a file of any version but Version is refused with.

@@ -614,9 +614,12 @@ this doc fails until it agrees.
   C2, a frozen clock and 120 frames buy none; **the save** (Q5 (a)) with the
   clock fight live is not refused, moves nothing in the digest, and its file
   decodes (`d2save.Decode`, version `d2save.Version`) with the fight in
-  `combat.clock.live`; C4, the fight run to its end -- B killed -- counts
-  `ended_enemies_dead` and `xp_suppressed` in the clock block and pays him no
-  experience and no journal `slain`; act 3, a second clock fight and his own
+  `combat.clock.live`; C4, B killed by the forced crit band (`forced_band`,
+  the one allowed steer), counts `ended_enemies_dead` +1 **and**
+  `xp_suppressed` +1 in the clock block and pays him no experience and no
+  journal `slain` (forced since the R1 review's B4: the act had accepted
+  either ending, so on A's death the suppression half passed with nothing
+  suppressed); act 3, a second clock fight and his own
   paced fight (`zombie1` beside him): his fight is `e:1` with `next_id` one
   past it however many clock fights opened first, 600 frames of his open turn
   buy the clock fight no round (C3), and three committed turns buy it exactly
@@ -632,12 +635,31 @@ this doc fails until it agrees.
   **`TestAFightHeIsNotInWhileHeSleeps`** (act 5): at night, the headman's
   "sleep inside" runs its whole 240 minutes while a clock fight twelve tiles
   off runs rounds -- the sleep loop reads `inFight`, his fight. C5 is a source
-  mutation (no separation). **`TestAFightHeIsNotInReplays`** (act 6): two
+  mutation: the pre-R1 reader put back, one line -- `inFight` reads any fight,
+  the village's too (`c5-sleep-reads-any-fight`; red, "his sleep stopped
+  after 0.08 of 240 minutes"). **`TestAFightHeIsNotInReplays`** (act 6): two
   launches on seed 1462 fight the village's fight blow for blow (ids written
-  A and B); C6, a third launch on seed 7, does not. Every assertion is
-  `t.Errorf` so a negative-control run shows every act it turns red; the
-  controls and their logs are in the raid's R1 build note
-  (`strigoi-harness-runs\wt-raid-r1\`).
+  A and B); C6, a third launch on seed 7, does not.
+  **`TestAFightHeIsNotInOneFightEach`** (the R1 review's A1, BUG-67): one
+  combatant, one live fight, whichever way its watch moves. B (`zombie1`)
+  watches the villager A (`fallen1`) beside him, a clock fight; B's watch
+  moves to him and A's fight lets B go and ends `disengaged` while his fight
+  takes B (two frames), on no frame in both; six minutes of him holding, no
+  clock blow names B and his experience and journal do not move; B's watch
+  moves back to A and his fight keeps B (his fight wins a tie) with no clock
+  fight opened; then he kills B and is paid once (5 XP, `slain` +1), the
+  clock counting nothing. The review's probe, at the same seed, measured the
+  leak this closes: B in both fights striking twice a minute, killed by the
+  village, the corpse striking him on, and his riposte on it paying him.
+  **The acts' assertions are `t.Errorf`**, so a negative-control run reports
+  every act it turns red -- acts 1, 2 and 3's "no clock fight" included since
+  the R1 review's C3 (they were `t.Fatalf`, so under the no-separation
+  control only act 1 reported); **setup the rest cannot stand on stays
+  `t.Fatalf`**: a launch, a file the test wrote that cannot be read, his own
+  fight not ending before act 4, a night that never comes, the one-fight
+  script's first clock fight. The controls and their logs are in the raid's
+  R1 build note (`strigoi-harness-runs\wt-raid-r1\`, and
+  `wt-raid-r1-fix\` for the review fixes).
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -1121,17 +1143,32 @@ quarry_max_health, round, minutes_into_round, enemies[{id, dead, routed,
 broke, health}], enemy_order, order, dead, routed, broke, initiator,
 surprised, surprise_why}` -- and the clock book's own records: `next_id` (the
 clock's id sequence, `c:<n>`, never his `e:<n>`), `started`, `ended`,
-`rounds`, `declined_reach`, `actions_total`, `actions_round` and `actions`
+`rounds`, `declined_reach` (out-of-reach pairs on the quarry a clock fight
+was being opened for -- only those since the R1 review's C1, BUG-70; with him
+bound, his top-level `declined_reach` likewise counts only pairs on him, and
+unbound every pair, as ever), `actions_total`, `actions_round` and `actions`
 (the last round any clock fight resolved, rows as his), `joined`,
 `quick_resolved`, `last_quick_advantage`, `ended_reason` and
 `ended_quarry_dead` / `ended_enemies_dead` / `ended_player_dead` /
 `ended_routed` / `ended_disengaged` / `ended_dawn`, `xp_suppressed` (kills and
 routs in clock fights, which pay him nothing), `released` (watches let go on
-a dead clock quarry in the frame he died), `reentrant_reads` (reads of
-`Fighting`, `Encounter` or `Awaiting` made from a callback during a clock step
--- asserted 0), and `rng` (the `combat-clock` stream, `d2rand.Derived`'s
-fourth). A clock quarry at 0 drops a man's body (`class: human`, `was:
-villager`), plays his death, and ends `quarry_dead`. The four speakers are no
+a dead clock quarry in the frame he died), `reentrant_reads` (reads of any of
+the fourteen readers of his fight -- `Fighting`, `Encounter`, `Awaiting`,
+`Round`, `Order`, `Participates`, `ActionSpent`, `MoveSpent`, `WorldHeld`,
+`Paced`, `Tactical`, `LastRound`, `LastPace`, `EndedReason` -- made from a
+callback during a clock step, each answered with HIS fight; three were
+guarded before the R1 review's C2, BUG-71 -- asserted 0), and `rng` (the
+`combat-clock` stream, `d2rand.Derived`'s fourth). A clock quarry at 0 drops a
+man's body (`class: human`, `was: villager`), plays his death, and ends
+`quarry_dead`; a clock fight whose quarry is at 0 before its round -- killed
+by something that is not that fight -- ends `quarry_dead` too, with no body
+and no death of its own. **One live fight per combatant** (the R1 review's
+A1, BUG-67): a monster or a quarry already in a live fight -- his or the
+village's -- joins no second one; a clock fight lets go of a living enemy
+whose watch has moved to someone else (it ends `disengaged` if that was its
+last), and his fight wins that tie, keeping its enemies whatever their watch
+names while they are in reach; and a body at 0 is gone in every fight,
+whichever fight killed it. The four speakers are no
 quarry (S0-1 (a)): no fight opens on one. The world save carries the whole
 block, live fights included (`combat.clock`; the raid's Q5 (a): a fight he is
 not in never stops a save), which is the world file's version 2. Nothing new

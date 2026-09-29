@@ -270,6 +270,13 @@ deferral written only in a commit message is a deferral that has been lost.
   (a save with the village fighting is refused `ErrUnresolvedRef` without
   it). The game's rule itself, `Game.protectedQuarry`, is unexported and
   reached only through the Combat seam.
+- **The raid's R1 review fixes (29 Sep 2026).** One row, wire and live:
+  `Combat.RejoinFight` (the review's B2, BUG-69) -- `Game.raiseTheDead`
+  (through the unexported `rejoinHisFight`) now asks it which fight a Downed
+  man stood again into, so his journal's "reraised" is written for HIS fight
+  alone. `Combat.Rejoin` keeps its row: `RejoinFight` calls it, so it stays
+  live in the game, and its bool form is what the M4.7 and R1 unit tests
+  assert (`rejoin_test.go`, one of the 289 that may not be edited).
 
 The rule for this section: **if the gate cannot express it, write it here on
 the day you defer it, and name the milestone that picks it up.**

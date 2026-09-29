@@ -394,13 +394,18 @@ func (c *Combat) tryQuickResolve() bool {
 
 		id := enemy.WatcherID()
 
+		// A body at 0 is gone in every fight (the raid R1 review's A1,
+		// BUG-67): one another fight killed is not a living enemy to finish,
+		// and its kill is not his.
+		gone := e.gone(id) || c.deadByBody(id)
+
 		// A Downed man may stand again: the fight is not one to finish in a
 		// stroke while he lies there (the step-3b review; R2 §2B).
-		if e.gone(id) && c.stillIn(e, id) {
+		if gone && c.stillIn(e, id) {
 			return false
 		}
 
-		if e.gone(id) {
+		if gone {
 			continue
 		}
 
@@ -580,7 +585,10 @@ func (c *Combat) playerActivation() {
 	}
 
 	for _, id := range e.enemyOrder {
-		if e.gone(id) {
+		// A body at 0 is gone in every fight (the raid R1 review's A1,
+		// BUG-67): nothing strikes a corpse another fight made, and so
+		// nothing earns its kill.
+		if e.gone(id) || c.deadByBody(id) {
 			continue
 		}
 
@@ -610,7 +618,7 @@ func (c *Combat) commitStrike(targetID string) {
 		return
 	}
 
-	if targetID != "" && !e.gone(targetID) {
+	if targetID != "" && !e.gone(targetID) && !c.deadByBody(targetID) {
 		if enemy := e.enemyByID(targetID); enemy != nil && c.inReach(enemy, e.target) {
 			c.resolveBlow(e.round, e.target.QuarryID(), targetID, true, "")
 
@@ -630,8 +638,11 @@ func (c *Combat) commitStrike(targetID string) {
 // enemy fairness through tools, rather than stat walls"). The dial that tames
 // a pack is MaxCount on its row, not a fudge here.
 func (c *Combat) enemyActivation(id string) {
+	// A body at 0 takes no activation, whichever fight killed it (the raid R1
+	// review's A1, BUG-67): a monster the village killed struck him on in his
+	// fight until he finished the corpse off.
 	e := c.encounter
-	if e == nil || e.target == nil || e.gone(id) {
+	if e == nil || e.target == nil || e.gone(id) || c.deadByBody(id) {
 		return
 	}
 

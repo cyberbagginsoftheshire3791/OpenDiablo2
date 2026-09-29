@@ -852,12 +852,16 @@ func (c *Combat) finishRound() {
 // ONE key mean two things: E sends hold while this is false and end once it is
 // true, so the player never learns there are two verbs.
 func (c *Combat) ActionSpent() bool {
-	return c.encounter != nil && c.encounter.actionSpent
+	e := c.his()
+
+	return e != nil && e.actionSpent
 }
 
 // MoveSpent reports whether the open turn's Move is gone.
 func (c *Combat) MoveSpent() bool {
-	return c.encounter != nil && c.encounter.moveSpent
+	e := c.his()
+
+	return e != nil && e.moveSpent
 }
 
 // RoundRow is what one closed round was, captured at the close. The game
@@ -895,11 +899,23 @@ type PaceRow struct {
 }
 
 // LastRound and LastPace are the two records, read by the game screen at the
-// edges it already sees.
-func (c *Combat) LastRound() RoundRow { return c.lastRound }
+// edges it already sees. Both are HIS, mid clock step too (midStep).
+func (c *Combat) LastRound() RoundRow {
+	if c.midStep() {
+		return c.clockBook.lastRound
+	}
+
+	return c.lastRound
+}
 
 // LastPace is the closed fight's record; its Encounter is "" until one closes.
-func (c *Combat) LastPace() PaceRow { return c.lastPace }
+func (c *Combat) LastPace() PaceRow {
+	if c.midStep() {
+		return c.clockBook.lastPace
+	}
+
+	return c.lastPace
+}
 
 // Wait accumulates the player's thinking time. The game screen hands it the
 // frame's elapsed while a turn is open; it does nothing at any other time, so
@@ -1157,6 +1173,13 @@ func (c *Combat) scanAware(target Quarry) (enemies []Combatant, chosen Quarry, d
 		return nil, target, 0
 	}
 
+	// want is the quarry the caller named, before the loop may choose one.
+	want := target
+
+	// Who is already in ANOTHER live fight (the raid R1 review's A1, BUG-67).
+	// Nil -- and free -- on the legacy path, where there is no other fight.
+	elsewhere := c.fightingElsewhere()
+
 	for _, pair := range c.notice.AwarePairs() {
 		if pair.Target == nil || pair.Watcher == nil {
 			continue
@@ -1164,8 +1187,18 @@ func (c *Combat) scanAware(target Quarry) (enemies []Combatant, chosen Quarry, d
 
 		// ENGAGE, not strike: at the defaults the two radii are the same
 		// adjacency, and in a paced fight the approach is part of the fight.
+		//
+		// A DECLINE IS THE NAMED QUARRY'S (the raid R1 review's C1, BUG-70).
+		// With a quarry named -- his tryStart names him, the clock driver
+		// each villager in turn -- only a pair on it is counted: his saved
+		// declines no longer move with the village's watchers, and the
+		// clock's grow by the pairs on the quarry it is opening rather than
+		// by every out-of-reach pair on the map once per pending quarry.
+		// Unnamed (the legacy rule) every pair counts, as it always has.
 		if !within(pair.Watcher, pair.Target, c.engageTiles()) {
-			declined++
+			if want == nil || pair.Target.QuarryID() == want.QuarryID() {
+				declined++
+			}
 
 			continue
 		}
@@ -1186,7 +1219,7 @@ func (c *Combat) scanAware(target Quarry) (enemies []Combatant, chosen Quarry, d
 		}
 
 		// A DEAD QUARRY IS SKIPPED PER PAIR, NOT PER SCAN (the raid's R1; B2's
-		// wedge, BUG-65). Before it, the first pair's target was chosen even
+		// wedge, BUG-66). Before it, the first pair's target was chosen even
 		// when it was dead, tryStart refused it, and every other aware pair
 		// waited behind a watch on a corpse -- measured, probe-wedge.txt. After
 		// the reach test, so declined_reach counts exactly as it did.
@@ -1197,6 +1230,18 @@ func (c *Combat) scanAware(target Quarry) (enemies []Combatant, chosen Quarry, d
 		// A PROTECTED QUARRY IS NO QUARRY (S0-1 (a), SetProtected): no fight
 		// opens on one, and none takes one in.
 		if c.protected != nil && c.protected(pair.Target.QuarryID()) {
+			continue
+		}
+
+		// ONE LIVE FIGHT PER COMBATANT, IN EITHER ROLE (the raid R1 review's
+		// A1, BUG-67). A watcher that is already an enemy or the quarry of
+		// another live fight -- his, or one he is not in -- joins no second
+		// one, and no fight opens on a quarry that is fighting elsewhere.
+		// Before it, a monster whose watch moved from a villager to him was
+		// in both fights: it struck twice a world minute, and when the
+		// village killed it its corpse went on striking him and then paid
+		// him the kill (the review's probe, measured in the game).
+		if elsewhere[pair.Watcher.WatcherID()] || elsewhere[pair.Target.QuarryID()] {
 			continue
 		}
 
@@ -1494,6 +1539,20 @@ func (c *Combat) pruneOrEnd() {
 			continue
 		}
 
+		// A LIVING ENEMY WHOSE WATCH HAS MOVED ON LEAVES A CLOCK FIGHT (the
+		// raid R1 review's A1, BUG-67). Its noticed watch now names someone
+		// other than this fight's quarry -- him, by strigoi_watch today and by
+		// Seek's retarget from R2 -- so it is that quarry's to fight: it goes
+		// from here in the step its watch moved, and scanAware's one-fight
+		// rule lets it into the new fight at the next scan. HIS FIGHT WINS A
+		// TIE: only a clock fight asks this, so a monster in his fight stays
+		// in it, whatever its watch names, while it is in reach of him. (The
+		// other direction -- his strike drawing a monster out of a village
+		// fight -- is the raid's R6 "draw".)
+		if e.driver == driverClock && !e.gone(enemy.WatcherID()) && c.awareOfAnother(enemy.WatcherID(), e.target) {
+			continue
+		}
+
 		if e.gone(enemy.WatcherID()) || within(enemy, e.target, c.disengageTiles()) {
 			kept = append(kept, enemy)
 		}
@@ -1539,7 +1598,7 @@ func (c *Combat) pruneOrEnd() {
 	order := e.enemyOrder[:0]
 
 	for _, id := range e.enemyOrder {
-		if live[id] && !e.gone(id) {
+		if live[id] && !e.gone(id) && !c.deadByBody(id) {
 			order = append(order, id)
 		}
 	}
@@ -1557,12 +1616,32 @@ func (e *encounter) gone(id string) bool { return e.dead[id] || e.routed[id] || 
 // dead cut down whose body lies Downed and may stand again inside his window
 // (M4.7 step 3b; R2 §3, "possibly while the fight still runs"). The fight
 // goes on, round by round, until he stands or is staked -- or first light.
+//
+// A BODY AT 0 IS GONE IN EVERY FIGHT (the raid R1 review's A1, BUG-67),
+// whichever fight put it there: e.dead is this fight's own record, and a
+// monster killed in another fight is dead in this one too. A body the
+// registry does not know is alive (deadByBody), as it always was.
 func (c *Combat) stillIn(e *encounter, id string) bool {
-	if !e.gone(id) {
+	if !e.gone(id) && !c.deadByBody(id) {
 		return true
 	}
 
 	return !e.broke[id] && c.corpses != nil && c.corpses.DownedMember(id)
+}
+
+// RejoinFight is Rejoin, and says whose fight it was (the raid R1 review's
+// B2, BUG-69): his is true only when the fight the Downed man stood again
+// into is the player's -- the one fight whose Downed are men HE cut down. The
+// game screen writes his journal's "reraised" ("I cut one down and turned my
+// back on it") for his fight alone; a man a villager cut down, standing again
+// into the village's fight, only "rose". Rejoin tries his fight first and
+// takes it exactly when the old member is among its enemies, which is what
+// his reads.
+func (c *Combat) RejoinFight(oldID string, stood Combatant) (in, his bool) {
+	his = c.encounter != nil && oldID != "" && c.encounter.enemyByID(oldID) != nil
+	in = c.Rejoin(oldID, stood)
+
+	return in, in && his
 }
 
 // Rejoin puts a Downed man who stood again back into the fight he fell in
@@ -1570,7 +1649,8 @@ func (c *Combat) stillIn(e *encounter, id string) bool {
 // member he walks as. It is not an arrival -- no notice or engage gate: he
 // stands where he lay, in the fight he never left -- and the fallen one's
 // row goes with the remains the game takes off the map. It reports whether
-// the old member was in the fight.
+// the old member was in a fight -- his or the village's; RejoinFight says
+// which.
 func (c *Combat) Rejoin(oldID string, stood Combatant) bool {
 	if c.rejoinOne(oldID, stood) {
 		return true
@@ -1738,8 +1818,15 @@ func (c *Combat) fallCorpse(id string) {
 }
 
 // EndedReason is why the last encounter ended ("" before any). The death
-// screen reads it to say a fight killed him.
-func (c *Combat) EndedReason() string { return c.endedReason }
+// screen reads it to say a fight killed him: his last fight's, mid clock step
+// too (midStep).
+func (c *Combat) EndedReason() string {
+	if c.midStep() {
+		return c.clockBook.endedReason
+	}
+
+	return c.endedReason
+}
 
 // end closes the encounter and records WHY, both as the last reason and as a
 // counter. An encounter that starts and ends between two harness reads is
@@ -1887,11 +1974,12 @@ func (c *Combat) Encounter() string {
 
 // Round reports the current round, or 0 when nothing is happening.
 func (c *Combat) Round() int {
-	if c.encounter == nil {
+	e := c.his()
+	if e == nil {
 		return 0
 	}
 
-	return c.encounter.round
+	return e.round
 }
 
 // Order reports the activation sequence for the CURRENT round, the player's
@@ -1903,11 +1991,12 @@ func (c *Combat) Round() int {
 // is the two-copies disease this codebase keeps treating. The assertions in
 // combat_test.go that pinned the enemy-only format moved in the same commit.
 func (c *Combat) Order() []string {
-	if c.encounter == nil {
+	e := c.his()
+	if e == nil {
 		return nil
 	}
 
-	return c.encounter.activation()
+	return e.activation()
 }
 
 // --- the harness provider -------------------------------------------------

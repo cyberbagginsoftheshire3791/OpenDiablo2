@@ -30,9 +30,16 @@ package d2world
 //   - its own stream, combat-clock, derived from the one seed NewCombat is
 //     handed (d2rand.Rederive), so his dice never move either (M0.1d);
 //   - its quarry's death is not his: a man's body falls, every watch on the
-//     dead is released in the same frame (the wedge, BUG-65), and the fight
+//     dead is released in the same frame (the wedge, BUG-66), and the fight
 //     ends quarry_dead -- never player_dead;
 //   - it earns him nothing: earn is suppressed and counted (xp_suppressed);
+//   - ONE LIVE FIGHT PER COMBATANT (the raid R1 review's A1, BUG-67): the
+//     separation is by combatant as well as by record. A monster or a
+//     quarry already in a live fight -- his or the village's -- joins no
+//     second one (scanAware); a clock fight lets go of a living enemy whose
+//     watch has moved to someone else (pruneOrEnd), and his fight wins that
+//     tie; and a body at 0 is gone in every fight, whichever fight killed it
+//     (the activations, stillIn, and stepClock's dead quarry);
 //   - it is saved with the world (the raid's Q5, default (a): a fight he is
 //     not in never stops a save) -- combat_snapshot.go's clock block.
 
@@ -193,21 +200,123 @@ func (c *Combat) withClock(e *encounter, fn func()) (out *encounter) {
 }
 
 // his is the player's encounter -- even in the middle of a clock step, when
-// the book swap has put a clock fight on c.encounter. Fighting, Encounter and
-// Awaiting read through it, so a reader reached from a callback a clock step
-// makes (Animate, Chases.Release, Notice.Unwatch, Corpses.Fall/FallHuman,
-// Morale.Hurt, and whatever the game hangs on them) still gets HIS answer.
-// Every such read is counted (clock.reentrant_reads): none is made today, R1
+// the book swap has put a clock fight on c.encounter. Every reader of his
+// fight the game has goes through it or through midStep, so a reader reached
+// from a callback a clock step makes (Animate, Chases.Release,
+// Notice.Unwatch, Corpses.Fall/FallHuman, Morale.Hurt, and whatever the game
+// hangs on them) still gets HIS answer: Fighting, Encounter, Awaiting, Round,
+// Order, Participates, ActionSpent and MoveSpent read his encounter here;
+// WorldHeld, Paced, LastRound, LastPace and EndedReason read his records from
+// the book (midStep); Tactical reads them with the swap undone (asHis). Every
+// such read is counted (clock.reentrant_reads): none is made today, R1
 // assertion 9 holds it at zero, and a count that moves names a new reader to
-// look at.
+// look at. (The R1 review's C2, BUG-71: before it, three of those readers were
+// guarded.)
+//
+// THE LIMIT, NAMED: what is not a read is not guarded. His verbs (Commit,
+// SpendMove, Wait, Tick), the frame's takes (TakeXPEvents, TakeRoundMinutes)
+// and the harness provider (HarnessState) act on whatever is on the struct.
+// Each is called by the game's frame or by a script between frames, never
+// from a callback of a clock step; one reached from such a callback would act
+// on the clock fight's records.
 func (c *Combat) his() *encounter {
-	if b := c.clockBook; b != nil && b.stepping {
-		b.reentrantReads++
-
-		return b.encounter
+	if c.midStep() {
+		return c.clockBook.encounter
 	}
 
 	return c.encounter
+}
+
+// midStep reports that a clock fight is stepping -- his records are in the
+// clock's book and the clock fight's on the struct -- and counts the read
+// (clock.reentrant_reads). Every guarded reader asks it once.
+func (c *Combat) midStep() bool {
+	if b := c.clockBook; b != nil && b.stepping {
+		b.reentrantReads++
+
+		return true
+	}
+
+	return false
+}
+
+// asHis runs read with HIS records on the struct: between clock steps they are
+// there already; mid-step the book swap is undone for the length of the read
+// and redone after it, and the read is counted as midStep counts one. read
+// must only read.
+func (c *Combat) asHis(read func()) {
+	b := c.clockBook
+	if !c.midStep() {
+		read()
+
+		return
+	}
+
+	b.stepping = false
+	c.swapBook(b)
+
+	defer func() {
+		c.swapBook(b)
+		b.stepping = true
+	}()
+
+	read()
+}
+
+// fightingElsewhere is every combatant of a live fight other than the one on
+// the struct: each fight's quarry, and each of its enemies that has not left
+// it (dead, routed or broken off). scanAware lets none of them into a second
+// fight (the raid R1 review's A1, BUG-67). The fight on the struct is the one
+// scanning -- his, or a clock fight under its book -- and its own are its
+// own; his fight, mid clock step, is in the book. Nil when there is no other
+// live fight, which is always on the legacy path.
+func (c *Combat) fightingElsewhere() map[string]bool {
+	his := c.encounter
+	if b := c.clockBook; b != nil && b.stepping {
+		his = b.encounter
+	}
+
+	var out map[string]bool
+
+	add := func(e *encounter) {
+		if e == nil || e == c.encounter {
+			return
+		}
+
+		if out == nil {
+			out = map[string]bool{}
+		}
+
+		if e.target != nil {
+			out[e.target.QuarryID()] = true
+		}
+
+		for _, en := range e.enemies {
+			if en != nil && !e.gone(en.WatcherID()) {
+				out[en.WatcherID()] = true
+			}
+		}
+	}
+
+	add(his)
+
+	for _, e := range c.clockFights {
+		add(e)
+	}
+
+	return out
+}
+
+// awareOfAnother reports a watcher whose noticed watch names someone other
+// than q: a clock fight's enemy whose watch has moved on (pruneOrEnd).
+func (c *Combat) awareOfAnother(id string, q Quarry) bool {
+	if c.notice == nil || q == nil {
+		return false
+	}
+
+	w := c.notice.watches[id]
+
+	return w != nil && w.noticed && w.target != nil && w.target.QuarryID() != q.QuarryID()
 }
 
 // SetPlayer binds the player's entity id, as Squads.BindPlayer is bound: the
@@ -257,20 +366,17 @@ func (c *Combat) quarryNamed(id string) Quarry {
 // as one round's world minutes (TakeRoundMinutes), so a clock fight takes
 // exactly one round per round of his that closes, and none while his turn is
 // open (M0.1c, measured).
+//
+// A fight that ends is taken out of the list in its own slot, at once, and the
+// list closed up after the loop (dropEndedClock), so a later fight's scan in
+// the same frame never takes an ended fight's enemies for a live fight's
+// (fightingElsewhere).
 func (c *Combat) advanceClock(worldMinutes float64) {
-	live := c.clockFights[:0]
-
-	for _, e := range c.clockFights {
-		if out := c.withClock(e, func() { c.stepClock(worldMinutes) }); out != nil {
-			live = append(live, out)
-		}
+	for i, e := range c.clockFights {
+		c.clockFights[i] = c.withClock(e, func() { c.stepClock(worldMinutes) })
 	}
 
-	for i := len(live); i < len(c.clockFights); i++ {
-		c.clockFights[i] = nil
-	}
-
-	c.clockFights = live
+	c.dropEndedClock()
 
 	c.openClockFights()
 }
@@ -318,6 +424,22 @@ func (c *Combat) stepClock(worldMinutes float64) {
 		return
 	}
 
+	// A QUARRY ALREADY AT 0 ENDS ITS FIGHT BEFORE ANY ROUND (the raid R1
+	// review's A1, BUG-67). Something else killed him -- another fight, or a
+	// path that is no fight's -- so this one has nothing left to fight: it
+	// ends quarry_dead, and the watches on him go in this frame as they go
+	// when a clock fight kills him. No body falls and no death plays: he fell
+	// where he died, by what killed him. Before it, the dead quarry took his
+	// activation and struck, and the blow that answered him fell a second
+	// body and played a second death on the corpse.
+	if e.target != nil && c.deadByBody(e.target.QuarryID()) {
+		c.clockBook.released += c.releaseWatchesOn(e.target.QuarryID())
+		c.clockBook.quarryDead++
+		c.end("quarry_dead")
+
+		return
+	}
+
 	e.sinceTurn += worldMinutes
 
 	for c.encounter != nil && c.encounter.sinceTurn >= c.dials.RoundMinutes-roundEpsilon {
@@ -335,7 +457,7 @@ func (c *Combat) stepClock(worldMinutes float64) {
 
 // quarryDead is a clock fight's quarry at 0 (reachedZero's clock branch): a
 // man's body falls where he stood and he plays his death, every watch on him
-// is let go in the same frame -- B2's wedge fixed at its source, BUG-65 -- and
+// is let go in the same frame -- B2's wedge fixed at its source, BUG-66 -- and
 // the fight ends quarry_dead. Never player_dead: that is the death screen's
 // word, and his book is not on the struct to take it.
 func (c *Combat) quarryDead(e *encounter) {

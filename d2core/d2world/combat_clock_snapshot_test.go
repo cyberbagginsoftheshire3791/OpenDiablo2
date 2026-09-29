@@ -129,11 +129,17 @@ func clockFixture(t *testing.T) *clockWorld {
 
 // clockCopy is the same world with its combat model replaced by a FRESH one,
 // on another game's streams, into which snap is restored as the saved game's.
-func clockCopy(t *testing.T, snap CombatSnapshot, withResolver bool) (*clockWorld, error) {
+// The watchers named in off are not in that world's map (B1: remains that
+// left it).
+func clockCopy(t *testing.T, snap CombatSnapshot, withResolver bool, off ...string) (*clockWorld, error) {
 	t.Helper()
 
 	w := clockFixture(t)
 	w.c.Close()
+
+	for _, id := range off {
+		delete(w.watchers, id)
+	}
 
 	dials := DefaultCombatDials()
 	dials.PlayerControl = PlayerControlHuman
@@ -507,4 +513,103 @@ func TestCombatClockSnapshotRefusals(t *testing.T) {
 		require.Error(t, err, name)
 		require.False(t, errors.Is(err, ErrCombatFighting), "%s is not his fight", name)
 	}
+}
+
+// --- B1 (the raid R1 review; BUG-68): a dead enemy off the map --------------
+
+// P4, the review's probe, as a test: c:1 keeps d:1's row (v:1 killed it) for
+// the fight's life, and d:1's remains leave the map -- his body rises and the
+// game takes what lay there off it, or his pack is sent home at daybreak.
+// The save validates the live model's own snapshot (validateSnapshots ->
+// Validate), and a fight he is not in must not stop it (Q5 (a)); a LIVING
+// enemy off the map still does, because that is a world the save cannot
+// describe.
+func TestADeadEnemyOffTheMapStopsNoSave(t *testing.T) {
+	w := clockFixture(t)
+
+	snap, err := w.c.Snapshot()
+	require.NoError(t, err)
+	require.NoError(t, w.c.Validate(snap, b2aWorldSeed), "the control: every entity on the map")
+	require.Equal(t, []string{"d:1"}, snap.Clock.Live[0].Dead)
+	require.Contains(t, snap.Clock.Live[0].Enemies, "d:1", "c:1 keeps the dead d:1's row")
+
+	delete(w.watchers, "d:1")
+
+	snap, err = w.c.Snapshot()
+	require.NoError(t, err)
+	require.NoError(t, w.c.Validate(snap, b2aWorldSeed), "a dead enemy off the map stops no save")
+
+	w.c.Advance(1.0)
+	w.c.Advance(1.0)
+
+	snap, err = w.c.Snapshot()
+	require.NoError(t, err)
+	require.Len(t, snap.Clock.Live, 1, "c:1 fights on")
+	require.Contains(t, snap.Clock.Live[0].Enemies, "d:1", "its row with it")
+	require.NoError(t, w.c.Validate(snap, b2aWorldSeed), "two minutes on, still no refusal")
+
+	// A routed enemy off the map (his pack sent home) stops no save either.
+	m3 := w.watchers["m:3"]
+	delete(w.watchers, "d:2")
+	require.Equal(t, []string{"d:2"}, snap.Clock.Live[0].Routed)
+	require.NoError(t, w.c.Validate(snap, b2aWorldSeed), "a routed enemy off the map stops no save")
+
+	// THE CONTROL beside it: a living enemy off the map is still refused.
+	delete(w.watchers, "m:3")
+	require.ErrorIs(t, w.c.Validate(snap, b2aWorldSeed), ErrUnresolvedRef, "a living enemy off the map is refused")
+	w.watchers["m:3"] = m3
+	require.NoError(t, w.c.Validate(snap, b2aWorldSeed))
+}
+
+// The sweep case: the same world with d:1 off the map, saved, restored into a
+// fresh model whose map has no d:1 either -- its row an id-only one (goneRow)
+// -- round trips, fights on exactly as the live model does, and every field of
+// the clock block is still load-bearing (B2a's sweep over it: each mutation
+// refused or diverging).
+func TestCombatClockSnapshotWithADeadEnemyOffTheMap(t *testing.T) {
+	orig := clockFixture(t)
+	delete(orig.watchers, "d:1")
+
+	snap, err := orig.c.Snapshot()
+	require.NoError(t, err)
+
+	snap = b2aThroughJSON(t, snap)
+	ref := clockSteps(t, orig)
+
+	cp, err := clockCopy(t, snap, true, "d:1")
+	require.NoError(t, err, "a dead enemy off the map restores")
+
+	again, err := cp.c.Snapshot()
+	require.NoError(t, err)
+	require.Equal(t, snap, again, "restored is the same model")
+
+	var row Combatant
+
+	for _, en := range cp.c.clockFights[0].enemies {
+		if en.WatcherID() == "d:1" {
+			row = en
+		}
+	}
+
+	require.Equal(t, goneRow("d:1"), row, "d:1 comes back as its id alone")
+	require.Equal(t, ref, clockSteps(t, cp), "and the copy fights on as the live model does")
+
+	try := func(raw []byte) (string, error) {
+		var v clockOnly
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return "", err
+		}
+
+		s := snap
+		s.Clock = v.Clock
+
+		cp, err := clockCopy(t, s, true, "d:1")
+		if err != nil {
+			return "", err
+		}
+
+		return clockSteps(t, cp), nil
+	}
+
+	b2aExercised(t, b2aSweep(t, clockOnly{snap.Clock}, ref, nil, try), clockClasses()...)
 }
