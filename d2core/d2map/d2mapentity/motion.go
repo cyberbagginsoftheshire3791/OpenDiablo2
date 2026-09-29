@@ -16,15 +16,27 @@ import (
 // bit-exact; the harness reports the same points divided by five.
 //
 // NOT CARRIED, and why:
-//   - the arrival callback (done) is a function. Every monster's walk is
-//     handed over with none (the game's chaser passes nil to SetPath); the
+//   - the arrival callback (done) is a function. A chase's walk is handed
+//     over with none (the game's chaser passes nil to SetPath). A PACED
+//     FIGHT'S walk is not: Game.StepToward passes borrowPace's return, which
+//     hands the creature its own speed back on arrival (corrected at the B2b
+//     review; this said every monster walk had none). That one needs no
+//     carrying either: saves are refused during a fight, and whenever no
+//     fight runs Game.tacticalAdvance calls returnAllPace, which gives every
+//     borrowed pace back and empties the table the callback reads -- so at
+//     any moment a save is allowed, a walk's callback is a no-op
+//     (d2gamescreen TestNoPaceIsBorrowedOutsideAFight pins that). The
 //     player's click-to-move has one, and the player's walk is not restored
 //     (rule 4, below).
 //   - drawLayer is never set on these kinds; highlight is a render flag
 //     cleared every frame.
 //   - an animation's frame. An action being played through (Action) restarts
 //     from its first frame, which the digest cannot see (it carries no frame
-//     counters) and a player barely can.
+//     counters) and a player barely can. A creature saved while its DEATH is
+//     held plays the death again from its first frame after a load and then
+//     lies as a corpse, as it would have. Its held action's callback
+//     (finished / onHeldFinished) is not carried either: the game starts
+//     every action with a nil one (npc_body.go), so there is nothing to lose.
 //   - an NPC's patrol (Paths, path index, repetitions): only villagers
 //     patrol, and villagers are rebuilt by the map (build plan §1).
 //

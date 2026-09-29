@@ -141,6 +141,8 @@ func TestCreatureMotionEveryFieldIsSeen(t *testing.T) {
 		mutate func(*Motion)
 	}
 
+	seen := map[string]bool{}
+
 	for _, m := range []mutation{
 		{"pos lost", false, func(mo *Motion) { mo.Pos = [2]float64{} }},
 		{"target lost", false, func(mo *Motion) { mo.Target = [2]float64{} }},
@@ -163,6 +165,10 @@ func TestCreatureMotionEveryFieldIsSeen(t *testing.T) {
 		changed := mo
 		changed.Path = append([][2]float64(nil), mo.Path...)
 		m.mutate(&changed)
+
+		for _, key := range b2bMotionKeysChanged(mo, changed) {
+			seen[key] = true
+		}
 
 		f := b2bFactory(t)
 		require.NoError(t, f.SetNextEntityID(a.ID()))
@@ -187,6 +193,10 @@ func TestCreatureMotionEveryFieldIsSeen(t *testing.T) {
 		require.GreaterOrEqual(t, at, 0, "%s: LOST WITHOUT A TRACE -- a hole in observability, not a pass", m.name)
 		t.Logf("%-24s diverged at frame %d", m.name, at)
 	}
+
+	// Every field labelled saved is exercised by a mutation above (the B2b
+	// review's B5, with the B2a review's B3 teeth).
+	b2bMotionExercised(t, seen, b2bMapEntityClass(), b2bCreatureClass())
 }
 
 func b2bMust(c *Creature, err error) *Creature {
@@ -290,6 +300,8 @@ func TestNPCMotionRoundTripsAndStepsInStep(t *testing.T) {
 // carry the behaviour of the same two flags, and B4b's playtest carries the
 // composite.
 func TestNPCMotionCarriesItsPose(t *testing.T) {
+	npcSeen := map[string]bool{}
+
 	for _, a := range []*NPC{
 		{mapEntity: newMapEntity(50, 50), corpse: true},
 		{mapEntity: newMapEntity(50, 50), held: true, heldMode: d2enum.MonsterAnimationModeAttack1},
@@ -309,7 +321,13 @@ func TestNPCMotionCarriesItsPose(t *testing.T) {
 		c := &NPC{mapEntity: newMapEntity(0, 0)}
 		require.NoError(t, c.RestoreMotion(lost))
 		require.NotEqual(t, mo, c.MotionSnapshot(), "the pose lost is seen")
+
+		for _, key := range b2bMotionKeysChanged(mo, lost) {
+			npcSeen[key] = true
+		}
 	}
+
+	b2bMotionExercised(t, npcSeen, b2bNPCClass())
 
 	held := &NPC{mapEntity: newMapEntity(0, 0), held: true, heldMode: d2enum.MonsterAnimationModeAttack1}
 	require.Equal(t, "A1", held.MotionSnapshot().Action, "the held mode is written by its two letters")

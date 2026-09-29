@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapstamp"
 )
@@ -49,7 +50,7 @@ func TestRestoreRandResumesTheWorldStream(t *testing.T) {
 
 	b := &MapEngine{}
 	b.SetSeed(99) // a different world: RestoreRand must replace its stream wholesale
-	b.RestoreRand(seed, draws)
+	require.NoError(t, b.RestoreRand(seed, draws))
 
 	assert.Equal(t, seed, b.RandSeed())
 	assert.Equal(t, draws, b.RandDraws(), "a restored stream reports the count it was restored at")
@@ -57,7 +58,7 @@ func TestRestoreRandResumesTheWorldStream(t *testing.T) {
 	assert.Equal(t, a.RandDraws(), b.RandDraws(), "and counts the same draws from there")
 
 	short := &MapEngine{}
-	short.RestoreRand(seed, draws-1)
+	require.NoError(t, short.RestoreRand(seed, draws-1))
 	assert.NotEqual(t, want, worldDraws(short, 24), "one draw short must not reproduce the stream")
 }
 
@@ -117,7 +118,7 @@ func TestRestoreRandHandsTheStreamToTheFactories(t *testing.T) {
 	b.SetSeed(99) // the factories now hold the 99 stream
 	require.Same(t, b.Rand(), b.MapEntityFactory.WorldRand())
 
-	b.RestoreRand(seed, draws)
+	require.NoError(t, b.RestoreRand(seed, draws))
 
 	require.Same(t, b.Rand(), b.MapEntityFactory.WorldRand(), "the entity factory draws the restored stream")
 	require.Same(t, b.Rand(), b.StampFactory.WorldRand(), "and so does the stamp factory")
@@ -130,4 +131,20 @@ func TestRestoreRandHandsTheStreamToTheFactories(t *testing.T) {
 
 	assert.Equal(t, stdlibAfter(seed, draws+1), b.StampFactory.WorldRand().Int63())
 	assert.Equal(t, draws+2, b.RandDraws())
+}
+
+// A draw count past d2rand.MaxDraws is refused, and the stream running is
+// left as it was (the B2a review's B1: a count is replayed a step at a time,
+// so it is bounded, not trusted).
+func TestRestoreRandRefusesACountPastTheCap(t *testing.T) {
+	m := withFactories()
+	m.SetSeed(1462)
+	worldDraws(m, 5)
+
+	before, draws := m.Rand(), m.RandDraws()
+
+	require.ErrorIs(t, m.RestoreRand(1462, d2rand.MaxDraws+1), d2rand.ErrStreamState)
+	require.Same(t, before, m.Rand(), "a refused restore leaves the stream running")
+	require.Equal(t, draws, m.RandDraws())
+	require.NoError(t, m.RestoreRand(1462, 3), "and a count under the cap still restores")
 }

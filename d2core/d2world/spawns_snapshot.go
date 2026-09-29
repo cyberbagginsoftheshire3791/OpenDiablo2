@@ -41,19 +41,10 @@ type SpawnsSnapshot struct {
 	Cleared   int `json:"cleared"`
 	Released  int `json:"released"`
 
-	// RNG is the tables' stream (d2rand.Stream) as {seed, draws}.
-	RNG b2bStream `json:"rng"`
-}
-
-// b2bStream is a counted stream as a save carries it: the seed it was made
-// from and how many values it has handed out. The seed is written as a JSON
-// STRING: a wall-clock seed is past 2^53, and a reader that decodes a number
-// into float64 would restore a different stream (B1 notes §2). The shape is
-// the one B2a writes for Combat's and Rising's streams, so the world file
-// carries every stream one way.
-type b2bStream struct {
-	Seed  int64  `json:"seed,string"`
-	Draws uint64 `json:"draws"`
+	// RNG is the tables' stream (d2rand.Stream) as {seed, draws}: the one
+	// shape every saved stream takes (d2rand.StreamState, which B2a's and
+	// B2b's two private copies became at the B2 review).
+	RNG d2rand.StreamState `json:"rng"`
 }
 
 // SpawnGroupSnapshot is one arrival.
@@ -124,7 +115,7 @@ func (s *Spawns) Snapshot(r Resolver) (SpawnsSnapshot, error) {
 	}
 
 	if s.rng != nil {
-		snap.RNG = b2bStream{Seed: s.rng.Seeded(), Draws: s.rng.Draws()}
+		snap.RNG = d2rand.StateOf(s.rng)
 	}
 
 	for _, id := range s.groupIDs() {
@@ -164,8 +155,16 @@ func (s *Spawns) Snapshot(r Resolver) (SpawnsSnapshot, error) {
 }
 
 // Restore puts the tables where a snapshot left them, resolving every member
-// through r. It is all-or-nothing: a snapshot that fails any check leaves the
+// through r. worldSeed is the saved game's seed: the stream must be the one
+// that game ran the tables on (d2rand.StreamState.Check). It is
+// all-or-nothing: a snapshot that fails any check (Validate's) leaves the
 // tables exactly as they were.
+//
+// It restores only into tables that hold NO GROUP (the B2b review's B4, as
+// B2a's corpses and squads refuse a used target): a group's members are map
+// entities the notice model watches and pursuit chases with, and replacing a
+// live group would leave them standing, watched and chasing, in no pack --
+// and a daybreak despawn would never take them home.
 //
 // ORDER AT LOAD: the entities (ids and motion) first, then this, then Notice,
 // then Pursuit (build plan §5). A member that resolves must stand where the
@@ -174,27 +173,10 @@ func (s *Spawns) Snapshot(r Resolver) (SpawnsSnapshot, error) {
 // It watches nothing, spawns nothing and releases nothing. The notice model's
 // watches come back through Notice.Restore, and a restore that called Watch
 // here would evaluate every member a second time and move its counters.
-func (s *Spawns) Restore(snap SpawnsSnapshot, r Resolver) error {
-	if err := s.b2bCheckTop(snap); err != nil {
+func (s *Spawns) Restore(snap SpawnsSnapshot, r Resolver, worldSeed int64) error {
+	groups, err := s.b2bValidate(snap, r, worldSeed)
+	if err != nil {
 		return err
-	}
-
-	groups := make(map[string]*group, len(snap.Groups))
-	members := make(map[string]string)
-
-	for i := range snap.Groups {
-		gs := snap.Groups[i]
-
-		g, err := s.b2bGroup(gs, snap.NextID, r, members)
-		if err != nil {
-			return err
-		}
-
-		if _, dup := groups[g.id]; dup {
-			return fmt.Errorf("d2world: spawns: group %s is saved twice", g.id)
-		}
-
-		groups[g.id] = g
 	}
 
 	s.groups = groups
@@ -210,9 +192,53 @@ func (s *Spawns) Restore(snap SpawnsSnapshot, r Resolver) error {
 		s.rng = d2rand.NewStream(snap.RNG.Seed)
 	}
 
-	s.rng.Restore(snap.RNG.Seed, snap.RNG.Draws)
+	snap.RNG.RestoreInto(s.rng)
 
 	return nil
+}
+
+// Validate is Restore's check and nothing else (D4): every refusal Restore
+// would make, through the same Resolver, without changing the tables.
+func (s *Spawns) Validate(snap SpawnsSnapshot, r Resolver, worldSeed int64) error {
+	_, err := s.b2bValidate(snap, r, worldSeed)
+
+	return err
+}
+
+// b2bValidate checks the whole snapshot and returns the groups it would
+// restore. Nothing in s is changed.
+func (s *Spawns) b2bValidate(snap SpawnsSnapshot, r Resolver, worldSeed int64) (map[string]*group, error) {
+	if len(s.groups) != 0 {
+		return nil, fmt.Errorf("d2world: spawns: restore into tables that hold no group; these hold %d", len(s.groups))
+	}
+
+	if err := s.b2bCheckTop(snap); err != nil {
+		return nil, err
+	}
+
+	if err := snap.RNG.Check(worldSeed, d2rand.StreamSpawns); err != nil {
+		return nil, fmt.Errorf("d2world: spawns: %w", err)
+	}
+
+	groups := make(map[string]*group, len(snap.Groups))
+	members := make(map[string]string)
+
+	for i := range snap.Groups {
+		gs := snap.Groups[i]
+
+		g, err := s.b2bGroup(gs, snap.NextID, r, members)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, dup := groups[g.id]; dup {
+			return nil, fmt.Errorf("d2world: spawns: group %s is saved twice", g.id)
+		}
+
+		groups[g.id] = g
+	}
+
+	return groups, nil
 }
 
 // b2bCheckTop checks the snapshot's own numbers.

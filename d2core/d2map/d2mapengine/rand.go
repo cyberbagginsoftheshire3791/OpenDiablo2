@@ -1,6 +1,7 @@
 package d2mapengine
 
 import (
+	"fmt"
 	"math/rand"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
@@ -65,9 +66,24 @@ func (m *MapEngine) ReseedRand(seed int64) {
 //
 // NOTHING CALLS IT YET. It is B1's half of the world save; the load that
 // calls it is burst B4, and it must run AFTER the entities are rebuilt,
-// because rebuilding them draws from this stream (the plan's trap 6).
-func (m *MapEngine) RestoreRand(seed int64, draws uint64) {
+// because rebuilding them draws from this stream (the plan's trap 6:
+// NewCreature and NewNPC draw a behaviour seed and roll equipment from it).
+//
+// It refuses a draw count past d2rand.MaxDraws, and changes nothing when it
+// does (the B2a review's B1: a count is replayed a step at a time, so it is
+// bounded rather than trusted). The seed needs no check here: the world
+// stream runs on the game seed, and the load hands the server that seed
+// (SetNextGameSeed) from the same file; B4 checks the two agree with
+// d2rand.StreamState.Check(seed, d2rand.StreamWorld).
+func (m *MapEngine) RestoreRand(seed int64, draws uint64) error {
+	if draws > d2rand.MaxDraws {
+		return fmt.Errorf("%w: the world stream is saved at %d draws, past the %d a save may claim",
+			d2rand.ErrStreamState, draws, d2rand.MaxDraws)
+	}
+
 	m.useRand(d2rand.Restore(seed, draws))
+
+	return nil
 }
 
 // RandDraws returns how many values have been drawn from the world RNG since

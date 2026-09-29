@@ -16,12 +16,19 @@ func TestClockSnapshotFieldsClassified(t *testing.T) {
 	t.Cleanup(c.Close)
 	c.Advance(10)
 
-	b2aClassified(t, Clock{}, c.Snapshot(), map[string]string{
+	for _, cl := range b2aClockClasses() {
+		b2aClassified(t, cl.kind, c.Snapshot(), cl.fields)
+	}
+}
+
+// b2aClockClasses is every field of the clock, labelled.
+func b2aClockClasses() []b2aClass {
+	return []b2aClass{{Clock{}, map[string]string{
 		"dials":        "W: the construction dials; the game builds the clock with the defaults",
 		"elapsed":      "S:elapsed",
 		"frozen":       "D: the harness's hold (SetFrozen has no caller in the game); a resumed game is not held",
 		"moonOverride": "D: the harness's SetMoon (no caller in the game); the sky is read from the day table",
-	})
+	}}}
 }
 
 // b2aClockSteps advances a clock across dusk into the night, reading the
@@ -61,8 +68,9 @@ func TestClockSnapshotRoundTrip(t *testing.T) {
 	require.Equal(t, b2aJSON(t, orig.HarnessState()), b2aJSON(t, restored.HarnessState()), "restored is the same clock")
 	require.Equal(t, b2aClockSteps(t, orig), b2aClockSteps(t, restored), "and stays the same clock when both run on")
 
-	// Refused: a time that is not a time.
+	// Refused: a time that is not a time, by Validate and by Restore alike.
 	for _, bad := range []float64{-1, math.NaN(), math.Inf(1)} {
+		require.Error(t, NewClock(DefaultClockDials()).Validate(ClockSnapshot{Elapsed: bad}), "elapsed %v", bad)
 		require.Error(t, NewClock(DefaultClockDials()).Restore(ClockSnapshot{Elapsed: bad}), "elapsed %v", bad)
 	}
 }
@@ -88,7 +96,7 @@ func TestClockSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 	snap := orig.Snapshot()
 	ref := b2aClockSteps(t, orig)
 
-	b2aSweep(t, snap, ref, nil, func(raw []byte) (string, error) {
+	outcomes := b2aSweep(t, snap, ref, nil, func(raw []byte) (string, error) {
 		var s ClockSnapshot
 		if err := json.Unmarshal(raw, &s); err != nil {
 			return "", err
@@ -103,4 +111,6 @@ func TestClockSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 
 		return b2aClockSteps(t, c), nil
 	})
+
+	b2aExercised(t, outcomes, b2aClockClasses()...)
 }

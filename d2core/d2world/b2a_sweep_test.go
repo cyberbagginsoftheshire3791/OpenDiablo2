@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
@@ -17,6 +18,19 @@ import (
 // The B2a helpers every *_snapshot_test.go in this package uses. They are named
 // b2a* so that B2b's snapshots, built in parallel, cannot collide with them.
 // ----------------------------------------------------------------------------
+
+// b2aWorldSeed is the game seed every B2a fixture's streams derive from, as
+// CreateGame derives them (d2rand.Derive), and the one each Restore is told
+// the saved game ran on (the B2a review's B1: a Restore checks its stream's
+// seed against the game's).
+//
+// Not 1462: the combat fixture scripts a fight round by round (a turn waits on
+// rounds one and two), and on the combat stream 1462 derives, round two does
+// not wait. The fixtures ran on a stream seeded 1462 itself before the check
+// existed; 2026 is the first seed of a short list (99, 2026, 1463..1468) on
+// whose derived streams both the combat and the rising fixture play out as
+// written (1464, 1466 and 1468 do too).
+const b2aWorldSeed int64 = 2026
 
 // b2aJSON is v as JSON: the form every observable is compared in, because it
 // is the form the digest and the save-resume playtest compare.
@@ -386,8 +400,10 @@ func b2aPerturb(v interface{}) (out interface{}, wasZero bool) {
 // seen. (Added at the B2a review, 28 Sep 2026: the squads sweep restores along
 // a path -- BindPlayer after Restore -- that no run-on comparison had covered.)
 func b2aSweep(t *testing.T, snap interface{}, reference string, exempt map[string]string,
-	try func(raw []byte) (string, error)) {
+	try func(raw []byte) (string, error)) []b2aOutcome {
 	t.Helper()
+
+	var outcomes []b2aOutcome
 
 	raw, err := json.Marshal(snap)
 	require.NoError(t, err)
@@ -420,12 +436,15 @@ func b2aSweep(t *testing.T, snap interface{}, reference string, exempt map[strin
 			t.Errorf("%s %s: exempt as %q, but its loss is seen (err=%v); the exemption is wrong", v.how, v.path, why, err)
 		case isExempt:
 			counts["exempt"]++
+			outcomes = append(outcomes, b2aOutcome{path: v.path, seen: false})
 			t.Logf("%-9s %-44s exempt: %s", v.how, v.path, why)
 		case err != nil:
 			counts["refused"]++
+			outcomes = append(outcomes, b2aOutcome{path: v.path, seen: true})
 			t.Logf("%-9s %-44s refused: %v", v.how, v.path, err)
 		case obs != reference:
 			counts["diverged"]++
+			outcomes = append(outcomes, b2aOutcome{path: v.path, seen: true})
 			t.Logf("%-9s %-44s diverged", v.how, v.path)
 		default:
 			t.Errorf("%s %s: restored and run on, the copy matches the original -- losing it changed nothing "+
@@ -441,6 +460,8 @@ func b2aSweep(t *testing.T, snap interface{}, reference string, exempt map[strin
 
 	t.Logf("sweep: %d variants: %d refused, %d diverged, %d exempt",
 		len(variants), counts["refused"], counts["diverged"], counts["exempt"])
+
+	return outcomes
 }
 
 // b2aFirstDiff is where a and b first differ (-1 if they do not), with a little
@@ -513,6 +534,227 @@ func b2aMustDiverge[T any](t *testing.T, snap T, reference string, wrongs map[st
 				"not seen", name)
 		default:
 			t.Logf("probe     %-44s diverged", name)
+		}
+	}
+}
+
+// ----------------------------------------------------------------------------
+// The classification's teeth (the B2a review's B3, 28 Sep 2026). b2aClassified
+// forces every field to carry a label, but it could not check one: an S path
+// had only to EXIST in the JSON, so a field saved and never restored passed,
+// and a T field had only to SAY it was empty at every save, so a transient
+// that Snapshot never checked passed too. Two more checks close that:
+//
+//   - b2aExercised: every S path is exercised by the sweep -- some variant at
+//     that path, or under it, was refused or diverged. A path reached only by
+//     an exempt variant, or by none, is a label nobody checked.
+//   - b2aTransientsRefused: every T field, set to something other than its
+//     zero on a system that could otherwise be saved, makes Snapshot refuse.
+//     A T label whose field Snapshot does not check is a transient the save
+//     would silently drop.
+// ----------------------------------------------------------------------------
+
+// b2aClass is one struct's classification: a zero value of the struct and the
+// label of each of its fields (see b2aClassified).
+type b2aClass struct {
+	kind   interface{}
+	fields map[string]string
+}
+
+// b2aOutcome is what one sweep variant (or one named mutation) did: seen is
+// true when it was refused or diverged, false when it was exempt or carried.
+type b2aOutcome struct {
+	path string
+	seen bool
+}
+
+// b2aNormPath writes every list index in a JSON path as [*], so a label
+// written at [0] matches a variant at any element.
+func b2aNormPath(p string) string {
+	var b strings.Builder
+
+	for i := 0; i < len(p); i++ {
+		if p[i] != '[' {
+			b.WriteByte(p[i])
+			continue
+		}
+
+		j := strings.IndexByte(p[i:], ']')
+		if j < 0 {
+			b.WriteString(p[i:])
+			break
+		}
+
+		b.WriteString("[*]")
+		i += j
+	}
+
+	return b.String()
+}
+
+// b2aUnder reports whether path is at or below label, both normalised.
+func b2aUnder(path, label string) bool {
+	path, label = b2aNormPath(path), b2aNormPath(label)
+
+	return path == label || strings.HasPrefix(path, label+".") || strings.HasPrefix(path, label+"[")
+}
+
+// b2aExercised requires every S path of every class to be exercised by a
+// variant the sweep SAW: refused or diverged, at the path or below it.
+func b2aExercised(t *testing.T, outcomes []b2aOutcome, classes ...b2aClass) {
+	t.Helper()
+
+	for _, c := range classes {
+		typ := reflect.TypeOf(c.kind)
+
+		for field, class := range c.fields {
+			if !strings.HasPrefix(class, "S:") {
+				continue
+			}
+
+			label := strings.TrimPrefix(class, "S:")
+			seen, reached := false, false
+
+			for _, o := range outcomes {
+				if b2aUnder(o.path, label) {
+					reached = true
+					seen = seen || o.seen
+				}
+			}
+
+			switch {
+			case !reached:
+				t.Errorf("%s.%s is saved at %q, and no sweep variant reached that path: the label is unchecked",
+					typ.Name(), field, label)
+			case !seen:
+				t.Errorf("%s.%s is saved at %q, and every variant there was exempt or carried: nothing sees it",
+					typ.Name(), field, label)
+			}
+		}
+	}
+}
+
+// b2aTransientsRefused requires Snapshot to refuse once any T field of c is
+// set. fresh builds a system that CAN be saved (the control: its snapshot
+// must succeed) and returns it (a pointer to the struct c classifies) with
+// its Snapshot. Each T field is set on its own fresh system.
+func b2aTransientsRefused(t *testing.T, c b2aClass, fresh func() (interface{}, func() error)) {
+	t.Helper()
+
+	typ := reflect.TypeOf(c.kind)
+
+	sys, snapshot := fresh()
+	require.NoError(t, snapshot(), "the control: the fresh %s must be savable, or no refusal below means anything", typ.Name())
+
+	names := make([]string, 0, len(c.fields))
+
+	for name, class := range c.fields {
+		if strings.HasPrefix(class, "T: ") {
+			names = append(names, name)
+		}
+	}
+
+	sort.Strings(names)
+
+	for _, name := range names {
+		sys, snapshot = fresh()
+		b2aSetNonZero(t, sys, name)
+
+		if err := snapshot(); err == nil {
+			t.Errorf("%s.%s is classified transient (%q), but Snapshot saves with it set: the save would drop it. "+
+				"Snapshot must refuse while it is set (for combat, checkBetweenFights), or it is not transient",
+				typ.Name(), name, c.fields[name])
+		} else {
+			t.Logf("T %-22s set -> refused: %v", name, err)
+		}
+	}
+}
+
+// b2aSetNonZero sets one field of *sys, exported or not, to a value that is
+// not its zero.
+func b2aSetNonZero(t *testing.T, sys interface{}, name string) {
+	t.Helper()
+
+	v := reflect.ValueOf(sys).Elem().FieldByName(name)
+	require.True(t, v.IsValid(), "no field %s", name)
+
+	f := reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+
+	switch f.Kind() {
+	case reflect.Bool:
+		f.SetBool(true)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		f.SetInt(1)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		f.SetUint(1)
+	case reflect.Float32, reflect.Float64:
+		f.SetFloat(1)
+	case reflect.String:
+		f.SetString("b2a")
+	case reflect.Slice:
+		f.Set(reflect.MakeSlice(f.Type(), 1, 1))
+	case reflect.Map:
+		m := reflect.MakeMap(f.Type())
+		m.SetMapIndex(reflect.Zero(f.Type().Key()), reflect.Zero(f.Type().Elem()))
+		f.Set(m)
+	case reflect.Ptr:
+		f.Set(reflect.New(f.Type().Elem()))
+	default:
+		t.Fatalf("b2aSetNonZero: %s is a %s; teach this helper its non-zero", name, f.Kind())
+	}
+}
+
+// b2aTreeDiff is every path at which two JSON trees differ: a key present in
+// one only, a leaf that changed, a list whose length changed (the list's own
+// path: its elements cannot be paired). It is how a named mutation (B2b's
+// sweeps) says which saved paths it exercised.
+func b2aTreeDiff(a, b interface{}, path string, out *[]string) {
+	switch x := a.(type) {
+	case map[string]interface{}:
+		y, ok := b.(map[string]interface{})
+		if !ok {
+			*out = append(*out, path)
+			return
+		}
+
+		keys := map[string]bool{}
+		for k := range x {
+			keys[k] = true
+		}
+
+		for k := range y {
+			keys[k] = true
+		}
+
+		for k := range keys {
+			child := k
+			if path != "" {
+				child = path + "." + k
+			}
+
+			xv, inX := x[k]
+			yv, inY := y[k]
+
+			if inX != inY {
+				*out = append(*out, child)
+				continue
+			}
+
+			b2aTreeDiff(xv, yv, child, out)
+		}
+	case []interface{}:
+		y, ok := b.([]interface{})
+		if !ok || len(x) != len(y) {
+			*out = append(*out, path)
+			return
+		}
+
+		for i := range x {
+			b2aTreeDiff(x[i], y[i], fmt.Sprintf("%s[%d]", path, i), out)
+		}
+	default:
+		if !reflect.DeepEqual(a, b) {
+			*out = append(*out, path)
 		}
 	}
 }

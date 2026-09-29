@@ -201,24 +201,130 @@ func TestTheKindsASaveDoesNotRebuildSpendTheID(t *testing.T) {
 	require.Equal(t, "e:dog", b2bNewDog(t, f, 50, 50).ID())
 }
 
-// b2bSeamCallees are the calls that birth a map entity's id.
-var b2bSeamCallees = map[string]bool{
-	"newMapEntity": true, "newMapEntityWithID": true, "NewAnimatedEntity": true, "newCreature": true,
+// b2bSeamBirths are the calls that birth a map entity's id: the two that make
+// a mapEntity, and an inline uuid.New (b2bIsUUIDNew). Anything that reaches one
+// of them -- directly or through any chain of this package's own functions and
+// methods -- births an id (the B2b review's B6: the first version matched four
+// names in the constructor's own body, so a helper that reached newMapEntity,
+// or an id minted inline, walked past it).
+var b2bSeamBirths = map[string]bool{"newMapEntity": true, "newMapEntityWithID": true}
+
+// b2bSeamTakes are the two calls that consume the waiting id.
+var b2bSeamTakes = map[string]bool{"takeEntityID": true, "spendEntityID": true}
+
+// b2bSeamViolations reads a package's files and returns every EXPORTED
+// MapEntityFactory method that births an entity id, transitively, and the
+// ones among them that do not take the waiting id in their first statement.
+//
+// Unexported methods are helpers a constructor calls AFTER its take, so they
+// are not held to it themselves; they are what makes the check transitive.
+// Calls are matched by name -- a method call by its selector, a function call
+// by its identifier -- which over-approximates (two methods with one name on
+// different types share their calls), and an over-approximation can only make
+// the check stricter.
+func b2bSeamViolations(t *testing.T, files []*ast.File) (constructors, violations []string) {
+	t.Helper()
+
+	type fn struct {
+		decl    *ast.FuncDecl
+		factory bool
+	}
+
+	funcs := map[string][]fn{}
+
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			d, ok := decl.(*ast.FuncDecl)
+			if !ok || d.Body == nil {
+				continue
+			}
+
+			funcs[d.Name.Name] = append(funcs[d.Name.Name], fn{d, d.Recv != nil && b2bOnFactory(d)})
+		}
+	}
+
+	// births[name] is true once a function of that name is known to reach a
+	// birth; iterate to a fixed point.
+	births := map[string]bool{}
+
+	for changed := true; changed; {
+		changed = false
+
+		for name, fs := range funcs {
+			if births[name] {
+				continue
+			}
+
+			for _, f := range fs {
+				if b2bReaches(f.decl.Body, births) {
+					births[name], changed = true, true
+
+					break
+				}
+			}
+		}
+	}
+
+	for name, fs := range funcs {
+		for _, f := range fs {
+			if !f.factory || !ast.IsExported(name) || !births[name] || b2bSeamTakes[name] {
+				continue
+			}
+
+			constructors = append(constructors, name)
+
+			if !b2bCalls(f.decl.Body.List[0], b2bSeamTakes) {
+				violations = append(violations, name)
+			}
+		}
+	}
+
+	sort.Strings(constructors)
+	sort.Strings(violations)
+
+	return constructors, violations
 }
 
-// EVERY factory constructor that births a map entity takes the waiting id,
-// and takes it in its FIRST statement -- before anything that can fail. The
-// seam is only as good as its coverage: a constructor added later that calls
-// newMapEntity and skips the take would build a fresh-id entity while a saved
-// id waits, and the next monster would wear a name meant for another. Read
-// from the source, so a new constructor cannot slip past it.
-func TestEveryEntityConstructorTakesTheWaitingID(t *testing.T) {
+// b2bReaches reports whether n calls a birth, an inline uuid.New, or a
+// function already known to reach one.
+func b2bReaches(n ast.Node, births map[string]bool) bool {
+	found := false
+
+	ast.Inspect(n, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || found {
+			return !found
+		}
+
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			found = b2bSeamBirths[fun.Name] || births[fun.Name]
+		case *ast.SelectorExpr:
+			found = b2bIsUUIDNew(fun) || b2bSeamBirths[fun.Sel.Name] || births[fun.Sel.Name]
+		}
+
+		return !found
+	})
+
+	return found
+}
+
+// b2bIsUUIDNew is a call of uuid.New: an id minted inline.
+func b2bIsUUIDNew(sel *ast.SelectorExpr) bool {
+	pkg, ok := sel.X.(*ast.Ident)
+
+	return ok && pkg.Name == "uuid" && (sel.Sel.Name == "New" || sel.Sel.Name == "NewString" || sel.Sel.Name == "NewRandom")
+}
+
+func b2bParseDir(t *testing.T) []*ast.File {
+	t.Helper()
+
 	fset := token.NewFileSet()
 
 	paths, err := filepath.Glob("*.go")
 	require.NoError(t, err)
 
-	var constructors []string
+	var files []*ast.File
 
 	for _, path := range paths {
 		if strings.HasSuffix(path, "_test.go") {
@@ -228,28 +334,159 @@ func TestEveryEntityConstructorTakesTheWaitingID(t *testing.T) {
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		require.NoError(t, err)
 
+		files = append(files, file)
+	}
+
+	return files
+}
+
+// EVERY factory constructor that births a map entity takes the waiting id,
+// and takes it in its FIRST statement -- before anything that can fail. The
+// seam is only as good as its coverage: a constructor added later that
+// reaches newMapEntity and skips the take would build a fresh-id entity while
+// a saved id waits, and the next monster would wear a name meant for another.
+// Read from the source, transitively, so a new constructor cannot slip past
+// it through a helper or an inline uuid.New.
+func TestEveryEntityConstructorTakesTheWaitingID(t *testing.T) {
+	constructors, violations := b2bSeamViolations(t, b2bParseDir(t))
+
+	require.Empty(t, violations, "these make a map entity and do not take the waiting id in their first statement")
+
+	// The positive control: the instrument found the seven it must --
+	// NewObject by its inline uuid.New, NewItem, NewMissile and
+	// NewCastOverlay through NewAnimatedEntity, NewCreature through
+	// newCreature.
+	require.Equal(t, []string{"NewCastOverlay", "NewCreature", "NewItem", "NewMissile", "NewNPC", "NewObject", "NewPlayer"},
+		constructors)
+}
+
+// The instrument's negative controls, kept: a constructor that births its
+// entity through a helper, and one that mints its id inline, are both found
+// and both flagged -- and the same two, taking the id first, are clean.
+func TestTheSeamReaderFindsAHelperAndAnInlineUUID(t *testing.T) {
+	const src = `package d2mapentity
+
+import "github.com/google/uuid"
+
+type MapEntityFactory struct{}
+
+func newMapEntity(x, y int) int { return 0 }
+
+func (f *MapEntityFactory) spendEntityID() {}
+
+func (f *MapEntityFactory) build(x int) int { return newMapEntity(x, x) }
+
+func (f *MapEntityFactory) deeper(x int) int { return f.build(x) }
+
+func (f *MapEntityFactory) NewThroughAHelper(x int) int { return f.deeper(x) }
+
+func (f *MapEntityFactory) NewWithAnInlineID() string { return uuid.New().String() }
+
+func (f *MapEntityFactory) NewTakingFirst(x int) int {
+	f.spendEntityID()
+	return f.deeper(x)
+}
+
+func (f *MapEntityFactory) NewNothing() int { return 1 }
+`
+
+	file, err := parser.ParseFile(token.NewFileSet(), "synthetic.go", src, 0)
+	require.NoError(t, err)
+
+	constructors, violations := b2bSeamViolations(t, []*ast.File{file})
+	require.Equal(t, []string{"NewTakingFirst", "NewThroughAHelper", "NewWithAnInlineID"}, constructors,
+		"a helper chain and an inline uuid.New are both births; a method that births nothing is not a constructor")
+	require.Equal(t, []string{"NewThroughAHelper", "NewWithAnInlineID"}, violations)
+}
+
+// NewNPC and NewCreature WEAR the waiting id; the rest only spend it (the B2b
+// review's B7). No NPC can be BUILT without the MPQs -- NewNPC loads a
+// composite from them, and fails after its take -- so this is read from the
+// source: in each wearer, the value takeEntityID returns reaches the call that
+// makes the entity (newMapEntityWithID, newCreature), and spendEntityID is
+// never called. A NewNPC that spent the id and built the NPC with a fresh one
+// fails here. The runtime proof is B4b's playtest: a deployed squad model --
+// an NPC -- saved and rebuilt must answer to its saved id (docs/m4.6-world-
+// save-notes.md). NewCreature's is also proved at runtime, without MPQs, by
+// TestNextEntityIDIsUsedOnceThenGenerationResumes.
+func TestTheWearersWearTheID(t *testing.T) {
+	wearers := map[string]bool{"NewNPC": false, "NewCreature": false}
+
+	for _, file := range b2bParseDir(t) {
 		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv == nil || fn.Body == nil || !b2bOnFactory(fn) {
+			d, ok := decl.(*ast.FuncDecl)
+			if !ok || d.Body == nil || d.Recv == nil || !b2bOnFactory(d) {
 				continue
 			}
 
-			if !b2bCalls(fn.Body, b2bSeamCallees) {
+			if _, want := wearers[d.Name.Name]; !want {
 				continue
 			}
 
-			constructors = append(constructors, fn.Name.Name)
-
-			first := fn.Body.List[0]
-			require.True(t, b2bCalls(first, map[string]bool{"takeEntityID": true, "spendEntityID": true}),
-				"%s makes a map entity and does not take the waiting id in its first statement", fn.Name.Name)
+			require.False(t, b2bCalls(d.Body, map[string]bool{"spendEntityID": true}), "%s spends the id", d.Name.Name)
+			wearers[d.Name.Name] = b2bWearsTheTake(d.Body)
 		}
 	}
 
-	sort.Strings(constructors)
+	for name, worn := range wearers {
+		require.True(t, worn, "%s does not put the id takeEntityID returns on the entity it makes", name)
+	}
+}
 
-	// The positive control: the instrument found the six it must.
-	require.Equal(t, []string{"NewCastOverlay", "NewCreature", "NewItem", "NewMissile", "NewNPC", "NewPlayer"}, constructors)
+// b2bWearsTheTake reports whether takeEntityID's result reaches a call of
+// newMapEntityWithID or newCreature: passed straight in as an argument, or
+// assigned to a local that is.
+func b2bWearsTheTake(body *ast.BlockStmt) bool {
+	isTake := func(e ast.Expr) bool {
+		call, ok := e.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+
+		return ok && sel.Sel.Name == "takeEntityID"
+	}
+
+	held := map[string]bool{} // locals holding the taken id
+
+	ast.Inspect(body, func(n ast.Node) bool {
+		if as, ok := n.(*ast.AssignStmt); ok && len(as.Lhs) == 1 && len(as.Rhs) == 1 && isTake(as.Rhs[0]) {
+			if id, ok := as.Lhs[0].(*ast.Ident); ok {
+				held[id.Name] = true
+			}
+		}
+
+		return true
+	})
+
+	worn := false
+
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return !worn
+		}
+
+		name := ""
+		if id, ok := call.Fun.(*ast.Ident); ok {
+			name = id.Name
+		}
+
+		if name != "newMapEntityWithID" && name != "newCreature" {
+			return true
+		}
+
+		for _, arg := range call.Args {
+			if id, ok := arg.(*ast.Ident); (ok && held[id.Name]) || isTake(arg) {
+				worn = true
+			}
+		}
+
+		return !worn
+	})
+
+	return worn
 }
 
 func b2bOnFactory(fn *ast.FuncDecl) bool {

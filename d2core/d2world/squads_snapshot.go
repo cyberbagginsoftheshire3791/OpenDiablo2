@@ -57,9 +57,6 @@ type MetersSnapshot struct {
 // playerSquad is the player's squad: born with the owner, never removed.
 const playerSquad = "s:1"
 
-// playerEntity is what the save writes for a record that points at the player.
-const playerEntity = "player"
-
 // Snapshot is the squads as they stand.
 func (s *Squads) Snapshot() SquadsSnapshot {
 	out := SquadsSnapshot{NextID: s.nextID, Selected: s.selected, Squads: make([]SquadSnapshot, 0, len(s.squads))}
@@ -75,7 +72,7 @@ func (s *Squads) Snapshot() SquadsSnapshot {
 		for _, m := range sq.members {
 			member := SquadMemberSnapshot{Entity: m.entity, Health: m.health, Max: m.max, Order: m.order}
 			if sq.id == playerSquad {
-				member.Entity = playerEntity
+				member.Entity = PlayerRef
 			}
 
 			snap.Members = append(snap.Members, member)
@@ -109,8 +106,16 @@ func (m *Meters) snapshot() MetersSnapshot {
 // Every deployed squad gets new meters spending its front model, exactly as
 // addSquad builds one; its models' entities must be on the map with their
 // saved ids (B2b's seam, B4's order).
+//
+// DEPLOYED SQUADS ARE B4b's (D3, 28 Sep 2026). A deployed squad's models are
+// map entities, rebuilt with their saved ids through the next-id seam, which
+// is the hunted-night load's. The quiet-evening load (B4a) restores s:1 only:
+// it refuses a snapshot holding any deployed squad -- a model it cannot
+// rebuild -- until B4b brings the seam to the load. This Restore does not
+// check that the models' entities exist (it has no Resolver); B4b's order
+// rebuilds them before it.
 func (s *Squads) Restore(snap SquadsSnapshot) error {
-	if err := s.checkRestore(snap); err != nil {
+	if err := s.Validate(snap); err != nil {
 		return err
 	}
 
@@ -154,7 +159,12 @@ func (m *Meters) restore(s MetersSnapshot) {
 	m.food, m.water, m.fatigue, m.activity, m.damage = s.Food, s.Water, s.Fatigue, s.Activity, s.Damage
 }
 
-func (s *Squads) checkRestore(snap SquadsSnapshot) error {
+// Validate is Restore's check and nothing else (D4): a fresh owner, s:1
+// first and the player's alone, squads in ordinal order below next_id, a
+// selected squad that is saved, meters in range -- and every model's entity in
+// ONE squad (the B2a review's B2): a map entity is one man, and a model is in
+// one squad at a time.
+func (s *Squads) Validate(snap SquadsSnapshot) error {
 	player, ok := s.squads[playerSquad]
 	if !ok || len(s.squads) != 1 || len(player.members) != 1 {
 		return fmt.Errorf("squads snapshot: restore into a fresh owner holding only %s; this one holds %d squad(s)",
@@ -166,11 +176,23 @@ func (s *Squads) checkRestore(snap SquadsSnapshot) error {
 	}
 
 	seen := map[string]bool{}
+	models := map[string]string{}
 	last := 0
 
 	for _, ss := range snap.Squads {
 		if err := checkSquadSnapshot(ss, last, snap.NextID); err != nil {
 			return err
+		}
+
+		if ss.ID != playerSquad {
+			for _, m := range ss.Members {
+				if other, dup := models[m.Entity]; dup {
+					return fmt.Errorf("squads snapshot: entity %s is a model of %s and of %s; a man is in one squad",
+						m.Entity, other, ss.ID)
+				}
+
+				models[m.Entity] = ss.ID
+			}
 		}
 
 		seen[ss.ID] = true
@@ -206,16 +228,16 @@ func checkSquadSnapshot(ss SquadSnapshot, lastOrdinal, nextID int) error {
 
 	if ss.ID == playerSquad {
 		m := ss.Members
-		if len(m) != 1 || m[0].Entity != playerEntity || m[0].Health != 0 || m[0].Max != 0 || m[0].Order != 0 {
+		if len(m) != 1 || m[0].Entity != PlayerRef || m[0].Health != 0 || m[0].Max != 0 || m[0].Order != 0 {
 			return fmt.Errorf("squads snapshot: %s is the player alone -- one member, entity %q, health and max 0 "+
-				"(his health is his body's), order 0; got %+v", playerSquad, playerEntity, m)
+				"(his health is his body's), order 0; got %+v", playerSquad, PlayerRef, m)
 		}
 
 		return nil
 	}
 
 	for _, m := range ss.Members {
-		if m.Entity == "" || m.Entity == playerEntity || m.Max < 1 || m.Health < 0 || m.Health > m.Max {
+		if m.Entity == "" || m.Entity == PlayerRef || m.Max < 1 || m.Health < 0 || m.Health > m.Max {
 			return fmt.Errorf("squads snapshot: %s has a model %+v that is not a map entity with health in [0, max]", ss.ID, m)
 		}
 	}

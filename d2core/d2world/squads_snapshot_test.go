@@ -122,47 +122,54 @@ func b2aSquadsCopy(t *testing.T, clockSnap ClockSnapshot, snap SquadsSnapshot, h
 	return c, s, nil
 }
 
+// b2aSquadsClasses is every field of the squads, a squad, a model and the
+// meters, labelled.
+func b2aSquadsClasses() []b2aClass {
+	return []b2aClass{
+		{Squads{}, map[string]string{
+			"clock":    "W: the clock the meters read; restored on its own",
+			"dials":    "W: construction dials; the game builds the squads with the defaults",
+			"deployer": "W: how a model becomes a map entity; the load rebuilds entities through B2b's seam",
+			"squads":   "S:squads",
+			"nextID":   "S:next_id",
+			"selected": "S:selected",
+		}},
+		{squad{}, map[string]string{
+			"id":      "S:squads[0].id",
+			"owner":   "S:squads[0].owner",
+			"ordinal": "S:squads[0].ordinal",
+			"meters":  "S:squads[0].meters",
+			"extBody": "D: s:1's body is the player's, bound by BindPlayer on the game's first frame with a player",
+			"members": "S:squads[0].members",
+			"morale":  "S:squads[0].morale",
+		}},
+		{model{}, map[string]string{
+			"entity": "S:squads[1].members[0].entity",
+			"health": "S:squads[1].members[0].health",
+			"max":    "S:squads[1].members[0].max",
+			"order":  "S:squads[1].members[0].order",
+		}},
+		{Meters{}, map[string]string{
+			"cond":     "D: his talents (T3), set again when the load applies his progress; s:1's meters keep theirs",
+			"dials":    "W: construction dials; the squads build every meters with their own",
+			"clock":    "W: the clock the meters read; restored on its own",
+			"body":     "D: the health neglect spends -- s:1's by BindPlayer, a deployed squad's front model by Restore",
+			"food":     "S:squads[0].meters.food",
+			"water":    "S:squads[0].meters.water",
+			"fatigue":  "S:squads[0].meters.fatigue",
+			"activity": "S:squads[0].meters.activity",
+			"damage":   "S:squads[0].meters.damage",
+		}},
+	}
+}
+
 func TestSquadsSnapshotFieldsClassified(t *testing.T) {
 	_, s, _ := b2aSquadsWorld(t)
 	snap := s.Snapshot()
 
-	b2aClassified(t, Squads{}, snap, map[string]string{
-		"clock":    "W: the clock the meters read; restored on its own",
-		"dials":    "W: construction dials; the game builds the squads with the defaults",
-		"deployer": "W: how a model becomes a map entity; the load rebuilds entities through B2b's seam",
-		"squads":   "S:squads",
-		"nextID":   "S:next_id",
-		"selected": "S:selected",
-	})
-
-	b2aClassified(t, squad{}, snap, map[string]string{
-		"id":      "S:squads[0].id",
-		"owner":   "S:squads[0].owner",
-		"ordinal": "S:squads[0].ordinal",
-		"meters":  "S:squads[0].meters",
-		"extBody": "D: s:1's body is the player's, bound by BindPlayer on the game's first frame with a player",
-		"members": "S:squads[0].members",
-		"morale":  "S:squads[0].morale",
-	})
-
-	b2aClassified(t, model{}, snap, map[string]string{
-		"entity": "S:squads[1].members[0].entity",
-		"health": "S:squads[1].members[0].health",
-		"max":    "S:squads[1].members[0].max",
-		"order":  "S:squads[1].members[0].order",
-	})
-
-	b2aClassified(t, Meters{}, snap, map[string]string{
-		"cond":     "D: his talents (T3), set again when the load applies his progress; s:1's meters keep theirs",
-		"dials":    "W: construction dials; the squads build every meters with their own",
-		"clock":    "W: the clock the meters read; restored on its own",
-		"body":     "D: the health neglect spends -- s:1's by BindPlayer, a deployed squad's front model by Restore",
-		"food":     "S:squads[0].meters.food",
-		"water":    "S:squads[0].meters.water",
-		"fatigue":  "S:squads[0].meters.fatigue",
-		"activity": "S:squads[0].meters.activity",
-		"damage":   "S:squads[0].meters.damage",
-	})
+	for _, c := range b2aSquadsClasses() {
+		b2aClassified(t, c.kind, snap, c.fields)
+	}
 }
 
 func TestSquadsSnapshotRoundTrip(t *testing.T) {
@@ -170,9 +177,14 @@ func TestSquadsSnapshotRoundTrip(t *testing.T) {
 
 	snap := b2aThroughJSON(t, s.Snapshot())
 	require.Equal(t, s.Snapshot(), snap, "the snapshot survives JSON exactly")
-	require.Equal(t, playerEntity, snap.Squads[0].Members[0].Entity, "s:1's member is written as the player")
+	require.Equal(t, PlayerRef, snap.Squads[0].Members[0].Entity, "s:1's member is written as the player")
 	require.Positive(t, snap.Squads[0].Meters.Damage, "the fixture owes a fraction of a point on s:1")
 	require.Positive(t, snap.Squads[1].Meters.Damage, "and on s:2")
+
+	// Observability first (the B2a review's C7): the fraction owed is saved,
+	// so the provider reports it.
+	require.Equal(t, snap.Squads[0].Meters.Damage, s.PlayerMeters().HarnessState()["damage_owed"],
+		"the meters provider reports what the save carries")
 
 	playerMeters := s.PlayerMeters()
 	playerMeters.SetConditioning(Conditioning{FatigueRate: 0.5})
@@ -245,6 +257,12 @@ func TestSquadsSnapshotRefusesWhatCannotBe(t *testing.T) {
 		"no activity":              func(s *SquadsSnapshot) { s.Squads[1].Meters.Activity = "" },
 		"a model past its max":     func(s *SquadsSnapshot) { s.Squads[1].Members[0].Health = 51 },
 		"a model with no entity":   func(s *SquadsSnapshot) { s.Squads[1].Members[0].Entity = "" },
+
+		// The B2a review's B2: a map entity is one man, in one squad.
+		"one man in two squads": func(s *SquadsSnapshot) { s.Squads[2].Members[0].Entity = s.Squads[1].Members[0].Entity },
+		"one man twice in a squad": func(s *SquadsSnapshot) {
+			s.Squads[1].Members[1].Entity = s.Squads[1].Members[0].Entity
+		},
 	} {
 		var snap SquadsSnapshot
 
@@ -254,6 +272,12 @@ func TestSquadsSnapshotRefusesWhatCannotBe(t *testing.T) {
 
 		_, _, err := b2aSquadsCopy(t, ClockSnapshot{}, snap, 80, true)
 		require.Error(t, err, name)
+
+		clk := NewClock(DefaultClockDials())
+		fresh := NewSquads(clk, DefaultMeterDials(), &fakeDeployer{})
+		require.Error(t, fresh.Validate(snap), "%s: Validate", name)
+		fresh.Close()
+		clk.Close()
 	}
 
 	// And into an owner that already has a deployed squad: its model would be
@@ -280,7 +304,7 @@ func TestSquadsSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		return b2aSquadsSteps(t, c2, s2), nil
 	}
 
-	b2aSweep(t, snap, ref, nil, try)
+	b2aExercised(t, b2aSweep(t, snap, ref, nil, try), b2aSquadsClasses()...)
 
 	// The fields a Restore checks, lost to a valid other value: a next id one
 	// past the last squad (the fixture recalled its newest, so the saved one is
@@ -291,5 +315,9 @@ func TestSquadsSnapshotEveryFieldIsLoadBearing(t *testing.T) {
 		"an owner renamed":                func(s *SquadsSnapshot) { s.Squads[1].Owner = "b2a" },
 		"a model's max moved":             func(s *SquadsSnapshot) { s.Squads[1].Members[0].Max++ },
 		"s:2 set to watch":                func(s *SquadsSnapshot) { s.Squads[1].Meters.Activity = ActivityWatch },
+
+		// The B2a review's C2: a model's entity was only ever refused
+		// (emptied); another map entity's id is valid, and must show.
+		"a model is another man": func(s *SquadsSnapshot) { s.Squads[1].Members[0].Entity = "m:77" },
 	}, try)
 }

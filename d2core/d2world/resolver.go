@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2saveref"
 )
 
 // PlayerRef is the word a snapshot writes wherever a saved record points at
@@ -14,7 +16,10 @@ import (
 // the resumed game, and every watch and chase that pointed at him would fail
 // to resolve. Every other entity is rebuilt with its saved id (the
 // d2mapentity next-id seam), so he alone needs a word.
-const PlayerRef = "player"
+//
+// It is d2saveref.Player, the one spelling d2world and the entity seam share
+// (the B2b review: it was three).
+const PlayerRef = d2saveref.Player
 
 // Resolver turns the ids a snapshot saved back into the live things they name
 // in the resumed game (M4.6 B2b).

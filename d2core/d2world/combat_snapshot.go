@@ -3,6 +3,8 @@ package d2world
 import (
 	"errors"
 	"fmt"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 )
 
 // ErrCombatFighting is Snapshot's refusal while a fight is running (plan rule
@@ -25,8 +27,8 @@ var ErrCombatFighting = errors.New("combat snapshot refused: a fight is running"
 // them. The pace window (decision and wall seconds, commits, the health it
 // opened on) is reset when a fight ends and is refused the same way.
 type CombatSnapshot struct {
-	NextID int       `json:"next_id"`
-	RNG    b2aStream `json:"rng"`
+	NextID int                `json:"next_id"`
+	RNG    d2rand.StreamState `json:"rng"`
 
 	Started        int `json:"started"`
 	Ended          int `json:"ended"`
@@ -134,7 +136,7 @@ func (c *Combat) Snapshot() (CombatSnapshot, error) {
 	}
 
 	s := CombatSnapshot{
-		NextID: c.nextID, RNG: b2aStreamOf(c.rng),
+		NextID: c.nextID, RNG: d2rand.StateOf(c.rng),
 		Started: c.started, Ended: c.ended, Rounds: c.rounds, Declines: c.declines, Actions: c.actions,
 		CommitsRefused: c.commitsRefused, CommitsByInput: c.commitsByInput, CommitsByField: c.commitsByField,
 		StepsOrdered: c.stepsOrdered, Joined: c.joined, QuickResolved: c.quickResolved,
@@ -199,28 +201,16 @@ func (c *Combat) checkBetweenFights() error {
 }
 
 // Restore puts the saved combat model back between fights, stream included.
-// It is refused during a fight -- a fight is never restored into -- and into a
-// model with experience or paced minutes still to be taken, and is checked
-// whole before anything changes.
+// worldSeed is the saved game's seed: the stream must be the one that game
+// ran combat on (d2rand.StreamState.Check). It is checked whole first
+// (Validate), so a refused snapshot changes nothing.
 //
 // The dials are not restored: the game builds the model with its shipped
 // dials, and the harness's writes to them are test setup. Load order (B4):
 // with the other systems' counters, after the entities are rebuilt; nothing it
 // restores names a live entity except as a record (the last round's blows).
-func (c *Combat) Restore(s CombatSnapshot) error {
-	if c.Fighting() {
-		return fmt.Errorf("combat snapshot: restore refused during a fight")
-	}
-
-	// Nor into a model holding what a fight leaves behind for the game screen,
-	// or an open pace window: the snapshot never carries those, so a restore
-	// over them would leave a resumed game owing experience or minutes that
-	// belong to no saved moment. A fresh model (CreateGame's) holds none.
-	if err := c.checkBetweenFights(); err != nil {
-		return fmt.Errorf("combat snapshot: restore refused: %w", err)
-	}
-
-	if err := checkCombatSnapshot(s); err != nil {
+func (c *Combat) Restore(s CombatSnapshot, worldSeed int64) error {
+	if err := c.Validate(s, worldSeed); err != nil {
 		return err
 	}
 
@@ -264,7 +254,36 @@ func (c *Combat) Restore(s CombatSnapshot) error {
 		})
 	}
 
-	s.RNG.restore(c.rng)
+	s.RNG.RestoreInto(c.rng)
+
+	return nil
+}
+
+// Validate is Restore's check and nothing else (D4). It refuses during a
+// fight -- a fight is never restored into -- and into a model holding what a
+// fight leaves behind for the game screen, or an open pace window: the
+// snapshot never carries those, so a restore over them would leave a resumed
+// game owing experience or minutes that belong to no saved moment (a fresh
+// model, CreateGame's, holds none). Then the snapshot itself: counts, the ids
+// tied to them, and the stream -- on the seed a game seeded worldSeed runs
+// combat on, at no more than d2rand.MaxDraws, so the rising's block swapped in
+// is refused (the B2a review's B1).
+func (c *Combat) Validate(s CombatSnapshot, worldSeed int64) error {
+	if c.Fighting() {
+		return fmt.Errorf("combat snapshot: restore refused during a fight")
+	}
+
+	if err := c.checkBetweenFights(); err != nil {
+		return fmt.Errorf("combat snapshot: restore refused: %w", err)
+	}
+
+	if err := checkCombatSnapshot(s); err != nil {
+		return err
+	}
+
+	if err := s.RNG.Check(worldSeed, d2rand.StreamCombat); err != nil {
+		return fmt.Errorf("combat snapshot: %w", err)
+	}
 
 	return nil
 }

@@ -538,6 +538,16 @@ var Register = []Entry{
 	{sym(pkgWorld, "Clock.Today"), BucketWire, VerdictLive,
 		"Looks up today's generated day-table row for the strip's feast/fast name and moon-phase text. Built for M4.4a; the HUD is its only caller.", ""},
 
+	// M4.6 B2a, C6 (28 Sep 2026): one seed per stream. WIRE because CreateGame
+	// must keep seeding the spawn tables, combat and the rising through it: if
+	// it went harness-only, the three streams would be back on one seed in the
+	// shipped game and a restore that swapped two of them would pass the seed
+	// check that now rests on it (d2rand.StreamState.Check) -- C6 hollow, with
+	// its unit test still green. (Folded here from register_b2a.go at the B2a
+	// review, C4: the register lives in one place.)
+	{sym("d2common/d2rand", "Derive"), BucketWire, VerdictLive,
+		"C6: CreateGame seeds the spawn tables, combat and the rising each on its own stream of the run's seed (the world keeps the seed itself), so no two gameplay streams hand out one sequence.", ""},
+
 	// ---------------------------------------------------------------
 	// DELETE -- empty, and that is the bucket working rather than an
 	// oversight.
@@ -658,16 +668,81 @@ var Register = []Entry{
 	// exactly what its row said it was waiting for: something that ends a
 	// fight.
 
-	// M4.6 B2b -- THE SNAPSHOTS THAT CARRY ENTITY IDS (28 Sep 2026). Fourteen
-	// rows, all DEFERRED and expected DEAD: B2b builds the verbs and tests
-	// them in their own packages, and nothing in the shipped build calls them
-	// yet. The snapshots are for B3's Game.SaveWorld, the restores and the
-	// next-id seam for B4b's hunted-night load. The day either calls one, its
-	// row goes live and the gate goes red until the row moves to wire -- a
-	// save that exists only in a unit test is the hollow class this register
-	// was built for. (The first draft of these rows sat in a file of their
-	// own, appended at init; they are here because the register lives in one
-	// place -- see RegisterMarkdown.)
+	// M4.6 B2a -- THE SNAPSHOTS WITH NO ENTITY IDS (clock, light, squads,
+	// corpses, rising, combat; 28 Sep 2026). All DEFERRED and expected DEAD:
+	// nothing in the shipped build takes a snapshot or restores one yet.
+	// Game.SaveWorld (B3) takes the snapshots; the quiet-evening load (B4a)
+	// validates and restores these -- except Squads, whose deployed models are
+	// map entities and need the next-id seam, so its Restore and Validate are
+	// the hunted-night load's (B4b; D3 of the B2 review, 28 Sep 2026). B4a
+	// restores s:1 through it and refuses a snapshot holding a deployed squad,
+	// so the day B4a calls it the row goes live early, and the burst that
+	// moves it to wire must show that refusal. (These rows sat in a file of
+	// their own, register_b2a.go, appended at init; folded here at the B2a
+	// review, C4, because the register lives in one place -- RegisterMarkdown.)
+	//
+	// Every Restore has a Validate twin (D4): the same checks, changing
+	// nothing, so a load checks every block of the file before it restores
+	// any and a refusal anywhere sets the whole file aside (rule 7).
+	{sym(pkgWorld, "Clock.Snapshot"), BucketDefer, VerdictDead,
+		"The world minutes since the epoch, the clock's whole state. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Clock.Restore"), BucketDefer, VerdictDead,
+		"Puts the clock at the saved minute, right after NewClock and before bindProgress reads it (trap 1). The load calls it.", "M4.6 B4a"},
+	{sym(pkgWorld, "Clock.Validate"), BucketDefer, VerdictDead,
+		"Restore's check alone (D4): the load validates every block before it restores any.", "M4.6 B4a"},
+	{sym(pkgWorld, "Light.Snapshot"), BucketDefer, VerdictDead,
+		"Every light source (no radius: a dial, D2) and the next id. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Light.Restore"), BucketDefer, VerdictDead,
+		"Puts every source back exactly, his carried torch included -- the light model is the truth on load, the kit torch's minutes are ignored, and nothing re-lights through the L path (D1). Radii come from the dials (D2). The load calls it.", "M4.6 B4a"},
+	{sym(pkgWorld, "Light.Validate"), BucketDefer, VerdictDead,
+		"Restore's check alone (D4), including a burn that fits the kind (the B2a review's B2).", "M4.6 B4a"},
+	{sym(pkgWorld, "Squads.Snapshot"), BucketDefer, VerdictDead,
+		"Every squad with its members and meters, s:1's member written as the player. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Squads.Restore"), BucketDefer, VerdictDead,
+		"Puts the squads back into a fresh owner, s:1 in place so the game's meters pointer and his conditioning survive. Deployed squads' models are map entities rebuilt through the next-id seam, so this row is the hunted-night load's (D3); B4a restores s:1 alone and refuses a deployed squad.", "M4.6 B4b"},
+	{sym(pkgWorld, "Squads.Validate"), BucketDefer, VerdictDead,
+		"Restore's check alone (D4), including one man in one squad (the B2a review's B2).", "M4.6 B4b"},
+	{sym(pkgWorld, "Corpses.Snapshot"), BucketDefer, VerdictDead,
+		"Every body in fall order and the three member maps. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Corpses.Restore"), BucketDefer, VerdictDead,
+		"Puts the bodies back into an empty registry WITHOUT the open-count callback (trap 5); the load skips placeTheDead and sets openBodies from the file.", "M4.6 B4a"},
+	{sym(pkgWorld, "Corpses.Validate"), BucketDefer, VerdictDead,
+		"Restore's check alone (D4), accepting only what the machine could have written (the B2a review's B2).", "M4.6 B4a"},
+	{sym(pkgWorld, "Rising.Snapshot"), BucketDefer, VerdictDead,
+		"The accrued soul pressure (not the dial's constant, D2), the band and stage last seen, the counters and the stream. Game.SaveWorld calls it.", "M4.6 B3"},
+	{sym(pkgWorld, "Rising.Restore"), BucketDefer, VerdictDead,
+		"Puts the rising back after the corpses, its stream checked against the game seed and restored through d2rand. The load calls it.", "M4.6 B4a"},
+	{sym(pkgWorld, "Rising.Validate"), BucketDefer, VerdictDead,
+		"Restore's check alone (D4), against the file's corpses block, so it runs before the registry is restored.", "M4.6 B4a"},
+	{sym(pkgWorld, "Combat.Snapshot"), BucketDefer, VerdictDead,
+		"The model between fights: counters, records and the stream. Refuses during a fight (ErrCombatFighting) and while experience or paced minutes wait to be taken. Game.SaveWorld calls it, and its refusal is the save's FIGHTING.", "M4.6 B3"},
+	{sym(pkgWorld, "Combat.Restore"), BucketDefer, VerdictDead,
+		"Puts the model back between fights, its stream checked against the game seed, with the other systems' counters. The load calls it.", "M4.6 B4a"},
+	{sym(pkgWorld, "Combat.Validate"), BucketDefer, VerdictDead,
+		"Restore's check alone (D4).", "M4.6 B4a"},
+
+	// The saved stream's one shape (the B2 review: B2a's and B2b's private
+	// copies made one, in d2rand) and its check. Dead with the snapshots that
+	// write and read it.
+	{sym("d2common/d2rand", "StateOf"), BucketDefer, VerdictDead,
+		"A counted stream's {seed, draws} for the world file. Every Snapshot with a stream calls it.", "M4.6 B3"},
+	{sym("d2common/d2rand", "StreamState.Check"), BucketDefer, VerdictDead,
+		"Refuses a saved stream on another stream's seed (a swapped block) or past MaxDraws (the B2a review's B1). Every Validate with a stream calls it.", "M4.6 B4a"},
+	{sym("d2common/d2rand", "StreamState.RestoreInto"), BucketDefer, VerdictDead,
+		"Puts a stream back through Stream.Restore, rand and counted source together. Every Restore with a stream calls it.", "M4.6 B4a"},
+	{sym("d2common/d2rand", "SeedFor"), BucketDefer, VerdictDead,
+		"The seed a named stream runs on in a game of a given seed: the check's half.", "M4.6 B4a"},
+
+	// M4.6 B2b -- THE SNAPSHOTS THAT CARRY ENTITY IDS (28 Sep 2026). All
+	// DEFERRED and expected DEAD: B2b builds the verbs and tests them in their
+	// own packages, and nothing in the shipped build calls them yet. The
+	// snapshots are for B3's Game.SaveWorld, the restores, their Validate
+	// twins (D4) and the next-id seam for B4b's hunted-night load. The day
+	// either calls one, its row goes live and the gate goes red until the row
+	// moves to wire -- a save that exists only in a unit test is the hollow
+	// class this register was built for. (The first draft of these rows sat in
+	// a file of their own, appended at init; they are here because the
+	// register lives in one place -- see RegisterMarkdown.)
 	{sym(pkgWorld, "Spawns.Snapshot"), BucketDefer, VerdictDead,
 		"The spawn tables' state for the world file, members by entity id with the dead marked gone. Game.SaveWorld calls it.", "M4.6 B3"},
 	{sym(pkgWorld, "Spawns.Restore"), BucketDefer, VerdictDead,
@@ -680,6 +755,12 @@ var Register = []Entry{
 		"Every chase, hunter by entity id and the player as the word player. Game.SaveWorld calls it.", "M4.6 B3"},
 	{sym(pkgWorld, "Pursuit.Restore"), BucketDefer, VerdictDead,
 		"Puts every chase back through a Resolver, solving nothing: the walk is the entity's motion. The hunted-night load calls it.", "M4.6 B4b"},
+	{sym(pkgWorld, "Spawns.Validate"), BucketDefer, VerdictDead,
+		"Restore's check alone (D4), through the same Resolver, stream seed included.", "M4.6 B4b"},
+	{sym(pkgWorld, "Notice.Validate"), BucketDefer, VerdictDead,
+		"Restore's check alone (D4), through the same Resolver.", "M4.6 B4b"},
+	{sym(pkgWorld, "Pursuit.Validate"), BucketDefer, VerdictDead,
+		"Restore's check alone (D4), through the same Resolver.", "M4.6 B4b"},
 	{sym(pkgMapEngine, "MapEngine.SetNextEntityID"), BucketDefer, VerdictDead,
 		"The next-id seam through the engine: the next entity construction takes a saved id (NewNPC and NewCreature wear it, the rest spend it); an id already on the map is refused. The load rebuilds every saved entity through it.", "M4.6 B4b"},
 	{sym(pkgEntity, "MapEntityFactory.PendingEntityID"), BucketDefer, VerdictDead,

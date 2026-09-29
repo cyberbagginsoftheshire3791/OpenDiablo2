@@ -73,9 +73,11 @@ func (b *Corpse) Door() bool {
 	return b.Class == CorpseHuman && (b.State == CorpseFresh || b.State == CorpseHasty || b.State == CorpseDowned)
 }
 
-// Corpses is the registry. It is world state for one session: M4.6 owns the
-// world save, and "load last save means a new dawn" (12 Sep), so bodies do not
-// survive a reload.
+// Corpses is the registry. It is world state, and the world save carries it
+// whole (M4.6 B2a, CorpsesSnapshot): every body in fall order and the three
+// member maps, restored WITHOUT the open-count callback. (Until M4.6 this said
+// bodies do not survive a reload -- the 12 Sep interim rule, "load last save
+// means a new dawn", which Josh's 25 Sep ruling retired.)
 type Corpses struct {
 	byID    map[string]*Corpse
 	order   []string

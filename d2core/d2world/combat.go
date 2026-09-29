@@ -1865,6 +1865,12 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		"ended_routed":       c.endedRouted,
 		"ended_dawn":         c.endedDawn,
 
+		// M4.6 B2a review, C7 (observability first): the verb of the round a
+		// fight ended on, when his own blow ended it -- finishRound never ran
+		// to clear it, so the next fight's first round row reads it unless he
+		// acts first. The save carries it, so the provider reports it.
+		"last_action_verb": c.lastActionVerb,
+
 		// Step 5's three facts about what the fight DID, all reported whether
 		// or not one is running. joined is the only evidence a reinforcement
 		// ever arrived -- the participant list grows and shrinks, and a
