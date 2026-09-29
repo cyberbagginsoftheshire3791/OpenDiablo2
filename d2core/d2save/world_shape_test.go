@@ -51,7 +51,13 @@ var b3ShapeHashes = map[int]string{
 	1: "3f7fb4b1b510b802fd0c7c6f2da0dd5c0f161921275ba0b26a81cd490c97087a",
 	// The raid's R1 (29 Sep 2026): combat.clock and rng.combat_clock. The
 	// merge with M4.6 B4b recomputes this once, if B4b changed a shape too.
-	2: "fa82243b4569ce29eb4b2a5c7179f36489d4a90accf8800fa1fe61c586b71565",
+	// (It did not: fa82243b4569ce29eb4b2a5c7179f36489d4a90accf8800fa1fe61c586b71565.)
+	//
+	// AMENDED, NOT BUMPED (M4.6 BUG-87, 29 Sep 2026): entities[].motion
+	// gained action_at -- a held action's frame and the time into it. The
+	// milestone's rule allows amending version 2's shape until saving is a
+	// player's (B5), and B5 had not merged (world.go, Version).
+	2: "be2baeb5d220d42c0d27a1c4402cb3851ce09562e20cc9a49ee2df5af81c14d4",
 }
 
 var b3UpdateGolden = flag.Bool("update-golden", false, "write testdata/world-v<Version>.json from the fixture and print the shape hash")

@@ -551,7 +551,7 @@ var Register = []Entry{
 	{sym(pkgWorld, "Clock.MinuteOfDay"), BucketWire, VerdictLive,
 		"The HUD refreshes the strip when int(MinuteOfDay) changes -- once a world minute, not every frame -- and Clock.HoursToDusk derives from it. Wire since M4.4a.", ""},
 	{sym(pkgWorld, "Clock.HoursToDusk"), BucketWire, VerdictLive,
-		"The strip's time-to-sunset readout: world hours to the clock's DuskStart (19:45). Built for M4.4a; the HUD is its only caller.", ""},
+		"The strip's time-to-sunset readout: world hours to the clock's DuskStart (19:45), from the start of the current world minute since M4.6 BUG-88 (so a game resumed mid-minute reads the saved game's value). Built for M4.4a; the HUD is its only caller.", ""},
 	{sym(pkgWorld, "Clock.Today"), BucketWire, VerdictLive,
 		"Looks up today's generated day-table row for the strip's feast/fast name and moon-phase text. Built for M4.4a; the HUD is its only caller.", ""},
 
@@ -838,12 +838,15 @@ var Register = []Entry{
 	// that is not a refusal.
 	{sym(pkgEntity, "mapEntity.halt"), BucketWire, VerdictLive,
 		"A monster's death ends its walk where it begins, without turning it (Creature.StartAction, NPC.StartAction, from Game.Animate as the resolver lays a monster dead). If it went dark a monster slain on its way in would walk on through its death, and its corpse come to rest away from where Combat.fallCorpse recorded the fall (BUG-75).", ""},
-	{sym(pkgScreen, "heldInFile"), BucketWire, VerdictLive,
-		"The load refuses an entity saved while it held an action -- ENTITY for a monster, NATIVES for a villager -- which it could only play again from its first frame (BUG-76). Game.rebuildEntity and Game.rekeyNatives call it.", ""},
 	{sym(pkgScreen, "Game.loadNote"), BucketWire, VerdictLive,
 		"What the load did that is not a refusal, in the load report and the log: a villager the file lacks taken off the map (BUG-79), an entity whose name this build gives otherwise (BUG-80). Game.rekeyNatives and Game.rebuildEntity call it.", ""},
-	{sym(pkgScreen, "Game.heldAction"), BucketDefer, VerdictHarnessOnly,
-		"The save's refusal while a monster or villager holds an action -- a swing, a blow taken, a death -- whose frame the file cannot carry (BUG-76). Game.SaveWorld reaches it through fightUnsettled.", "M4.6 B5"},
+	// M4.6 BUG-87 (29 Sep 2026): a held action is saved at its frame, and
+	// the two refusals above (heldInFile at the load, Game.heldAction at the
+	// save, BUG-76) are gone with their rows.
+	{sym(pkgAsset, "Composite.SetProgress"), BucketWire, VerdictLive,
+		"The load puts a rebuilt or re-keyed NPC's held action -- a swing, a blow taken, a death -- back at its saved frame and time into it (NPC.RestoreMotion, from Game.rebuildEntity and Game.rekeyNatives). If it went dark a monster saved half-way through its death would fall again from the first frame and lie later than the saved one (BUG-76's case, which the save no longer refuses).", ""},
+	{sym(pkgAsset, "Animation.SetProgress"), BucketWire, VerdictLive,
+		"The same for a creature's held action, on its sheet (Creature.RestoreMotion), and for each layer of an NPC's composite (Composite.SetProgress).", ""},
 	{sym(pkgScreen, "gameSpawner.Snapshot"), BucketDefer, VerdictHarnessOnly,
 		"The arrival count, which sets where the next pack comes from. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgScreen, "gameSpawner.Restore"), BucketWire, VerdictLive,

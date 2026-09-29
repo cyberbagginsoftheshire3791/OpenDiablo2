@@ -109,12 +109,15 @@ import (
 //	8  RULE 4 (B4b): he is walked, saved mid-stride, and loaded; he stands
 //	   where he was saved, and every system, entity and part is the saved
 //	   moment's but his walk (sameWorldExcept, hisWalk).
-//	6i A SAVE IN THE DEATH WINDOW (the B4b review fixes, BUG-75 and BUG-76;
+//	6i A SAVE IN THE DEATH WINDOW (the B4b review fixes, BUG-75, and BUG-87;
 //	   the review's real-game probe, run after act 8): T resumed with B4b's
 //	   quick-resolving dials, the pack's fight quick-resolved; each member it
-//	   slew lies where his fall was recorded; the save is refused while any
-//	   still plays his death, then made the moment the last lies, and that
-//	   moment resumes exactly and runs on the same.
+//	   slew lies where his fall was recorded; the save is made at once, on
+//	   the first try, while the slain still play their deaths, each saved at
+//	   its frame; and that moment resumes exactly -- the deaths at their
+//	   frames -- runs on the same through the deaths' ends, and each slain
+//	   lies where the saved game's lies. (BUG-76 had refused the save until
+//	   the last lay; BUG-87 carries the deaths instead.)
 //
 // THE COMPARISON (BUG-58 fixed, 29 Sep 2026): the digest's resume_digest is
 // every part a resumed game must reproduce -- not sim (the harness's clock)
@@ -1593,20 +1596,24 @@ func huntedActs6h8(t *testing.T, s *session, ev evening) {
 
 // deathWindowAct6i is THE REVIEW'S REAL-GAME B1 PROBE AS AN ACT (the B4b
 // review fixes, BUG-75 and BUG-76; the probe was TestZZRevMidDeath, on
-// evening-2). The review resumed T with the fight after it quick-resolved,
-// stepped to the frame the quick resolve fired and saved there, while the
-// slain still played their deaths: sixty frames later two opportunists lay
-// dead in the saved game and were still falling in the resumed one. And a
-// member quick-resolved while he walked in walked on through his death, his
-// corpse coming to rest away from where the resolver recorded his fall.
+// evening-2), made a save mid-death by BUG-87. The review resumed T with the
+// fight after it quick-resolved, stepped to the frame the quick resolve fired
+// and saved there, while the slain still played their deaths: sixty frames
+// later two opportunists lay dead in the saved game and were still falling in
+// the resumed one. And a member quick-resolved while he walked in walked on
+// through his death, his corpse coming to rest away from where the resolver
+// recorded his fall. The B4b review fixes stopped the walk (BUG-75) and
+// refused the save until the last lay (BUG-76); BUG-87 saves the deaths at
+// their frames instead.
 //
 // Here, on the same T (the evening's file beside his act-3 files, as act 4
 // loads it) with B4b's dials (quickResolvedDials): the quick resolve fires;
-// every member it slew lies where his fall was recorded -- at once, and still
-// when the save is made (BUG-75); the save is refused while any of them is
-// still playing his death, and names it (BUG-76); it is made the moment the
-// last lies, with none of them holding an action; and that moment T' resumes
-// exactly, and sixty frames on is the same world (S_R0 = S_T', S_R = S_U').
+// every member it slew lies where his fall was recorded (BUG-75); the save is
+// made at once, on the first try, with the slain still playing their deaths
+// -- each in the file at its frame; and that moment T' resumes exactly (S_R0
+// = S_T', the deaths at their frames), is the same world 20 frames on (S_R =
+// S_M', the deaths still playing) and 120 frames on (S_R = S_U', every slain
+// a corpse), and each resumed corpse lies where the saved game's lies.
 func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 	t.Helper()
 
@@ -1659,56 +1666,54 @@ func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 
 	lieWhereTheyFell(t, s, "act 6i (the first look after the quick resolve)", slain)
 
-	var refusals []string
-
-	saved := -1
-
-	for i := 0; i < 240 && saved < 0; i++ {
-		if e := s.callErr("strigoi_save_game", map[string]any{}); e == "" {
-			saved = i
-		} else {
-			refusals = append(refusals, e)
-			s.call("strigoi_step", map[string]any{"frames": 1})
-		}
+	// BUG-87: the save is made at once, with the slain still falling.
+	if e := s.callErr("strigoi_save_game", map[string]any{}); e != "" {
+		t.Fatalf("RED act 6i: the save in the death window is made on the first try (BUG-87): refused %q", e)
 	}
-
-	if saved < 0 {
-		t.Fatalf("act 6i: the save is made once the slain lie: refused %d times, last %q", len(refusals), refusals[len(refusals)-1])
-	}
-
-	dying := 0
-	for _, r := range refusals {
-		if strings.Contains(r, "FIGHTING") && strings.Contains(r, "is still playing its death") {
-			dying++
-		}
-	}
-
-	if dying == 0 {
-		t.Fatalf("act 6i: a save while the slain still fall is refused, naming the death: %v", refusals)
-	}
-
-	kinds := map[string]int{}
-	for _, r := range refusals {
-		kinds[regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f-]{27}`).ReplaceAllString(r, "<id>")]++
-	}
-
-	t.Logf("act 6i: the refusals, by reason: %v", kinds)
 
 	sT := snapWorld(t, s)
+
+	dying := map[string]string{}
 
 	for id := range slain {
 		var e map[string]any
 		_ = json.Unmarshal(sT.Entities[id], &e)
 
-		if st := sub(e, "state"); str(st, "held") != "" || !flag(t, st, "corpse") {
-			t.Fatalf("act 6i: at T' the slain %s lies dead, holding no action: %v", id, st)
+		if st := sub(e, "state"); str(st, "held") != "" {
+			if _, ok := st["held_frame"]; !ok {
+				t.Fatalf("act 6i: at T' the slain %s holds %s and reports no frame: %v", id, str(st, "held"), st)
+			}
+
+			dying[id] = fmt.Sprintf("%s at frame %v + %v s", str(st, "held"), st["held_frame"], st["held_elapsed"])
 		}
+	}
+
+	if len(dying) == 0 {
+		t.Fatalf("act 6i: at T' at least one slain is still playing his death, so the save is made mid-death (%d slain, none holding an action)", len(slain))
 	}
 
 	lieWhereTheyFell(t, s, "act 6i (at T')", slain)
 
-	s.call("strigoi_step", map[string]any{"frames": 60})
+	s.call("strigoi_step", map[string]any{"frames": 20})
+	sM := snapWorld(t, s)
+
+	s.call("strigoi_step", map[string]any{"frames": 100})
 	sU := snapWorld(t, s)
+
+	corpses := map[string][2]float64{}
+
+	for id := range slain {
+		var e map[string]any
+		_ = json.Unmarshal(sU.Entities[id], &e)
+
+		if st := sub(e, "state"); str(st, "held") != "" || !flag(t, st, "corpse") {
+			t.Fatalf("act 6i: 120 frames after T' the slain %s lies dead, holding no action: %v", id, st)
+		}
+
+		corpses[id] = [2]float64{num(e, "x"), num(e, "y")}
+	}
+
+	lieWhereTheyFell(t, s, "act 6i (T'+120, the saved game)", slain)
 
 	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
 	awaitMenu(t, s)
@@ -1722,14 +1727,17 @@ func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 		setField(s, d.System, d.Field, d.Value)
 	}
 
-	sameWorld(t, "act 6i (S_R0 = S_T', a save the moment the slain lie)", sT, snapWorld(t, s))
+	sameWorld(t, "act 6i (S_R0 = S_T', saved mid-death: each death at its frame)", sT, snapWorld(t, s))
 
-	s.call("strigoi_step", map[string]any{"frames": 60})
-	sameWorld(t, "act 6i (S_R = S_U', sixty frames on)", sU, snapWorld(t, s))
-	lieWhereTheyFell(t, s, "act 6i (resumed)", slain)
+	s.call("strigoi_step", map[string]any{"frames": 20})
+	sameWorld(t, "act 6i (S_R = S_M', twenty frames on, the deaths still playing)", sM, snapWorld(t, s))
 
-	t.Logf("act 6i PASS: the quick resolve after %d frames slew %d; the save was refused %d times (%d on a death still playing) "+
-		"and made %d frames later; each lies where he fell; S_R0 = S_T' and S_R = S_U'", frames, len(slain), len(refusals), dying, saved)
+	s.call("strigoi_step", map[string]any{"frames": 100})
+	sameWorld(t, "act 6i (S_R = S_U', 120 frames on, every slain a corpse)", sU, snapWorld(t, s))
+	lieWhereTheyFell(t, s, "act 6i (resumed: where the saved game's lie)", corpses)
+
+	t.Logf("act 6i PASS: the quick resolve after %d frames slew %d; the save was made at once, on the first try, with %d still falling (%v); "+
+		"S_R0 = S_T', S_R = S_M' twenty frames on and S_R = S_U' 120 frames on; each lies where he fell, in both games", frames, len(slain), len(dying), dying)
 }
 
 // lieWhereTheyFell requires each slain entity to stand exactly where his fall

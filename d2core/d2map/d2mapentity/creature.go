@@ -289,6 +289,7 @@ func (c *Creature) HarnessState() map[string]interface{} {
 		state["held"] = ""
 	}
 
+	c.harnessHeldAt(state)
 	c.harnessMotion(state)
 
 	return state

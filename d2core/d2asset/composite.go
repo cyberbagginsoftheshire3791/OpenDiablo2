@@ -230,6 +230,65 @@ func (c *Composite) SetCurrentFrame(frame int) {
 	}
 }
 
+// Progress is how far the current mode has played: the frame it is on, the
+// time already spent on that frame (the sub-frame progress Advance carries),
+// and how many times it has played through. It is what decides the mode's
+// next frame and when it has played through -- an NPC's held action ends on
+// the first Advance that makes played 1 (M4.6 BUG-87: a held action is saved
+// at its frame). (0, 0, 0) with no mode.
+//
+// The layers keep their own frame and time: they are what is DRAWN, not what
+// decides anything, and a turn puts every layer back to its first frame
+// (Animation.SetDirection) while the mode's frame runs on.
+func (c *Composite) Progress() (frame int, elapsed float64, played int) {
+	if c.mode == nil {
+		return 0, 0, 0
+	}
+
+	return c.mode.frameIndex, c.mode.lastFrameTime, c.mode.playedCount
+}
+
+// SetProgress puts the current mode at frame, with elapsed seconds already
+// spent on it, ON ITS FIRST PLAY (played 0): Progress's restore, for a held
+// action, which is always on its first play -- it ends the Advance its play
+// count reaches 1 (M4.6 BUG-87). Each layer is put at the same point of its
+// own sheet (the frame modulo its own count), which is where a layer that has
+// advanced in step with the mode since it began stands; the direction must be
+// set first, since a turn puts the layers back to their first frame. It
+// refuses a frame the mode does not have, or no mode, changing nothing.
+func (c *Composite) SetProgress(frame int, elapsed float64) error {
+	if c.mode == nil {
+		return errors.New("composite: no mode to set the progress of")
+	}
+
+	if frame < 0 || frame >= c.mode.frameCount {
+		return fmt.Errorf("composite: frame %d of a mode of %d", frame, c.mode.frameCount)
+	}
+
+	c.mode.frameIndex = frame
+	c.mode.lastFrameTime = elapsed
+	c.mode.playedCount = 0
+
+	for _, layer := range c.mode.layers {
+		if layer == nil {
+			continue
+		}
+
+		n := layer.GetFrameCount()
+		if n <= 0 {
+			continue
+		}
+
+		layer.ResetPlayedCount()
+
+		if err := layer.SetProgress(frame%n, elapsed); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (c *Composite) resetPlayedCount() {
 	if c.mode != nil {
 		c.mode.playedCount = 0

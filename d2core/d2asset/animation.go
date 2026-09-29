@@ -391,6 +391,32 @@ func (a *Animation) ResetPlayedCount() {
 	a.playedCount = 0
 }
 
+// Progress is where the animation is in its play: the frame it shows, and the
+// time already spent on that frame -- the sub-frame progress Advance carries
+// from one call to the next (lastFrameTime). With the play count, the
+// direction and the sheet, it is everything that decides the animation's
+// next frame (M4.6 BUG-87: a held action is saved at its frame, and a
+// creature's held action ends when its sheet has played through once).
+func (a *Animation) Progress() (frame int, elapsed float64) {
+	return a.frameIndex, a.lastFrameTime
+}
+
+// SetProgress puts the animation at frame, with elapsed seconds already spent
+// on it: Progress's restore (M4.6 BUG-87). It refuses a frame the current
+// direction does not have, changing nothing. The play count is its own
+// (ResetPlayedCount), and so is the direction -- SetDirection puts the frame
+// back to 0, so a caller sets the direction first.
+func (a *Animation) SetProgress(frame int, elapsed float64) error {
+	if frame < 0 || frame >= a.GetFrameCount() {
+		return errors.New("invalid frame index")
+	}
+
+	a.frameIndex = frame
+	a.lastFrameTime = elapsed
+
+	return nil
+}
+
 // SetEffect sets the draw effect for the animation
 func (a *Animation) SetEffect(e d2enum.DrawEffect) {
 	a.effect = e

@@ -226,8 +226,19 @@ func (c *Clock) Stage() Stage {
 // 11 Sep, the gap being below the one-decimal-hour display precision). It is
 // 17.0 at the dawn epoch (02:45) and wraps to the following day's dusk
 // overnight, so the readout is never negative.
+//
+// IT COUNTS FROM THE START OF THE CURRENT WORLD MINUTE (M4.6 BUG-88, 29 Sep
+// 2026), the minute the HUD refreshes the strip on (int(MinuteOfDay)). It
+// used to count from the exact moment it was read, and the HUD reads it on
+// the frame the strip refreshes -- the first frame of a new minute, or a
+// resumed game's first frame, part-way through the minute it was saved in --
+// so a saved and a resumed game held two samples of one minute, and they
+// could round to two tenths of an hour: 16.85 h saved ("Sunset in 16.9h"),
+// 16.84 h resumed ("16.8h"), measured by the BUG-87 burst. Read from the
+// minute's start, one minute is one value. The readout is a tenth of an hour;
+// the floor moves it by less than a sixtieth.
 func (c *Clock) HoursToDusk() float64 {
-	d := math.Mod(c.dials.DuskStart-c.MinuteOfDay(), minutesPerDay)
+	d := math.Mod(c.dials.DuskStart-math.Floor(c.MinuteOfDay()), minutesPerDay)
 	if d < 0 {
 		d += minutesPerDay
 	}

@@ -1,7 +1,6 @@
 package d2gamescreen
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,7 +13,7 @@ import (
 )
 
 // THE B4b REVIEW FIXES (29 Sep 2026), in a unit game: the review's B1 (a
-// death playing at the save), C2 (a villager the file lacks), C3 (a renamed
+// death playing at the save; since BUG-87 saved and resumed at its frame), C2 (a villager the file lacks), C3 (a renamed
 // bestiary entry), C7 (a risen man walking at T) and the merge scout's
 // BUG-86 (the village's sound in the digest's world part). The playtest
 // halves are TestSaveResume's act 6i, TestASlainWalkerLiesWhereHeFell and
@@ -28,19 +27,22 @@ func b4bfixStep(v *Game, n int) {
 	}
 }
 
-// B1 (BUG-75, BUG-76): THE REVIEW'S UNIT PROBE, TestZZRevDeathMidWalk, AS A
+// B1 (BUG-75) AND BUG-87: THE REVIEW'S UNIT PROBE, TestZZRevDeathMidWalk, AS A
 // TEST. A wolf walking in is slain (his body at 0, the death animated, as the
 // quick resolve leaves him) and the game is run 0, 3 and 8 frames into his
 // death. The review found him walking on through it, and a save made then
 // resumed him falling again from the first frame, his corpse 0.6 and 1.6
-// sub-tiles further on than the saved game's. Now:
+// sub-tiles further on than the saved game's. The B4b review fixes stopped
+// the walk (BUG-75) and refused the save while the death played (BUG-76);
+// since BUG-87 the save is made, and carries the death at its frame. Now:
 //   - his walk ends where his death begins (BUG-75): no route, no target
 //     ahead, no velocity, and he does not move through the death;
-//   - no save is made while his death plays (BUG-76): refused FIGHTING,
-//     naming it, and no file is touched;
-//   - once he lies, the save is made, and the resumed game is the saved one
-//     at once and run on -- his corpse where his death began, in both.
-func TestADeathIsNeitherWalkedNorSavedHalfPlayed(t *testing.T) {
+//   - the save is made while his death plays (BUG-87), and the file holds
+//     the death at the frame and the time into it that his sheet shows;
+//   - the resumed game is the saved one at once, the death at that frame,
+//     and on every frame after: the two deaths end on the same frame, and
+//     each corpse lies where his death began; and run on, it is the same.
+func TestADeathSavedHalfPlayedResumesAtItsFrame(t *testing.T) {
 	for _, before := range []int{0, 3, 8} {
 		saved, save := b4bGame(t)
 		b4Busy(t, saved)
@@ -64,24 +66,15 @@ func TestADeathIsNeitherWalkedNorSavedHalfPlayed(t *testing.T) {
 		b4bfixStep(saved, before)
 		require.Equal(t, fell, w.MotionSnapshot().Pos, "[before=%d] BUG-75: he does not walk while he dies", before)
 
-		// BUG-76: no save while the death plays.
-		refusedTo := filepath.Join(filepath.Dir(save), "refused.world.json")
-		b3Refused(t, saved, SaveRefusedFighting, SaveOptions{To: refusedTo})
-
-		_, err := saved.SaveWorld(SaveOptions{To: refusedTo})
-		require.Contains(t, err.Error(), w.ID(), "[before=%d] the refusal names him", before)
-		require.Contains(t, err.Error(), "death", "[before=%d] and his death", before)
-		require.NoFileExists(t, refusedTo, "[before=%d] a refusal touches no file", before)
-
-		frames := 0
-		for ; frames < 200 && !w.MotionSnapshot().Corpse; frames++ {
-			b4bfixStep(saved, 1)
-		}
-
-		require.True(t, w.MotionSnapshot().Corpse, "[before=%d] the death played through", before)
-		require.Equal(t, fell, w.MotionSnapshot().Pos, "[before=%d] his corpse lies where his death began", before)
-
+		// BUG-87: saved while the death plays, at its frame.
 		wf, atT := b4File(t, saved, save, "t.world.json")
+
+		atFrame := w.MotionSnapshot().ActionAt
+		require.NotNil(t, atFrame, "[before=%d] he is still dying at the save", before)
+
+		inFile := b87Entity(t, wf, w.ID())
+		require.Equal(t, "death", inFile.Motion.Action, "[before=%d] the file holds his death", before)
+		require.Equal(t, atFrame, inFile.Motion.ActionAt, "[before=%d] at its frame", before)
 
 		resumed, _ := b4bGame(t)
 		require.NoError(t, b4Load(t, resumed, wf))
@@ -90,6 +83,19 @@ func TestADeathIsNeitherWalkedNorSavedHalfPlayed(t *testing.T) {
 		require.Equal(t, b4Moment(t, atT), b4Moment(t, atR0), "[before=%d] S_R0 = S_T", before)
 
 		e := resumed.gameClient.MapEngine.Entities()[w.ID()].(*d2mapentity.Creature)
+		require.Equal(t, w.MotionSnapshot(), e.MotionSnapshot(), "[before=%d] his death resumed at its frame", before)
+
+		frames := 0
+		for ; frames < 200 && !w.MotionSnapshot().Corpse; frames++ {
+			b4bfixStep(saved, 1)
+			b4bfixStep(resumed, 1)
+			require.Equal(t, w.MotionSnapshot(), e.MotionSnapshot(), "[before=%d] %d frames after the save", before, frames+1)
+		}
+
+		require.True(t, w.MotionSnapshot().Corpse, "[before=%d] the death played through", before)
+		require.True(t, e.MotionSnapshot().Corpse, "[before=%d] and the resumed one on the same frame", before)
+		require.Equal(t, fell, w.MotionSnapshot().Pos, "[before=%d] his corpse lies where his death began", before)
+		require.Equal(t, fell, e.MotionSnapshot().Pos, "[before=%d] and so does the resumed one", before)
 
 		b4bfixStep(saved, 100)
 		b4bfixStep(resumed, 100)
@@ -97,33 +103,102 @@ func TestADeathIsNeitherWalkedNorSavedHalfPlayed(t *testing.T) {
 		_, atU := b4File(t, saved, save, "u.world.json")
 		_, atR := b4File(t, resumed, save, "r.world.json")
 		require.Equal(t, b4Moment(t, atU), b4Moment(t, atR), "[before=%d] S_R = S_U", before)
-		require.Equal(t, fell, e.MotionSnapshot().Pos, "[before=%d] the resumed corpse lies where he fell", before)
-		require.Equal(t, fell, w.MotionSnapshot().Pos, "[before=%d] and so does the saved one", before)
 
-		t.Logf("[before=%d] refused for %d frames of his death; then saved and resumed, the corpse at %v in both", before, frames, fell)
+		t.Logf("[before=%d] saved at frame %d of his death (%v s into it); both lay %d frames after the save, at %v", before,
+			atFrame.Frame, atFrame.Elapsed, frames, fell)
 	}
 }
 
-// A FILE THAT HOLDS AN ACTION IS REFUSED (BUG-76): the save never writes one,
-// so a file that does was not written by this build's save -- and resumed, the
-// action would play again from its first frame. A monster's is refused ENTITY
-// and a villager's NATIVES, before anything is rebuilt or re-keyed.
-func TestAFileHoldingAnActionIsRefused(t *testing.T) {
+// b87Entity is the file's entity id.
+func b87Entity(t *testing.T, w *d2save.World, id string) d2save.Entity {
+	t.Helper()
+
+	for _, e := range w.Entities {
+		if e.ID == id {
+			return e
+		}
+	}
+
+	t.Fatalf("%s is not in the file", id)
+
+	return d2save.Entity{}
+}
+
+// A SWING AND A BLOW TAKEN, SAVED HALF-PLAYED, RESUME AT THEIR FRAME (BUG-87),
+// on a monster walking in and on the villager (a native, re-keyed in place):
+// the save is made, the file holds each at its frame, and the resumed game is
+// the saved one at once and on every frame after -- each action ending on the
+// same frame, back to its idle or its walk -- and run on, S_R = S_U.
+func TestASwingAndABlowSavedHalfPlayedResumeAtTheirFrame(t *testing.T) {
+	for _, in := range []int{0, 4, 11} {
+		saved, save := b4bGame(t)
+		night := b4bHunt(t, saved)
+
+		saved.Animate(night.walker.ID(), d2world.ActSwing)
+		saved.Animate(night.wounded.ID(), d2world.ActHit)
+		saved.Animate(night.villager.ID(), d2world.ActHit)
+		b4bfixStep(saved, in)
+
+		held := map[string]string{night.walker.ID(): "attack", night.wounded.ID(): "hit", night.villager.ID(): "hit"}
+
+		wf, atT := b4File(t, saved, save, "t.world.json")
+
+		for id, action := range held {
+			mo := saved.gameClient.MapEngine.Entities()[id].(*d2mapentity.Creature).MotionSnapshot()
+			require.Equal(t, action, mo.Action, "[in=%d] %s holds its %s at the save", in, id, action)
+			require.Equal(t, mo.ActionAt, b87Entity(t, wf, id).Motion.ActionAt, "[in=%d] %s: the file holds it at its frame", in, id)
+		}
+
+		resumed, _ := b4bGame(t)
+		require.NoError(t, b4Load(t, resumed, wf))
+
+		_, atR0 := b4File(t, resumed, save, "r0.world.json")
+		require.Equal(t, b4Moment(t, atT), b4Moment(t, atR0), "[in=%d] S_R0 = S_T", in)
+
+		ended := map[string]int{}
+
+		for f := 1; f <= 60; f++ {
+			b4bfixStep(saved, 1)
+			b4bfixStep(resumed, 1)
+
+			for id := range held {
+				a := saved.gameClient.MapEngine.Entities()[id].(*d2mapentity.Creature).MotionSnapshot()
+				b := resumed.gameClient.MapEngine.Entities()[id].(*d2mapentity.Creature).MotionSnapshot()
+				require.Equal(t, a, b, "[in=%d] %s, %d frames after the save", in, id, f)
+
+				if a.Action == "" && ended[id] == 0 {
+					ended[id] = f
+				}
+			}
+		}
+
+		for id, action := range held {
+			require.Positive(t, ended[id], "[in=%d] %s's %s ended within the run", in, id, action)
+		}
+
+		_, atU := b4File(t, saved, save, "u.world.json")
+		_, atR := b4File(t, resumed, save, "r.world.json")
+		require.Equal(t, b4Moment(t, atU), b4Moment(t, atR), "[in=%d] S_R = S_U", in)
+
+		t.Logf("[in=%d] saved with a bite, a blow taken and the villager's blow held; each ended on the same frame in both games: %v", in, ended)
+	}
+}
+
+// A FILE THAT HOLDS AN ACTION RESUMES IT AT ITS FRAME (BUG-87; the B4b review
+// fixes refused such a file, BUG-76): a monster's death, a monster's bite and
+// the villager's blow, each written into the file at a frame part-way through
+// its sheet, are resumed there -- each entity's motion is the file's, read
+// back equal. And a held action the file carries no frame for, or at a frame
+// its sheet does not have, is refused where its motion is restored -- ENTITY
+// for a monster, NATIVES for a villager -- nothing left waiting in the seam
+// (and, as every refusal does, the whole game torn down: step 8).
+func TestAFileHoldingAnActionResumesItAtItsFrame(t *testing.T) {
 	saved, save := b4bGame(t)
 	b4bHunt(t, saved)
 
 	good, _ := b4File(t, saved, save, "t.world.json")
 
-	for _, c := range []struct {
-		name   string
-		native bool
-		action string
-		code   string
-	}{
-		{"a monster saved while his death played", false, "death", LoadRefusedEntity},
-		{"a monster saved mid-bite", false, "attack", LoadRefusedEntity},
-		{"a villager saved mid-blow", true, "hit", LoadRefusedNatives},
-	} {
+	edit := func(native bool, action string, at *d2mapentity.ActionProgress) (*d2save.World, string) {
 		data, err := d2save.Encode(good, nil)
 		require.NoError(t, err)
 
@@ -131,12 +206,56 @@ func TestAFileHoldingAnActionIsRefused(t *testing.T) {
 		require.NoError(t, err)
 
 		for i := range w.Entities {
-			if w.Entities[i].Native == c.native && !w.Entities[i].Motion.Corpse {
-				w.Entities[i].Motion.Action = c.action
+			if w.Entities[i].Native == native && !w.Entities[i].Motion.Corpse {
+				w.Entities[i].Motion.Mode, w.Entities[i].Motion.Action, w.Entities[i].Motion.ActionAt = action, action, at
 
-				break
+				return w, w.Entities[i].ID
 			}
 		}
+
+		t.Fatal("no such entity in the file")
+
+		return nil, ""
+	}
+
+	for _, c := range []struct {
+		name   string
+		native bool
+		action string
+		at     d2mapentity.ActionProgress
+	}{
+		{"a monster saved while his death played", false, "death", d2mapentity.ActionProgress{Frame: 5, Elapsed: 0.02}},
+		{"a monster saved mid-bite", false, "attack", d2mapentity.ActionProgress{Frame: 3, Elapsed: 0.05}},
+		{"a villager saved mid-blow", true, "hit", d2mapentity.ActionProgress{Frame: 2, Elapsed: 0.1}},
+	} {
+		at := c.at
+		w, id := edit(c.native, c.action, &at)
+
+		v, _ := b4bGame(t)
+		require.NoError(t, b4Load(t, v, w), c.name)
+
+		got := v.gameClient.MapEngine.Entities()[id].(*d2mapentity.Creature).MotionSnapshot()
+		require.Equal(t, b87Entity(t, w, id).Motion, got, "%s: resumed at its frame", c.name)
+	}
+
+	for _, c := range []struct {
+		name   string
+		native bool
+		at     *d2mapentity.ActionProgress
+		code   string
+		why    string
+	}{
+		{"a monster's death with no frame", false, nil, LoadRefusedEntity, "carries no frame"},
+		{"a monster's death at a frame its sheet lacks", false, &d2mapentity.ActionProgress{Frame: 99}, LoadRefusedEntity, "no such frame"},
+		{"a villager's blow with no frame", true, nil, LoadRefusedNatives, "carries no frame"},
+		{"a villager's blow at a frame its sheet lacks", true, &d2mapentity.ActionProgress{Frame: 99}, LoadRefusedNatives, "no such frame"},
+	} {
+		action := "death"
+		if c.native {
+			action = "hit"
+		}
+
+		w, _ := edit(c.native, action, c.at)
 
 		v, _ := b4bGame(t)
 		require.Nil(t, v.restoreClock(w), c.name)
@@ -144,7 +263,7 @@ func TestAFileHoldingAnActionIsRefused(t *testing.T) {
 		r := v.checkLoad(w)
 		require.NotNil(t, r, "%s: refused", c.name)
 		require.Equal(t, c.code, r.Code, "%s: %v", c.name, r)
-		require.Contains(t, r.Detail, "played", c.name)
+		require.Contains(t, r.Detail, c.why, c.name)
 
 		_, waiting := v.gameClient.MapEngine.PendingEntityID()
 		require.False(t, waiting, "%s: nothing is left waiting in the seam", c.name)

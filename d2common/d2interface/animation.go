@@ -38,6 +38,8 @@ type Animation interface {
 	SetColorMod(colorMod color.Color)
 	GetPlayedCount() int
 	ResetPlayedCount()
+	Progress() (frame int, elapsed float64)
+	SetProgress(frame int, elapsed float64) error
 	SetEffect(effect d2enum.DrawEffect)
 	SetShadow(shadow bool)
 }

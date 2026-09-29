@@ -950,6 +950,10 @@ func (h *HUD) refreshClockStrip() {
 	h.lastStripMinute = minute
 
 	year, month, day := h.clock.Date()
+
+	// Counted from the START of this minute (Clock.HoursToDusk; M4.6
+	// BUG-88), so a game resumed part-way through the minute it was saved in
+	// reads what the saved game read.
 	h.stripHoursToDusk = h.clock.HoursToDusk()
 	h.stripDate = fmt.Sprintf("%s %d %s %d", h.clock.Weekday(), day, strigoiMonthName(month), year)
 

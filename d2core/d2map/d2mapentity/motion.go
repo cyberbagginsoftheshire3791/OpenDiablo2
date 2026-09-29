@@ -30,23 +30,31 @@ import (
 //     (rule 4, below).
 //   - drawLayer is never set on these kinds; highlight is a render flag
 //     cleared every frame.
-//   - an animation's frame. An action being played through (Action) restarts
-//     from its first frame. B2b wrote that a creature saved while its DEATH is
-//     held "plays the death again from its first frame after a load and then
-//     lies as a corpse, as it would have". The B4b review measured otherwise
-//     (its B1): the death ends later than it would have, and a monster slain
-//     on its way in walked on through its death, so its corpse came to rest
-//     further along its route. So (the B4b review fixes, BUG-75 and BUG-76)
-//     a death now ends the walk where it begins (mapEntity.halt), and THE
-//     GAME NEVER SAVES A HELD ACTION: Game.SaveWorld refuses while any
-//     monster or villager holds one, as it refuses while his own swing
-//     plays, and the load refuses a file that holds one. Restoring a held
-//     action here stays exact about everything but the frame, and is
-//     unit-tested; no save or load of the game's asks it to. Its callback
-//     (finished / onHeldFinished) is not carried either: the game starts
+//   - the frame of an animation that is NOT a held action (idle, walk, an
+//     NPC's NU or WL, a corpse's Dead pose): it restarts from its first
+//     frame. Nothing in the world reads it -- it is what is drawn -- but a
+//     villager's patrol pause, which only villagers take (below).
+//   - a held action's callback (finished / onHeldFinished): the game starts
 //     every action with a nil one (npc_body.go), so there is nothing to lose.
 //   - an NPC's patrol (Paths, path index, repetitions): only villagers
 //     patrol, and villagers are rebuilt by the map (build plan §1).
+//
+// A HELD ACTION IS CARRIED AT ITS FRAME (M4.6 BUG-87, 29 Sep 2026): Action
+// is the mode being played through, and ActionAt how far it has played -- the
+// frame and the time already spent on it -- so a swing, a blow taken or a
+// death saved half-played resumes at that frame and ends on the frame the
+// saved one would have. The history: B2b carried the mode and not the frame,
+// and wrote that a creature saved while its DEATH was held "plays the death
+// again from its first frame after a load and then lies as a corpse, as it
+// would have". The B4b review measured otherwise (its B1): the death ended
+// later than it would have, and a monster slain on its way in walked on
+// through its death. So (the B4b review fixes, BUG-75 and BUG-76) a death
+// ends the walk where it begins (mapEntity.halt), and the save refused while
+// any monster or villager held an action. The B4b x R1 merge measured what
+// that refusal cost (BUG-87): a fight he is not in -- a monster and a
+// villager -- held an action on 92-93% of its frames, so the refusal lasted
+// the whole fight.
+// Carrying the frame made the refusal unnecessary, and it is gone.
 //
 // RULE 4 IS THE PLAYER'S ALONE: "a walk you were in the middle of does not
 // continue". Monsters, the risen and deployed squads keep their motion, and
@@ -68,9 +76,36 @@ type Motion struct {
 	// "" when none. A death being played becomes a corpse when it ends.
 	Action string `json:"action,omitempty"`
 
+	// ActionAt is how far the held action has played (M4.6 BUG-87): present
+	// exactly when Action is. The facing is Dir, above.
+	ActionAt *ActionProgress `json:"action_at,omitempty"`
+
 	// Corpse is the Dead pose, held for the rest of the run. A corpse does
 	// not walk.
 	Corpse bool `json:"corpse,omitempty"`
+}
+
+// ActionProgress is how far a held action has played: the frame of its sheet
+// (a creature's) or of its mode (an NPC's composite) it is on, and the time,
+// in seconds, already spent on that frame -- the sub-frame progress the
+// animation carries from one Advance to the next. With the mode (Action) and
+// the facing (Dir) it is the whole of a held action's state:
+//
+//   - the play count is not carried: a held action is always on its first
+//     play -- it ends on the Advance that makes the count 1 (Creature.Advance,
+//     NPC.Advance) -- so it is 0 at every moment a save can see;
+//   - the speed, the frame count and whether the sheet loops are the art's,
+//     rebuilt with the entity;
+//   - what happens when it ends is the mode's: back to idle (a creature) or
+//     Neutral (an NPC), or, for a death, the Dead pose held for the rest of
+//     the run.
+//
+// Elapsed is kept as the animation holds it, bit for bit (a JSON float64
+// round-trips exactly), and may be a hair below zero: Advance subtracts whole
+// frames from a sum of frame times.
+type ActionProgress struct {
+	Frame   int     `json:"frame"`
+	Elapsed float64 `json:"elapsed"`
 }
 
 // check refuses a Motion no running entity could have had. d2vector panics
@@ -93,6 +128,16 @@ func (mo Motion) check() error {
 
 	if mo.Corpse && mo.Action != "" {
 		return fmt.Errorf("d2mapentity: motion: a corpse holds no action (%q)", mo.Action)
+	}
+
+	// A held action is carried at its frame, and only a held action is.
+	switch {
+	case mo.Action != "" && mo.ActionAt == nil:
+		return fmt.Errorf("d2mapentity: motion: the held %q carries no frame", mo.Action)
+	case mo.Action == "" && mo.ActionAt != nil:
+		return fmt.Errorf("d2mapentity: motion: a frame (%+v) and no held action", *mo.ActionAt)
+	case mo.ActionAt != nil && (mo.ActionAt.Frame < 0 || math.IsNaN(mo.ActionAt.Elapsed) || math.IsInf(mo.ActionAt.Elapsed, 0)):
+		return fmt.Errorf("d2mapentity: motion: the held %q at %+v is not a point of a play", mo.Action, *mo.ActionAt)
 	}
 
 	return nil
@@ -140,13 +185,20 @@ func (c *Creature) MotionSnapshot() Motion {
 
 	if c.held {
 		mo.Action = string(c.heldMode)
+		mo.ActionAt = &ActionProgress{}
+
+		if c.animation != nil {
+			mo.ActionAt.Frame, mo.ActionAt.Elapsed = c.animation.Progress()
+		}
 	}
 
 	return mo
 }
 
-// RestoreMotion puts the creature's walk and pose back. It refuses, and
-// changes nothing, when the Motion is not one a creature could have had.
+// RestoreMotion puts the creature's walk and pose back, a held action at its
+// saved frame. It refuses, and changes nothing, when the Motion is not one a
+// creature could have had -- a held action at a frame its sheet does not have
+// among them.
 func (c *Creature) RestoreMotion(mo Motion) error {
 	if err := mo.check(); err != nil {
 		return err
@@ -162,6 +214,17 @@ func (c *Creature) RestoreMotion(mo Motion) error {
 	if mo.Action != "" {
 		if action, ok = creatureModeNamed(mo.Action); !ok {
 			return fmt.Errorf("d2mapentity: motion: %q is not a creature mode", mo.Action)
+		}
+
+		// The sheet the action plays on (idle's when it has none of its
+		// own, as setMode will land) must have the saved frame.
+		sheet := c.animations[action]
+		if sheet == nil {
+			sheet = c.animations[creatureIdle]
+		}
+
+		if sheet == nil || mo.ActionAt.Frame >= sheet.GetFrameCount() {
+			return fmt.Errorf("d2mapentity: motion: the held %q at frame %d: its sheet has no such frame", mo.Action, mo.ActionAt.Frame)
 		}
 	}
 
@@ -182,6 +245,15 @@ func (c *Creature) RestoreMotion(mo Motion) error {
 	}
 
 	if action != "" {
+		// AT ITS SAVED FRAME, NOT ITS FIRST (BUG-87): setMode rewound the
+		// sheet, reset its play count and set its facing, which puts the
+		// frame back to 0; the saved frame and the time already spent on it
+		// go on after, so the action ends on the frame the saved one would
+		// have.
+		if err := c.animation.SetProgress(mo.ActionAt.Frame, mo.ActionAt.Elapsed); err != nil {
+			return err
+		}
+
 		c.held, c.heldMode = true, action
 	}
 
@@ -210,16 +282,23 @@ func (v *NPC) MotionSnapshot() Motion {
 
 	if v.held {
 		mo.Action = v.heldMode.String()
+		mo.ActionAt = &ActionProgress{}
+
+		if v.composite != nil {
+			mo.ActionAt.Frame, mo.ActionAt.Elapsed, _ = v.composite.Progress()
+		}
 	}
 
 	return mo
 }
 
-// RestoreMotion puts the NPC's walk and pose back. A Motion no NPC could have
-// had is refused before anything changes; a composite that cannot load the
-// saved mode is reported after the walk is set (it loaded that mode once, so
-// that is a missing file, not a bad save). An NPC with no composite (a
-// test's) takes the walk and has no animation to pose.
+// RestoreMotion puts the NPC's walk and pose back, a held action at its saved
+// frame. A Motion no NPC could have had is refused before anything changes; a
+// composite that cannot load the saved mode, or whose mode has no such frame
+// as the held action's, is reported after the walk is set (the mode's frame
+// count is known only once it is loaded, and it loaded that mode once, so
+// that is a missing or changed file, not a bad save). An NPC with no
+// composite (a test's) takes the walk and has no animation to pose.
 func (v *NPC) RestoreMotion(mo Motion) error {
 	if err := mo.check(); err != nil {
 		return err
@@ -256,6 +335,16 @@ func (v *NPC) RestoreMotion(mo Motion) error {
 		}
 
 		v.composite.SetDirection(mo.Dir)
+
+		// A held action AT ITS SAVED FRAME, NOT ITS FIRST (BUG-87), set after
+		// the facing (a turn puts the layers back to their first frame), on
+		// its first play: SetMode short-circuits on the mode the composite is
+		// already in, so its play count is set here, not trusted.
+		if mo.Action != "" {
+			if err := v.composite.SetProgress(mo.ActionAt.Frame, mo.ActionAt.Elapsed); err != nil {
+				return err
+			}
+		}
 	}
 
 	if mo.Action != "" {

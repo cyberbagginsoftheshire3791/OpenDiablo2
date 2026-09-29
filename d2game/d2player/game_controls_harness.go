@@ -403,12 +403,14 @@ func (g *GameControls) handIconsReport() map[string]interface{} {
 //     through the camera -- the same easing moves what is under it, and a
 //     real mouse on the desktop moves the point itself (BUG-15's class).
 //
-// And clock_strip_hours_to_dusk, a CACHE: the clock's time to sunset sampled
-// on whichever frame the strip last refreshed (once a world minute), so a game
-// resumed mid-minute holds another sample of the same minute. The clock itself
-// is the clock provider's, and clock_strip_text -- what the player reads,
-// formatted from it -- stays (M4.6 B4a, measured: 16.4656 saved, 16.46
-// resumed, one strip text).
+// (clock_strip_hours_to_dusk went here too until M4.6 BUG-88: it was sampled
+// on whichever frame the strip last refreshed, so a game resumed mid-minute
+// held another sample of the same minute -- B4a measured 16.4656 saved and
+// 16.46 resumed, one strip text, but the BUG-87 burst found a save whose two
+// samples rounded to two texts, 16.85 h and 16.84 h, "16.9h" and "16.8h".
+// Since BUG-88 the strip samples the start of the minute it shows, so the
+// saved and the resumed game hold one sample, and it is compared again, with
+// clock_strip_text.)
 //
 // Two fields go to the process part: torch_verbs counts this process's torch
 // verbs (d2gamescreen classifies it D, "every process starts it at 0"), and
@@ -436,7 +438,7 @@ func (g *GameControls) HarnessDigest() (world, process map[string]interface{}) {
 	}
 
 	for _, key := range []string{
-		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button", "clock_strip_hours_to_dusk",
+		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button",
 		"talent_cells", "journal_notice",
 	} {
 		delete(world, key)

@@ -152,7 +152,7 @@ func TestCreatureMotionEveryFieldIsSeen(t *testing.T) {
 		{"speed lost", false, func(mo *Motion) { mo.Speed = 0 }},
 		{"dir altered", false, func(mo *Motion) { mo.Dir = (mo.Dir + 3) % 8 }},
 		{"mode altered", false, func(mo *Motion) { mo.Mode = "idle" }},
-		{"an action added", false, func(mo *Motion) { mo.Action = "attack" }},
+		{"an action added", false, func(mo *Motion) { mo.Action, mo.ActionAt = "attack", &ActionProgress{Frame: 3} }},
 		{"corpse added", false, func(mo *Motion) { mo.Corpse = true }},
 		{"mode lost", true, func(mo *Motion) { mo.Mode = "" }},
 		{"mode unknown", true, func(mo *Motion) { mo.Mode = "WL" }},
@@ -160,7 +160,14 @@ func TestCreatureMotionEveryFieldIsSeen(t *testing.T) {
 		{"speed negative", true, func(mo *Motion) { mo.Speed = -1 }},
 		{"pos NaN", true, func(mo *Motion) { mo.Pos[0] = math.NaN() }},
 		{"waypoint infinite", true, func(mo *Motion) { mo.Path[0][1] = math.Inf(1) }},
-		{"corpse with an action", true, func(mo *Motion) { mo.Corpse, mo.Action = true, "attack" }},
+		{"corpse with an action", true, func(mo *Motion) { mo.Corpse, mo.Action, mo.ActionAt = true, "attack", &ActionProgress{} }},
+		// BUG-87: a held action is carried at its frame, and only a held
+		// action is.
+		{"an action with no frame", true, func(mo *Motion) { mo.Action = "attack" }},
+		{"a frame and no action", true, func(mo *Motion) { mo.ActionAt = &ActionProgress{Frame: 2} }},
+		{"a frame the sheet lacks", true, func(mo *Motion) { mo.Action, mo.ActionAt = "attack", &ActionProgress{Frame: 10} }},
+		{"a negative frame", true, func(mo *Motion) { mo.Action, mo.ActionAt = "attack", &ActionProgress{Frame: -1} }},
+		{"a NaN time into a frame", true, func(mo *Motion) { mo.Action, mo.ActionAt = "attack", &ActionProgress{Elapsed: math.NaN()} }},
 	} {
 		changed := mo
 		changed.Path = append([][2]float64(nil), mo.Path...)
@@ -223,24 +230,178 @@ func TestCreatureMotionVelocityIsOnlySeenBeforeTheNextStep(t *testing.T) {
 	require.Equal(t, want[1:], got[1:], "and never again: the first step recomputes it")
 }
 
-// A dog saved the moment it starts a bite resumes the bite and finishes it on
-// the same frame. (Saved MID-bite, it would restart the bite: the frame is
-// not carried -- see Motion.)
-func TestCreatureMotionResumesAnActionFromItsStart(t *testing.T) {
+// b2bTick is the harness's frame, 1/60 s: the tick every playtest steps, and
+// the one BUG-87's measurements were made at. (b2bFrame, 25 fps, is B2b's.)
+const b2bTick = 1.0 / 60
+
+// b2bRunAt is b2bRun at another tick.
+func b2bRunAt(t *testing.T, c *Creature, n int, tick float64) []string {
+	t.Helper()
+
+	out := []string{b2bSeen(t, c)}
+
+	for i := 0; i < n; i++ {
+		c.Advance(tick)
+		out = append(out, b2bSeen(t, c))
+	}
+
+	return out
+}
+
+// b2bHeldActions are the three actions the fight plays on a monster
+// (Game.Animate): a swing, a blow taken, a death.
+var b2bHeldActions = []struct {
+	name string
+	mode d2enum.MonsterAnimationMode
+	held creatureMode
+}{
+	{"a bite", d2enum.MonsterAnimationModeAttack1, creatureAttack},
+	{"a blow taken", d2enum.MonsterAnimationModeGetHit, creatureHit},
+	{"a death", d2enum.MonsterAnimationModeDeath, creatureDeath},
+}
+
+// b2bHeldTicks is how many ticks a fresh walker holds the action.
+func b2bHeldTicks(t *testing.T, mode d2enum.MonsterAnimationMode) int {
+	t.Helper()
+
+	c := b2bWalker(t)
+	require.NoError(t, c.StartAction(mode, nil))
+
+	n := 0
+	for ; n < 1000 && c.held; n++ {
+		c.Advance(b2bTick)
+	}
+
+	require.False(t, c.held)
+
+	return n
+}
+
+// A HELD ACTION RESUMES AT ITS FRAME (M4.6 BUG-87). A dog saved mid-bite,
+// mid-blow and mid-death -- on its first tick, a tick in, a sheet frame in,
+// half-way, and on the last tick before it ends -- is rebuilt in another
+// factory from the motion read back through JSON, and is the saved dog on
+// every frame after: the same sheet frame, the same time into it (both in its
+// harness state), the action ending on the same frame -- back to idle and on
+// walking, or the Dead pose and a corpse where it fell -- and the same steps.
+// (B2b's version of this test could only save the FIRST tick: the frame was
+// not carried, and a dog saved mid-bite restarted the bite.)
+func TestCreatureMotionResumesAHeldActionAtItsFrame(t *testing.T) {
+	for _, act := range b2bHeldActions {
+		ticks := b2bHeldTicks(t, act.mode)
+
+		for _, in := range []int{0, 1, 7, ticks / 2, ticks - 1} {
+			a := b2bWalker(t)
+			require.NoError(t, a.StartAction(act.mode, nil))
+
+			for i := 0; i < in; i++ {
+				a.Advance(b2bTick)
+			}
+
+			require.True(t, a.held, "%s, %d ticks in: still held", act.name, in)
+
+			mo := a.MotionSnapshot()
+			require.Equal(t, string(act.held), mo.Action)
+			require.NotNil(t, mo.ActionAt, "%s: a held action is carried at its frame", act.name)
+
+			frame, elapsed := a.animation.Progress()
+			require.Equal(t, ActionProgress{Frame: frame, Elapsed: elapsed}, *mo.ActionAt)
+
+			b, err := b2bRebuild(t, a.ID(), mo)
+			require.NoError(t, err, "%s, %d ticks in", act.name, in)
+			require.Equal(t, mo, b.MotionSnapshot(), "%s, %d ticks in: read back equal", act.name, in)
+
+			want := b2bRunAt(t, a, ticks+60, b2bTick)
+			got := b2bRunAt(t, b, ticks+60, b2bTick)
+			require.Equal(t, -1, b2bFirstDiff(want, got), "%s, %d ticks in: the rebuilt dog left the saved one", act.name, in)
+
+			// The run covered the action's end: a finished action ends
+			// identically.
+			require.False(t, a.held, "%s: the action ended within the run", act.name)
+			require.Equal(t, act.mode == d2enum.MonsterAnimationModeDeath, a.corpse, "%s", act.name)
+			require.Equal(t, a.corpse, b.corpse)
+		}
+
+		t.Logf("%s: held %d ticks at 1/60 s; resumed at its first, second, seventh, middle and last tick, each the saved dog to the end", act.name, ticks)
+	}
+}
+
+// A HELD ACTION IS ALWAYS ON ITS FIRST PLAY (BUG-87), which is why the play
+// count is not carried: Advance ends the action on the tick the count reaches
+// 1, so at every tick a save can see, a held action's count is 0.
+func TestAHeldActionIsAlwaysOnItsFirstPlay(t *testing.T) {
+	for _, act := range b2bHeldActions {
+		c := b2bWalker(t)
+		require.NoError(t, c.StartAction(act.mode, nil))
+
+		for i := 0; i < 1000 && c.held; i++ {
+			require.Zero(t, c.animation.GetPlayedCount(), "%s, tick %d", act.name, i)
+			c.Advance(b2bTick)
+		}
+
+		require.False(t, c.held)
+	}
+}
+
+// EVERY PART OF A HELD ACTION, LOST OR ALTERED, IS SEEN -- or refused before
+// anything changes (BUG-87). The dog is mid-bite, its sheet a frame in and
+// part-way through it; each mutation of the held action, rebuilt, must leave
+// the saved dog's path or be refused.
+func TestCreatureHeldMotionEveryFieldIsSeen(t *testing.T) {
 	a := b2bWalker(t)
 	require.NoError(t, a.StartAction(d2enum.MonsterAnimationModeAttack1, nil))
 
+	for i := 0; i < 9; i++ {
+		a.Advance(b2bTick)
+	}
+
 	mo := a.MotionSnapshot()
-	require.Equal(t, "attack", mo.Action)
+	require.Positive(t, mo.ActionAt.Frame, "a frame in")
+	require.Positive(t, mo.ActionAt.Elapsed, "and part-way through it")
 
-	b, err := b2bRebuild(t, a.ID(), mo)
-	require.NoError(t, err)
-	require.True(t, b.held)
+	want := b2bRunAt(t, b2bMust(b2bRebuild(t, a.ID(), mo)), 120, b2bTick)
 
-	want := b2bRun(t, a, 60)
-	got := b2bRun(t, b, 60)
-	require.Equal(t, -1, b2bFirstDiff(want, got))
-	require.False(t, a.held, "the bite finished within the run")
+	for _, m := range []struct {
+		name   string
+		refuse bool
+		mutate func(*Motion)
+	}{
+		{"the frame put back to the first", false, func(mo *Motion) { mo.ActionAt.Frame = 0 }},
+		{"the frame moved on", false, func(mo *Motion) { mo.ActionAt.Frame++ }},
+		{"the time into the frame lost", false, func(mo *Motion) { mo.ActionAt.Elapsed = 0 }},
+		{"the time into the frame a hair off", false, func(mo *Motion) { mo.ActionAt.Elapsed = math.Nextafter(mo.ActionAt.Elapsed, 1) }},
+		{"another action", false, func(mo *Motion) { mo.Action = "hit" }},
+		{"the held action dropped", false, func(mo *Motion) { mo.Action, mo.ActionAt = "", nil }},
+		{"the frame dropped", true, func(mo *Motion) { mo.ActionAt = nil }},
+		{"a frame the sheet lacks", true, func(mo *Motion) { mo.ActionAt.Frame = 10 }},
+	} {
+		changed := mo
+		changed.Path = append([][2]float64(nil), mo.Path...)
+		at := *mo.ActionAt
+		changed.ActionAt = &at
+		m.mutate(&changed)
+
+		f := b2bFactory(t)
+		require.NoError(t, f.SetNextEntityID(a.ID()))
+		c := b2bNewDog(t, f, 0, 0)
+		before := b2bSeen(t, c)
+
+		err := c.RestoreMotion(changed)
+
+		if m.refuse {
+			require.Error(t, err, m.name)
+			require.Equal(t, before, b2bSeen(t, c), "%s: a refused motion must change nothing", m.name)
+			t.Logf("%-36s refused: %v", m.name, err)
+
+			continue
+		}
+
+		require.NoError(t, err, m.name)
+
+		at2 := b2bFirstDiff(want, b2bRunAt(t, c, 120, b2bTick))
+		require.GreaterOrEqual(t, at2, 0, "%s: LOST WITHOUT A TRACE", m.name)
+		t.Logf("%-36s diverged at tick %d", m.name, at2)
+	}
 }
 
 // A dead dog comes back dead: in the Dead pose, and it does not walk.
@@ -291,7 +452,9 @@ func TestNPCMotionRoundTripsAndStepsInStep(t *testing.T) {
 	}
 
 	require.Error(t, b.RestoreMotion(Motion{Speed: -1}), "refused")
-	require.Error(t, b.RestoreMotion(Motion{Action: "ZZ"}), "an unknown held mode is refused")
+	require.Error(t, b.RestoreMotion(Motion{Action: "ZZ", ActionAt: &ActionProgress{}}), "an unknown held mode is refused")
+	require.Error(t, b.RestoreMotion(Motion{Action: "A1"}), "a held mode with no frame is refused (BUG-87)")
+	require.Error(t, b.RestoreMotion(Motion{ActionAt: &ActionProgress{}}), "a frame with no held mode is refused (BUG-87)")
 }
 
 // An NPC's pose flags -- a corpse, a held action -- round-trip, and each one
@@ -316,7 +479,7 @@ func TestNPCMotionCarriesItsPose(t *testing.T) {
 		require.Equal(t, mo, b.MotionSnapshot(), "a re-save writes what was loaded")
 
 		lost := mo
-		lost.Corpse, lost.Action = false, ""
+		lost.Corpse, lost.Action, lost.ActionAt = false, "", nil
 
 		c := &NPC{mapEntity: newMapEntity(0, 0)}
 		require.NoError(t, c.RestoreMotion(lost))
@@ -331,7 +494,9 @@ func TestNPCMotionCarriesItsPose(t *testing.T) {
 
 	held := &NPC{mapEntity: newMapEntity(0, 0), held: true, heldMode: d2enum.MonsterAnimationModeAttack1}
 	require.Equal(t, "A1", held.MotionSnapshot().Action, "the held mode is written by its two letters")
-	require.Error(t, (&NPC{mapEntity: newMapEntity(0, 0)}).RestoreMotion(Motion{Corpse: true, Action: "A1"}),
+	require.Equal(t, &ActionProgress{}, held.MotionSnapshot().ActionAt,
+		"and carried at its frame: with no composite (no MPQs), the first (BUG-87; d2asset's TestACompositeResumesAtItsProgress carries the composite)")
+	require.Error(t, (&NPC{mapEntity: newMapEntity(0, 0)}).RestoreMotion(Motion{Corpse: true, Action: "A1", ActionAt: &ActionProgress{}}),
 		"a corpse holds no action")
 }
 
