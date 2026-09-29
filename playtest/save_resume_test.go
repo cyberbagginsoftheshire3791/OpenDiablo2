@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestSaveResume is M4.6's acceptance test (build plan section 4): the save
@@ -44,6 +45,21 @@ import (
 //	7e  dead: DEAD, every file untouched -- and the death put his sidecar
 //	    back to the LAST SAVE's bytes, not to the moment he entered, because
 //	    the save re-takes the death screen's copy.
+//
+// The B3 review (29 Sep 2026) adds, in the same acts:
+//
+//	7a  the file names its hero -- the .od2's heroName and heroType -- and
+//	    carries his facing and stamina, each what the player reports; he is
+//	    walked a step first, so he faces somewhere other than where he
+//	    started. The sidecar file is of the world file's generation.
+//	7c  before the save, the sidecar a fight's end rewrote still carries
+//	    7a's generation; at least one pack member is checked in the entity
+//	    list; the .od2's .bak is 7a's .od2, byte for byte.
+//	7d  to is fenced: relative, inside the repository, or one of his own
+//	    files is BAD_ARGUMENT and writes nothing; world_path is absolute.
+//	7f  (run before 7e, which kills him) the slain dog taken off the map by
+//	    the harness takes his body with him (body_dropped), and the next save
+//	    is made -- it used to fail INTERNAL on a body with no entity.
 func TestSaveResume(t *testing.T) {
 	s := start(t)
 
@@ -65,6 +81,11 @@ func TestSaveResume(t *testing.T) {
 	// Acts 1-6: B4 (the resume). Act 8: B4. Act 9: B6.
 
 	// --- 7a: a quiet save writes all three, and moves nothing --------------
+	// A step first, so the facing the file must carry is not the one he was
+	// made with (the B3 review, B6): one neighbour, and back if that one left
+	// him facing 0.
+	faceSomewhere(t, s)
+
 	out := saveUnmoved(t, s, "7a", map[string]any{})
 
 	if got := str(out, "world_path"); got != world {
@@ -79,6 +100,13 @@ func TestSaveResume(t *testing.T) {
 
 	first := mustRead(t, world)
 	file := worldFile(t, "7a", first)
+
+	// One moment in both files (B7): the sidecar file is of this save's
+	// generation, before it is compared whole.
+	gen7a := str(file, "saved_at")
+	if got := generationOf(t, mustRead(t, sidecar)); got != gen7a || gen7a == "" {
+		t.Fatalf("7a: the sidecar is of this save's generation %q; it carries %q", gen7a, got)
+	}
 
 	sameSidecar(t, "7a", file, mustRead(t, sidecar))
 
@@ -97,7 +125,21 @@ func TestSaveResume(t *testing.T) {
 		t.Fatalf("7a: the hero's health is saved: file %v, player %v", hero["health"], sub(p, "state")["health"])
 	}
 
-	t.Logf("7a PASS: %d bytes, %d blocks, the sidecar embedded byte for byte, digest unmoved", len(first), len(file))
+	// Who he is, which way he faces, how much wind he has (A1, B6).
+	firstOD2 := mustRead(t, save)
+	sameHero(t, "7a", hero, firstOD2)
+
+	if num(hero, "facing") != num(sub(p, "state"), "direction") || num(hero, "facing") == 0 {
+		t.Fatalf("7a: his facing is saved as he faces, and he was walked to face somewhere: file %v, player %v",
+			hero["facing"], sub(p, "state")["direction"])
+	}
+
+	if num(hero, "stamina") != num(sub(p, "state"), "stamina") {
+		t.Fatalf("7a: his stamina is saved: file %v, player %v", hero["stamina"], sub(p, "state")["stamina"])
+	}
+
+	t.Logf("7a PASS: %d bytes, %d blocks, the sidecar embedded byte for byte, digest unmoved; %s the %s facing %v with %v stamina, generation %s",
+		len(first), len(file), str(hero, "name"), str(hero, "class"), hero["facing"], hero["stamina"], gen7a)
 
 	// --- 7b: mid-fight, FIGHTING, and nothing is touched --------------------
 	pl := s.call("strigoi_get_player", map[string]any{})
@@ -175,6 +217,12 @@ func TestSaveResume(t *testing.T) {
 		t.Fatalf("7c: the arranged world must not be in a fight when it saves: %v", combatState(s))
 	}
 
+	// The fight's end rewrote his sidecar (saveKit); it carries the last
+	// world save's generation forward, so the two files still agree (B7).
+	if got := generationOf(t, mustRead(t, sidecar)); got != gen7a {
+		t.Fatalf("7c: a kit save between world saves carries 7a's generation %q; the sidecar carries %q", gen7a, got)
+	}
+
 	out = saveUnmoved(t, s, "7c", map[string]any{})
 
 	second := mustRead(t, world)
@@ -192,11 +240,16 @@ func TestSaveResume(t *testing.T) {
 		t.Fatalf("7c: the previous save is kept as .bak, byte for byte (rule 5)")
 	}
 
-	if _, err := os.Stat(save + ".bak"); err != nil {
-		t.Fatalf("7c: the .od2 keeps its previous generation too: %v", err)
+	if bak := mustRead(t, save+".bak"); !bytes.Equal(bak, firstOD2) {
+		t.Fatalf("7c: the .od2 keeps its previous generation too -- 7a's .od2, byte for byte (rule 5)")
 	}
 
 	sameSidecar(t, "7c", file, mustRead(t, sidecar))
+	sameHero(t, "7c", sub(file, "hero"), mustRead(t, save))
+
+	if got, want := generationOf(t, mustRead(t, sidecar)), str(file, "saved_at"); got != want {
+		t.Fatalf("7c: the sidecar is of 7c's generation %q; it carries %q", want, got)
+	}
 
 	savedSidecar := mustRead(t, sidecar)
 
@@ -271,6 +324,12 @@ func TestSaveResume(t *testing.T) {
 		t.Fatalf("7c: the map's villagers are marked native")
 	}
 
+	// The loop above checks every member on the map against the entity list;
+	// with none, it checked nothing (the review's C item).
+	if members == 0 {
+		t.Fatalf("7c: no pack member was on the map to check against the entity list")
+	}
+
 	t.Logf("7c PASS: %d entities (%d native), %d pack member(s) where their pack says, every list block non-empty, .bak = 7a's file",
 		len(entities), natives, members)
 
@@ -279,8 +338,35 @@ func TestSaveResume(t *testing.T) {
 	to := filepath.Join(t.TempDir(), "copy.world.json")
 
 	out = s.call("strigoi_save_game", map[string]any{"to": to})
-	if str(out, "world_path") != to || len(stringsOf(out["written"])) != 1 {
-		t.Fatalf("7d: to writes the world file there and nothing else: %v", out)
+	if str(out, "world_path") != to || !filepath.IsAbs(str(out, "world_path")) || len(stringsOf(out["written"])) != 1 {
+		t.Fatalf("7d: to writes the world file there and nothing else, and says where, absolute: %v", out)
+	}
+
+	// The fence (B5): relative (the game's working directory is the
+	// repository), inside the repository, or one of his own files.
+	repo, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inRepo := filepath.Join(repo, "docs", "b3-to.world.json")
+
+	for _, bad := range []map[string]any{
+		{"to": "b3-relative.world.json"},
+		{"to": inRepo},
+		{"to": world},
+		{"to": world, "omit": []any{"corpses"}},
+		{"to": sidecar},
+	} {
+		if e := s.callErr("strigoi_save_game", bad); !strings.Contains(e, "BAD_ARGUMENT") {
+			t.Fatalf("7d: %v must be BAD_ARGUMENT, got %q", bad, e)
+		}
+	}
+
+	for _, p := range []string{inRepo, filepath.Join(repo, "b3-relative.world.json")} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("7d: a refused to wrote %s (%v)", p, err)
+		}
 	}
 
 	if !equalHashes(ours, hashFiles(t, files)) {
@@ -313,7 +399,37 @@ func TestSaveResume(t *testing.T) {
 		t.Fatalf("7d: omit and its refusals touched his save")
 	}
 
-	t.Logf("7d PASS: to writes only there (the same file but saved_at); omit drops exactly its blocks; omit without to is refused")
+	t.Logf("7d PASS: to writes only there (the same file but saved_at); omit drops exactly its blocks; omit without to is refused; to is fenced")
+
+	// --- 7f: a monster taken off the map takes his body with him ------------
+	// (Run before 7e, which kills him.) The slain dog's body is in the file
+	// at 0; the harness's removal used to leave it, with no entity, and every
+	// save after it failed INTERNAL "a body with no entity in the file".
+	removed := s.call("strigoi_remove_entity", map[string]any{"handle": dog})
+	if removed["removed"] != true || removed["body_dropped"] != true {
+		t.Fatalf("7f: removing the slain dog drops his body: %v", removed)
+	}
+
+	saveUnmoved(t, s, "7f", map[string]any{})
+
+	after := worldFile(t, "7f", mustRead(t, world))
+
+	for _, raw := range listAt(t, after, "bodies") {
+		if b, _ := raw.(map[string]any); str(b, "id") == dogID {
+			t.Fatalf("7f: the removed dog's body is still saved: %v", b)
+		}
+	}
+
+	for _, raw := range listAt(t, after, "entities") {
+		if e, _ := raw.(map[string]any); str(e, "id") == dogID {
+			t.Fatalf("7f: the removed dog is still an entity: %v", e)
+		}
+	}
+
+	// 7f's save is the last save now: the death below puts ITS sidecar back.
+	savedSidecar = mustRead(t, sidecar)
+
+	t.Logf("7f PASS: the slain dog removed with his body, and the next save made")
 
 	// --- 7e: dead, DEAD, and the death put the LAST SAVE back ---------------
 	setField(s, "meters", "health", 0.0)
@@ -552,7 +668,8 @@ func equalHashes(a, b map[string]string) bool {
 	return fmt.Sprint(a) == fmt.Sprint(b)
 }
 
-// withoutSavedAt is a world file with its saved_at line blanked.
+// withoutSavedAt is a world file with its saved_at line blanked, and the
+// embedded sidecar's generation, which is the same moment (B7).
 func withoutSavedAt(t *testing.T, data []byte) []byte {
 	t.Helper()
 
@@ -561,5 +678,95 @@ func withoutSavedAt(t *testing.T, data []byte) []byte {
 		t.Fatalf("no saved_at line in the world file")
 	}
 
-	return re.ReplaceAll(data, []byte(`  "saved_at": "",`))
+	gen := regexp.MustCompile(`(?m)^    "generation": "[^"]*",$`)
+	if !gen.Match(data) {
+		t.Fatalf("no generation line in the world file's sidecar")
+	}
+
+	return gen.ReplaceAll(re.ReplaceAll(data, []byte(`  "saved_at": "",`)), []byte(`    "generation": "",`))
+}
+
+// generationOf is a sidecar document's generation.
+func generationOf(t *testing.T, sidecar []byte) string {
+	t.Helper()
+
+	var sc struct {
+		Generation string `json:"generation"`
+	}
+
+	if err := json.Unmarshal(sidecar, &sc); err != nil {
+		t.Fatalf("the sidecar is not JSON: %v", err)
+	}
+
+	return sc.Generation
+}
+
+// sameHero requires the world file's hero to be the .od2's: its heroName, and
+// its heroType by name (the B3 review, A1).
+func sameHero(t *testing.T, act string, hero map[string]any, od2 []byte) {
+	t.Helper()
+
+	var h struct {
+		Name string `json:"heroName"`
+		Type int    `json:"heroType"`
+	}
+
+	if err := json.Unmarshal(od2, &h); err != nil {
+		t.Fatalf("%s: the .od2 is not JSON: %v", act, err)
+	}
+
+	classes := []string{"", "Barbarian", "Necromancer", "Paladin", "Assassin", "Sorceress", "Amazon", "Druid"}
+
+	if h.Type < 1 || h.Type >= len(classes) || str(hero, "name") != h.Name || str(hero, "class") != classes[h.Type] {
+		t.Fatalf("%s: the world file names %q the %q; the .od2 is %q, heroType %d", act, hero["name"], hero["class"], h.Name, h.Type)
+	}
+}
+
+// faceSomewhere walks him to a clear neighbour, and back if that left him
+// facing direction 0, so a facing the save drops cannot pass for one it kept.
+func faceSomewhere(t *testing.T, s *session) {
+	t.Helper()
+
+	p := s.call("strigoi_get_player", map[string]any{})
+	x, y := num(p, "x"), num(p, "y")
+	spot := clearNeighbour(t, s, x, y)
+
+	for _, to := range [][2]float64{spot, {x, y}} {
+		s.call("strigoi_move_player_to", map[string]any{"x": to[0], "y": to[1], "wait": true, "max_ticks": 600})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+
+		if num(sub(s.call("strigoi_get_player", map[string]any{}), "state"), "direction") != 0 {
+			digestSettled(t, s)
+
+			return
+		}
+	}
+
+	t.Fatalf("walked to a neighbour and back, and he faces direction 0 both ways")
+}
+
+// digestSettled waits, in wall time, for two digests a moment apart to agree.
+// After a walk the camera eases toward him over render frames, which run while
+// the simulation is paused, and the ui provider reports the overhead bars in
+// SCREEN coordinates -- so the digest's systems part moves on its own for a
+// second or so, save or no save (measured 29 Sep 2026: the bar's x 385 -> 382
+// -> 381 -> 380 across four digests with nothing called between them). A save
+// taken then would read as one that moved the world.
+func digestSettled(t *testing.T, s *session) {
+	t.Helper()
+
+	last, _ := digest(s)
+
+	for i := 0; i < 40; i++ {
+		time.Sleep(150 * time.Millisecond)
+
+		d, _ := digest(s)
+		if d == last {
+			return
+		}
+
+		last = d
+	}
+
+	t.Fatalf("the digest did not settle in 6 s after a walk")
 }

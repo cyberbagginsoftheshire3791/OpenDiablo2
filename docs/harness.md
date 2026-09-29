@@ -537,7 +537,20 @@ this doc fails until it agrees.
   the same file but `saved_at`; `omit` drops exactly its blocks; `omit`
   without `to` and an unknown block are `BAD_ARGUMENT`. 7e: dead, `DEAD`, files
   untouched, and the death put his sidecar back to the LAST SAVE's bytes (the
-  save re-took the death screen's copy).
+  save re-took the death screen's copy). **The B3 review (29 Sep 2026)** added,
+  in the same acts: 7a walks him a step first (`faceSomewhere`, and back if he
+  faced 0) and waits for the digest to settle (`digestSettled`: the camera eases
+  after a walk and the ui provider's bars are SCREEN coordinates, so the digest
+  moves on its own for about a second), then requires the file to name the
+  `.od2`'s hero (`sameHero`) and to carry his facing and stamina as the player
+  reports them, and the sidecar file to be of the file's generation (its
+  `saved_at`); 7c requires the sidecar a fight's end rewrote to still carry 7a's
+  generation, at least one pack member checked, and the `.od2.bak` to be 7a's
+  `.od2` byte for byte; 7d requires `to` relative, inside the repository, or one
+  of his own files to be `BAD_ARGUMENT` writing nothing, and `world_path`
+  absolute; and a new **7f**, run before 7e (which kills him): the slain dog
+  removed with `strigoi_remove_entity` takes his body with him (`body_dropped`)
+  and the next save is made.
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -629,7 +642,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.13.0)
+## The tools (37; harness 0.13.1)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -658,7 +671,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game |
 | `strigoi_navigate` | main_menu · character_select · select_hero · credits |
 | `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame |
-| `strigoi_save_game` | **Save the game (M4.6 B3, harness 0.13.0): `Game.SaveWorld`.** Writes the world file `N.od2.world.json`, then the `.od2`, then the kit sidecar -- one moment in all three, the sidecar the same bytes the world file embeds -- keeping each previous generation as `.bak`, then re-takes the death screen's "as he entered" copy. Refused, touching no file, with `FIGHTING` (a fight running or not yet settled), `DEAD`, `TALKING`, `JOURNAL`, `LOADOUT`, `NETWORK` (rule 9) or `NOT_READY` (no hero in the world yet). `to` writes ONLY the world file, at that path (his `.od2`, sidecar, `.bak`s and the death copy untouched); `omit:[block...]` leaves top-level blocks out and needs `to` (`BAD_ARGUMENT` otherwise, and for a name that is not a block). Returns `save_path`, `world_path`, `sidecar_path`, `written`, `kept` (the `.bak`s), `set_aside` (a file this build could not read, moved aside -- rule 7), `omitted`, `blocks`, `bytes`. Until 0.13.0 it wrote the `.od2` alone and refused nothing |
+| `strigoi_save_game` | **Save the game (M4.6 B3, harness 0.13.0): `Game.SaveWorld`.** Writes the world file `N.od2.world.json`, then the `.od2`, then the kit sidecar -- one moment in all three, the sidecar the same bytes the world file embeds -- keeping each previous generation as `.bak`, then re-takes the death screen's "as he entered" copy. Refused, touching no file, with `FIGHTING` (a fight running or not yet settled), `DEAD`, `TALKING`, `JOURNAL`, `LOADOUT`, `NETWORK` (rule 9) or `NOT_READY` (no hero in the world yet). `to` writes ONLY the world file, at that path (his `.od2`, sidecar, `.bak`s and the death copy untouched); `omit:[block...]` leaves top-level blocks out and needs `to` (`BAD_ARGUMENT` otherwise, and for a name that is not a block). Returns `save_path`, `world_path`, `sidecar_path`, `written`, `kept` (the `.bak`s), `set_aside` (a file this build could not read, moved aside -- rule 7), `omitted`, `blocks`, `bytes`. Until 0.13.0 it wrote the `.od2` alone and refused nothing. **`to` is fenced (0.13.1, the B3 review's B5):** it is made absolute and must lie under `%APPDATA%` (the game's own folder -- under the playtest launcher, the test's private home) or the temporary folder, and never inside a source tree of this game (a folder whose `go.mod` is this module: the World Editor's guard, `harnessSourceTree`); and it may not be one of HIS files -- anything in his save folder named after his save (`N.od2`, `N.od2.bak`, the sidecar, the world file and its `.bak`), with or without `omit` (`Game.SaveWorld`, `ErrBadSaveArgument`). Each is `BAD_ARGUMENT` and writes nothing. Before, a relative `to` resolved in the game's working directory, which the launcher sets to the repository, and a file there was set aside as `.unread` and replaced. `world_path` echoes the absolute path. A block the load's own checks would refuse -- each system's `Validate`/`CheckSnapshot` run on what the save took -- fails the save `INTERNAL` naming the block, touching no file |
 | `strigoi_quit` | Manifest + exit (confirm: true) |
 
 ### Time and determinism (M3.3)
@@ -698,7 +711,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_move_player_to` | MovePlayer packet toward a world-tile target; `wait`/`max_ticks` step until arrived / stuck / timeout |
 | `strigoi_set_system_field` | Write one allow-listed provider field (test setup); `FIELD_NOT_SETTABLE` otherwise |
 | `strigoi_spawn_entity` | npc (monstats Id) · item (item codes) · object (objects.txt index or name) at a world tile, through the engine's own factory; returns a handle |
-| `strigoi_remove_entity` | Remove by handle (never a player); a watcher is unwatched and its chase released with it, as a death does (M4.6 B2b review), reported as `unwatched`/`released` |
+| `strigoi_remove_entity` | Remove by handle (never a player); a watcher is unwatched and its chase released with it, as a death does (M4.6 B2b review), reported as `unwatched`/`released`; and a monster's body is forgotten with it (`body_dropped`, 0.13.1, the B3 review's B4: a body left with no entity failed every later save `INTERNAL`) |
 | `strigoi_key` | tap · down · up, by name (`i`, `escape`, `f5`, `kp7`, `graveaccent`, …) |
 | `strigoi_click` | left/right/middle at screen pixels, optional shift/control/alt; walks the player like a real click |
 | `strigoi_move_cursor` | Place the scripted cursor (holds until the real mouse moves) |

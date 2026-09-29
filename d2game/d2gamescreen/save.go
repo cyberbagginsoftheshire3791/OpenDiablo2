@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
@@ -40,12 +43,18 @@ import (
 //   - there is no hero in the world yet (NOT_READY);
 //   - he is dead (DEAD, the 12 Sep ruling: a dead hero is never written);
 //   - a fight is running or has not settled (FIGHTING, rule 2): the combat
-//     model's own refusal (Combat.Snapshot), a paced fight's hold, and the
-//     screen's fight-only state -- a strike waiting on a walk, a tactical walk
-//     still out, the fight edge not yet taken back;
+//     model's own refusal (Combat.Snapshot), the screen's fight-only state --
+//     a strike waiting on a walk, a tactical walk still out, the fight edge
+//     not yet taken back -- and his last swing still playing;
 //   - he is talking (TALKING);
 //   - his journal is open (JOURNAL);
 //   - he is choosing his loadout (LOADOUT).
+//
+// AND IT IS STRICT: before a byte is written, every block it took must pass
+// the load's own check of it -- each system's Validate (or, where Validate
+// also refuses a system in use, CheckSnapshot) -- and the file's (World.Check,
+// then Decode of the bytes). A disagreement is an error, not a refusal: the
+// live world holds something no load would take (the B3 review, B2).
 //
 // IT CHANGES NOTHING IN THE WORLD. No stream is drawn, no minute passes, no
 // system is advanced: every snapshot is a read. The one thing a save moves is
@@ -72,9 +81,14 @@ const (
 // ErrSaveRefused is what every refusal wraps: errors.Is(err, ErrSaveRefused).
 var ErrSaveRefused = errors.New("the game cannot be saved now")
 
+// ErrBadSaveArgument is what a save refuses its ARGUMENTS with, whatever the
+// game is doing: the harness's BAD_ARGUMENT.
+var ErrBadSaveArgument = errors.New("the save cannot be made with these arguments")
+
 // errOmitNeedsTo refuses a save that would write a file with a block missing
 // over his real save.
-var errOmitNeedsTo = errors.New("a save that omits a block writes a file no load reads, so it must be written somewhere else (to)")
+var errOmitNeedsTo = fmt.Errorf("%w: a save that omits a block writes a file no load reads, so it must be written somewhere else (to)",
+	ErrBadSaveArgument)
 
 // SaveRefusal is one refusal: its code and why.
 type SaveRefusal struct {
@@ -99,7 +113,11 @@ type SaveOptions struct {
 	// sidecar, their .bak generations and the death screen's copy are not
 	// touched. The world file is self-sufficient -- it embeds the sidecar --
 	// so a file written here is a whole save of this moment, beside the real
-	// one.
+	// one. A relative path is made absolute (from the working directory) and
+	// the result's world_path says where it went; a path that is one of HIS
+	// files -- named after his save, in his folder -- is refused
+	// (ErrBadSaveArgument): To is "somewhere else" (the B3 review, B5). The
+	// harness also keeps it out of the source tree (d2app).
 	To string
 }
 
@@ -179,6 +197,14 @@ func readUUIDStream() *d2save.UUIDStream {
 	return &d2save.UUIDStream{Seed: seed, Bytes: bytes}
 }
 
+// saveProbe, when a test sets it, changes the file a save has assembled just
+// before the file is held to the load's checks: the B3 review's B2 probe,
+// which corrupts one block at a time and requires the save to refuse it with
+// no file touched (TestTheSaveRunsTheLoadsOwnChecks). Nil in every game.
+//
+// nolint:gochecknoglobals // a test's probe; nothing in the program sets it
+var saveProbe func(w *d2save.World)
+
 // SaveWorld saves the game: the world file, then his .od2, then his sidecar,
 // then the death screen's copy (see the top of this file). A refusal is a
 // *SaveRefusal and touches no file.
@@ -190,8 +216,24 @@ func (v *Game) SaveWorld(opts SaveOptions) (SaveResult, error) {
 		return res, errOmitNeedsTo
 	}
 
+	to := ""
+
+	if opts.To != "" {
+		abs, err := filepath.Abs(opts.To)
+		if err != nil {
+			return res, fmt.Errorf("%w: to %q: %v", ErrBadSaveArgument, opts.To, err)
+		}
+
+		to = abs
+	}
+
 	if r := v.saveRefusal(); r != nil {
 		return res, r
+	}
+
+	if to != "" && d2hero.IsHeroFile(v.gameClient.SaveFilePath, to) {
+		return res, fmt.Errorf("%w: to %s is one of his own files (his save is %s); to writes a world file somewhere else",
+			ErrBadSaveArgument, to, v.gameClient.SaveFilePath)
 	}
 
 	world, sidecar, err := v.worldFile()
@@ -222,18 +264,18 @@ func (v *Game) SaveWorld(opts SaveOptions) (SaveResult, error) {
 		}
 	}
 
-	if opts.To != "" {
-		w, err := d2save.WriteWorld(opts.To, data)
-		res.WorldPath, res.SetAside = opts.To, w.SetAside
+	if to != "" {
+		w, err := d2save.WriteWorld(to, data)
+		res.WorldPath, res.SetAside = to, w.SetAside
 
 		if err != nil {
 			return res, err
 		}
 
-		res.Written = []string{opts.To}
+		res.Written = []string{to}
 		res.Kept = nonEmpty(w.Bak)
 
-		v.Infof("SAVE world=%s (to; his save untouched) omitted=%v bytes=%d", opts.To, opts.Omit, len(data))
+		v.Infof("SAVE world=%s (to; his save untouched) omitted=%v bytes=%d", to, opts.Omit, len(data))
 
 		return res, nil
 	}
@@ -272,6 +314,10 @@ func (v *Game) SaveWorld(opts SaveOptions) (SaveResult, error) {
 	}
 
 	res.Written = append(res.Written, v.kitPath)
+
+	// Every kit save from here writes this save's generation, so the sidecar
+	// and the world file agree until the next world save (the B3 review, B7).
+	v.saveGeneration = world.SavedAt
 
 	// 4. "Last save" is this moment now, for the death screen too.
 	v.snapshotHero()
@@ -326,12 +372,29 @@ func (v *Game) saveRefusal() *SaveRefusal {
 // or "". Every clause is state that exists only in a fight and is empty
 // whenever one is not running and its close has been applied: the save
 // refuses rather than carry it (the plan's section 1, "UI and fight state").
+//
+// The combat model's own refusal is here, with the screen's (the B3 review:
+// it used to come after TALKING, JOURNAL and LOADOUT, from inside the
+// snapshots, so a talk opened on a fight's closing frame was refused TALKING
+// while the fight's experience waited). Combat.WorldHeld was here too, and
+// could never fire: it is false whenever no encounter runs, which Fighting,
+// the clause before it, already refused.
 func (v *Game) fightUnsettled() string {
+	unsettled := ""
+	if v.combat != nil {
+		unsettled = v.combatUnsettled()
+	}
+
 	switch {
 	case v.combat != nil && v.combat.Fighting():
 		return "a fight is running"
-	case v.combat != nil && v.combat.WorldHeld():
-		return "a paced fight holds the world"
+	case unsettled != "":
+		return unsettled
+	case v.localPlayer != nil && v.localPlayer.IsCasting():
+		// A swing's animation outlives the blow by a frame or two; the
+		// digest compares casting and the animation mode, and a load stands
+		// him still (rule 4). Nothing else in Strigoi's game casts.
+		return "his last swing is still playing"
 	case v.wasFighting:
 		return "the fight's end has not been applied yet"
 	case v.pendingStrike != "":
@@ -345,15 +408,30 @@ func (v *Game) fightUnsettled() string {
 	return ""
 }
 
+// combatUnsettled is the combat model's own word that a fight is not over --
+// its experience or paced minutes not yet taken, the pace window open -- or
+// "". Combat.Snapshot is a read; its refusal is the only thing asked of it.
+func (v *Game) combatUnsettled() string {
+	if _, err := v.combat.Snapshot(); err != nil {
+		return err.Error()
+	}
+
+	return ""
+}
+
 // worldFile takes every snapshot and assembles the file, and the sidecar
-// document it embeds. Every call in it is a read.
+// document it embeds, then holds every block to the load's own checks. Every
+// call in it is a read.
 func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 	r := worldResolver{v}
 
+	// The file's moment, and the generation its sidecar carries (B7).
+	savedAt := time.Now().UTC().Format(time.RFC3339Nano)
+
 	combat, err := v.combat.Snapshot()
 	if err != nil {
-		// The combat model's own word that a fight is not over: running, or
-		// its experience or paced minutes not yet taken.
+		// fightUnsettled asked first; this is its word again, should a fight
+		// ever start between the two.
 		return nil, nil, &SaveRefusal{Code: SaveRefusedFighting, Reason: err.Error()}
 	}
 
@@ -376,7 +454,7 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 		return nil, nil, fmt.Errorf("pursuit: %w", err)
 	}
 
-	sidecar, err := v.heroBytes()
+	sidecar, err := v.heroBytes(savedAt)
 	if err != nil {
 		return nil, nil, fmt.Errorf("his sidecar: %w", err)
 	}
@@ -393,7 +471,7 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 	w := &d2save.World{
 		Version: d2save.Version,
 		Build:   buildName(),
-		SavedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		SavedAt: savedAt,
 		Map:     d2save.Map{Path: mapPath, SHA: mapSHA, Generated: mapPath == ""},
 		Seed:    v.gameClient.Seed,
 		RNG: d2save.RNG{
@@ -403,10 +481,14 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 			UUID:   readUUIDStream(),
 		},
 		Hero: d2save.Hero{
-			X: x, Y: y,
-			Pos:    [2]float64{v.localPlayer.Position.X(), v.localPlayer.Position.Y()},
-			Health: v.localPlayer.Stats.Health,
-			Run:    v.localPlayer.IsRunToggled(),
+			Name:  v.localPlayer.Name(),
+			Class: v.localPlayer.Class.String(),
+			X:     x, Y: y,
+			Pos:     [2]float64{v.localPlayer.Position.X(), v.localPlayer.Position.Y()},
+			Facing:  v.localPlayer.Facing(),
+			Health:  v.localPlayer.Stats.Health,
+			Stamina: v.localPlayer.Stats.Stamina,
+			Run:     v.localPlayer.IsRunToggled(),
 		},
 		Sidecar:  sidecar,
 		Clock:    v.worldClock.Snapshot(),
@@ -433,6 +515,14 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 
 	w.RNG.Rising = w.Rising.RNG
 
+	if saveProbe != nil {
+		saveProbe(w)
+	}
+
+	if err := v.validateSnapshots(w, r); err != nil {
+		return nil, nil, err
+	}
+
 	if err := w.Check(); err != nil {
 		return nil, nil, fmt.Errorf("the world as it stands would not make a file a load could read: %w", err)
 	}
@@ -440,11 +530,76 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 	return w, sidecar, nil
 }
 
-// heroBytes is his sidecar document as saveKit writes it. A torch he holds
-// lit keeps its minutes in the light model, and the kit's copy reads zero
-// while it burns (the L key), so the minutes are written in for the file and
-// taken back out: the live kit still owns nothing the light model owns.
-func (v *Game) heroBytes() ([]byte, error) {
+// validateSnapshots holds every block this save took to the check the load
+// will make of it (the B3 review, B2; D4's Validate twins): Clock, Light,
+// Rising and Combat by their Validate, and Squads, Corpses, Spawns, Notice
+// and Pursuit by CheckSnapshot -- Validate's checks without its refusal of a
+// system in use, which the live system this save read always is -- Spawns,
+// Notice and Pursuit through the save's own Resolver over the live map, as
+// the load's goes over the resumed one. And the spawner's arrival.
+//
+// A refusal is the live world holding something no load would take -- a lit
+// torch at no minutes, two carried sources, a source id past next_id -- and
+// no file is touched: the harness reports it INTERNAL with the system and
+// the reason. Called one by one, never through method values (the reach
+// gate's lesson in World.Check).
+func (v *Game) validateSnapshots(w *d2save.World, r d2world.Resolver) error {
+	seed := v.gameClient.Seed
+
+	refused := func(block string, err error) error {
+		return fmt.Errorf("the %s block this save took is one the load would refuse: %w", block, err)
+	}
+
+	if err := v.worldClock.Validate(w.Clock); err != nil {
+		return refused("clock", err)
+	}
+
+	if err := v.light.Validate(w.Light); err != nil {
+		return refused("light", err)
+	}
+
+	if err := v.squads.CheckSnapshot(w.Squads); err != nil {
+		return refused("squads", err)
+	}
+
+	if err := v.corpses.CheckSnapshot(w.Corpses); err != nil {
+		return refused("corpses", err)
+	}
+
+	if err := v.rising.Validate(w.Rising, seed, w.Corpses); err != nil {
+		return refused("rising", err)
+	}
+
+	if err := v.combat.Validate(w.Combat, seed); err != nil {
+		return refused("combat", err)
+	}
+
+	if err := v.spawns.CheckSnapshot(w.Spawns, r, seed); err != nil {
+		return refused("spawns", err)
+	}
+
+	if err := v.spawner.validate(SpawnerSnapshot{Arrival: w.Spawner.Arrival}); err != nil {
+		return refused("spawner", err)
+	}
+
+	if err := v.notice.CheckSnapshot(w.Notice, r); err != nil {
+		return refused("notice", err)
+	}
+
+	if err := v.pursuit.CheckSnapshot(w.Pursuit, r); err != nil {
+		return refused("pursuit", err)
+	}
+
+	return nil
+}
+
+// heroBytes is his sidecar document as saveKit writes it, of the given world
+// save generation (saveKit passes the last save's, SaveWorld its own: B7). A
+// torch he holds lit keeps its minutes in the light model, and the kit's copy
+// reads zero while it burns (the L key), so the minutes are written in for
+// the file and taken back out: the live kit still owns nothing the light
+// model owns.
+func (v *Game) heroBytes(generation string) ([]byte, error) {
 	if v.kit == nil {
 		return nil, errors.New("he has no kit")
 	}
@@ -461,6 +616,7 @@ func (v *Game) heroBytes() ([]byte, error) {
 
 	data, err := d2items.HeroBytes(v.kit, d2items.Extras{
 		Progress: v.progressJSON(), Village: v.standingJSON(), Land: v.landJSON(), Journal: v.journalJSON(),
+		Generation: generation,
 	})
 
 	if held > 0 {
@@ -503,6 +659,20 @@ func (v *Game) saveEntities() ([]d2save.Entity, error) {
 
 	sort.Strings(ids)
 
+	// Which live entity is which native: by the entity itself, not its id,
+	// which B4b's re-key changes (the B3 review, B3). A pair two entities
+	// share could not be told apart on load: refused.
+	nativeOf := make(map[d2interface.MapEntity]nativeKey, len(v.natives))
+
+	for k, e := range v.natives {
+		if e == nil {
+			return nil, fmt.Errorf("two entities the map built are both %q at %v,%v: a load re-keys a native by its "+
+				"name_key and where the map put it, and could not tell them apart", k.nameKey, k.x, k.y)
+		}
+
+		nativeOf[e] = k
+	}
+
 	out := make([]d2save.Entity, 0, len(ids))
 
 	for _, id := range ids {
@@ -532,9 +702,9 @@ func (v *Game) saveEntities() ([]d2save.Entity, error) {
 		se.NameKey = d2mapentity.NameKey(e)
 		se.X, se.Y = e.GetPositionF()
 
-		if n, ok := v.natives[se.ID]; ok {
+		if k, ok := nativeOf[e]; ok {
 			se.Native = true
-			se.Born = &[2]float64{n.x, n.y}
+			se.Born = &[2]float64{k.x, k.y}
 		}
 
 		out = append(out, se)
@@ -543,24 +713,31 @@ func (v *Game) saveEntities() ([]d2save.Entity, error) {
 	return out, nil
 }
 
-// nativeEntity is one entity the map built, as it stood when the game screen
-// was made: who stands in for him and where the map put him (world tiles).
-type nativeEntity struct {
+// nativeKey is how a native is known across a load: who stands in for him and
+// where the map put him (world tiles). B4b re-keys a rebuilt map's villager to
+// his saved id by it (B3-6).
+type nativeKey struct {
 	nameKey string
 	x, y    float64
 }
 
 // nativesOf is every NPC and creature on the map as the game screen is made:
 // the ones the map built -- the villagers -- which a load's map build makes
-// again, and which it re-keys rather than rebuilds (B4b).
-func nativesOf(engine *d2mapengine.MapEngine) map[string]nativeEntity {
-	out := map[string]nativeEntity{}
+// again, and which it re-keys rather than rebuilds (B4b). Each is recorded by
+// its key and held by the ENTITY, not its id (the B3 review, B3): B4b's
+// re-key gives a villager his saved id, and a record by id would lose him --
+// the next save would mark no villager native. A key two entities share maps
+// to nil, and the save refuses it (saveEntities): the load could not tell the
+// two apart. B4b must re-key in place -- the same entity, a new id -- or
+// capture the natives again after it rebuilds them.
+func nativesOf(engine *d2mapengine.MapEngine) map[nativeKey]d2interface.MapEntity {
+	out := map[nativeKey]d2interface.MapEntity{}
 
 	if engine == nil {
 		return out
 	}
 
-	for id, e := range engine.Entities() {
+	for _, e := range engine.Entities() {
 		switch e.(type) {
 		case *d2mapentity.NPC, *d2mapentity.Creature:
 		default:
@@ -568,7 +745,15 @@ func nativesOf(engine *d2mapengine.MapEngine) map[string]nativeEntity {
 		}
 
 		x, y := e.GetPositionF()
-		out[id] = nativeEntity{nameKey: d2mapentity.NameKey(e), x: x, y: y}
+		k := nativeKey{nameKey: d2mapentity.NameKey(e), x: x, y: y}
+
+		if _, dup := out[k]; dup {
+			out[k] = nil
+
+			continue
+		}
+
+		out[k] = e
 	}
 
 	return out

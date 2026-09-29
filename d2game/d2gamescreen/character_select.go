@@ -2,12 +2,10 @@ package d2gamescreen
 
 import (
 	"math"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
-	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
@@ -487,25 +485,31 @@ func (v *CharacterSelect) onDeleteCharButtonClicked() {
 }
 
 func (v *CharacterSelect) onDeleteCharacterConfirmClicked() {
-	err := os.Remove(v.gameStates[v.selectedCharacter].FilePath)
-	if err != nil {
-		v.Error(err.Error())
-	}
-
-	// T2: his kit goes with him. The save's name is reused by the next hero
-	// (getFirstFreeFileName), who would otherwise inherit worn mail and a
-	// spent torch and never be asked to choose (review finding).
-	if kit := d2items.SidecarPath(v.gameStates[v.selectedCharacter].FilePath); kit != "" {
-		if err := os.Remove(kit); err != nil && !os.IsNotExist(err) {
-			v.Error(err.Error())
-		}
-	}
+	v.deleteSelectedHero()
 
 	v.charScrollbar.SetCurrentOffset(0)
 	v.refreshGameStates()
 	v.toggleDeleteCharacterDialog(false)
 	v.deleteCharButton.SetEnabled(len(v.gameStates) > 0)
 	v.okButton.SetEnabled(len(v.gameStates) > 0)
+}
+
+// deleteSelectedHero removes every file of the selected hero
+// (d2hero.DeleteHero): his .od2, his kit sidecar, his world file, every .bak
+// and every file set aside. T2 took the sidecar with him (a save's number is
+// reused by the next hero, who would otherwise have inherited worn mail and a
+// spent torch); M4.6 B3's world file and the .bak generations stayed, and the
+// next hero made would have resumed the dead man's night (the B3 review, A1).
+// If a file of his cannot be removed his .od2 stays, so he is still listed
+// and can be deleted again.
+func (v *CharacterSelect) deleteSelectedHero() {
+	if v.selectedCharacter < 0 || v.selectedCharacter >= len(v.gameStates) {
+		return
+	}
+
+	if _, err := d2hero.DeleteHero(v.gameStates[v.selectedCharacter].FilePath); err != nil {
+		v.Error(err.Error())
+	}
 }
 
 func (v *CharacterSelect) onDeleteCharacterCancelClicked() {

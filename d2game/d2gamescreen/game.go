@@ -495,10 +495,18 @@ type Game struct {
 	spawner *gameSpawner
 
 	// natives is every NPC and creature the map built, as it stood when this
-	// screen was made (M4.6 B3): the villagers. The world save marks them
-	// native, with where the map put them, because a load's map build makes
-	// them again and re-keys them rather than rebuilding them (B4b).
-	natives map[string]nativeEntity
+	// screen was made (M4.6 B3): the villagers, by who stands in for each and
+	// where the map put him, held by the entity (not its id, which B4b's
+	// re-key changes: the B3 review, B3). The world save marks them native,
+	// with where the map put them, because a load's map build makes them
+	// again and re-keys them rather than rebuilding them (B4b).
+	natives map[nativeKey]d2interface.MapEntity
+
+	// saveGeneration is the saved_at of the last world save this hero's
+	// sidecar belongs to: SaveWorld sets it, bindKit reads it from the
+	// sidecar, and every kit save writes it, so the sidecar and the world
+	// file agree until the next world save (the B3 review, B7).
+	saveGeneration string
 
 	// T8: the watch -- minutes stood at the headman's post tonight, the world
 	// clock last frame, and the post itself (the headman's sprite, cached).
@@ -1818,13 +1826,22 @@ func (g *gameSpawner) Snapshot() SpawnerSnapshot {
 }
 
 // Restore puts it back. A negative count, which no game could have made, is
-// refused.
+// refused (validate, which the save runs too: the B3 review, B2).
 func (g *gameSpawner) Restore(s SpawnerSnapshot) error {
-	if s.Arrival < 0 {
-		return fmt.Errorf("gameSpawner: %d arrivals is not a count", s.Arrival)
+	if err := g.validate(s); err != nil {
+		return err
 	}
 
 	g.arrival = s.Arrival
+
+	return nil
+}
+
+// validate is Restore's check and nothing else (D4).
+func (g *gameSpawner) validate(s SpawnerSnapshot) error {
+	if s.Arrival < 0 {
+		return fmt.Errorf("gameSpawner: %d arrivals is not a count", s.Arrival)
+	}
 
 	return nil
 }

@@ -293,16 +293,142 @@ func (f *HeroStateFactory) getGameBaseSavePath() (string, error) {
 }
 
 func (f *HeroStateFactory) getFirstFreeFileName() string {
-	i := 0
 	basePath, _ := f.getGameBaseSavePath()
 
-	for {
-		filePath := filepath.Join(basePath, strconv.Itoa(i)+".od2")
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	return firstFreeFileName(basePath)
+}
+
+// firstFreeFileName is the first N.od2 in dir that NOTHING is named after: no
+// N.od2, and no file of a hero who was N.od2 -- his sidecar, his world file,
+// their .bak and .tmp generations, a world file set aside unread (M4.6 B3
+// review, A1). It used to ask only whether N.od2 existed, so a hero deleted by
+// hand, or one whose delete could not remove every file, handed his world
+// file to the next hero made: a load would have resumed the dead man's night.
+func firstFreeFileName(dir string) string {
+	for i := 0; ; i++ {
+		filePath := filepath.Join(dir, strconv.Itoa(i)+".od2")
+
+		if files, err := HeroFiles(filePath); err == nil && len(files) == 0 {
 			return filePath
 		}
-		i++
 	}
+}
+
+// HeroFiles is every file in savePath's folder that belongs to the hero saved
+// there: savePath itself and every file named savePath + "." + anything --
+// N.od2.bak and .tmp, the sidecar N.od2.strigoi.json, the world file
+// N.od2.world.json and its .bak and .tmp, and every world file set aside
+// (N.od2.world.json.v2.unread, .unread.1, ...). The names are the save's
+// own: "1.od2" is not a prefix of "10.od2.world.json", whose next character
+// is not the dot. Matched without regard to case, as Windows names are.
+func HeroFiles(savePath string) ([]string, error) {
+	if savePath == "" {
+		return nil, nil
+	}
+
+	dir, base := filepath.Dir(savePath), filepath.Base(savePath)
+
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	var out []string
+
+	for _, e := range entries {
+		if isNamedAfter(base, e.Name()) {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+
+	return out, nil
+}
+
+// IsHeroFile reports whether path is, or would be, a file of the hero saved at
+// savePath: in his folder, and named after his save (HeroFiles' rule). The
+// world save refuses to write a harness's "somewhere else" copy over one of
+// them (d2gamescreen.SaveOptions.To; the B3 review, B5).
+func IsHeroFile(savePath, path string) bool {
+	if savePath == "" || path == "" {
+		return false
+	}
+
+	save, err := filepath.Abs(savePath)
+	if err != nil {
+		return false
+	}
+
+	p, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(filepath.Dir(save), filepath.Dir(p)) && isNamedAfter(filepath.Base(save), filepath.Base(p))
+}
+
+// isNamedAfter: name is base, or base + "." + something, without regard to
+// case.
+func isNamedAfter(base, name string) bool {
+	return strings.EqualFold(name, base) ||
+		(len(name) > len(base)+1 && strings.EqualFold(name[:len(base)+1], base+"."))
+}
+
+// DeleteHero removes every file of the hero saved at savePath (HeroFiles),
+// and his N.od2 LAST: if anything of his cannot be removed, the N.od2 stays,
+// so he is still listed and a second delete can finish the job -- and his
+// number is not handed to the next hero while a file of his is left
+// (firstFreeFileName). It returns what it removed, and the first error.
+//
+// The hero screen's Delete used to remove only N.od2 and the sidecar. The
+// world file (M4.6 B3), its .bak and the .od2's own .bak stayed, and the next
+// hero made got the same N: a load would have resumed the deleted man's night
+// and written his sidecar over the new hero's (the B3 review, A1).
+func DeleteHero(savePath string) ([]string, error) {
+	files, err := HeroFiles(savePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		removed []string
+		first   error
+		od2     string
+	)
+
+	for _, p := range files {
+		if strings.EqualFold(filepath.Base(p), filepath.Base(savePath)) {
+			od2 = p
+			continue
+		}
+
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			if first == nil {
+				first = err
+			}
+
+			continue
+		}
+
+		removed = append(removed, p)
+	}
+
+	if first != nil {
+		return removed, fmt.Errorf("deleting the hero %s: %w (his save is kept, so he can be deleted again)", savePath, first)
+	}
+
+	if od2 != "" {
+		if err := os.Remove(od2); err != nil && !os.IsNotExist(err) {
+			return removed, err
+		}
+
+		removed = append(removed, od2)
+	}
+
+	return removed, nil
 }
 
 // onDisk is the state as its file holds it: an old save's Diablo II skills,

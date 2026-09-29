@@ -54,6 +54,10 @@ type harnessRemoveOut struct {
 	// (M4.6 B2b review: left, either would block every save).
 	Unwatched bool `json:"unwatched"`
 	Released  bool `json:"released"`
+
+	// BodyDropped: the monster's body went with him (M4.6 B3 review, B4:
+	// left, a body with no entity fails every save after it).
+	BodyDropped bool `json:"body_dropped"`
 }
 
 func (a *App) harnessSpawn(kind, code string, x, y float64) (d2interface.MapEntity, error) {
@@ -198,7 +202,7 @@ func (a *App) harnessAddSpawnTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_remove_entity",
-		Description: "Remove an entity by handle from the running map (npc, item, object, missile). Players cannot be removed. A watcher is unwatched and a hunter's chase released with it (unwatched/released say so), as a death does; its pack keeps it as a member. The handle stays known so a later get_entity reports it gone.",
+		Description: "Remove an entity by handle from the running map (npc, item, object, missile). Players cannot be removed. A watcher is unwatched, a hunter's chase released and a monster's body forgotten with it (unwatched/released/body_dropped say so), as the game's own removals do; its pack keeps it as a member. The handle stays known so a later get_entity reports it gone.",
 		Annotations: harnessAnnMut(true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessRemoveIn) (*mcp.CallToolResult, harnessRemoveOut, error) {
 		harnessLogCall("strigoi_remove_entity")
@@ -250,6 +254,11 @@ func (a *App) harnessAddSpawnTools(srv *mcp.Server) {
 				if p := game.Pursuit(); p != nil {
 					out.Released = p.Release(id)
 				}
+
+				// And his body: the game forgets a body whenever it takes
+				// an entity off the map (releaseNPCBody); left here, a body
+				// with no entity refuses every later save (B3 review, B4).
+				out.BodyDropped = game.ForgetBody(id)
 			}
 
 			out.Removed = true

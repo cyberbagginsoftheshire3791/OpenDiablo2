@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
@@ -67,8 +68,8 @@ func b3Fixture() *World {
 			World: b3Stream(d2rand.StreamWorld, 4242), Spawns: spawns, Combat: combat, Rising: rising,
 			UUID: &UUIDStream{Seed: b3Seed, Bytes: 16 * 9},
 		},
-		Hero:    Hero{X: hx, Y: hy, Pos: heroPos, Health: 187, Run: true},
-		Sidecar: json.RawMessage(`{"version": 1, "kit": {"worn": {"off": "torch"}}, "progress": {"xp": 50}}`),
+		Hero:    Hero{Name: "Saver", Class: "Amazon", X: hx, Y: hy, Pos: heroPos, Facing: 3, Health: 187, Stamina: 42.5, Run: true},
+		Sidecar: json.RawMessage(`{"version": 1, "generation": "2026-09-28T21:14:05.123Z", "kit": {"worn": {"off": "torch"}}, "progress": {"xp": 50}}`),
 		Clock:   d2world.ClockSnapshot{Elapsed: 1092.5},
 		Light: d2world.LightSnapshot{NextID: 3, Sources: []d2world.LightSourceSnapshot{
 			{ID: 2, Kind: d2world.SourceTorch, Burn: 41.5, Lit: true, Carried: true},
@@ -269,21 +270,23 @@ func TestEveryBlockIsRequired(t *testing.T) {
 
 		_, err := Decode(b3Encode(t, w, name))
 		require.ErrorIs(t, err, ErrWorldFile, "without %q", name)
+		require.Equal(t, ReasonBlockMissing, ReasonOf(err), "without %q", name)
 		require.Contains(t, err.Error(), name)
 
 		nulled := b3SetBlock(t, b3Encode(t, w), name, "null")
 		_, err = Decode(nulled)
 		require.ErrorIs(t, err, ErrWorldFile, "%q null", name)
+		require.Equal(t, ReasonBlockNull, ReasonOf(err), "%q null", name)
 	}
 
 	_, err := Decode(b3SetBlock(t, b3Encode(t, w), "weather", `{"rain": true}`))
-	require.ErrorIs(t, err, ErrWorldFile, "an unknown block")
+	require.Equal(t, ReasonBlockUnknown, ReasonOf(err), "an unknown block")
 
 	_, err = Decode(bytes.Replace(b3Encode(t, w), []byte(`"elapsed": 1092.5`), []byte(`"elapsed": 1092.5, "rate": 2`), 1))
-	require.ErrorIs(t, err, ErrWorldFile, "an unknown field inside a block")
+	require.Equal(t, ReasonField, ReasonOf(err), "an unknown field inside a block")
 
 	_, err = Decode(append(b3Encode(t, w), []byte(`{}`)...))
-	require.ErrorIs(t, err, ErrWorldFile, "data after the object")
+	require.Equal(t, ReasonJSON, ReasonOf(err), "data after the object")
 
 	for _, junk := range []string{"", "[]", "null", "42", "{"} {
 		_, err = Decode([]byte(junk))
@@ -334,74 +337,218 @@ func TestEncodeOmit(t *testing.T) {
 }
 
 // CHECK refuses a file whose blocks disagree. Every case is the fixture -- a
-// file Check accepts -- with one thing wrong.
+// file Check accepts -- with one thing wrong, and EACH NAMES THE RULE THAT
+// MUST REFUSE IT (the B3 review, A2). Asserting only ErrWorldFile let a rule
+// be deleted with its case still green, because another rule refused the same
+// file: the entity's own place check, deleted, left "an entity off its
+// motion" refused by the spawns member's place check instead.
 func TestCheckRefusesWhatNoLoadCouldRestore(t *testing.T) {
-	cases := map[string]func(w *World){
-		"version 2 in a struct":            func(w *World) { w.Version = 2 },
-		"generated with a path":            func(w *World) { w.Map.Generated = true },
-		"authored with no path":            func(w *World) { w.Map.Path = "" },
-		"authored with no sha":             func(w *World) { w.Map.SHA = "" },
-		"a sha that is not hex":            func(w *World) { w.Map.SHA = strings.Repeat("zz", 32) },
-		"rng.spawns is not the spawns'":    func(w *World) { w.RNG.Spawns.Draws++ },
-		"rng.combat is not the combat's":   func(w *World) { w.RNG.Combat.Draws++ },
-		"rng.rising is not the rising's":   func(w *World) { w.Rising.RNG.Draws++ },
-		"the world stream on another seed": func(w *World) { w.RNG.World.Seed++ },
-		"two streams swapped": func(w *World) {
+	cases := map[string]struct {
+		reason string
+		mutate func(w *World)
+	}{
+		"version 2 in a struct":            {ReasonVersion, func(w *World) { w.Version = 2 }},
+		"generated with a path":            {ReasonMap, func(w *World) { w.Map.Generated = true }},
+		"authored with no path":            {ReasonMap, func(w *World) { w.Map.Path = "" }},
+		"authored with no sha":             {ReasonMap, func(w *World) { w.Map.SHA = "" }},
+		"a sha that is not hex":            {ReasonMap, func(w *World) { w.Map.SHA = strings.Repeat("zz", 32) }},
+		"rng.spawns is not the spawns'":    {ReasonRNGCopy, func(w *World) { w.RNG.Spawns.Draws++ }},
+		"rng.combat is not the combat's":   {ReasonRNGCopy, func(w *World) { w.RNG.Combat.Draws++ }},
+		"rng.rising is not the rising's":   {ReasonRNGCopy, func(w *World) { w.Rising.RNG.Draws++ }},
+		"the world stream on another seed": {ReasonRNGStream, func(w *World) { w.RNG.World.Seed++ }},
+		"two streams swapped": {ReasonRNGStream, func(w *World) {
 			w.RNG.Combat, w.RNG.Rising = w.RNG.Rising, w.RNG.Combat
 			w.Combat.RNG, w.Rising.RNG = w.RNG.Combat, w.RNG.Rising
-		},
-		"a stream past MaxDraws":       func(w *World) { w.RNG.World.Draws = d2rand.MaxDraws + 1 },
-		"the hero off his own pos":     func(w *World) { w.Hero.X += 0.2 },
-		"a dead hero":                  func(w *World) { w.Hero.Health = 0 },
-		"a NaN hero":                   func(w *World) { w.Hero.Pos[0] = math.NaN() },
-		"a sidecar of version 2":       func(w *World) { w.Sidecar = json.RawMessage(`{"version": 2, "kit": {}}`) },
-		"a sidecar with no kit":        func(w *World) { w.Sidecar = json.RawMessage(`{"version": 1, "kit": null}`) },
-		"a sidecar that is not JSON":   func(w *World) { w.Sidecar = json.RawMessage(`[1]`) },
-		"a negative clock":             func(w *World) { w.Clock.Elapsed = -1 },
-		"an entity saved twice":        func(w *World) { w.Entities = append(w.Entities, w.Entities[1]) },
-		"entities out of order":        func(w *World) { w.Entities[0], w.Entities[1] = w.Entities[1], w.Entities[0] },
-		"an entity called player":      func(w *World) { w.Entities[1].ID = "player" },
-		"an entity of no kind":         func(w *World) { w.Entities[0].Kind = "object" },
-		"an npc with no monstat":       func(w *World) { w.Entities[1].Monstat = "" },
-		"a creature with no entry":     func(w *World) { w.Entities[0].Creature = "" },
-		"a creature with a monstat":    func(w *World) { w.Entities[0].Monstat = "zombie1" },
-		"a native with no birthplace":  func(w *World) { w.Entities[1].Born = nil },
-		"a birthplace on a non-native": func(w *World) { w.Entities[0].Born = &[2]float64{1, 1} },
-		"an entity off its motion":     func(w *World) { w.Entities[0].X += 1 },
-		"an infinite path":             func(w *World) { w.Entities[0].Motion.Path[1][0] = math.Inf(1) },
-		"a body with no entity":        func(w *World) { w.Bodies[0].ID = "0z-nobody" },
-		"a body over its max":          func(w *World) { w.Bodies[0].Health = 182 },
-		"a body with no max":           func(w *World) { w.Bodies[0].MaxHealth = 0 },
-		"a body saved twice":           func(w *World) { w.Bodies = append(w.Bodies, w.Bodies[0]) },
-		"a member not in the list":     func(w *World) { w.Spawns.Groups[0].Members[0].ID = "0z-nobody" },
-		"a member off his entity":      func(w *World) { w.Spawns.Groups[0].Members[0].X += 0.2 },
-		"a gone member on the map":     func(w *World) { w.Spawns.Groups[0].Members[1].ID = w.Entities[1].ID },
-		"a watcher not in the list":    func(w *World) { w.Notice.Watches[0].Watcher = "0z-nobody" },
-		"a watch on nobody":            func(w *World) { w.Notice.Watches[0].Target = "0z-nobody" },
-		"a hunter not in the list":     func(w *World) { w.Pursuit.Chases[0].Hunter = "0z-nobody" },
-		"a chase after nobody":         func(w *World) { w.Pursuit.Chases[0].Quarry = "0z-nobody" },
-		"a squad model not in the list": func(w *World) {
+		}},
+		"a stream past MaxDraws":       {ReasonRNGStream, func(w *World) { w.RNG.World.Draws = d2rand.MaxDraws + 1 }},
+		"a hero with no name":          {ReasonHeroIdentity, func(w *World) { w.Hero.Name = "" }},
+		"a hero of no class":           {ReasonHeroIdentity, func(w *World) { w.Hero.Class = "Janissary" }},
+		"a hero of class None":         {ReasonHeroIdentity, func(w *World) { w.Hero.Class = "" }},
+		"the hero off his own pos":     {ReasonHeroPlace, func(w *World) { w.Hero.X += 0.2 }},
+		"a dead hero":                  {ReasonHeroDead, func(w *World) { w.Hero.Health = 0 }},
+		"a NaN hero":                   {ReasonHeroFinite, func(w *World) { w.Hero.Pos[0] = math.NaN() }},
+		"a NaN stamina":                {ReasonHeroFinite, func(w *World) { w.Hero.Stamina = math.NaN() }},
+		"a facing that is no facing":   {ReasonHeroFacing, func(w *World) { w.Hero.Facing = 64 }},
+		"a negative facing":            {ReasonHeroFacing, func(w *World) { w.Hero.Facing = -1 }},
+		"a negative stamina":           {ReasonHeroStamina, func(w *World) { w.Hero.Stamina = -0.5 }},
+		"a sidecar of version 2":       {ReasonSidecar, func(w *World) { w.Sidecar = b3Sidecar(w, 2, `{}`) }},
+		"a sidecar with no kit":        {ReasonSidecar, func(w *World) { w.Sidecar = b3Sidecar(w, 1, `null`) }},
+		"a sidecar that is not JSON":   {ReasonSidecar, func(w *World) { w.Sidecar = json.RawMessage(`[1]`) }},
+		"a sidecar of another save":    {ReasonGeneration, func(w *World) { w.SavedAt = "2026-09-28T21:14:06Z" }},
+		"a sidecar of no save":         {ReasonGeneration, func(w *World) { w.Sidecar = json.RawMessage(`{"version": 1, "kit": {}}`) }},
+		"a negative clock":             {ReasonClock, func(w *World) { w.Clock.Elapsed = -1 }},
+		"an entity saved twice":        {ReasonEntityTwice, func(w *World) { w.Entities = append(w.Entities, w.Entities[1]) }},
+		"entities out of order":        {ReasonEntityOrder, func(w *World) { w.Entities[0], w.Entities[1] = w.Entities[1], w.Entities[0] }},
+		"an entity called player":      {ReasonEntityID, func(w *World) { w.Entities[1].ID = "player" }},
+		"an entity of no kind":         {ReasonEntityKind, func(w *World) { w.Entities[0].Kind = "object" }},
+		"an npc with no monstat":       {ReasonEntityKind, func(w *World) { w.Entities[1].Monstat = "" }},
+		"a creature with no entry":     {ReasonEntityKind, func(w *World) { w.Entities[0].Creature = "" }},
+		"a creature with a monstat":    {ReasonEntityKind, func(w *World) { w.Entities[0].Monstat = "zombie1" }},
+		"a native with no birthplace":  {ReasonEntityNative, func(w *World) { w.Entities[1].Born = nil }},
+		"a birthplace on a non-native": {ReasonEntityNative, func(w *World) { w.Entities[0].Born = &[2]float64{1, 1} }},
+		"two natives of one name and birthplace": {ReasonNativeTwice, func(w *World) {
+			twin := w.Entities[1]
+			twin.ID = "7g-twin"
+			w.Entities = append(w.Entities, twin)
+		}},
+		"an entity off its motion":  {ReasonEntityPlace, func(w *World) { w.Entities[0].X += 1 }},
+		"an infinite path":          {ReasonEntityFinite, func(w *World) { w.Entities[0].Motion.Path[1][0] = math.Inf(1) }},
+		"a body with no entity":     {ReasonBodyOrphan, func(w *World) { w.Bodies[0].ID = "0z-nobody" }},
+		"a body over its max":       {ReasonBodyHealth, func(w *World) { w.Bodies[0].Health = 182 }},
+		"a body with no max":        {ReasonBodyHealth, func(w *World) { w.Bodies[0].MaxHealth = 0 }},
+		"a body saved twice":        {ReasonBodyTwice, func(w *World) { w.Bodies = append(w.Bodies, w.Bodies[0]) }},
+		"bodies out of order":       {ReasonBodyOrder, func(w *World) { w.Bodies = []Body{{ID: w.Entities[1].ID, Health: 1, MaxHealth: 1}, w.Bodies[0]} }},
+		"a member not in the list":  {ReasonMemberMissing, func(w *World) { w.Spawns.Groups[0].Members[0].ID = "0z-nobody" }},
+		"a member off his entity":   {ReasonMemberPlace, func(w *World) { w.Spawns.Groups[0].Members[0].X += 0.2 }},
+		"a gone member on the map":  {ReasonMemberGone, func(w *World) { w.Spawns.Groups[0].Members[1].ID = w.Entities[1].ID }},
+		"a watcher not in the list": {ReasonWatch, func(w *World) { w.Notice.Watches[0].Watcher = "0z-nobody" }},
+		"a watch on nobody":         {ReasonWatch, func(w *World) { w.Notice.Watches[0].Target = "0z-nobody" }},
+		"a hunter not in the list":  {ReasonChase, func(w *World) { w.Pursuit.Chases[0].Hunter = "0z-nobody" }},
+		"a chase after nobody":      {ReasonChase, func(w *World) { w.Pursuit.Chases[0].Quarry = "0z-nobody" }},
+		"a squad model not in the list": {ReasonSquadModel, func(w *World) {
 			w.Squads.Squads[0].Members = append(w.Squads.Squads[0].Members, d2world.SquadMemberSnapshot{Entity: "0z-nobody"})
-		},
-		"a stage that is none":    func(w *World) { w.Scene.LastStage = "noon" },
-		"a negative watch":        func(w *World) { w.Scene.WatchStood = -1 },
-		"an infinite watch clock": func(w *World) { w.Scene.WatchClock = math.Inf(-1) },
+		}},
+		"a stage that is none":    {ReasonSceneStage, func(w *World) { w.Scene.LastStage = "noon" }},
+		"a negative watch":        {ReasonSceneWatch, func(w *World) { w.Scene.WatchStood = -1 }},
+		"an infinite watch clock": {ReasonSceneFinite, func(w *World) { w.Scene.WatchClock = math.Inf(-1) }},
 	}
 
-	for name, mutate := range cases {
+	for name, tc := range cases {
 		w := b3Fixture()
-		mutate(w)
+		tc.mutate(w)
 
-		require.ErrorIs(t, w.Check(), ErrWorldFile, name)
+		err := w.Check()
+		require.ErrorIs(t, err, ErrWorldFile, name)
+		require.Equal(t, tc.reason, ReasonOf(err), "%s: refused by the wrong rule: %v", name, err)
 
 		// And through the bytes, where the case can be written at all (a NaN
 		// or an infinity cannot: encoding/json refuses to write one).
 		data, err := Encode(w, nil)
 		if err == nil {
 			_, err = Decode(data)
-			require.Error(t, err, name)
+			require.Equal(t, tc.reason, ReasonOf(err), "%s through Decode: %v", name, err)
 		}
 	}
+}
+
+// b3Sidecar is an embedded sidecar of the given version and kit, of w's
+// generation.
+func b3Sidecar(w *World, version int, kit string) json.RawMessage {
+	return json.RawMessage(`{"version": ` + strconv.Itoa(version) + `, "generation": "` + w.SavedAt + `", "kit": ` + kit + `}`)
+}
+
+// THE FILE AND THE .OD2 BESIDE IT ARE ONE HERO'S (the B3 review, A1): a world
+// file names its hero, and a load refuses it beside another hero's .od2 -- the
+// deleted hero's world file the next hero's number used to inherit.
+func TestAWorldFileIsOneHerosFile(t *testing.T) {
+	w := b3Fixture()
+
+	od2 := func(name string, class d2enum.Hero) []byte {
+		data, err := json.Marshal(map[string]interface{}{"heroName": name, "heroType": class, "act": 1})
+		require.NoError(t, err)
+
+		return data
+	}
+
+	require.NoError(t, w.CheckHeroFile(od2("Saver", d2enum.HeroAmazon)), "his own .od2")
+
+	for what, data := range map[string][]byte{
+		"another name":    od2("Vlad", d2enum.HeroAmazon),
+		"another class":   od2("Saver", d2enum.HeroPaladin),
+		"not a hero save": []byte("garbage"),
+	} {
+		err := w.CheckHeroFile(data)
+		require.ErrorIs(t, err, ErrWorldFile, what)
+		require.Equal(t, ReasonPairHero, ReasonOf(err), what)
+	}
+}
+
+// ONE MOMENT IN BOTH FILES (the B3 review, B7): the sidecar file must be of
+// the world file's generation -- its saved_at, which the save writes into
+// both. A save cut off after the world file and before the sidecar leaves the
+// sidecar of the save before, and the load can tell.
+func TestTheSidecarIsOfTheWorldFilesGeneration(t *testing.T) {
+	w := b3Fixture()
+
+	require.NoError(t, w.SameMoment(w.Sidecar), "the sidecar this save wrote")
+
+	for what, data := range map[string][]byte{
+		"the save before":   []byte(`{"version": 1, "generation": "2026-09-28T20:00:00Z", "kit": {}}`),
+		"no world save yet": []byte(`{"version": 1, "kit": {}}`),
+		"not a kit file":    []byte(`[]`),
+	} {
+		err := w.SameMoment(data)
+		require.ErrorIs(t, err, ErrWorldFile, what)
+		require.Equal(t, ReasonPairMoment, ReasonOf(err), what)
+	}
+}
+
+// A FIELD THE FILE LACKS IS REFUSED, AT ANY DEPTH (the B3 review, B1): B3-8
+// says any change to the file's shape bumps Version, and nothing held it --
+// encoding/json reads a missing field as zero, so a file from before a field
+// existed would load it as zero. Decode now re-encodes what it read and
+// refuses any key the re-encoding writes that the file lacks.
+func TestAFieldTheFileLacksIsRefused(t *testing.T) {
+	data := b3Encode(t, b3Fixture())
+
+	for _, path := range []string{
+		"spawner.arrival", "hero.facing", "hero.stamina", "clock.elapsed", "rng.world.draws",
+		"light.sources[0].burn", "entities[0].motion.dir", "combat.last_round.encounter", "scene.watch_clock_set",
+	} {
+		cut := b3Cut(t, data, path)
+
+		_, err := Decode(cut)
+		require.ErrorIs(t, err, ErrWorldFile, path)
+		require.Equal(t, ReasonFieldMissing, ReasonOf(err), "%s cut: %v", path, err)
+		require.Contains(t, err.Error(), path)
+	}
+
+	// A null where an object is written reads as zero too.
+	nulled := bytes.Replace(data, []byte(`"last_round": {`), []byte(`"last_round": null, "x_was": {`), 1)
+	nulled = b3Cut(t, nulled, "combat.x_was")
+
+	_, err := Decode(nulled)
+	require.Equal(t, ReasonFieldMissing, ReasonOf(err), "a nested null: %v", err)
+
+	// An omitempty field written by neither is not missing (the control).
+	_, err = Decode(data)
+	require.NoError(t, err)
+}
+
+// b3Cut removes the key at a dotted path ("a.b[0].c") from a JSON document.
+func b3Cut(t *testing.T, data []byte, path string) []byte {
+	t.Helper()
+
+	var tree interface{}
+	require.NoError(t, json.Unmarshal(data, &tree))
+
+	cur := tree
+	parts := strings.Split(path, ".")
+
+	for _, p := range parts[:len(parts)-1] {
+		name, index := p, -1
+		if i := strings.Index(p, "["); i >= 0 {
+			name = p[:i]
+			n, err := strconv.Atoi(strings.TrimSuffix(p[i+1:], "]"))
+			require.NoError(t, err)
+			index = n
+		}
+
+		cur = cur.(map[string]interface{})[name]
+		if index >= 0 {
+			cur = cur.([]interface{})[index]
+		}
+	}
+
+	m := cur.(map[string]interface{})
+	_, ok := m[parts[len(parts)-1]]
+	require.True(t, ok, "%s is not in the file", path)
+	delete(m, parts[len(parts)-1])
+
+	out, err := json.Marshal(tree)
+	require.NoError(t, err)
+
+	return out
 }
 
 // The generated world is a map too: no path, no sha, and it says so.

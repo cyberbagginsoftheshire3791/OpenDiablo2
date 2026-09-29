@@ -135,6 +135,18 @@ func (n *Notice) Validate(snap NoticeSnapshot, r Resolver) error {
 	return err
 }
 
+// CheckSnapshot is every check Validate makes of the snapshot itself --
+// everything but its refusal of a model already in use. Game.SaveWorld runs it on
+// the snapshot it has just taken from this live model, so a save never writes a
+// block the load's own Validate would refuse (the M4.6 B3 review, B2: "strict
+// at save" stopped at the file's own checks). Validate is the in-use refusal
+// and this, so the two cannot disagree.
+func (n *Notice) CheckSnapshot(snap NoticeSnapshot, r Resolver) error {
+	_, err := n.b2bBuild(snap, r)
+
+	return err
+}
+
 // b2bValidate checks the whole snapshot and returns the watches it would
 // restore. Nothing in n is changed.
 func (n *Notice) b2bValidate(snap NoticeSnapshot, r Resolver) (map[string]*watch, error) {
@@ -142,6 +154,12 @@ func (n *Notice) b2bValidate(snap NoticeSnapshot, r Resolver) (map[string]*watch
 		return nil, fmt.Errorf("d2world: notice: restore into a model that watches no one; this one watches %d", len(n.watches))
 	}
 
+	return n.b2bBuild(snap, r)
+}
+
+// b2bBuild is b2bValidate's checks of the snapshot itself, and the watches it
+// would restore: nothing of the model's own state is read or changed.
+func (n *Notice) b2bBuild(snap NoticeSnapshot, r Resolver) (map[string]*watch, error) {
 	if err := b2bCheckNumbers("notice", true,
 		b2bNum{"checks", float64(snap.Checks)}, b2bNum{"notices", float64(snap.Notices)}); err != nil {
 		return nil, err

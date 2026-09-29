@@ -47,6 +47,10 @@ func (v *Game) bindKit() {
 	defer v.bindStanding(extras.Village)
 	defer v.bindLand(extras.Land)
 
+	// The world save this sidecar belongs to, carried forward by every kit
+	// save until the next world save (the B3 review, B7).
+	v.saveGeneration = extras.Generation
+
 	switch {
 	case err == nil:
 		v.kit = kit
@@ -229,7 +233,7 @@ func (v *Game) saveKit() {
 	// light model's minutes into the document and takes them back out of the
 	// live kit (save.go). The world save writes the same document, so the
 	// sidecar is one shape whoever writes it (M4.6 B3).
-	data, err := v.heroBytes()
+	data, err := v.heroBytes(v.saveGeneration)
 	if err == nil {
 		err = d2items.WriteHero(v.kitPath, data)
 	}

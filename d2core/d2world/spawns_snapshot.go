@@ -205,6 +205,18 @@ func (s *Spawns) Validate(snap SpawnsSnapshot, r Resolver, worldSeed int64) erro
 	return err
 }
 
+// CheckSnapshot is every check Validate makes of the snapshot itself --
+// everything but its refusal of a table set already in use. Game.SaveWorld runs it on
+// the snapshot it has just taken from this live table set, so a save never writes a
+// block the load's own Validate would refuse (the M4.6 B3 review, B2: "strict
+// at save" stopped at the file's own checks). Validate is the in-use refusal
+// and this, so the two cannot disagree.
+func (s *Spawns) CheckSnapshot(snap SpawnsSnapshot, r Resolver, worldSeed int64) error {
+	_, err := s.b2bBuild(snap, r, worldSeed)
+
+	return err
+}
+
 // b2bValidate checks the whole snapshot and returns the groups it would
 // restore. Nothing in s is changed.
 func (s *Spawns) b2bValidate(snap SpawnsSnapshot, r Resolver, worldSeed int64) (map[string]*group, error) {
@@ -212,6 +224,12 @@ func (s *Spawns) b2bValidate(snap SpawnsSnapshot, r Resolver, worldSeed int64) (
 		return nil, fmt.Errorf("d2world: spawns: restore into tables that hold no group; these hold %d", len(s.groups))
 	}
 
+	return s.b2bBuild(snap, r, worldSeed)
+}
+
+// b2bBuild is b2bValidate's checks of the snapshot itself, and the groups it
+// would restore: nothing of the tables' own state is read or changed.
+func (s *Spawns) b2bBuild(snap SpawnsSnapshot, r Resolver, worldSeed int64) (map[string]*group, error) {
 	if err := s.b2bCheckTop(snap); err != nil {
 		return nil, err
 	}

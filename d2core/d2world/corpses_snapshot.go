@@ -104,6 +104,16 @@ func (c *Corpses) Validate(s CorpsesSnapshot) error {
 		return fmt.Errorf("corpses snapshot: restore into an empty registry; this one holds %d bodies", len(c.order))
 	}
 
+	return c.CheckSnapshot(s)
+}
+
+// CheckSnapshot is every check Validate makes of the snapshot itself --
+// everything but its refusal of a registry already in use. Game.SaveWorld runs it on
+// the snapshot it has just taken from this live registry, so a save never writes a
+// block the load's own Validate would refuse (the M4.6 B3 review, B2: "strict
+// at save" stopped at the file's own checks). Validate is the in-use refusal
+// and this, so the two cannot disagree.
+func (c *Corpses) CheckSnapshot(s CorpsesSnapshot) error {
 	return checkCorpsesSnapshot(s)
 }
 

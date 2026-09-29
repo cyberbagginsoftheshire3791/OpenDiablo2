@@ -86,21 +86,29 @@ func (p sceneProvider) HarnessState() map[string]interface{} {
 		world = d2rand.ReportOf(v.gameClient.MapEngine.RandSeed(), v.gameClient.MapEngine.RandDraws())
 	}
 
-	nativeIDs := make([]string, 0, len(v.natives))
-	for id := range v.natives {
-		nativeIDs = append(nativeIDs, id)
-	}
+	// Each native by the id his entity has NOW (B4b's re-key changes it), and
+	// "" for a key two entities share, which the save refuses.
+	natives := make([]map[string]interface{}, 0, len(v.natives))
 
-	sort.Strings(nativeIDs)
+	for k, e := range v.natives {
+		id := ""
+		if e != nil {
+			id = e.ID()
+		}
 
-	natives := make([]map[string]interface{}, 0, len(nativeIDs))
-
-	for _, id := range nativeIDs {
-		n := v.natives[id]
 		natives = append(natives, map[string]interface{}{
-			"id": id, "name_key": n.nameKey, "born": [2]float64{n.x, n.y},
+			"id": id, "name_key": k.nameKey, "born": [2]float64{k.x, k.y},
 		})
 	}
+
+	sort.Slice(natives, func(i, j int) bool {
+		a, b := natives[i]["id"].(string), natives[j]["id"].(string)
+		if a != b {
+			return a < b
+		}
+
+		return natives[i]["name_key"].(string) < natives[j]["name_key"].(string)
+	})
 
 	mapPath, mapSHA := d2mapgen.HostMap()
 

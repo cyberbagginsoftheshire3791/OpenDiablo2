@@ -569,6 +569,12 @@ func removeAChasingWatcher(t *testing.T, s *session) {
 		t.Fatalf("act 8: removing a watcher that hunts must unwatch him and release his chase: %v", out)
 	}
 
+	// And his body goes with him (M4.6 B3 review, B4): the pack's arrival
+	// gave him one, and a body with no entity refuses every save after it.
+	if out["body_dropped"] != true {
+		t.Fatalf("act 8: removing a pack member must drop the body his arrival gave him: %v", out)
+	}
+
 	if isWatched() || isChasing() {
 		t.Fatalf("act 8: %s is off the map and still watched (%v) or chasing (%v) -- every save would be refused",
 			hunter, isWatched(), isChasing())

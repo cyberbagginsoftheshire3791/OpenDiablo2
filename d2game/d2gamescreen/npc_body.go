@@ -97,6 +97,20 @@ func (v *Game) releaseNPCBody(id string) {
 	delete(v.bodies, id)
 }
 
+// ForgetBody forgets the body of an entity the harness has taken off the map
+// (strigoi_remove_entity), and reports whether there was one. The game's own
+// removals -- a pack sent home, a recalled model, a risen man taken off --
+// release the body themselves (releaseNPCBody); the harness's did not, so a
+// removed monster's body stayed, with no entity, and every save after it was
+// refused ("a body with no entity in the file": the B3 review, B4). The
+// removal's third half, beside Unwatch and Pursuit.Release.
+func (v *Game) ForgetBody(id string) bool {
+	_, had := v.bodies[id]
+	v.releaseNPCBody(id)
+
+	return had
+}
+
 // BodiesKnown is how many monsters currently have a body. NPC BODIES ONLY --
 // the player's body is answered by BodyOf but is not in this registry and
 // never counts here, so a script that reads bodies_known across step 4 must

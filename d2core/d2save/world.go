@@ -27,11 +27,14 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2saveref"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 )
@@ -63,6 +66,97 @@ func (e *VersionError) Error() string {
 
 // Unwrap makes errors.Is(err, ErrWorldVersion) true.
 func (e *VersionError) Unwrap() error { return ErrWorldVersion }
+
+// FileError is a refusal of a version-1 file: Reason names the one rule that
+// refused it (the Reason* constants), Detail says what it found. Every
+// refusal Decode, Check, CheckHeroFile and SameMoment make is one, and
+// errors.Is(err, ErrWorldFile) holds for each.
+//
+// The reason is for the tests first (the B3 review, A2: a test that asserted
+// only ErrWorldFile stayed green with a rule deleted, because another rule
+// refused the same file) and for the load's log second.
+type FileError struct {
+	Reason string
+	Detail string
+}
+
+func (e *FileError) Error() string { return fmt.Sprintf("%v: %s", ErrWorldFile, e.Detail) }
+
+// Unwrap makes errors.Is(err, ErrWorldFile) true.
+func (e *FileError) Unwrap() error { return ErrWorldFile }
+
+// ReasonOf is the Reason of the *FileError in err's chain -- ReasonVersion
+// for a *VersionError -- or "".
+func ReasonOf(err error) string {
+	var (
+		fe *FileError
+		ve *VersionError
+	)
+
+	switch {
+	case errors.As(err, &fe):
+		return fe.Reason
+	case errors.As(err, &ve):
+		return ReasonVersion
+	}
+
+	return ""
+}
+
+func refuse(reason, format string, args ...interface{}) error {
+	return &FileError{Reason: reason, Detail: fmt.Sprintf(format, args...)}
+}
+
+// The rules a file is refused by (FileError.Reason).
+const (
+	// Decode's own.
+	ReasonJSON         = "json"          // not a JSON object, or something after it
+	ReasonBlockMissing = "block-missing" // a top-level block absent
+	ReasonBlockNull    = "block-null"    // a top-level block null
+	ReasonBlockUnknown = "block-unknown" // a top-level key this build does not know
+	ReasonField        = "field"         // a field this build does not know, or a value of the wrong type
+	ReasonFieldMissing = "field-missing" // a field this build writes and the file lacks (B3-8; the review's B1)
+
+	// Check's.
+	ReasonVersion       = "version"
+	ReasonMap           = "map"
+	ReasonRNGCopy       = "rng-copy"
+	ReasonRNGStream     = "rng-stream"
+	ReasonHeroIdentity  = "hero-identity"
+	ReasonHeroFinite    = "hero-finite"
+	ReasonHeroPlace     = "hero-place"
+	ReasonHeroDead      = "hero-dead"
+	ReasonHeroFacing    = "hero-facing"
+	ReasonHeroStamina   = "hero-stamina"
+	ReasonSidecar       = "sidecar"
+	ReasonGeneration    = "generation"
+	ReasonClock         = "clock"
+	ReasonEntityID      = "entity-id"
+	ReasonEntityTwice   = "entity-twice"
+	ReasonEntityOrder   = "entity-order"
+	ReasonEntityKind    = "entity-kind"
+	ReasonEntityNative  = "entity-native"
+	ReasonNativeTwice   = "native-twice"
+	ReasonEntityFinite  = "entity-finite"
+	ReasonEntityPlace   = "entity-place"
+	ReasonBodyTwice     = "body-twice"
+	ReasonBodyOrder     = "body-order"
+	ReasonBodyOrphan    = "body-orphan"
+	ReasonBodyHealth    = "body-health"
+	ReasonMemberGone    = "member-gone"
+	ReasonMemberMissing = "member-missing"
+	ReasonMemberPlace   = "member-place"
+	ReasonWatch         = "watch"
+	ReasonChase         = "chase"
+	ReasonSquadModel    = "squad-model"
+	ReasonSceneFinite   = "scene-finite"
+	ReasonSceneWatch    = "scene-watch"
+	ReasonSceneStage    = "scene-stage"
+
+	// The pairing with the files beside it (B4's step 1).
+	ReasonPairHero   = "pair-hero"   // CheckHeroFile: another hero's .od2
+	ReasonPairMoment = "pair-moment" // SameMoment: a sidecar of another generation
+)
 
 // Blocks is every top-level key of the world file, in the order it is
 // written. Every one is required: a load that found one missing would restore
@@ -171,7 +265,12 @@ type UUIDStream struct {
 	Bytes uint64 `json:"bytes"`
 }
 
-// Hero is the player's saved place, health and run toggle.
+// Hero is who the player is, and his saved place, facing, health, stamina and
+// run toggle.
+//
+// Name and Class are the .od2's heroName and heroType (by name, "Amazon"): the
+// file says whose it is, and a load refuses it beside another hero's .od2
+// (CheckHeroFile; the B3 review, A1).
 //
 // X and Y are WORLD TILES, the units every other position in the file but a
 // motion's is in (the spawns members', the harness's). Pos is the same point
@@ -179,14 +278,22 @@ type UUIDStream struct {
 // world tiles times five is not always the sub-tile it came from in floating
 // point. Check holds the two together.
 //
+// Facing is the direction his body faces (Player.Facing), and Stamina his
+// stamina, which the .od2 does not carry (its json:"-"): both were missing
+// from B3's file, and the digest compares both (the B3 review, B6).
+//
 // Rule 4: a walk he was in the middle of does not continue, so no motion is
-// carried for him -- he stands at Pos after a load.
+// carried for him -- he stands at Pos after a load, facing Facing.
 type Hero struct {
-	X      float64    `json:"x"`
-	Y      float64    `json:"y"`
-	Pos    [2]float64 `json:"pos"`
-	Health int        `json:"health"`
-	Run    bool       `json:"run"`
+	Name    string     `json:"name"`
+	Class   string     `json:"class"`
+	X       float64    `json:"x"`
+	Y       float64    `json:"y"`
+	Pos     [2]float64 `json:"pos"`
+	Facing  int        `json:"facing"`
+	Health  int        `json:"health"`
+	Stamina float64    `json:"stamina"`
+	Run     bool       `json:"run"`
 }
 
 // Spawner is the game spawner's one saved number (d2gamescreen's
@@ -353,17 +460,21 @@ func isBlock(name string) bool {
 //  4. Any field this build does not know, at any depth: ErrWorldFile (the
 //     decoder disallows unknown fields). A file from a build whose snapshot
 //     grew a field it did not bump the version for is refused, not half read.
-//  5. Check.
+//  5. Any field this build WRITES that the file lacks, at any depth
+//     (missingKey; the B3 review, B1): a file from before a field existed is
+//     refused, never read with the field at zero.
+//  6. Check.
 //
+// Every refusal but the version's is a *FileError naming its rule (ReasonOf).
 // Seeds decode as int64 through typed fields, never through a float64.
 func Decode(data []byte) (*World, error) {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(data, &top); err != nil {
-		return nil, fmt.Errorf("%w: not a JSON object: %v", ErrWorldFile, err)
+		return nil, refuse(ReasonJSON, "not a JSON object: %v", err)
 	}
 
 	if top == nil {
-		return nil, fmt.Errorf("%w: not a JSON object (null)", ErrWorldFile)
+		return nil, refuse(ReasonJSON, "not a JSON object (null)")
 	}
 
 	version, ok := top["version"]
@@ -380,15 +491,15 @@ func Decode(data []byte) (*World, error) {
 
 		switch {
 		case !ok:
-			return nil, fmt.Errorf("%w: the %q block is missing", ErrWorldFile, name)
+			return nil, refuse(ReasonBlockMissing, "the %q block is missing", name)
 		case string(bytes.TrimSpace(raw)) == "null":
-			return nil, fmt.Errorf("%w: the %q block is null", ErrWorldFile, name)
+			return nil, refuse(ReasonBlockNull, "the %q block is null", name)
 		}
 	}
 
 	for name := range top {
 		if !isBlock(name) {
-			return nil, fmt.Errorf("%w: %q is not a block this build knows", ErrWorldFile, name)
+			return nil, refuse(ReasonBlockUnknown, "%q is not a block this build knows", name)
 		}
 	}
 
@@ -397,11 +508,31 @@ func Decode(data []byte) (*World, error) {
 
 	var w World
 	if err := dec.Decode(&w); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrWorldFile, err)
+		return nil, refuse(ReasonField, "%v", err)
 	}
 
 	if dec.More() {
-		return nil, fmt.Errorf("%w: data after the world object", ErrWorldFile)
+		return nil, refuse(ReasonJSON, "data after the world object")
+	}
+
+	again, err := json.Marshal(&w)
+	if err != nil {
+		return nil, refuse(ReasonField, "re-encoding what was read: %v", err)
+	}
+
+	var want, have interface{}
+
+	if err := json.Unmarshal(again, &want); err != nil {
+		return nil, refuse(ReasonField, "re-encoding what was read: %v", err)
+	}
+
+	if err := json.Unmarshal(data, &have); err != nil {
+		return nil, refuse(ReasonJSON, "%v", err)
+	}
+
+	if path := missingKey(want, have, ""); path != "" {
+		return nil, refuse(ReasonFieldMissing, "%s is missing: this build writes it, and a file without it is of an older shape "+
+			"whose version was not bumped (B3-8) -- it would load as zero", path)
 	}
 
 	if err := w.Check(); err != nil {
@@ -435,7 +566,13 @@ var shaHex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // the blocks agree with each other, every stream is the one this seed runs,
 // and every id a live record points at is an entity the file carries. The
 // systems' own checks (each B2 Validate) need the game the load is building,
-// and are B4's (D4).
+// and are B4's (D4) -- and SaveWorld's, which runs every one of them on the
+// snapshots it takes before it writes (the B3 review, B2).
+//
+// Every refusal is a *FileError whose Reason names the one rule that refused
+// it (the B3 review, A2): a test of a rule asserts ITS reason, so a rule that
+// is deleted turns its case red even where another rule would still have
+// refused the file.
 //
 // SaveWorld runs it on the file it is about to write, so a file no load could
 // read is refused before it is written (B2b's "strict at save").
@@ -484,16 +621,12 @@ func (w *World) Check() error {
 		err = w.checkScene()
 	}
 
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrWorldFile, err)
-	}
-
-	return nil
+	return err
 }
 
 func (w *World) checkHeader() error {
 	if w.Version != Version {
-		return fmt.Errorf("version %d", w.Version)
+		return refuse(ReasonVersion, "version %d", w.Version)
 	}
 
 	return nil
@@ -502,11 +635,11 @@ func (w *World) checkHeader() error {
 func (w *World) checkMap() error {
 	switch {
 	case w.Map.Generated && (w.Map.Path != "" || w.Map.SHA != ""):
-		return fmt.Errorf("map: a generated world has no path or sha (%q, %q)", w.Map.Path, w.Map.SHA)
+		return refuse(ReasonMap, "map: a generated world has no path or sha (%q, %q)", w.Map.Path, w.Map.SHA)
 	case !w.Map.Generated && w.Map.Path == "":
-		return errors.New("map: an authored world names its .tmj")
+		return refuse(ReasonMap, "map: an authored world names its .tmj")
 	case !w.Map.Generated && !shaHex.MatchString(w.Map.SHA):
-		return fmt.Errorf("map: %q is not the SHA-256 of %s in hex", w.Map.SHA, w.Map.Path)
+		return refuse(ReasonMap, "map: %q is not the SHA-256 of %s in hex", w.Map.SHA, w.Map.Path)
 	}
 
 	return nil
@@ -526,7 +659,7 @@ func (w *World) checkRNG() error {
 
 	for _, c := range copies {
 		if c.copy != c.block {
-			return fmt.Errorf("rng.%s is %+v and the %s block's own stream is %+v", c.name, c.copy, c.name, c.block)
+			return refuse(ReasonRNGCopy, "rng.%s is %+v and the %s block's own stream is %+v", c.name, c.copy, c.name, c.block)
 		}
 	}
 
@@ -542,45 +675,90 @@ func (w *World) checkRNG() error {
 
 	for _, st := range streams {
 		if err := st.s.Check(w.Seed, st.name); err != nil {
-			return err
+			return refuse(ReasonRNGStream, "%v", err)
 		}
 	}
 
 	return nil
 }
 
+// heroDirections bounds a facing: Diablo II's art has at most 64 directions,
+// and a hero's body uses 16 or fewer.
+const heroDirections = 64
+
 func (w *World) checkHero() error {
 	h := w.Hero
-	if err := finite("hero", h.X, h.Y, h.Pos[0], h.Pos[1]); err != nil {
-		return err
+
+	// WHOSE FILE THIS IS (the B3 review, A1): a world file names its hero, so
+	// a load can refuse one that is not the .od2's it sits beside
+	// (CheckHeroFile).
+	if h.Name == "" || !isHeroClass(h.Class) {
+		return refuse(ReasonHeroIdentity, "hero: name %q, class %q -- a world file names the hero it is his", h.Name, h.Class)
+	}
+
+	if err := finite("hero", h.X, h.Y, h.Pos[0], h.Pos[1], h.Stamina); err != nil {
+		return refuse(ReasonHeroFinite, "%v", err)
 	}
 
 	if err := samePlace("hero", h.X, h.Y, h.Pos); err != nil {
-		return err
+		return refuse(ReasonHeroPlace, "%v", err)
 	}
 
 	// A dead hero is never saved (DEAD, the 12 Sep ruling).
 	if h.Health <= 0 {
-		return fmt.Errorf("hero: health %d -- a dead hero is never saved", h.Health)
+		return refuse(ReasonHeroDead, "hero: health %d -- a dead hero is never saved", h.Health)
+	}
+
+	if h.Facing < 0 || h.Facing >= heroDirections {
+		return refuse(ReasonHeroFacing, "hero: facing %d is no direction (0-%d)", h.Facing, heroDirections-1)
+	}
+
+	if h.Stamina < 0 {
+		return refuse(ReasonHeroStamina, "hero: stamina %v", h.Stamina)
 	}
 
 	return nil
 }
 
-// checkSidecar: the embedded sidecar is the kit file's document, version 1,
-// with a kit.
-func (w *World) checkSidecar() error {
-	var sc struct {
-		Version int             `json:"version"`
-		Kit     json.RawMessage `json:"kit"`
+// isHeroClass reports whether class names one of Diablo II's seven classes, as
+// d2enum.Hero spells it (the .od2's heroType, by name).
+func isHeroClass(class string) bool {
+	for h := d2enum.HeroBarbarian; h <= d2enum.HeroDruid; h++ {
+		if h.String() == class {
+			return true
+		}
 	}
+
+	return false
+}
+
+// embeddedSidecar is what the world file reads of the sidecar it carries.
+type embeddedSidecar struct {
+	Version    int             `json:"version"`
+	Generation string          `json:"generation"`
+	Kit        json.RawMessage `json:"kit"`
+}
+
+// checkSidecar: the embedded sidecar is the kit file's document, of the
+// version d2items writes (d2items.SidecarVersion, not a literal: the B3
+// review's C item), with a kit -- and of THIS save's generation: the saved_at
+// the world file carries, which the save writes into both (the B3 review,
+// B7).
+func (w *World) checkSidecar() error {
+	var sc embeddedSidecar
 
 	if err := json.Unmarshal(w.Sidecar, &sc); err != nil {
-		return fmt.Errorf("sidecar: %v", err)
+		return refuse(ReasonSidecar, "sidecar: %v", err)
 	}
 
-	if sc.Version != 1 || len(sc.Kit) == 0 || string(sc.Kit) == "null" {
-		return fmt.Errorf("sidecar: version %d with kit %s -- the kit file's document is version 1 and has a kit", sc.Version, sc.Kit)
+	if sc.Version != d2items.SidecarVersion || len(sc.Kit) == 0 || string(sc.Kit) == "null" {
+		return refuse(ReasonSidecar, "sidecar: version %d with kit %s -- the kit file's document is version %d and has a kit",
+			sc.Version, sc.Kit, d2items.SidecarVersion)
+	}
+
+	if sc.Generation != w.SavedAt {
+		return refuse(ReasonGeneration, "sidecar: generation %q, and this file was saved at %q -- the save writes the one into the other",
+			sc.Generation, w.SavedAt)
 	}
 
 	return nil
@@ -588,25 +766,33 @@ func (w *World) checkSidecar() error {
 
 func (w *World) checkClock() error {
 	if e := w.Clock.Elapsed; math.IsNaN(e) || math.IsInf(e, 0) || e < 0 {
-		return fmt.Errorf("clock: elapsed %v", e)
+		return refuse(ReasonClock, "clock: elapsed %v", e)
 	}
 
 	return nil
 }
 
+// nativePair is how a load knows a native entity: who stands in for him and
+// where the map put him (B3-6; the B3 review, B3).
+type nativePair struct {
+	nameKey string
+	x, y    float64
+}
+
 func (w *World) checkEntities() error {
 	seen := map[string]bool{}
+	natives := map[nativePair]string{}
 
 	for i, e := range w.Entities {
 		what := fmt.Sprintf("entities[%d] %q", i, e.ID)
 
 		switch {
 		case e.ID == "" || e.ID == d2saveref.Player:
-			return fmt.Errorf("%s: not an entity id", what)
+			return refuse(ReasonEntityID, "%s: not an entity id", what)
 		case seen[e.ID]:
-			return fmt.Errorf("%s: saved twice", what)
+			return refuse(ReasonEntityTwice, "%s: saved twice", what)
 		case i > 0 && w.Entities[i-1].ID > e.ID:
-			return fmt.Errorf("%s: the list is sorted by id", what)
+			return refuse(ReasonEntityOrder, "%s: the list is sorted by id", what)
 		}
 
 		seen[e.ID] = true
@@ -614,18 +800,19 @@ func (w *World) checkEntities() error {
 		switch e.Kind {
 		case KindNPC:
 			if e.Monstat == "" || e.Creature != "" {
-				return fmt.Errorf("%s: an npc names its monstat and no creature (%q, %q)", what, e.Monstat, e.Creature)
+				return refuse(ReasonEntityKind, "%s: an npc names its monstat and no creature (%q, %q)", what, e.Monstat, e.Creature)
 			}
 		case KindCreature:
 			if e.Creature == "" || e.Monstat != "" {
-				return fmt.Errorf("%s: a creature names its bestiary id and no monstat (%q, %q)", what, e.Creature, e.Monstat)
+				return refuse(ReasonEntityKind, "%s: a creature names its bestiary id and no monstat (%q, %q)", what, e.Creature, e.Monstat)
 			}
 		default:
-			return fmt.Errorf("%s: kind %q is not %s or %s", what, e.Kind, KindNPC, KindCreature)
+			return refuse(ReasonEntityKind, "%s: kind %q is not %s or %s", what, e.Kind, KindNPC, KindCreature)
 		}
 
 		if e.Native != (e.Born != nil) {
-			return fmt.Errorf("%s: a native entity, and only one, carries where the map put it (native %v, born %v)", what, e.Native, e.Born)
+			return refuse(ReasonEntityNative, "%s: a native entity, and only one, carries where the map put it (native %v, born %v)",
+				what, e.Native, e.Born)
 		}
 
 		nums := []float64{e.X, e.Y, e.Motion.Pos[0], e.Motion.Pos[1], e.Motion.Target[0], e.Motion.Target[1],
@@ -639,11 +826,23 @@ func (w *World) checkEntities() error {
 		}
 
 		if err := finite(what, nums...); err != nil {
-			return err
+			return refuse(ReasonEntityFinite, "%v", err)
 		}
 
 		if err := samePlace(what, e.X, e.Y, e.Motion.Pos); err != nil {
-			return err
+			return refuse(ReasonEntityPlace, "%v", err)
+		}
+
+		// B4b re-keys a native by (name_key, born), so no two may share the
+		// pair: the load could not tell them apart (the B3 review, B3).
+		if e.Native {
+			pair := nativePair{nameKey: e.NameKey, x: e.Born[0], y: e.Born[1]}
+			if other, dup := natives[pair]; dup {
+				return refuse(ReasonNativeTwice, "%s and %q are both %q born at %v,%v: a load re-keys a native by name_key and born, and could not tell them apart",
+					what, other, e.NameKey, e.Born[0], e.Born[1])
+			}
+
+			natives[pair] = e.ID
 		}
 	}
 
@@ -659,13 +858,13 @@ func (w *World) checkBodies() error {
 
 		switch {
 		case seen[b.ID]:
-			return fmt.Errorf("%s: saved twice", what)
+			return refuse(ReasonBodyTwice, "%s: saved twice", what)
 		case i > 0 && w.Bodies[i-1].ID > b.ID:
-			return fmt.Errorf("%s: the list is sorted by id", what)
+			return refuse(ReasonBodyOrder, "%s: the list is sorted by id", what)
 		case !entities[b.ID]:
-			return fmt.Errorf("%s: a body with no entity in the file", what)
+			return refuse(ReasonBodyOrphan, "%s: a body with no entity in the file", what)
 		case b.MaxHealth < 1 || b.Health < 0 || b.Health > b.MaxHealth:
-			return fmt.Errorf("%s: health %d of %d", what, b.Health, b.MaxHealth)
+			return refuse(ReasonBodyHealth, "%s: health %d of %d", what, b.Health, b.MaxHealth)
 		}
 
 		seen[b.ID] = true
@@ -695,32 +894,32 @@ func (w *World) checkRefs() error {
 
 			switch {
 			case m.Gone && ok:
-				return fmt.Errorf("spawns %s: %s is gone, and the file carries an entity with his id", g.ID, m.ID)
+				return refuse(ReasonMemberGone, "spawns %s: %s is gone, and the file carries an entity with his id", g.ID, m.ID)
 			case m.Gone:
 			case !ok:
-				return fmt.Errorf("spawns %s: member %s is on the map and not in the entity list", g.ID, m.ID)
+				return refuse(ReasonMemberMissing, "spawns %s: member %s is on the map and not in the entity list", g.ID, m.ID)
 			case e.X != m.X || e.Y != m.Y:
-				return fmt.Errorf("spawns %s: member %s stood at %v,%v and his entity at %v,%v", g.ID, m.ID, m.X, m.Y, e.X, e.Y)
+				return refuse(ReasonMemberPlace, "spawns %s: member %s stood at %v,%v and his entity at %v,%v", g.ID, m.ID, m.X, m.Y, e.X, e.Y)
 			}
 		}
 	}
 
 	for _, wt := range w.Notice.Watches {
 		if !isEntity(wt.Watcher) || !isQuarry(wt.Target) {
-			return fmt.Errorf("notice: watcher %q or target %q is not in the entity list", wt.Watcher, wt.Target)
+			return refuse(ReasonWatch, "notice: watcher %q or target %q is not in the entity list", wt.Watcher, wt.Target)
 		}
 	}
 
 	for _, c := range w.Pursuit.Chases {
 		if !isEntity(c.Hunter) || !isQuarry(c.Quarry) {
-			return fmt.Errorf("pursuit: hunter %q or quarry %q is not in the entity list", c.Hunter, c.Quarry)
+			return refuse(ReasonChase, "pursuit: hunter %q or quarry %q is not in the entity list", c.Hunter, c.Quarry)
 		}
 	}
 
 	for _, sq := range w.Squads.Squads {
 		for _, m := range sq.Members {
 			if !isQuarry(m.Entity) {
-				return fmt.Errorf("squads %s: model %q is not in the entity list", sq.ID, m.Entity)
+				return refuse(ReasonSquadModel, "squads %s: model %q is not in the entity list", sq.ID, m.Entity)
 			}
 		}
 	}
@@ -731,11 +930,11 @@ func (w *World) checkRefs() error {
 func (w *World) checkScene() error {
 	s := w.Scene
 	if err := finite("scene", s.WatchStood, s.WatchClock); err != nil {
-		return err
+		return refuse(ReasonSceneFinite, "%v", err)
 	}
 
 	if s.WatchStood < 0 {
-		return fmt.Errorf("scene: watch_stood %v", s.WatchStood)
+		return refuse(ReasonSceneWatch, "scene: watch_stood %v", s.WatchStood)
 	}
 
 	for _, stage := range []d2world.Stage{d2world.StageNight, d2world.StageDawn, d2world.StageDay, d2world.StageDusk} {
@@ -744,7 +943,7 @@ func (w *World) checkScene() error {
 		}
 	}
 
-	return fmt.Errorf("scene: last_stage %q is no stage", s.LastStage)
+	return refuse(ReasonSceneStage, "scene: last_stage %q is no stage", s.LastStage)
 }
 
 func (w *World) entityIDs() map[string]bool {
@@ -754,6 +953,55 @@ func (w *World) entityIDs() map[string]bool {
 	}
 
 	return ids
+}
+
+// CheckHeroFile refuses a world file that is not the hero's whose .od2 it sits
+// beside (the B3 review, A1): his name and class must be the .od2's heroName
+// and heroType. B4's load calls it in step 1, before anything is read into the
+// game, and sets a mismatched file aside (rule 7).
+//
+// Name and class are all the identity a hero has: there is no id or creation
+// stamp in the .od2. Two heroes of one name and class are told apart by their
+// number (N.od2), which the hero screen now never hands out while a file of a
+// deleted hero is left (d2hero.DeleteHero, firstFreeFileName).
+func (w *World) CheckHeroFile(od2 []byte) error {
+	var hero struct {
+		Name string      `json:"heroName"`
+		Type d2enum.Hero `json:"heroType"`
+	}
+
+	if err := json.Unmarshal(od2, &hero); err != nil {
+		return refuse(ReasonPairHero, "his .od2 is not a hero save: %v", err)
+	}
+
+	if hero.Name != w.Hero.Name || hero.Type.String() != w.Hero.Class {
+		return refuse(ReasonPairHero, "this world file is %s the %s's, and the .od2 beside it is %s the %s's",
+			w.Hero.Name, w.Hero.Class, hero.Name, hero.Type.String())
+	}
+
+	return nil
+}
+
+// SameMoment refuses a world file whose sidecar file is not of its generation
+// (the B3 review, B7): the sidecar's generation must be this file's saved_at.
+// A save writes the world file first, then his .od2, then his sidecar with
+// the same generation, and every kit save after it carries the generation
+// forward; so a sidecar of another generation means a save was cut off between
+// its files. B4's load calls it in step 1 and, on a refusal, falls back per
+// rule 7.
+func (w *World) SameMoment(sidecar []byte) error {
+	var sc embeddedSidecar
+
+	if err := json.Unmarshal(sidecar, &sc); err != nil {
+		return refuse(ReasonPairMoment, "his sidecar is not a kit file: %v", err)
+	}
+
+	if sc.Generation != w.SavedAt {
+		return refuse(ReasonPairMoment, "his sidecar is of generation %q and this world file of %q: a save was cut off between its files",
+			sc.Generation, w.SavedAt)
+	}
+
+	return nil
 }
 
 // finite refuses a NaN or an infinity: no running game has one, and d2vector
@@ -780,4 +1028,68 @@ func samePlace(what string, x, y float64, pos [2]float64) error {
 	}
 
 	return nil
+}
+
+// missingKey is the first key, as a path ("hero.facing",
+// "entities[1].motion.dir"), that the file as this build would write it has
+// and the file as it was read does not -- or "" when there is none.
+//
+// THIS IS WHAT HOLDS B3-8 (the B3 review, B1): "any change to the file's
+// shape bumps Version". encoding/json reads a missing field as its zero, so a
+// file from before a field existed would load that field as zero and the
+// resumed night would quietly diverge. Decode re-encodes what it read and
+// refuses any key the re-encoding writes that the file lacks: a field added
+// without a bump turns every older file into a refusal, which
+// TestTheV1ShapeIsTheGoldenFile turns into a red test the day it happens.
+// (A field REMOVED is refused already: the old file's key is unknown.) An
+// omitempty field absent from both is not missing, and a null where an
+// object is written is.
+func missingKey(want, have interface{}, path string) string {
+	switch w := want.(type) {
+	case map[string]interface{}:
+		h, ok := have.(map[string]interface{})
+		if !ok {
+			return path
+		}
+
+		keys := make([]string, 0, len(w))
+		for k := range w {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			sub := k
+			if path != "" {
+				sub = path + "." + k
+			}
+
+			hv, ok := h[k]
+			if !ok {
+				return sub
+			}
+
+			if p := missingKey(w[k], hv, sub); p != "" {
+				return p
+			}
+		}
+	case []interface{}:
+		h, ok := have.([]interface{})
+		if !ok {
+			return path
+		}
+
+		for i := range w {
+			if i >= len(h) {
+				return fmt.Sprintf("%s[%d]", path, i)
+			}
+
+			if p := missingKey(w[i], h[i], fmt.Sprintf("%s[%d]", path, i)); p != "" {
+				return p
+			}
+		}
+	}
+
+	return ""
 }

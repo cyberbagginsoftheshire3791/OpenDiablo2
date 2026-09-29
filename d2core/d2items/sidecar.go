@@ -17,12 +17,25 @@ import (
 // is unique per hero: keying it by hero NAME would let one test run's worn
 // mail leak into the next hero with the same name.
 
-// sidecarVersion is bumped when the file's shape changes incompatibly.
-const sidecarVersion = 1
+// SidecarVersion is bumped when the file's shape changes incompatibly. The
+// world file checks the sidecar it embeds against this constant (d2save's
+// checkSidecar), not a literal of its own (the B3 review, 29 Sep 2026).
+const SidecarVersion = 1
 
 type sidecar struct {
-	Version int  `json:"version"`
-	Kit     *Kit `json:"kit"`
+	Version int `json:"version"`
+
+	// Generation is the world save this document belongs to: the saved_at of
+	// the last N.od2.world.json written with it (M4.6 B3 review, B7). A world
+	// save writes its own saved_at here and into the world file; every kit
+	// save between world saves carries the same generation forward (the game
+	// screen keeps it), so the sidecar and the world file agree until the
+	// next world save. After a crash between the world file's write and the
+	// sidecar's, they do not, and the load can tell (d2save.World.SameMoment).
+	// Empty on a hero no world save has touched.
+	Generation string `json:"generation,omitempty"`
+
+	Kit *Kit `json:"kit"`
 
 	// Progress is the hero's standing (T3), carried here as raw JSON so this
 	// package does not import the progression package. Optional: a T2 file
@@ -49,6 +62,10 @@ type Extras struct {
 	Village  json.RawMessage
 	Land     json.RawMessage
 	Journal  json.RawMessage
+
+	// Generation is the world save this document belongs to (sidecar's
+	// Generation): read back by LoadHero, written by HeroBytes.
+	Generation string
 }
 
 // SidecarPath is the kit file for a hero save.
@@ -83,13 +100,15 @@ func LoadHero(path string, c *Catalog) (*Kit, Extras, error) {
 		return nil, Extras{}, fmt.Errorf("kit file %s: %w", path, err)
 	}
 
-	if sc.Version != sidecarVersion || sc.Kit == nil {
-		return nil, Extras{}, fmt.Errorf("kit file %s: version %d, want %d", path, sc.Version, sidecarVersion)
+	if sc.Version != SidecarVersion || sc.Kit == nil {
+		return nil, Extras{}, fmt.Errorf("kit file %s: version %d, want %d", path, sc.Version, SidecarVersion)
 	}
 
 	sc.Kit.Bind(c)
 
-	return sc.Kit, Extras{Progress: sc.Progress, Village: sc.Village, Land: sc.Land, Journal: sc.Journal}, nil
+	return sc.Kit, Extras{
+		Progress: sc.Progress, Village: sc.Village, Land: sc.Land, Journal: sc.Journal, Generation: sc.Generation,
+	}, nil
 }
 
 // SaveHero writes a hero's kit and what rides beside it,
@@ -116,7 +135,10 @@ func HeroBytes(k *Kit, x Extras) ([]byte, error) {
 		return nil, errors.New("no kit to write")
 	}
 
-	return json.MarshalIndent(sidecar{Version: sidecarVersion, Kit: k, Progress: x.Progress, Village: x.Village, Land: x.Land, Journal: x.Journal}, "", "  ")
+	return json.MarshalIndent(sidecar{
+		Version: SidecarVersion, Generation: x.Generation, Kit: k,
+		Progress: x.Progress, Village: x.Village, Land: x.Land, Journal: x.Journal,
+	}, "", "  ")
 }
 
 // WriteHero writes a document HeroBytes made to the sidecar at path,
@@ -171,22 +193,23 @@ const (
 // has the target open -- measured 23 Sep 2026: the kit playtest's polling
 // reader, and in the field an antivirus scan, the search indexer or Explorer's
 // preview would do the same. The save was simply lost. So the rename is
-// retried for half a second, and if the target stays locked the data is
-// written in place: a save that is not atomic beats a save that is not made.
+// retried for half a second (RenameRetrying), and if the target stays locked
+// the data is written in place: a save that is not atomic beats a save that is
+// not made.
+//
+// THE TEMPORARY FILE IS FLUSHED TO DISK BEFORE THE RENAME (M4.6 B3 review,
+// 29 Sep 2026): without it a power cut soon after the rename can leave the
+// new name pointing at blocks the disk never received -- an empty or torn
+// save where the old one was. One Sync per save is cheap beside the save.
 func WriteFileAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := writeSynced(tmp, data); err != nil {
 		return err
 	}
 
-	var err error
-
-	for i := 0; i < renameTries; i++ {
-		if err = os.Rename(tmp, path); err == nil {
-			return nil
-		}
-
-		time.Sleep(renamePause)
+	err := RenameRetrying(tmp, path)
+	if err == nil {
+		return nil
 	}
 
 	if werr := os.WriteFile(path, data, 0o600); werr != nil {
@@ -196,4 +219,43 @@ func WriteFileAtomic(path string, data []byte) error {
 	_ = os.Remove(tmp)
 
 	return nil
+}
+
+// writeSynced writes data to a new file at path and flushes it to disk
+// (File.Sync) before closing it.
+func writeSynced(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // nolint:gosec // a save beside the hero's own
+	if err != nil {
+		return err
+	}
+
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
+	}
+
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+
+	return err
+}
+
+// RenameRetrying renames from to to, retrying for half a second while the
+// rename is refused -- on Windows, while anything else holds either file open
+// (WriteFileAtomic's lesson). The world save's setting aside of a file it
+// cannot read goes through it too (d2save, the B3 review's C item): the file
+// being moved is exactly the kind a reader or a scanner has open.
+func RenameRetrying(from, to string) error {
+	var err error
+
+	for i := 0; i < renameTries; i++ {
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+
+		time.Sleep(renamePause)
+	}
+
+	return err
 }

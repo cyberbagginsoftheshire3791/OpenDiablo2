@@ -171,6 +171,16 @@ func (s *Squads) Validate(snap SquadsSnapshot) error {
 			playerSquad, len(s.squads))
 	}
 
+	return s.CheckSnapshot(snap)
+}
+
+// CheckSnapshot is every check Validate makes of the snapshot itself --
+// everything but its refusal of a owner already in use. Game.SaveWorld runs it on
+// the snapshot it has just taken from this live owner, so a save never writes a
+// block the load's own Validate would refuse (the M4.6 B3 review, B2: "strict
+// at save" stopped at the file's own checks). Validate is the in-use refusal
+// and this, so the two cannot disagree.
+func (s *Squads) CheckSnapshot(snap SquadsSnapshot) error {
 	if len(snap.Squads) == 0 || snap.Squads[0].ID != playerSquad {
 		return fmt.Errorf("squads snapshot: the first squad must be %s, the player's", playerSquad)
 	}

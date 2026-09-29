@@ -239,7 +239,8 @@ var b3GameClasses = map[string]string{
 	"journalRows":     "T: the rows seen in journalFight's encounter, cleared with it",
 	"fieldDead":       "S:scene.field_dead",
 	"spawner":         "S:spawner",
-	"natives":         "D: captured when the screen is made, from the map the load builds again; saved as entities[].native and born",
+	"natives":         "D: captured when the screen is made, from the map the load builds again, by (name_key, born) and held by the entity; saved as entities[].native and born",
+	"saveGeneration":  "S:saved_at",
 	"watchStood":      "S:scene.watch_stood",
 	"watchClock":      "S:scene.watch_clock",
 	"watchClockSet":   "S:scene.watch_clock_set",
@@ -252,7 +253,7 @@ var b3GameClasses = map[string]string{
 	"dawnPaidDay":     "S:scene.dawn_paid_day",
 
 	"navigator":            "W: the App",
-	"joinRefusalShown":     "T: set only in a network game a host refused, which NETWORK refuses",
+	"joinRefusalShown":     "D: set only in a network game whose host refused the join; NETWORK refuses every network game, so it is false in every game a save is made from",
 	"died":                 "T: DEAD refuses",
 	"death":                "T: how he died; set only with died",
 	"heroAtEntry":          "D: the death screen's copy of his sidecar, re-taken by every save",

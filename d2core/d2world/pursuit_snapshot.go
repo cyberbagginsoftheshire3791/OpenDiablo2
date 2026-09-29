@@ -111,6 +111,18 @@ func (p *Pursuit) Validate(snap PursuitSnapshot, r Resolver) error {
 	return err
 }
 
+// CheckSnapshot is every check Validate makes of the snapshot itself --
+// everything but its refusal of a pursuit already in use. Game.SaveWorld runs it on
+// the snapshot it has just taken from this live pursuit, so a save never writes a
+// block the load's own Validate would refuse (the M4.6 B3 review, B2: "strict
+// at save" stopped at the file's own checks). Validate is the in-use refusal
+// and this, so the two cannot disagree.
+func (p *Pursuit) CheckSnapshot(snap PursuitSnapshot, r Resolver) error {
+	_, err := p.b2bBuild(snap, r)
+
+	return err
+}
+
 // b2bValidate checks the whole snapshot and returns the chases it would
 // restore. Nothing in p is changed.
 func (p *Pursuit) b2bValidate(snap PursuitSnapshot, r Resolver) (map[string]*chase, error) {
@@ -118,6 +130,12 @@ func (p *Pursuit) b2bValidate(snap PursuitSnapshot, r Resolver) (map[string]*cha
 		return nil, fmt.Errorf("d2world: pursuit: restore into a pursuit that runs no chase; this one runs %d", len(p.chases))
 	}
 
+	return p.b2bBuild(snap, r)
+}
+
+// b2bBuild is b2bValidate's checks of the snapshot itself, and the chases it
+// would restore: nothing of the pursuit's own state is read or changed.
+func (p *Pursuit) b2bBuild(snap PursuitSnapshot, r Resolver) (map[string]*chase, error) {
 	if err := b2bCheckNumbers("pursuit", true, b2bNum{"solves", float64(snap.Solves)}); err != nil {
 		return nil, err
 	}

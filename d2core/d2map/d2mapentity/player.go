@@ -210,6 +210,18 @@ func (p *Player) SetDirection(direction int) {
 	p.rotate(direction)
 }
 
+// Facing is the direction his body faces, as the harness reports it
+// (direction): the world save carries it as hero.facing, and a load puts it
+// back with SetDirection (M4.6 B3 review, B6 -- it was not saved, and the state
+// digest compares it). 0 for a player with no body drawn yet.
+func (p *Player) Facing() int {
+	if p.composite == nil {
+		return 0
+	}
+
+	return p.composite.GetDirection()
+}
+
 // Name returns the player name.
 func (p *Player) Name() string {
 	return p.name

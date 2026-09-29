@@ -36,6 +36,47 @@ import (
 
 func harnessBoolPtr(b bool) *bool { return &b }
 
+// harnessSaveTo is where strigoi_save_game's to may write (the M4.6 B3 review,
+// B5): the absolute path, which must lie inside the game's own folder --
+// %AppData%, where the saves are (os.UserConfigDir: the playtest launcher
+// points it at the test's private home) -- or a temporary folder, and
+// never inside a source tree of this game (harnessSourceTree, the editor
+// guard's). A relative to used to resolve in the game's working directory,
+// which the launcher sets to the repository, and a file there was moved to
+// .unread and replaced.
+func harnessSaveTo(to string) (string, error) {
+	abs, err := filepath.Abs(to)
+	if err != nil {
+		return "", err
+	}
+
+	if tree := harnessSourceTree(abs); tree != "" {
+		return "", fmt.Errorf("%s is inside the source tree %s; a save's to never writes there", abs, tree)
+	}
+
+	config, _ := os.UserConfigDir()
+
+	for _, root := range []string{config, os.TempDir()} {
+		if harnessWithin(root, abs) {
+			return abs, nil
+		}
+	}
+
+	return "", fmt.Errorf("%s is outside the game's own folder (%s) and the temporary folder (%s); to writes only inside one of them",
+		abs, config, os.TempDir())
+}
+
+// harnessWithin reports whether path is root or inside it.
+func harnessWithin(root, path string) bool {
+	if root == "" {
+		return false
+	}
+
+	rel, err := filepath.Rel(root, path)
+
+	return err == nil && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // harnessIsWorldBlock reports whether name is a top-level block of the world
 // file (d2save.Blocks).
 func harnessIsWorldBlock(name string) bool {
@@ -585,7 +626,10 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 		Description: "Save the game (M4.6 B3, Game.SaveWorld): the world file N.od2.world.json, then the .od2, then the " +
 			"kit sidecar -- one moment in all three -- keeping each previous generation as .bak. Refused, touching no file, " +
 			"with FIGHTING, DEAD, TALKING, JOURNAL, LOADOUT, NETWORK or NOT_READY. omit + to write a world file with blocks " +
-			"left out somewhere else (negative controls); to alone writes only the world file, there.",
+			"left out somewhere else (negative controls); to alone writes only the world file, there. to must be under " +
+			"%APPDATA% (the test's home) or a temporary folder, outside the source tree, and none of his own files " +
+			"(BAD_ARGUMENT); world_path is where it went, absolute. A block the load's own checks would refuse fails " +
+			"the save INTERNAL, touching no file.",
 		Annotations: harnessAnnMut(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessSaveGameIn) (*mcp.CallToolResult, harnessSaveGameOut, error) {
 		harnessLogCall("strigoi_save_game")
@@ -604,6 +648,18 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			}
 		}
 
+		to := ""
+
+		if in.To != "" {
+			abs, err := harnessSaveTo(in.To)
+			if err != nil {
+				return nil, out, harnessErr("BAD_ARGUMENT", err.Error(),
+					"give to an absolute path under %APPDATA% (the test's home) or a temporary folder")
+			}
+
+			to = abs
+		}
+
 		var saveErr error
 
 		err := harnessOnUpdate(func() {
@@ -613,7 +669,7 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 				return
 			}
 
-			res, err := game.SaveWorld(d2gamescreen.SaveOptions{Omit: in.Omit, To: in.To})
+			res, err := game.SaveWorld(d2gamescreen.SaveOptions{Omit: in.Omit, To: to})
 
 			out = harnessSaveGameOut{
 				SavePath: res.SavePath, WorldPath: res.WorldPath, SidecarPath: res.SidecarPath,
@@ -626,6 +682,8 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			switch {
 			case errors.As(err, &refusal):
 				saveErr = harnessErr(refusal.Code, refusal.Reason, "every file is as it was")
+			case errors.Is(err, d2gamescreen.ErrBadSaveArgument):
+				saveErr = harnessErr("BAD_ARGUMENT", err.Error(), "every file is as it was")
 			case err != nil:
 				saveErr = harnessErr("INTERNAL", fmt.Sprintf("save failed: %v", err), "")
 			}
