@@ -46,7 +46,7 @@ func TestAFailedGameClosesItsClient(t *testing.T) {
 	conn := &countingConn{}
 
 	game, reason := startGame(conn, "", "hero.od2", func() (*d2gamescreen.Game, error) {
-		return d2gamescreen.CreateGame(nil, asset, nil, nil, nil, nil, nil, nil, d2util.LogLevelNone, nil)
+		return d2gamescreen.CreateGame(nil, asset, nil, nil, nil, nil, nil, nil, d2util.LogLevelNone, nil, nil)
 	})
 
 	if game != nil {

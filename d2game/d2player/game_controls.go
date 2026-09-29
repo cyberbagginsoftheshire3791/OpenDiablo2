@@ -1194,6 +1194,27 @@ func (g *GameControls) Load() {
 	g.hud.miniPanel.load(miniPanelActions)
 }
 
+// RestoreRun puts the run toggle back as the world save carries it
+// (hero.run; M4.6 B4a): if his toggle is not what was saved, it is flipped the
+// way the HUD's run button flips it -- the button's face, the tooltip, the
+// toggle and the running speed together (onToggleRunButton) -- so a resumed
+// game shows the button as the saved one did. Called by the load once the
+// controls are loaded; nothing is flipped when the toggle is already right.
+func (g *GameControls) RestoreRun(on bool) {
+	if g.hero == nil || g.hero.IsRunToggled() == on {
+		return
+	}
+
+	if g.hud == nil || g.hud.runButton == nil {
+		g.hero.ToggleRunWalk()
+		g.hero.SetIsRunning(g.hero.IsRunToggled())
+
+		return
+	}
+
+	g.hud.onToggleRunButton(false)
+}
+
 // Advance advances the state of the GameControls
 func (g *GameControls) Advance(elapsed float64) error {
 	g.clock += elapsed

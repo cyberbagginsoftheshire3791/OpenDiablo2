@@ -82,3 +82,28 @@ func count(names []string, want string) int {
 
 	return n
 }
+
+// digestingProvider splits its state for the digest (Digester).
+type digestingProvider struct{ fakeProvider }
+
+func (d *digestingProvider) HarnessDigest() (world, process map[string]interface{}) {
+	return map[string]interface{}{"day": d.state["day"]}, map[string]interface{}{"verbs": d.state["verbs"]}
+}
+
+// M4.6 B4a (BUG-58): a provider that implements Digester gives the digest its
+// own split -- the world's state and this process's -- and one that does not
+// is world state whole, with no process part.
+func TestDigestParts(t *testing.T) {
+	plain := &fakeProvider{name: "clock", state: map[string]interface{}{"day": 1, "verbs": 2}}
+
+	world, process := DigestParts(plain)
+	assert.Equal(t, plain.state, world, "a provider with no split is world state whole")
+	assert.Nil(t, process)
+
+	split := &digestingProvider{fakeProvider{name: "ui", state: map[string]interface{}{"day": 1, "verbs": 2}}}
+
+	world, process = DigestParts(split)
+	assert.Equal(t, map[string]interface{}{"day": 1}, world)
+	assert.Equal(t, map[string]interface{}{"verbs": 2}, process)
+	assert.Equal(t, 2, split.HarnessState()["verbs"], "HarnessState is unchanged: a script still reads every field")
+}

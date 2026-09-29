@@ -13,6 +13,16 @@ type assetsProvider struct {
 
 func (p assetsProvider) HarnessName() string { return "assets" }
 
+// HarnessDigest puts the whole census in the state digest's PROCESS part
+// (M4.6 B4a; d2harness.Digester): what this process has loaded, and how many
+// times, is its own history -- a game resumed from a world save in a fresh
+// process has loaded other files (no hero was made there, no dog fought) --
+// so it is compared between two launches of one script (determinism leak #2
+// was found here) and never across a resume.
+func (p assetsProvider) HarnessDigest() (world, process map[string]interface{}) {
+	return nil, p.HarnessState()
+}
+
 func (p assetsProvider) HarnessState() map[string]interface{} {
 	entries := p.loader.Census.Entries()
 

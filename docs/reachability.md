@@ -240,6 +240,15 @@ deferral written only in a commit message is a deferral that has been lost.
   `StampFactory.WorldRand` (same review) are read-only views of the RNG the
   engine hands each factory, called only by `d2mapengine`'s restore test; they
   are how that test sees the hand-off, and nothing in the game needs them.
+  **Since M4.6 B4a (29 Sep 2026) the load calls them:** `MapEngine.RestoreRand`
+  last in `Game.resumeLoad`, `d2rand.Stream.Restore` through each system's
+  Restore (`StreamState.RestoreInto`, on the register as wire), and
+  `d2rand.RestoreReader` in the harness's resume hook (a harness-build caller:
+  the shipped game's uuids are crypto/rand). The register now carries the
+  load's own verbs (`PrepareLoad`, `Game.restoreClock`, `checkLoad`,
+  `resumeLoad`, `abandonLoad`, `SetLoadAside`, `App.FallBackToDawn`,
+  `d2save.SetAside`, `d2server.SetNextStartPosition`, `Player.StandAt`,
+  `GameControls.RestoreRun`, `LastLoad`) as wire.
 
 The rule for this section: **if the gate cannot express it, write it here on
 the day you defer it, and name the milestone that picks it up.**

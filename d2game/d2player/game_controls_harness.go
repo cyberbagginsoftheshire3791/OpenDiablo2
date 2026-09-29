@@ -99,6 +99,13 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"kit_notice":       g.kitNoticeText(),
 		"kit_rows":         g.kitRowsReport(),
 
+		// M4.6 B4a (D1): the minutes the kit's off-hand torch holds -- zero
+		// while the light model carries them, lit or doused (the L key moves
+		// them there) -- or -1 with no torch in his off-hand. A load that
+		// restored the carried torch and left the kit's minutes in would show
+		// here, with the panel closed.
+		"kit_torch_left": g.kitTorchLeft(),
+
 		// T3: the talent panel and its cells, clickable where drawn.
 		"talent_open":  g.hud != nil && g.hud.talents != nil && g.hud.talents.open,
 		"talent_cells": g.talentCellsReport(),
@@ -147,6 +154,20 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"sheet_open":     g.hud.sheetOpen,
 		"sheet_cards":    sheetCards,
 	}
+}
+
+// kitTorchLeft is the kit's off-hand torch's minutes, or -1 with none.
+func (g *GameControls) kitTorchLeft() float64 {
+	if g.kitHolder == nil || g.kitHolder.Kit() == nil {
+		return -1
+	}
+
+	_, torch, ok := g.kitHolder.Kit().OffHandTorch()
+	if !ok {
+		return -1
+	}
+
+	return torch.BurnLeft
 }
 
 // tacticalNoticeText is the combat panel's live notice, "" when none is shown.
@@ -356,4 +377,105 @@ func (g *GameControls) handIconsReport() map[string]interface{} {
 	left, right, rightFrame := g.hud.HandsReport()
 
 	return map[string]interface{}{"left": left, "right": right, "right_frame": rightFrame}
+}
+
+// HarnessDigest is the ui provider's state for the state digest (BUG-58; M4.6
+// B4a): HarnessState with its SCREEN COORDINATES left out, and its one count
+// of this process's own history moved to the digest's process part.
+//
+// THE SCREEN COORDINATES are presentation, and they move on their own: the
+// camera eases toward him over RENDER frames, which run while the simulation
+// is paused, and every rect below is where the HUD last drew a thing on the
+// screen -- so after a walk the digest moved for about a second with nothing
+// called (BUG-58: the bar's x read 385, 382, 381, 380 across four digests). A
+// save compared against the state before it read as a save that moved the
+// world, and a load compared across a relaunch would read as a resume that
+// did. What each thing IS stays in the digest -- which bars are drawn, whose,
+// how full, selected or not; which rows, cells, answers, tabs -- and only
+// where it was drawn goes:
+//
+//   - bars[].x, y, w, h (the overhead bars, projected through the camera);
+//   - kit_rows[].x, y and talent_cells[].x, y (click points);
+//   - talk_view.answer_y (where each answer is drawn);
+//   - journal_view.tabs[] and rows[] x, y, w, h (click rects);
+//   - mini_panel_buttons and run_button (button rects);
+//   - hover_label: the name under the CURSOR, which is a screen point read
+//     through the camera -- the same easing moves what is under it, and a
+//     real mouse on the desktop moves the point itself (BUG-15's class).
+//
+// And clock_strip_hours_to_dusk, a CACHE: the clock's time to sunset sampled
+// on whichever frame the strip last refreshed (once a world minute), so a game
+// resumed mid-minute holds another sample of the same minute. The clock itself
+// is the clock provider's, and clock_strip_text -- what the player reads,
+// formatted from it -- stays (M4.6 B4a, measured: 16.4656 saved, 16.46
+// resumed, one strip text).
+//
+// Two fields go to the process part: torch_verbs counts this process's torch
+// verbs (d2gamescreen classifies it D, "every process starts it at 0"), and
+// clock is the controls' own frame clock, the sum of every frame's delta since
+// they were made, for click-repeat timing -- so a game resumed in another
+// process, or by "load last save", reads 0 where the saved one read its count.
+func (g *GameControls) HarnessDigest() (world, process map[string]interface{}) {
+	world = g.HarnessState()
+	process = map[string]interface{}{"torch_verbs": world["torch_verbs"], "clock": world["clock"]}
+
+	for _, key := range []string{
+		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button", "clock_strip_hours_to_dusk",
+	} {
+		delete(world, key)
+	}
+
+	rect := []string{"x", "y", "w", "h"}
+
+	world["bars"] = withoutKeys(world["bars"], rect...)
+	world["kit_rows"] = withoutKeys(world["kit_rows"], rect...)
+	world["talent_cells"] = withoutKeys(world["talent_cells"], rect...)
+
+	if talk, ok := world["talk_view"].(map[string]interface{}); ok {
+		talk = copyMap(talk)
+		delete(talk, "answer_y")
+		world["talk_view"] = talk
+	}
+
+	if journal, ok := world["journal_view"].(map[string]interface{}); ok {
+		journal = copyMap(journal)
+		journal["tabs"] = withoutKeys(journal["tabs"], rect...)
+		journal["rows"] = withoutKeys(journal["rows"], rect...)
+		world["journal_view"] = journal
+	}
+
+	return world, process
+}
+
+// withoutKeys is a list of report rows with keys left out of each row (a copy:
+// the report itself is not changed). Anything but a list of rows comes back
+// as it was.
+func withoutKeys(rows interface{}, keys ...string) interface{} {
+	list, ok := rows.([]map[string]interface{})
+	if !ok {
+		return rows
+	}
+
+	out := make([]map[string]interface{}, 0, len(list))
+
+	for _, row := range list {
+		c := copyMap(row)
+
+		for _, k := range keys {
+			delete(c, k)
+		}
+
+		out = append(out, c)
+	}
+
+	return out
+}
+
+func copyMap(m map[string]interface{}) map[string]interface{} {
+	c := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+
+	return c
 }

@@ -4,6 +4,7 @@ package d2app
 
 import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client"
 )
@@ -31,6 +32,10 @@ func (a *App) harnessNoteScreen(_ string) {}
 func (a *App) harnessNoteGame(_ *d2client.GameClient, _ *d2gamescreen.Game) {}
 
 func (a *App) harnessGameBegins() {}
+
+func (a *App) harnessLoadBegins(_ *d2save.World) {}
+
+func (a *App) harnessFallBack(_ int64) {}
 
 func (a *App) harnessInputService(real d2interface.InputService) d2interface.InputService {
 	return real

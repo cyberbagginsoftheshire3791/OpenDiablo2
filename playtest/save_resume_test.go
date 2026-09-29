@@ -8,9 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -19,12 +21,832 @@ import (
 // TestSaveResume is M4.6's acceptance test (build plan section 4): the save
 // "stops at that point then resumes at that point" (Josh, 25 Sep 2026).
 //
-// BURST B3 BUILDS ACT 7 ONLY -- the save verb and its refusals. Acts 1-6 are
-// the resume itself (fill every block, save at T, step 120 world minutes,
-// quit, relaunch, load, and compare S_R0 = S_T and S_R = S_U), and they are
-// burst B4's: nothing can load the file yet. Act 8 (rule 4, a save mid-walk)
-// is B4's too, and act 9's negative controls (omit every block in turn) are
-// B6's -- this act proves the omit/to verb they will drive.
+// ACTS 1-6 ARE BURST B4a's -- A QUIET EVENING RESUMES (29 Sep 2026) -- and
+// they are the test the whole milestone was designed around: save at T, step
+// 120 world minutes, relaunch, load, and the relaunched game must equal the
+// original at T and again at T+120. Act 7 is B3's (the save verb and its
+// refusals), run first in a process of its own (saveVerbActs, below). Act 8
+// (rule 4, a save mid-walk) and B4b's hunted night are not here yet; act 9's
+// omit sweep is B6's.
+//
+//	1  Seed 99, stepped, the default game. An evening that fills every block
+//	   B4a resumes, with no pack arriving: the kit (the default loadout), a
+//	   fight by day (a dog slain, then taken off the map with his body), two
+//	   forages and three stakes whittled, one of Night 1's dead staked and one
+//	   in a hasty grave, the other two risen in the first night and staked by
+//	   day where first light laid them down (a risen body Closed), the watch
+//	   promised in a talk and stood at the headman's post from true dark, and
+//	   his torch lit. The precondition names every block and requires it
+//	   non-empty.
+//	2  At T -- 01:30 of the third day, standing still at the post -- the save,
+//	   which moves nothing (the digest before and after is one digest).
+//	3  120 world minutes more: dawn comes (the night paid, the watch kept, the
+//	   rite, the soul pressure's count) and the torch burns out; S_U. Then he
+//	   is wounded and leaves through the menu, which writes his .od2 and his
+//	   sidecar and not the world file (B5's): the files a load finds beside
+//	   the world file are two hours and a wound later than it.
+//	4  A new process in the same home: start_game{save_path, seed 99} RESUMES
+//	   the file (the load reports it, and its steps), and S_R0 = S_T: the
+//	   resume digest -- world, entities, rng and every system's world state --
+//	   and each named system. The world file won over the later .od2 (his
+//	   health) and the later sidecar (a kit whose torch had burnt out).
+//	5  Saved again at once: the file is T's file byte for byte, but saved_at
+//	   and the sidecar's generation (which is saved_at).
+//	6  120 world minutes: S_R = S_U.
+//	6b THE IN-PROCESS PATH: he dies, and the death screen's "load last save"
+//	   (Enter; App.ReloadGame) resumes the saved moment -- not the dawn -- in
+//	   this process: S = S_T again, the uuid stream and the script's dials
+//	   put back by the load.
+//	6c-6e THE REFUSALS, each falling back to dawn with the file set aside
+//	   (rule 7): another hero's world file (6c), a torn save -- the sidecar of
+//	   another generation (6d) -- and a changed map (6e, D5), which is refused
+//	   after the game opened and so tears that game down.
+//
+// THE COMPARISON (BUG-58 fixed, 29 Sep 2026): the digest's resume_digest is
+// every part a resumed game must reproduce -- not sim (the harness's clock)
+// and not process (this process's history: the files it loaded, the games it
+// began, the torch verbs it counted) -- and screen coordinates are in no part.
+//
+// FOR THE NEGATIVE CONTROLS, two knobs, read here only: STRIGOI_SAVE_RESUME_
+// ONLY=b4a skips act 7, and STRIGOI_SAVE_RESUME_FROM=<dir> takes acts 1-3
+// from an evening a green run kept there (the kit's hero files at T and S_T,
+// S_U) and runs acts 4-6e against it, so a control that breaks the LOAD is
+// seen in minutes. The green run keeps its evening at
+// <run dir>/pt/TestSaveResume/evening.
+func TestSaveResume(t *testing.T) {
+	if os.Getenv("STRIGOI_SAVE_RESUME_ONLY") != "b4a" {
+		saveVerbActs(t)
+	}
+
+	ev := eveningActs1to3(t)
+	eveningActs4to6(t, ev)
+}
+
+// evening is what acts 1-3 hand acts 4-6: the hero's files at T and the two
+// states the resumed game must reproduce.
+type evening struct {
+	save  string // his .od2 in this test's home
+	fileT []byte // the world file written at T
+
+	// od2T and sidecarT are his .od2 and sidecar as the save at T wrote
+	// them; od2Left and sidecarLeft as he LEFT, through the menu, two hours
+	// and a wound later -- the files a load finds beside the world file,
+	// which must lose to it.
+	od2T, sidecarT       []byte
+	od2Left, sidecarLeft []byte
+
+	sT, sU    worldSnap
+	savedDial []dialWrite
+}
+
+type dialWrite struct {
+	System, Field string
+	Value         any
+}
+
+// eveningDials are the dials acts 1-3 leave set at T. A dial is never saved
+// (trap 7): a relaunched game has the defaults until the script sets them
+// again, and "load last save" in one process has them re-applied by the load.
+var eveningDials = []dialWrite{
+	{"spawns", "chance", 0},
+	{"spawns", "notice_radius", 0.5},
+	{"rising", "edge_floor", 0},
+	{"rising", "hasty_weight", 0.0},
+	{"rising", "p", 0.0},
+}
+
+// worldSnap is the state a resumed game must reproduce, as the harness reports
+// it: the resume digest and its parts, each system's world-state hash, each
+// system's whole state (for the diff a failure prints), and every entity
+// without its per-process handle.
+type worldSnap struct {
+	Resume   string                     `json:"resume"`
+	Parts    map[string]string          `json:"parts"`
+	Systems  map[string]string          `json:"systems"`
+	States   map[string]json.RawMessage `json:"states"`
+	Entities map[string]json.RawMessage `json:"entities"`
+}
+
+func snapWorld(t *testing.T, s *session) worldSnap {
+	t.Helper()
+
+	d := s.call("strigoi_get_state_digest", map[string]any{})
+	w := worldSnap{
+		Resume: str(d, "resume_digest"), Parts: map[string]string{}, Systems: map[string]string{},
+		States: map[string]json.RawMessage{}, Entities: map[string]json.RawMessage{},
+	}
+
+	if w.Resume == "" {
+		t.Fatalf("the digest reports no resume_digest: %v", d)
+	}
+
+	for k, v := range sub(d, "parts") {
+		w.Parts[k] = fmt.Sprint(v)
+	}
+
+	for k, v := range sub(d, "systems") {
+		w.Systems[k] = fmt.Sprint(v)
+
+		raw, _ := json.Marshal(sub(s.call("strigoi_get_system_state", map[string]any{"system": k}), "state"))
+		w.States[k] = raw
+	}
+
+	for _, raw := range asList(s.call("strigoi_get_entities", map[string]any{"limit": 500})["items"]) {
+		e, _ := raw.(map[string]any)
+		full := s.call("strigoi_get_entity", map[string]any{"handle": str(e, "handle")})
+		delete(full, "handle")
+		delete(full, "screen")
+
+		line, _ := json.Marshal(full)
+		w.Entities[str(full, "id")] = line
+	}
+
+	return w
+}
+
+// sameWorld requires b to be the world a was, naming every part, system and
+// entity that differs and, for a system, every field (the whole state, screen
+// coordinates and all, which the digest itself leaves out).
+func sameWorld(t *testing.T, act string, a, b worldSnap) {
+	t.Helper()
+
+	if a.Resume == b.Resume {
+		return
+	}
+
+	var why []string
+
+	for _, p := range []string{"world", "entities", "rng", "systems"} {
+		if a.Parts[p] != b.Parts[p] {
+			why = append(why, "part "+p)
+		}
+	}
+
+	names := keysOfSnap(a.Systems, b.Systems)
+
+	for _, n := range names {
+		if a.Systems[n] == b.Systems[n] {
+			continue
+		}
+
+		why = append(why, "system "+n)
+
+		var ma, mb map[string]any
+		_ = json.Unmarshal(a.States[n], &ma)
+		_ = json.Unmarshal(b.States[n], &mb)
+
+		for _, k := range keysOfAny(ma, mb) {
+			ja, _ := json.Marshal(ma[k])
+			jb, _ := json.Marshal(mb[k])
+
+			if string(ja) != string(jb) {
+				why = append(why, fmt.Sprintf("  %s.%s\n      was: %s\n      now: %s", n, k, cut(string(ja)), cut(string(jb))))
+			}
+		}
+	}
+
+	for _, id := range keysOfRaw(a.Entities, b.Entities) {
+		if ea, eb := compact(a.Entities[id]), compact(b.Entities[id]); ea != eb {
+			why = append(why, fmt.Sprintf("  entity %s\n      was: %s\n      now: %s", id, cut(ea), cut(eb)))
+		}
+	}
+
+	t.Fatalf("%s: the resumed world is not the saved one (resume digest %.12s, want %.12s):\n%s",
+		act, b.Resume, a.Resume, strings.Join(why, "\n"))
+}
+
+func keysOfSnap(a, b map[string]string) []string {
+	seen := map[string]bool{}
+	for k := range a {
+		seen[k] = true
+	}
+
+	for k := range b {
+		seen[k] = true
+	}
+
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+
+	sort.Strings(out)
+
+	return out
+}
+
+func keysOfAny(a, b map[string]any) []string {
+	seen := map[string]bool{}
+	for k := range a {
+		seen[k] = true
+	}
+
+	for k := range b {
+		seen[k] = true
+	}
+
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+
+	sort.Strings(out)
+
+	return out
+}
+
+func keysOfRaw(a, b map[string]json.RawMessage) []string {
+	seen := map[string]bool{}
+	for k := range a {
+		seen[k] = true
+	}
+
+	for k := range b {
+		seen[k] = true
+	}
+
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+
+	sort.Strings(out)
+
+	return out
+}
+
+// compact is a JSON value without its whitespace (a kept evening's
+// states.json is written indented).
+func compact(raw json.RawMessage) string {
+	var b bytes.Buffer
+	if err := json.Compact(&b, raw); err != nil {
+		return string(raw)
+	}
+
+	return b.String()
+}
+
+func cut(s string) string {
+	if len(s) > 900 {
+		return s[:900] + "..."
+	}
+
+	return s
+}
+
+// eveningEpoch is where the clock starts, in minutes of day 0 (02:45).
+const eveningEpoch = 2*60 + 45
+
+// stepTo steps the world to minute m of day d, a few minutes at a time,
+// keeping him fed and watered and rested while it does (act 1's evening is
+// two days long, and water empties by 18:09; the writes are state, and none
+// is made after T).
+func stepTo(t *testing.T, s *session, day int, m float64) {
+	t.Helper()
+
+	target := float64(day*1440) + m - eveningEpoch
+
+	for i := 0; i < 400; i++ {
+		now := mustNum(t, clockState(s), "world_minutes")
+		if now >= target {
+			return
+		}
+
+		s.call("strigoi_step_world", map[string]any{"world_minutes": math.Min(20, target-now)})
+		setField(s, "meters", "food", 80.0)
+		setField(s, "meters", "water", 80.0)
+		setField(s, "meters", "fatigue", 10.0)
+	}
+
+	t.Fatalf("the clock never reached day %d minute %.0f: %v", day, m, clockState(s))
+}
+
+// bodyAt is one body of the corpse registry by id.
+func bodyAt(t *testing.T, s *session, id string) map[string]any {
+	t.Helper()
+
+	for _, raw := range asList(corpsesState(s)["bodies"]) {
+		b, _ := raw.(map[string]any)
+		if str(b, "id") == id {
+			return b
+		}
+	}
+
+	t.Fatalf("no body %s: %v", id, corpsesState(s))
+
+	return nil
+}
+
+// eveningActs1to3 fills the evening, saves at T and steps on to T+120 (acts
+// 1-3), or takes a kept one (STRIGOI_SAVE_RESUME_FROM, the controls' knob).
+func eveningActs1to3(t *testing.T) evening {
+	t.Helper()
+
+	if from := os.Getenv("STRIGOI_SAVE_RESUME_FROM"); from != "" {
+		return keptEvening(t, from)
+	}
+
+	s := start(t)
+	s.call("strigoi_pause", map[string]any{})
+
+	game := s.call("strigoi_start_game", map[string]any{
+		"hero_name": "Evening", "hero_class": "amazon", "seed": 99, "wait_seconds": 90,
+	})
+
+	ev := evening{save: str(game, "save_path")}
+
+	for _, d := range eveningDials {
+		setField(s, d.System, d.Field, d.Value)
+	}
+
+	// The night's dead rise in the first night, and nothing notices him.
+	setField(s, "rising", "p", 1.0)
+	setField(s, "village", "rep", 30.0) // state: the headman offers the watch
+
+	// --- 1: a fight by day: a dog slain, then taken off the map ------------
+	pl := s.call("strigoi_get_player", map[string]any{})
+	spot := clearNeighbour(t, s, num(pl, "x"), num(pl, "y"))
+	dog := spawnNPC(t, s, "fallen1", spot[0], spot[1])
+
+	s.call("strigoi_watch", map[string]any{"watcher": dog, "target": str(pl, "handle")})
+	fightNow(t, s)
+
+	for i := 0; i < 8 && flag(t, combatState(s), "fighting"); i++ {
+		setField(s, "combat", "forced_band", "crit")
+		stepToNewRound(t, s)
+	}
+
+	setField(s, "combat", "forced_band", "")
+
+	if got := str(combatState(s), "ended_reason"); got != "enemies_dead" {
+		t.Fatalf("act 1: the dog must die for the file to carry a fight's counters; ended_reason %q", got)
+	}
+
+	s.call("strigoi_step", map[string]any{"frames": 4})
+
+	if removed := s.call("strigoi_remove_entity", map[string]any{"handle": dog}); removed["body_dropped"] != true {
+		t.Fatalf("act 1: the slain dog leaves the map with his body: %v", removed)
+	}
+
+	// --- 1: two forages, three stakes -------------------------------------
+	for i := 0; i < 2; i++ {
+		s.call("strigoi_key", map[string]any{"key": "k"})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "i"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	for i := 0; i < 3; i++ {
+		clickRecipe(t, s, "whittle-stake")
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "i"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	// --- 1: Night 1's dead: one staked, one in a hasty grave --------------
+	for _, v := range []struct{ id, key, state string }{{"dead:1", "x", "closed"}, {"dead:2", "d", "hasty"}} {
+		b := bodyAt(t, s, v.id)
+		walkTo(t, s, num(b, "x"), num(b, "y"))
+		s.call("strigoi_key", map[string]any{"key": v.key})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+
+		if got := str(bodyAt(t, s, v.id), "state"); got != v.state {
+			t.Fatalf("act 1: %s is %s after %s: %v", v.id, got, v.key, corpsesState(s))
+		}
+	}
+
+	// --- 1: the first night: the two left open rise ------------------------
+	stepTo(t, s, 0, 21*60+30)
+
+	for _, id := range []string{"dead:3", "dead:4"} {
+		if got := str(bodyAt(t, s, id), "state"); got != "risen" {
+			t.Fatalf("act 1: at certain odds %s rises in the first band: %s", id, got)
+		}
+	}
+
+	setField(s, "rising", "p", 0.0)
+
+	// --- 1: first light lays them down; he stakes both by day -------------
+	stepTo(t, s, 1, 4*60)
+
+	for _, id := range []string{"dead:3", "dead:4"} {
+		b := bodyAt(t, s, id)
+		if str(b, "state") != "downed" {
+			t.Fatalf("act 1: first light lays %s down: %v", id, b)
+		}
+
+		walkTo(t, s, num(b, "x"), num(b, "y"))
+		s.call("strigoi_key", map[string]any{"key": "x"})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+
+		if got := str(bodyAt(t, s, id), "state"); got != "closed" {
+			t.Fatalf("act 1: the risen %s, staked by day, is Closed: %s", id, got)
+		}
+	}
+
+	// --- 1: the talk: the watch promised ----------------------------------
+	headman := villager(t, s, "Warriv")
+	walkNear(t, s, headman)
+	openTalkWith(t, s, headman)
+
+	if str(villageState(s), "node") == "headman_first" {
+		answer(t, s, 3)
+		openTalkWith(t, s, headman)
+	}
+
+	answer(t, s, answerIndex(t, s, "stand the watch"))
+	answer(t, s, 1)
+
+	if !hasFlag(t, s, "watch_promised") {
+		t.Fatalf("act 1: the watch is promised: %v", villageState(s))
+	}
+
+	// --- 1: the second night, at the post; the torch lit late -------------
+	stepTo(t, s, 1, 21*60+20)
+	walkNear(t, s, headman)
+	stepTo(t, s, 2, 60+15)
+
+	s.call("strigoi_key", map[string]any{"key": "l"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if !flag(t, lightState(s), "carried_lit") {
+		t.Fatalf("act 1: L lights his torch: %v", lightState(s))
+	}
+
+	stepTo(t, s, 2, 90)
+	setField(s, "meters", "food", 90.0)
+	setField(s, "meters", "water", 90.0)
+	setField(s, "meters", "fatigue", 10.0)
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	// --- 1: THE PRECONDITION: every block B4a resumes is non-empty ---------
+	eveningPrecondition(t, s)
+
+	// --- 2: the save at T --------------------------------------------------
+	ev.sT = snapWorld(t, s)
+	out := s.call("strigoi_save_game", map[string]any{})
+	sameWorld(t, "act 2 (the save moved nothing)", ev.sT, snapWorld(t, s))
+
+	world := str(out, "world_path")
+	ev.fileT, ev.od2T, ev.sidecarT = mustRead(t, world), mustRead(t, ev.save), mustRead(t, ev.save+".strigoi.json")
+
+	file := worldFile(t, "act 2", ev.fileT)
+	for _, block := range []string{"spawns.groups", "notice.watches", "pursuit.chases", "bodies"} {
+		if n := len(listAt(t, file, block)); n != 0 {
+			t.Fatalf("act 2: a quiet evening has no %s: %d", block, n)
+		}
+	}
+
+	for _, raw := range listAt(t, file, "entities") {
+		if e, _ := raw.(map[string]any); !flag(t, e, "native") {
+			t.Fatalf("act 2: a quiet evening has only the villagers on the map: %v", e)
+		}
+	}
+
+	t.Logf("act 2 PASS: saved at %s (%s, day %v), %d bytes, the digest unmoved",
+		str(clockState(s), "time_of_day"), str(clockState(s), "stage"), clockState(s)["day_index"], len(ev.fileT))
+
+	// --- 3: 120 world minutes on; quit -------------------------------------
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 120})
+	ev.sU = snapWorld(t, s)
+
+	if ev.sU.Resume == ev.sT.Resume {
+		t.Fatal("act 3: 120 minutes moved nothing, so act 6 would compare nothing")
+	}
+
+	c := clockState(s)
+	if str(c, "stage") == "night" || flag(t, lightState(s), "carried_lit") {
+		t.Fatalf("act 3: the two hours cross dawn and outlast the torch (act 6's teeth): %s %s, light %v",
+			str(c, "time_of_day"), str(c, "stage"), lightState(s))
+	}
+
+	// He leaves through the menu, wounded: SAVE AND EXIT writes his .od2 and
+	// his sidecar (OnUnload) and not the world file (B5's) -- so the load in
+	// act 4 finds an .od2 of another health and a sidecar with no torch (it
+	// burnt out) beside the world file of T, and the world file must win.
+	hurt := mustNum(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "health") - 37
+	setField(s, "meters", "health", hurt)
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	ev.od2Left, ev.sidecarLeft = mustRead(t, ev.save), mustRead(t, ev.save+".strigoi.json")
+
+	if bytes.Equal(ev.od2Left, ev.od2T) || bytes.Equal(ev.sidecarLeft, ev.sidecarT) {
+		t.Fatal("act 3: leaving through the menu rewrites his .od2 and sidecar (the files the world file must beat in act 4)")
+	}
+
+	t.Logf("act 3 PASS: at %s (%s): dawn came, the torch burnt out; S_U taken; he left through the menu at %.0f health",
+		str(c, "time_of_day"), str(c, "stage"), hurt)
+
+	ev.savedDial = eveningDials
+	keepEvening(t, s, ev)
+	s.stop()
+
+	return ev
+}
+
+// eveningPrecondition is act 1's: every block B4a resumes holds something.
+func eveningPrecondition(t *testing.T, s *session) {
+	t.Helper()
+
+	scene := sub(s.call("strigoi_get_system_state", map[string]any{"system": "scene"}), "state")
+	c := corpsesState(s)
+	light := lightState(s)
+	village := villageState(s)
+	combat := combatState(s)
+
+	checks := []struct {
+		what string
+		ok   bool
+	}{
+		{"the clock at night", str(clockState(s), "stage") == "night"},
+		{"his torch lit and carried", flag(t, light, "carried_lit")},
+		{"the kit: his loadout chosen", !flag(t, uiState(s), "choosing_loadout")},
+		{"forage: the land gathered from", mustNum(t, village, "land_left") < 12},
+		{"a talk: the watch promised", hasFlag(t, s, "watch_promised")},
+		{"part of a watch stood", mustNum(t, village, "watch_stood") > 0},
+		{"a stake and a dig", mustNum(t, c, "hasty_human") == 1 && mustNum(t, c, "closed_human") == 3},
+		{"a risen body Closed", len(saveBlock(t, c, "risen_as")) >= 2 && len(saveBlock(t, c, "last")) >= 2},
+		{"no noticed pack", mustNum(t, spawnsState(s), "groups") == 0},
+		{"a fight's counters", mustNum(t, combat, "encounters") >= 1},
+		{"the rising rolled", mustNum(t, saveBlock(t, risingState(s), "rng"), "draws") > 0},
+		{"the scene's dead laid", len(asList(scene["field_dead"])) == 4},
+	}
+
+	for _, c := range checks {
+		if !c.ok {
+			t.Fatalf("act 1: the precondition fails: %s", c.what)
+		}
+	}
+}
+
+// keepEvening writes acts 1-3's evening beside the run's logs, for the
+// controls (STRIGOI_SAVE_RESUME_FROM).
+func keepEvening(t *testing.T, s *session, ev evening) {
+	t.Helper()
+
+	if s.RunBase == "" {
+		return
+	}
+
+	dir := filepath.Join(s.RunBase, "pt", safeName(t.Name()), "evening")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Logf("keeping the evening: %v", err)
+		return
+	}
+
+	states, _ := json.MarshalIndent(map[string]worldSnap{"t": ev.sT, "u": ev.sU}, "", " ")
+
+	for name, data := range map[string][]byte{
+		"hero.od2": ev.od2Left, "hero.od2.strigoi.json": ev.sidecarLeft, "hero.od2.world.json": ev.fileT,
+		"hero-at-t.od2": ev.od2T, "hero-at-t.od2.strigoi.json": ev.sidecarT, "states.json": states,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Logf("keeping the evening: %v", err)
+		}
+	}
+
+	t.Logf("the evening is kept at %s", dir)
+}
+
+// keptEvening is an evening a green run kept: its hero's files are copied
+// into this test's home, where a relaunch finds them.
+func keptEvening(t *testing.T, from string) evening {
+	t.Helper()
+
+	ev := evening{savedDial: eveningDials}
+	ev.od2Left, ev.sidecarLeft, ev.fileT = mustRead(t, filepath.Join(from, "hero.od2")),
+		mustRead(t, filepath.Join(from, "hero.od2.strigoi.json")), mustRead(t, filepath.Join(from, "hero.od2.world.json"))
+	ev.od2T, ev.sidecarT = mustRead(t, filepath.Join(from, "hero-at-t.od2")), mustRead(t, filepath.Join(from, "hero-at-t.od2.strigoi.json"))
+
+	var states map[string]worldSnap
+	if err := json.Unmarshal(mustRead(t, filepath.Join(from, "states.json")), &states); err != nil {
+		t.Fatalf("the kept evening's states: %v", err)
+	}
+
+	ev.sT, ev.sU = states["t"], states["u"]
+
+	home, err := testHome(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	saves := filepath.Join(home, "OpenDiablo2", "Saves")
+	if err := os.MkdirAll(saves, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	ev.save = filepath.Join(saves, "90.od2")
+
+	for path, data := range map[string][]byte{ev.save: ev.od2Left, ev.save + ".strigoi.json": ev.sidecarLeft, ev.save + ".world.json": ev.fileT} {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Logf("acts 1-3 taken from the evening kept at %s", from)
+
+	return ev
+}
+
+// eveningActs4to6 relaunches and resumes (acts 4-6), then takes the in-process
+// path (6b) and the refusals (6c-6e).
+func eveningActs4to6(t *testing.T, ev evening) {
+	t.Helper()
+
+	s := start(t)
+	s.call("strigoi_pause", map[string]any{})
+
+	// --- 4: relaunch, load, S_R0 = S_T --------------------------------------
+	g := s.call("strigoi_start_game", map[string]any{"save_path": ev.save, "seed": 99, "wait_seconds": 90})
+
+	load := sub(g, "load")
+	if !flag(t, load, "resumed") || str(load, "saved_at") != str(worldFile(t, "act 4", ev.fileT), "saved_at") {
+		t.Fatalf("act 4: start_game resumes the world file: %v", load)
+	}
+
+	for _, d := range ev.savedDial {
+		setField(s, d.System, d.Field, d.Value)
+	}
+
+	sameWorld(t, "act 4 (S_R0 = S_T)", ev.sT, snapWorld(t, s))
+	t.Logf("act 4 PASS: resumed (%v); S_R0 = S_T, resume digest %.12s", asList(load["steps"]), ev.sT.Resume)
+
+	// --- 5: saved again: T's file but for its stamp -------------------------
+	out := s.call("strigoi_save_game", map[string]any{})
+	fileR := mustRead(t, str(out, "world_path"))
+
+	if !bytes.Equal(withoutSavedAt(t, fileR), withoutSavedAt(t, ev.fileT)) {
+		t.Fatalf("act 5: the resumed game saves T's file, byte for byte but saved_at:\n T: %s\n R: %s",
+			cut(string(withoutSavedAt(t, ev.fileT))), cut(string(withoutSavedAt(t, fileR))))
+	}
+
+	if bak := mustRead(t, str(out, "world_path")+".bak"); !bytes.Equal(bak, ev.fileT) {
+		t.Fatal("act 5: the file loaded is kept as the .bak (rule 5)")
+	}
+
+	t.Logf("act 5 PASS: %d bytes, T's file but saved_at and the generation", len(fileR))
+
+	// --- 6: 120 world minutes: S_R = S_U ------------------------------------
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 120})
+	sameWorld(t, "act 6 (S_R = S_U)", ev.sU, snapWorld(t, s))
+	t.Logf("act 6 PASS: S_R = S_U, resume digest %.12s", ev.sU.Resume)
+
+	// --- 6b: he dies; "load last save" resumes T in this process -------------
+	setField(s, "meters", "health", 0.0)
+	s.call("strigoi_step", map[string]any{"frames": 3})
+
+	if !flag(t, uiState(s), "death_open") {
+		t.Fatalf("act 6b: at 0 health the death screen is up: %v", uiState(s))
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "enter"})
+	resumedLoad := awaitGame(t, s, "act 6b")
+
+	if !flag(t, resumedLoad, "resumed") {
+		t.Fatalf("act 6b: load last save resumes the world file, not the dawn: %v", resumedLoad)
+	}
+
+	sameWorld(t, "act 6b (in process: S = S_T)", ev.sT, snapWorld(t, s))
+
+	steps := fmt.Sprint(asList(resumedLoad["steps"]))
+	if !strings.Contains(steps, "uuid") || !strings.Contains(steps, "dials") {
+		t.Fatalf("act 6b: the in-process load puts the uuid stream and the script's dials back: %s", steps)
+	}
+	t.Logf("act 6b PASS: load last save resumed T in this process (%s)", steps)
+
+	// --- 6c: another hero's world file ---------------------------------------
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	o := s.call("strigoi_start_game", map[string]any{"hero_name": "Other", "hero_class": "amazon", "seed": 99, "wait_seconds": 90})
+	otherSave := str(o, "save_path")
+
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	if err := os.WriteFile(otherSave+".world.json", ev.fileT, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	refusedToDawn(t, s, "act 6c (another hero's)", otherSave, "HERO", ev.fileT, false)
+
+	// --- 6d: a torn save: his sidecar of another generation -----------------
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	torn := regexp.MustCompile(`"generation": "[^"]*"`).ReplaceAll(mustRead(t, ev.save+".strigoi.json"), []byte(`"generation": "a save cut off"`))
+	if err := os.WriteFile(ev.save+".strigoi.json", torn, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	refusedToDawn(t, s, "act 6d (a torn save)", ev.save, "TORN", fileR, false)
+
+	// --- 6e: a changed map (D5), refused after the game opened --------------
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	moved := regexp.MustCompile(`"sha": "[0-9a-f]{64}"`).ReplaceAll(fileR, []byte(`"sha": "`+strings.Repeat("0", 64)+`"`))
+	if bytes.Equal(moved, fileR) {
+		t.Fatal("act 6e: the file names no map sha to change (the default game builds the authored village)")
+	}
+
+	if err := os.WriteFile(ev.save+".world.json", moved, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sidecar := worldFile(t, "act 6e", fileR)["sidecar"]
+	doc, _ := json.MarshalIndent(sidecar, "", "  ")
+
+	if err := os.WriteFile(ev.save+".strigoi.json", doc, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	refusedToDawn(t, s, "act 6e (a changed map)", ev.save, "MAP", moved, true)
+}
+
+// awaitGame waits -- in wall time, stepping nothing, so the resumed world is
+// not moved by the wait -- for a new game to be in play with its controls
+// bound, and returns its load report.
+func awaitGame(t *testing.T, s *session, act string) map[string]any {
+	t.Helper()
+
+	last := ""
+
+	for i := 0; i < 300; i++ {
+		time.Sleep(100 * time.Millisecond)
+
+		info := s.call("strigoi_get_game_info", map[string]any{})
+		if !flag(t, info, "in_game") || flag(t, info, "loading") {
+			continue
+		}
+
+		if last = s.callErr("strigoi_get_system_state", map[string]any{"system": "ui"}); last != "" {
+			continue
+		}
+
+		if flag(t, uiState(s), "death_open") {
+			continue
+		}
+
+		return sub(info, "load")
+	}
+
+	t.Fatalf("%s: no game came up in 30 s (last: %s)", act, last)
+
+	return nil
+}
+
+// awaitMenu waits in wall time for the game to be gone.
+func awaitMenu(t *testing.T, s *session) {
+	t.Helper()
+
+	for i := 0; i < 100; i++ {
+		if !flag(t, s.call("strigoi_get_game_info", map[string]any{}), "in_game") {
+			return
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	t.Fatal("the game did not leave for the menu")
+}
+
+// refusedToDawn starts the hero at save and requires the load refused with
+// code, the file set aside whole (rule 7), and him at dawn in a living game.
+// afterOpen is a refusal that tears an opened game down (fell_back).
+func refusedToDawn(t *testing.T, s *session, act, save, code string, file []byte, afterOpen bool) {
+	t.Helper()
+
+	g := s.call("strigoi_start_game", map[string]any{"save_path": save, "seed": 99, "wait_seconds": 90})
+	load := sub(g, "load")
+
+	// fell_back is written only when true (omitempty).
+	fellBack, _ := load["fell_back"].(bool)
+	if str(load, "refused") != code || flag(t, load, "resumed") || fellBack != afterOpen {
+		t.Fatalf("%s: the load is refused %s (fell back %v): %v", act, code, afterOpen, load)
+	}
+
+	aside := str(load, "set_aside")
+	if got, err := readSaved(aside); err != nil || !bytes.Equal(got, file) {
+		t.Fatalf("%s: the file is set aside whole at %q (%v)", act, aside, err)
+	}
+
+	if _, err := os.Stat(save + ".world.json"); !os.IsNotExist(err) {
+		t.Fatalf("%s: the world file is out of the way (%v)", act, err)
+	}
+
+	c := clockState(s)
+	if str(c, "stage") != "dawn" || mustNum(t, c, "world_minutes") > 1 || mustNum(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "health") <= 0 {
+		t.Fatalf("%s: he begins at dawn, alive: %v", act, c)
+	}
+
+	t.Logf("%s PASS: refused %s (%s), set aside as %s; he begins at dawn", act, code, str(load, "reason"), filepath.Base(aside))
+}
+
+// saveVerbActs is act 7, burst B3's: the save verb and its refusals, in a
+// process of its own (its hero, Saver, is not the evening's).
 //
 // Act 7, as the plan has it, and what B3 adds to it:
 //
@@ -60,7 +882,9 @@ import (
 //	7f  (run before 7e, which kills him) the slain dog taken off the map by
 //	    the harness takes his body with him (body_dropped), and the next save
 //	    is made -- it used to fail INTERNAL on a body with no entity.
-func TestSaveResume(t *testing.T) {
+func saveVerbActs(t *testing.T) {
+	t.Helper()
+
 	s := start(t)
 
 	s.call("strigoi_pause", map[string]any{})
@@ -77,8 +901,6 @@ func TestSaveResume(t *testing.T) {
 	if save == "" {
 		t.Fatalf("start_game reported no save path: %v", game)
 	}
-
-	// Acts 1-6: B4 (the resume). Act 8: B4. Act 9: B6.
 
 	// --- 7a: a quiet save writes all three, and moves nothing --------------
 	// A step first, so the facing the file must carry is not the one he was
@@ -453,6 +1275,9 @@ func TestSaveResume(t *testing.T) {
 	}
 
 	t.Logf("7e PASS: DEAD, every file untouched; the death restored the last save's sidecar")
+
+	// The evening's processes follow: this one's work is done.
+	s.stop()
 }
 
 // worldBlocks is every top-level block of the world file, in order
@@ -736,37 +1561,9 @@ func faceSomewhere(t *testing.T, s *session) {
 		s.call("strigoi_step", map[string]any{"frames": 2})
 
 		if num(sub(s.call("strigoi_get_player", map[string]any{}), "state"), "direction") != 0 {
-			digestSettled(t, s)
-
 			return
 		}
 	}
 
 	t.Fatalf("walked to a neighbour and back, and he faces direction 0 both ways")
-}
-
-// digestSettled waits, in wall time, for two digests a moment apart to agree.
-// After a walk the camera eases toward him over render frames, which run while
-// the simulation is paused, and the ui provider reports the overhead bars in
-// SCREEN coordinates -- so the digest's systems part moves on its own for a
-// second or so, save or no save (measured 29 Sep 2026: the bar's x 385 -> 382
-// -> 381 -> 380 across four digests with nothing called between them). A save
-// taken then would read as one that moved the world.
-func digestSettled(t *testing.T, s *session) {
-	t.Helper()
-
-	last, _ := digest(s)
-
-	for i := 0; i < 40; i++ {
-		time.Sleep(150 * time.Millisecond)
-
-		d, _ := digest(s)
-		if d == last {
-			return
-		}
-
-		last = d
-	}
-
-	t.Fatalf("the digest did not settle in 6 s after a walk")
 }

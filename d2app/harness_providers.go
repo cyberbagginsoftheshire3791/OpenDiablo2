@@ -210,6 +210,10 @@ func (a *App) harnessAddProviderTools(srv *mcp.Server) {
 				return
 			}
 
+			// M4.6 B4a: a dial is never saved, so a load re-applies it
+			// (harness_load.go).
+			harnessRecordDial(name, in.Field, in.Value)
+
 			out.State = p.HarnessState()
 		})
 		if err != nil {

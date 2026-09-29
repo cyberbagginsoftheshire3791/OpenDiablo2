@@ -539,9 +539,9 @@ this doc fails until it agrees.
   untouched, and the death put his sidecar back to the LAST SAVE's bytes (the
   save re-took the death screen's copy). **The B3 review (29 Sep 2026)** added,
   in the same acts: 7a walks him a step first (`faceSomewhere`, and back if he
-  faced 0) and waits for the digest to settle (`digestSettled`: the camera eases
-  after a walk and the ui provider's bars are SCREEN coordinates, so the digest
-  moves on its own for about a second), then requires the file to name the
+  faced 0) -- it waited for the digest to settle (`digestSettled`) until
+  BUG-58 was fixed in B4a: screen coordinates are in no part of the digest
+  now -- then requires the file to name the
   `.od2`'s hero (`sameHero`) and to carry his facing and stamina as the player
   reports them, and the sidecar file to be of the file's generation (its
   `saved_at`); 7c requires the sidecar a fight's end rewrote to still carry 7a's
@@ -551,6 +551,33 @@ this doc fails until it agrees.
   absolute; and a new **7f**, run before 7e (which kills him): the slain dog
   removed with `strigoi_remove_entity` takes his body with him (`body_dropped`)
   and the next save is made.
+  **M4.6 B4a (29 Sep 2026) built acts 1-6 -- a quiet evening resumes -- and
+  act 7 now runs first, in a process of its own (`saveVerbActs`).** Act 1:
+  seed 99, the default game, a new hero (Evening) from 02:45 of day 0 to 01:30
+  of day 2: a dog slain by day and removed with his body, two forages and
+  three stakes, `dead:1` staked and `dead:2` in a hasty grave, the other two
+  risen at true dark and staked by day where first light laid them down, the
+  watch promised (a talk) and stood at the post from 21:20, the torch lit at
+  01:15; the precondition names every block B4a resumes and requires it
+  non-empty, and the file must hold no pack, watch, chase, body or non-native
+  entity. Act 2: the save at T, digest unmoved. Act 3: 120 world minutes (dawn:
+  the night's experience, the watch kept, the rite; the torch burns out) --
+  S_U -- then he is wounded and leaves through the menu, so the `.od2` and
+  sidecar beside the world file are later than it. Act 4: a new process,
+  `start_game{save_path, seed 99}` resumes the file (`load.resumed`, its
+  steps), and S_R0 = S_T: the digest's `resume_digest` (every part but `sim`
+  and `process`), with a per-system and per-entity diff on failure. Act 5:
+  saved again, T's file byte for byte but `saved_at` and the generation.
+  Act 6: 120 minutes, S_R = S_U. Act 6b: he dies and the death screen's "load
+  last save" (Enter) resumes T in the same process -- waited for in wall time,
+  stepping nothing -- with the uuid stream and the dials put back. Acts 6c-6e:
+  another hero's world file (`HERO`), a torn save (`TORN`), a changed map
+  (`MAP`, refused after the game opened: `fell_back`), each set aside whole
+  and he at dawn. Two knobs for the negative controls: `STRIGOI_SAVE_RESUME_
+  ONLY=b4a` skips act 7, and `STRIGOI_SAVE_RESUME_FROM=<dir>` takes acts 1-3
+  from an evening a green run kept at `pt\TestSaveResume\evening` (the files he
+  left with, the world file of T, S_T and S_U) and runs acts 4-6e in about ten
+  seconds.
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -642,7 +669,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.13.1)
+## The tools (37; harness 0.14.0)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -668,9 +695,9 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | Tool | What |
 |---|---|
 | `strigoi_ping` | Liveness, commit, harness version, mode, tick, uptime |
-| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game |
+| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game; since 0.14.0 (29 Sep, M4.6 B4a) `load`, what the last game's world-save load did (`world_path`, `found`, `resumed`, `saved_at`, `refused` and `reason`, `set_aside`, `fell_back`, and `steps`, the load order as it ran), and `dials`, the script's dials a load re-applies |
 | `strigoi_navigate` | main_menu · character_select · select_hero · credits |
-| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame |
+| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame. **Since 0.14.0 (M4.6 B4a) a `save_path` with a world file beside it RESUMES it** (the game goes through `App.ToCreateGame`, as every way in does): the file's seed and uuid stream, its moment restored before the first frame, `load` in the result saying what the load did (`resumed`, or `refused` with its code and `set_aside`; a refusal falls back to dawn). A `seed` other than the one the world file was saved on is `BAD_ARGUMENT` and starts nothing; no `seed` resumes the file's |
 | `strigoi_save_game` | **Save the game (M4.6 B3, harness 0.13.0): `Game.SaveWorld`.** Writes the world file `N.od2.world.json`, then the `.od2`, then the kit sidecar -- one moment in all three, the sidecar the same bytes the world file embeds -- keeping each previous generation as `.bak`, then re-takes the death screen's "as he entered" copy. Refused, touching no file, with `FIGHTING` (a fight running or not yet settled), `DEAD`, `TALKING`, `JOURNAL`, `LOADOUT`, `NETWORK` (rule 9) or `NOT_READY` (no hero in the world yet). `to` writes ONLY the world file, at that path (his `.od2`, sidecar, `.bak`s and the death copy untouched); `omit:[block...]` leaves top-level blocks out and needs `to` (`BAD_ARGUMENT` otherwise, and for a name that is not a block). Returns `save_path`, `world_path`, `sidecar_path`, `written`, `kept` (the `.bak`s), `set_aside` (a file this build could not read, moved aside -- rule 7), `omitted`, `blocks`, `bytes`. Until 0.13.0 it wrote the `.od2` alone and refused nothing. **`to` is fenced (0.13.1, the B3 review's B5):** it is made absolute and must lie under `%APPDATA%` (the game's own folder -- under the playtest launcher, the test's private home) or the temporary folder, and never inside a source tree of this game (a folder whose `go.mod` is this module: the World Editor's guard, `harnessSourceTree`); and it may not be one of HIS files -- anything in his save folder named after his save (`N.od2`, `N.od2.bak`, the sidecar, the world file and its `.bak`), with or without `omit` (`Game.SaveWorld`, `ErrBadSaveArgument`). Each is `BAD_ARGUMENT` and writes nothing. Before, a relative `to` resolved in the game's working directory, which the launcher sets to the repository, and a file there was set aside as `.unread` and replaced. `world_path` echoes the absolute path. A block the load's own checks would refuse -- each system's `Validate`/`CheckSnapshot` run on what the save took -- fails the save `INTERNAL` naming the block, touching no file |
 | `strigoi_quit` | Manifest + exit (confirm: true) |
 
@@ -684,7 +711,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_step_world` | Advance by sim seconds, or by `world_minutes` — steps until the world clock reports the target (M4.1) |
 | `strigoi_set_seed` | One-shot seed for the next start_game |
 | `strigoi_reseed_world` | Reseed the world RNG mid-game (repeated-roll tests) |
-| `strigoi_get_state_digest` | Per-part SHA-256: sim · world · entities · rng · systems |
+| `strigoi_get_state_digest` | Per-part SHA-256: sim · process · world · entities · rng · systems (six parts since 0.14.0: `process` is this process's own history, split out of `systems` by the providers that carry any -- `d2harness.Digester`; screen coordinates are in no part, BUG-58); `resume_digest`, the hash over world · entities · rng · systems, what a game resumed from a world save must reproduce; `systems` (a map), each provider's world-state hash by name |
 
 ### Observation (M3.2, M3.4)
 
@@ -803,24 +830,31 @@ hero's saved `x`, `y`, `health` and run toggle were already on `get_player`
 (`run_toggled`). The world file itself is `docs/m4.6-world-save-notes.md`'s
 "B3" section.
 
-**ONLY `start_game` SEEDS A GAME (a known limitation, owned by M4.6 burst
-B4b).** `start_game` sets the server's one-shot seed and reseeds the uuid
-stream, and then the game begins. Every other way into a game skips both --
-above all the death screen's **"load last save"** (`App.ReloadGame` ->
-`ToCreateGame`, `d2app/reload.go`). A reloaded game, in a process that was
-seeded: (1) takes a **wall-clock server seed** -- the override was consumed by
-the first game (`d2server.takeNextGameSeed` is one-shot) -- so the world,
-spawn, combat and rising streams (all seeded from `gameClient.Seed`) start
-somewhere no script chose; (2) **continues the uuid stream from the dead
-game's byte count**, so its player id (the connection's uuid) and every entity
-id are the seed's later ids, never its first; (3) therefore matches no fresh
-launch. The `uuid` provider shows it: on the reloaded game
-`seeded_for_this_game` is false, `games` is `seeded_game + 1`, and
-`bytes_at_game_start` is the dead game's count. `TestTownWalkDeterministic`
-pins the fresh-launch half (seeded for this game, from byte 0, whole uuids),
-and `d2app`'s `TestUUIDStreamOnAFreshLaunchAndOnAReload` pins both halves as
-they are today. Restoring the streams on a load is B4b's; see
-`docs/m4.6-world-save-notes.md`.
+**A LOAD SEEDS ITS GAME ON BOTH PATHS (M4.6 B4a, 29 Sep 2026; before it,
+only `start_game` seeded a game).** `start_game` sets the server's one-shot
+seed and reseeds the uuid stream, and then the game begins. A game that
+RESUMES a world file -- through `start_game`, the character select, or the
+death screen's **"load last save"** (`App.ReloadGame` -> `ToCreateGame`,
+`d2app/reload.go`) -- takes the file's seed (`SetNextGameSeed` in
+`ToCreateGame`), has the uuid stream reseeded from byte 0 of the file's
+`rng.uuid` seed before it opens (`harnessLoadBegins`), and has the stream put
+at the file's byte count once every block is restored (the resume hook,
+`d2app/harness_load.go`): so "load last save" in a seeded process resumes the
+saved moment exactly as a fresh launch does (`TestSaveResume` act 6b). A game
+that resumes NO world file by any way but `start_game` is as it was: a
+reloaded game in a seeded process (1) takes a **wall-clock server seed** --
+the override was consumed by the first game (`d2server.takeNextGameSeed` is
+one-shot); (2) **continues the uuid stream from the dead game's byte count**;
+(3) therefore matches no fresh launch. The `uuid` provider shows which game
+this is: `seeded_for_this_game`, `games`, `seeded_game`,
+`bytes_at_game_start` -- process state, in the digest's `process` part since
+B4a. `TestTownWalkDeterministic` pins the fresh-launch half, and `d2app`'s
+`TestUUIDStreamOnAFreshLaunchAndOnAReload` pins the reload with no world
+file. **A load also re-applies the script's dials** (never saved, trap 7):
+`strigoi_set_system_field` records every write to a field
+`harnessDialFields` lists as a dial, and the resume hook writes the last value
+of each again (`TestTheLoadReappliesTheScriptsDialsAndNothingElse`). See
+`docs/m4.6-world-save-notes.md`, "B4a".
 
 **`pursuit`** (M4.3a) reports the live chases and their dials; settable
 `arrive_within`, `release`, `repath_tiles`. **`strigoi_click` takes `hold_frames`** (c-2b, 19 Sep 2026), and the tool count
@@ -1277,6 +1311,27 @@ what the save keeps. The handles the tools hand out are unchanged -- the digest
 still assigns them in the order it always did. Digests compare across fresh
 launches, not across two games inside one process. An unseeded `start_game` restores
 crypto-random entity IDs and the wall-clock map seed.
+
+**Six parts, and what a resume compares (M4.6 B4a, 29 Sep 2026; BUG-58).**
+The digest's parts are `sim` (the harness's clock), `process`, `world`,
+`entities`, `rng` and `systems`. `process` is this process's own history, split
+out of `systems` by the providers that carry any (`d2harness.Digester`): the
+assets census (every file this process loaded, and how often), the uuid
+provider's game counts, the ui's `torch_verbs` and `clock` (the controls'
+frame clock), the journal's `last_written`. Two launches of one script agree on
+all six -- the proof above still compares every part, and leak #2, in the
+assets census, would still be caught there. A game RESUMED from a world save is
+not the same script: it reproduces `world`, `entities`, `rng` and `systems`,
+and `resume_digest` is the hash over exactly those. **Screen coordinates are
+in no part**: the camera eases toward him over render frames, which run while
+the simulation is paused, so every rect the ui reports (the overhead bars
+above all) moved for a second after a walk with nothing called -- BUG-58, which
+made a save read as one that moved the world. Left out: the ui's bars',
+rows', cells', tabs' and buttons' rects, `talk_view.answer_y`, `hover_label`
+(a screen point read through the camera) and `clock_strip_hours_to_dusk` (the
+clock sampled on whichever frame the strip last refreshed; the strip's text,
+what the player reads, stays). `strigoi_get_system_state` still reports them
+all. Every digest value moved once with the split; digests are build-specific.
 
 ## Determinism leak register (opened 26 Aug 2026)
 

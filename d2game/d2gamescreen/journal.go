@@ -418,3 +418,20 @@ func (p journalProvider) HarnessState() map[string]interface{} {
 
 	return state
 }
+
+// HarnessDigest puts the journal's last_written in the state digest's process
+// part (M4.6 B4a; d2harness.Digester): it is the id THIS SESSION last wrote,
+// for the provider, and not saved -- a game resumed from a world save has
+// written nothing yet, where the saved one had (measured: "page:1462-06-17"
+// saved, "" resumed). Every entry, page and task is the sidecar's, restored,
+// and stays in the systems part.
+func (p journalProvider) HarnessDigest() (world, process map[string]interface{}) {
+	world = p.HarnessState()
+
+	if last, ok := world["last_written"]; ok {
+		process = map[string]interface{}{"last_written": last}
+		delete(world, "last_written")
+	}
+
+	return world, process
+}

@@ -57,8 +57,12 @@ func harnessRegisterUUID() {
 		d2harness.Register(harnessUUIDProvider{})
 
 		// M4.6 B3: the world save carries where the stream stands (rng.uuid),
-		// so a load can put it back after the entities (B4b, trap 6).
+		// so a load can put it back after the entities (trap 6).
 		d2gamescreen.SetUUIDStream(harnessUUIDStream)
+
+		// M4.6 B4a: and the load puts it back, and the script's dials
+		// (harness_load.go).
+		d2gamescreen.SetResumeHook(harnessResume)
 	})
 }
 
@@ -120,6 +124,27 @@ func (a *App) harnessGameBegins() { harnessUUIDGameBegins() }
 
 // harnessUUIDProvider reports where the uuid stream stands.
 type harnessUUIDProvider struct{}
+
+// harnessUUIDProcessKeys are the uuid provider's keys that count THIS
+// PROCESS's games -- which game this is, which one start_game seeded, where
+// the stream stood when it began -- and go to the digest's process part
+// (M4.6 B4a): a game resumed in a fresh process is its first, and one resumed
+// by "load last save" its second, whatever game was saved. The stream itself
+// (seed, bytes) is the world file's rng.uuid and stays in the systems part.
+var harnessUUIDProcessKeys = []string{"games", "seeded_game", "seeded_for_this_game", "bytes_at_game_start"}
+
+// HarnessDigest splits the report for the digest (d2harness.Digester).
+func (p harnessUUIDProvider) HarnessDigest() (world, process map[string]interface{}) {
+	world = p.HarnessState()
+	process = map[string]interface{}{}
+
+	for _, k := range harnessUUIDProcessKeys {
+		process[k] = world[k]
+		delete(world, k)
+	}
+
+	return world, process
+}
 
 func (harnessUUIDProvider) HarnessName() string { return "uuid" }
 

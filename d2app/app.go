@@ -734,8 +734,30 @@ func (a *App) ToSelectHero(connType d2clientconnectiontype.ClientConnectionType,
 }
 
 // ToCreateGame forces the game to transition to the Create Game screen
+//
+// EVERY WAY INTO A GAME COMES THROUGH HERE, so this is where a world save is
+// resumed (M4.6 B4a): the character select's load, the death screen's "load
+// last save" (ReloadGame) and the harness's strigoi_start_game. The load's
+// step 1 runs before the client opens (d2gamescreen.PrepareLoad): the world
+// file beside the save, checked; his sidecar written from it; and the server
+// handed the file's seed and his saved place. A file refused there is set
+// aside and the game begins at dawn from his sidecar (rule 7). One refused
+// after the game opened -- by CreateGame's checks, or on the first frame --
+// closes that game and opens the same hero again at dawn (FallBackToDawn).
 func (a *App) ToCreateGame(filePath string, connType d2clientconnectiontype.ClientConnectionType, host string) {
 	a.harnessGameBegins() // no-op unless built with -tags harness
+
+	load, refusal := d2gamescreen.PrepareLoad(filePath, connType != d2clientconnectiontype.Local)
+	if refusal != nil {
+		a.Errorf("LOAD refused before the game opened, so he begins at dawn: %v (set aside: %q)",
+			refusal, d2gamescreen.LastLoad().SetAside)
+	}
+
+	if load != nil {
+		d2server.SetNextGameSeed(load.Seed)
+		d2server.SetNextStartPosition(load.Hero.Pos[0], load.Hero.Pos[1])
+		a.harnessLoadBegins(load) // no-op unless built with -tags harness
+	}
 
 	gameClient, err := d2client.Create(connType, a.asset, *a.Options.LogLevel, a.scriptEngine)
 	if err != nil || gameClient == nil {
@@ -744,20 +766,42 @@ func (a *App) ToCreateGame(filePath string, connType d2clientconnectiontype.Clie
 			reason = err.Error()
 		}
 
+		d2server.ClearNextStartPosition()
 		a.Error(reason)
 		a.ToMainMenu(gameStartFailed + reason)
 
 		return
 	}
 
+	var createErr error
+
 	game, reason := startGame(gameClient, host, filePath, func() (*d2gamescreen.Game, error) {
-		return d2gamescreen.CreateGame(
+		g, err := d2gamescreen.CreateGame(
 			a, a.asset, a.ui, a.renderer, a.inputManager, a.audio, gameClient, a.terminal, *a.Options.LogLevel, a.guiManager,
+			load,
 		)
+		createErr = err
+
+		return g, err
 	})
 
 	// On game == nil, not reason: a nil screen must never reach SetNextScreen.
 	if game == nil {
+		// A world save CreateGame refused (the load's steps 2 and 4): the
+		// client is closed, the file set aside, and the same hero opened
+		// again at dawn.
+		var loadRefused *d2gamescreen.LoadRefusal
+		if load != nil && errors.As(createErr, &loadRefused) {
+			aside := d2gamescreen.SetLoadAside(filePath, loadRefused, true)
+			a.FallBackToDawn(filePath, gameClient.Seed,
+				fmt.Sprintf("the world save was not resumed: %v; set aside as %q", loadRefused, aside))
+
+			return
+		}
+
+		// A load whose game never opened leaves no start position behind for
+		// the next game (its server would have taken it).
+		d2server.ClearNextStartPosition()
 		a.Error(reason)
 		a.ToMainMenu(reason)
 
@@ -766,6 +810,20 @@ func (a *App) ToCreateGame(filePath string, connType d2clientconnectiontype.Clie
 
 	a.screen.SetNextScreen(game)
 	a.harnessNoteGame(gameClient, game) // no-op unless built with -tags harness
+}
+
+// FallBackToDawn is rule 7 for a world save refused after its game was
+// opened (M4.6 B4a): the game in play is left, and the same hero opened again
+// -- the world file already set aside, so at dawn from his sidecar -- on the
+// seed the refused game ran on, through the main menu like "load last save"
+// (ReloadGame: the old game's server must let go of its port first). The
+// reason goes to the log; the notice a player sees is B5's.
+func (a *App) FallBackToDawn(savePath string, seed int64, reason string) {
+	a.Errorf("LOAD torn down, so he begins at dawn: %s", reason)
+
+	d2server.SetNextGameSeed(seed)
+	a.harnessFallBack(seed) // no-op unless built with -tags harness
+	a.ReloadGame(savePath)
 }
 
 // gameStartFailed begins the main menu's line when a game could not start.

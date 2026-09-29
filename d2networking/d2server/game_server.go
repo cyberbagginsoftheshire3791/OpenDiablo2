@@ -89,6 +89,10 @@ type GameServer struct {
 	// rebroadcast (OnPacketReceived); the first is logged.
 	castsRefused atomic.Int64
 
+	// startAt is where a load put the local player (SetNextStartPosition,
+	// M4.6 B4a), spent by his connection; unset, he starts on the map's start.
+	startAt startPosition
+
 	*d2util.Logger
 }
 
@@ -130,7 +134,8 @@ func NewGameServer(asset *d2asset.AssetManager,
 		packetManagerChan: make(chan ReceivedPacket),
 		mapEngines:        make([]*d2mapengine.MapEngine, 0),
 		scriptEngine:      d2script.CreateScriptEngine(),
-		seed:              takeNextGameSeed(), // wall clock unless the harness set one (seed.go, P3 E3)
+		seed:              takeNextGameSeed(),      // wall clock unless the harness set one (seed.go, P3 E3)
+		startAt:           takeNextStartPosition(), // the map's start unless a load set one (start_position.go, M4.6 B4a)
 		heroStateFactory:  heroStateFactory,
 	}
 
@@ -427,18 +432,24 @@ func (g *GameServer) OnClientConnected(client ClientConnection) {
 	// Temporary position hack --------------------------------------------
 	// https://github.com/OpenDiablo2/OpenDiablo2/issues/829
 	sx, sy := g.mapEngines[0].GetStartPosition()
+
+	// A load puts the local player where he was saved (M4.6 B4a).
+	playerX, playerY, wx, wy := g.startAt.placeOnConnect(client.GetConnectionType(), sx, sy)
+
 	clientPlayerState := client.GetPlayerState()
-	clientPlayerState.X = sx
-	clientPlayerState.Y = sy
+	clientPlayerState.X = wx
+	clientPlayerState.Y = wy
 	// --------------------------------------------------------------------
 
 	g.Infof("Client connected with an id of %s", client.GetUniqueID())
 	g.connections[client.GetUniqueID()] = client
 
-	g.handleClientConnection(client, sx, sy)
+	g.handleClientConnection(client, playerX, playerY)
 }
 
-func (g *GameServer) handleClientConnection(client ClientConnection, x, y float64) {
+// handleClientConnection sends a connecting client the world and his player,
+// placed at playerX, playerY (sub-tiles).
+func (g *GameServer) handleClientConnection(client ClientConnection, playerX, playerY int) {
 	usi, err := d2netpacket.CreateUpdateServerInfoPacket(g.seed, client.GetUniqueID())
 	if err != nil {
 		g.Errorf("UpdateServerInfoPacket: %v", err)
@@ -461,10 +472,6 @@ func (g *GameServer) handleClientConnection(client ClientConnection, x, y float6
 	}
 
 	playerState := client.GetPlayerState()
-
-	// these are in subtiles
-	playerX := int(x*subtilesPerTile) + middleOfTileOffset
-	playerY := int(y*subtilesPerTile) + middleOfTileOffset
 
 	d2hero.HydrateSkills(playerState.Skills, g.asset)
 

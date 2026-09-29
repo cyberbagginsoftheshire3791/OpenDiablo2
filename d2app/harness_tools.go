@@ -235,6 +235,13 @@ type harnessGameInfoOut struct {
 	MapError        string `json:"map_error,omitempty"`
 	Playtest        bool   `json:"playtest"`
 	PlaytestSaveDir string `json:"playtest_save_dir,omitempty"`
+
+	// Load is what the last game's world-save load did (M4.6 B4a): the file
+	// it looked for, whether it resumed it, why not, where it was set aside,
+	// and the load's steps as they ran. Dials is the script's dials a load
+	// re-applies.
+	Load  d2gamescreen.LoadReport `json:"load"`
+	Dials []string                `json:"dials"`
 }
 
 type harnessNavigateIn struct {
@@ -271,6 +278,9 @@ type harnessStartGameOut struct {
 	HeroAsked string `json:"hero_asked,omitempty"`
 	HeroUsed  string `json:"hero_used,omitempty"`
 	HeroError string `json:"hero_error,omitempty"`
+	// M4.6 B4a: what the game's world-save load did -- resumed, refused (and
+	// why, and where the file was set aside), or found no file.
+	Load d2gamescreen.LoadReport `json:"load"`
 }
 
 // harnessSaveGameIn is strigoi_save_game's arguments (M4.6 B3): both are for
@@ -353,6 +363,8 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			if a.playtest != nil {
 				out.Playtest, out.PlaytestSaveDir = true, a.playtest.saveDir
 			}
+
+			out.Load, out.Dials = d2gamescreen.LastLoad(), harnessDialNames()
 
 			if client == nil {
 				return
@@ -524,6 +536,15 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			} else if _, err := os.Stat(savePath); err != nil {
 				startErr = harnessErr("SAVE_NOT_FOUND", fmt.Sprintf("no save at %q", savePath), "pass hero_name+hero_class to create one")
 				return
+			} else if fileSeed, ok := harnessWorldSeed(savePath); ok && seed != 0 && seed != fileSeed {
+				// M4.6 B4a: a world save beside the hero resumes on ITS seed;
+				// a script that asked for another would get a game it did
+				// not ask for. Refused, nothing started.
+				startErr = harnessErr("BAD_ARGUMENT",
+					fmt.Sprintf("the world save beside %s was saved on seed %d, and start_game asked for %d", savePath, fileSeed, seed),
+					"pass its seed, or no seed: a load resumes the file's")
+
+				return
 			} else if _, err := os.Stat(d2items.SidecarPath(savePath)); os.IsNotExist(err) {
 				// T2: an existing save with no kit (every pre-T2 save) would
 				// open on the loadout choice and hold the world; give it the
@@ -609,6 +630,8 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 				if heroErr != nil {
 					out.HeroError = heroErr.Error()
 				}
+
+				out.Load = d2gamescreen.LastLoad()
 
 				return harnessText("in game · player %s at tile %.1f,%.1f · seed %d", out.Player, out.Spawn[0], out.Spawn[1], out.Seed), out, nil
 			}
@@ -1197,4 +1220,21 @@ func harnessWriteKit(a *App, savePath, loadout string) error {
 	}
 
 	return nil
+}
+
+// harnessWorldSeed is the seed of the world save beside a hero save, when a
+// file a load could read is there (M4.6 B4a: start_game refuses to resume it
+// on another seed).
+func harnessWorldSeed(savePath string) (int64, bool) {
+	data, err := os.ReadFile(d2save.WorldPath(savePath)) // nolint:gosec // the hero's own save
+	if err != nil {
+		return 0, false
+	}
+
+	w, err := d2save.Decode(data)
+	if err != nil {
+		return 0, false
+	}
+
+	return w.Seed, true
 }

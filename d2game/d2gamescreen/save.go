@@ -343,6 +343,10 @@ func (v *Game) saveRefusal() *SaveRefusal {
 		return refuse(SaveRefusedNotReady, "this game opened no hero save")
 	case v.localPlayer == nil || v.localPlayer.Stats == nil:
 		return refuse(SaveRefusedNotReady, "he is not in the world yet")
+	case v.pendingLoad != nil || v.loadAbandoned:
+		// M4.6 B4a: a world save still being resumed, or one refused on its
+		// first frame, is not a moment anyone could save.
+		return refuse(SaveRefusedNotReady, "the world save is still being resumed, or was refused")
 	case v.died || v.heroDead():
 		return refuse(SaveRefusedDead, "he is dead, and a dead hero is never saved")
 	}

@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client/d2clientconnectiontype"
 )
 
 func TestNextGameSeedIsOneShot(t *testing.T) {
@@ -17,4 +19,35 @@ func TestNextGameSeedIsOneShot(t *testing.T) {
 	SetNextGameSeed(7)
 	SetNextGameSeed(0) // clearing
 	assert.NotEqual(t, int64(7), takeNextGameSeed(), "0 clears the override")
+}
+
+// M4.6 B4a: a load puts the local player where he was saved. The position is
+// one-shot (the next server takes it), placed on the sub-tile the saved point
+// lies in, spent by the first local client, and never given to a remote one.
+func TestNextStartPositionIsOneShotAndLocal(t *testing.T) {
+	SetNextStartPosition(143.4, 112.9)
+
+	at := takeNextStartPosition()
+	assert.True(t, at.set, "the set position is taken by the next server")
+	assert.False(t, takeNextStartPosition().set, "and only by it: one-shot")
+
+	// A remote player joins at the map's start, and does not spend it.
+	x, y, wx, wy := at.placeOnConnect(d2clientconnectiontype.LANClient, 20, 30)
+	assert.Equal(t, []int{103, 153}, []int{x, y}, "a remote player: the start tile, mid-tile, as ever")
+	assert.Equal(t, []float64{20, 30}, []float64{wx, wy})
+
+	// The local player is put on the sub-tile the saved point lies in.
+	x, y, wx, wy = at.placeOnConnect(d2clientconnectiontype.Local, 20, 30)
+	assert.Equal(t, []int{143, 112}, []int{x, y}, "the local player: the sub-tile his saved point lies in")
+	assert.InDelta(t, 28.68, wx, 1e-9)
+	assert.InDelta(t, 22.58, wy, 1e-9)
+
+	// Spent: a second local connection (a reconnect) starts on the map's start.
+	x, y, _, _ = at.placeOnConnect(d2clientconnectiontype.Local, 20, 30)
+	assert.Equal(t, []int{103, 153}, []int{x, y}, "the position is spent by the first local client")
+
+	// Cleared: a load refused before its game opened leaves nothing behind.
+	SetNextStartPosition(1, 1)
+	ClearNextStartPosition()
+	assert.False(t, takeNextStartPosition().set, "a cleared position is not taken")
 }

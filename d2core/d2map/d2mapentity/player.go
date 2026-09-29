@@ -222,6 +222,25 @@ func (p *Player) Facing() int {
 	return p.composite.GetDirection()
 }
 
+// StandAt puts him standing at x, y -- SUB-TILES, the engine's own units,
+// bit-exact -- facing facing, with no walk: his position and his target are
+// the point, his path and its arrival callback are dropped, his velocity is
+// zero, and his body is turned (SetDirection) when he has one drawn. The world
+// save's load calls it (M4.6 B4a): rule 4, "a walk you were in the middle of
+// does not continue", so he stands at the hero.pos the file carries, facing
+// hero.facing. The server put him on the whole sub-tile the point lies in
+// (SetNextStartPosition); this is the exact point.
+func (p *Player) StandAt(x, y float64, facing int) {
+	p.path, p.done = nil, nil
+	p.Position = d2vector.NewPosition(x, y)
+	p.Target = d2vector.NewPosition(x, y)
+	p.velocity = *d2vector.VectorZero()
+
+	if p.composite != nil {
+		p.SetDirection(facing)
+	}
+}
+
 // Name returns the player name.
 func (p *Player) Name() string {
 	return p.name

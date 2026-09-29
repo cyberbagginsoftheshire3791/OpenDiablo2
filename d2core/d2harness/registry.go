@@ -46,6 +46,33 @@ type FieldLister interface {
 	HarnessSettableFields() []string
 }
 
+// Digester is optionally implemented by a provider not all of whose state is
+// the WORLD's (BUG-58; M4.6 B4a). The state digest (strigoi_get_state_digest)
+// puts a provider's world state in its "systems" part, which a game resumed
+// from a world save must reproduce exactly; its PROCESS state -- this
+// process's own history, which no save carries and a relaunch does not
+// repeat: the files it has loaded, the verbs it has counted, the games it has
+// begun -- in a "process" part of its own; and PRESENTATION that moves on its
+// own -- screen coordinates while the camera eases toward him over render
+// frames, which run while the simulation is paused -- in neither. A provider
+// that does not implement it is world state, whole.
+//
+// HarnessState is unchanged by it: a script still reads every field, screen
+// coordinates included, through strigoi_get_system_state.
+type Digester interface {
+	HarnessDigest() (world, process map[string]interface{})
+}
+
+// DigestParts is p's state split for the digest: the world's, and this
+// process's (nil when it has none). Called on the game goroutine.
+func DigestParts(p Provider) (world, process map[string]interface{}) {
+	if d, ok := p.(Digester); ok {
+		return d.HarnessDigest()
+	}
+
+	return p.HarnessState(), nil
+}
+
 // nolint:gochecknoglobals // the registry is deliberately process-global
 var (
 	mu        sync.Mutex

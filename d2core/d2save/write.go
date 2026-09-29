@@ -118,6 +118,23 @@ func readable(data []byte) bool {
 	return err == nil
 }
 
+// SetAside moves a world file the LOAD refuses out of the way (rule 7: "a save
+// this build cannot read ... is neither opened nor overwritten. You are told
+// why, it is set aside, and you begin at dawn"), and says where it went. The
+// name carries the version the file holds, as WriteWorld's setting aside does
+// -- N.od2.world.json.v1.unread for a version-1 file the load refused (another
+// hero's, a torn save, a changed map), .v2.unread for a newer build's -- under
+// a numbered suffix if that name is taken, so nothing set aside is ever
+// overwritten (M4.6 B4a). The load's step 1 and its teardown call it.
+func SetAside(path string) (string, error) {
+	data, err := os.ReadFile(path) // nolint:gosec // the hero's own save
+	if err != nil {
+		return "", fmt.Errorf("d2save: reading the world file to set it aside: %w", err)
+	}
+
+	return setAside(path, VersionOf(data))
+}
+
 // setAside moves the file at path to UnreadPath, or to the first of
 // UnreadPath + ".1", ".2", ... that nothing holds. The move is retried while
 // Windows refuses it (d2items.RenameRetrying): a file being set aside is

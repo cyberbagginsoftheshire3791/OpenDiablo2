@@ -30,6 +30,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2progress"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
@@ -92,6 +93,7 @@ func CreateGame(
 	term d2interface.Terminal,
 	l d2util.LogLevel,
 	guiManager *d2gui.GuiManager,
+	load *d2save.World,
 ) (*Game, error) {
 	bestiaryData, err := asset.LoadFile(bestiaryCatalogPath)
 	if err != nil {
@@ -235,6 +237,18 @@ func CreateGame(
 	// at construction, so they are registered providers from the screen's
 	// first frame; Game.OnUnload closes them.
 	game.worldClock = d2world.NewClock(d2world.DefaultClockDials())
+
+	// M4.6 B4a, the load's step 2 (trap 1): a world save's clock goes back
+	// HERE, before anything below is built -- every system samples the clock
+	// it is given, and bindProgress reads it for the stage he arrived in.
+	if load != nil {
+		if refusal := game.restoreClock(load); refusal != nil {
+			game.releaseWorld()
+
+			return nil, refusal
+		}
+	}
+
 	game.light = d2world.NewLight(game.worldClock, d2world.DefaultLightDials())
 	game.light.SetPlayer(startX, startY)
 
@@ -382,6 +396,20 @@ func CreateGame(
 
 	game.escapeMenu.OnLoad()
 
+	// M4.6 B4a, the load's step 4 (D4): every block checked against the game
+	// it is resumed into before any is restored. A refusal closes this game
+	// before its first frame (the App falls back to the dawn); a file that
+	// passes is restored on the first frame, once his kit is bound (resumeLoad).
+	if load != nil {
+		if refusal := game.checkLoad(load); refusal != nil {
+			game.releaseWorld()
+
+			return nil, refusal
+		}
+
+		game.pendingLoad = load
+	}
+
 	return game.bindOrRelease(inputManager)
 }
 
@@ -501,6 +529,17 @@ type Game struct {
 	// with where the map put them, because a load's map build makes them
 	// again and re-keys them rather than rebuilding them (B4b).
 	natives map[nativeKey]d2interface.MapEntity
+
+	// The world save's load (M4.6 B4a, load.go). pendingLoad is the file
+	// CreateGame checked, restored on the first frame (resumeLoad) and nil
+	// after; loadSteps the load's steps as they ran; loadAbandoned a load
+	// refused on the first frame, whose world never runs and whose files are
+	// never written (abandonLoad); loadFailed that refusal, held until the
+	// controls are bound so the teardown unbinds what was bound.
+	pendingLoad   *d2save.World
+	loadSteps     []string
+	loadAbandoned bool
+	loadFailed    error
 
 	// saveGeneration is the saved_at of the last world save this hero's
 	// sidecar belongs to: SaveWorld sets it, bindKit reads it from the
@@ -696,7 +735,11 @@ func (v *Game) OnUnload() error {
 	// server now returns its write error to a local sender, and returning
 	// here would skip the kit's save and leave the client -- a local game's
 	// server, holding its port -- open behind the menu (BUG-25's shape).
-	if shouldSaveOnUnload(v.localPlayer) {
+	//
+	// NOR AFTER A LOAD REFUSED ON ITS FIRST FRAME (M4.6 B4a): its world is
+	// half the file's and half the dawn's, and his .od2 and sidecar stay as
+	// the load found them for the dawn that replaces this game.
+	if shouldSaveOnUnload(v.localPlayer) && !v.loadAbandoned {
 		if err := v.OnPlayerSave(); err != nil {
 			v.Errorf("leaving: his .od2 was not saved: %v", err)
 		}
@@ -760,6 +803,23 @@ func (v *Game) Advance(elapsed float64) error {
 			v.navigator.ToMainMenu("The host refused this game: " + reason)
 		}
 
+		return nil
+	}
+
+	// M4.6 B4a: A HALF-RESTORED WORLD NEVER RUNS A FRAME. A game resumed from
+	// a world save binds its controls FIRST on its first frame -- the restore
+	// runs there, after his kit is bound (resumeLoad) -- so nothing below ever
+	// runs on the world CreateGame built before the file is back in it. A load
+	// refused there holds everything until the dawn replaces this game.
+	if v.pendingLoad != nil && v.gameControls == nil {
+		if err := v.bindGameControls(); err != nil {
+			return err
+		}
+	}
+
+	v.failPendingLoad()
+
+	if v.pendingLoad != nil || v.loadAbandoned {
 		return nil
 	}
 
@@ -836,36 +896,7 @@ func (v *Game) Advance(elapsed float64) error {
 	v.ticksSinceLevelCheck += elapsed
 	if v.ticksSinceLevelCheck > 1 {
 		v.ticksSinceLevelCheck = 0
-		if v.localPlayer != nil {
-			tilePosition := v.localPlayer.Position.Tile()
-			tile := v.gameClient.MapEngine.TileAt(int(tilePosition.X()), int(tilePosition.Y()))
-
-			// An authored map says its own sound environment and name (its map
-			// properties); a generated one reads levels.txt, which loads with
-			// that world (M5.3's tables burst: Strigoi's game does not load it).
-			soundEnv, areaName, known := v.gameClient.MapEngine.AuthoredRegion()
-			if tile != nil && !known {
-				// Through the locked accessor: levels.txt loads with a generated
-				// world, on whichever goroutine builds it (BUG-23).
-				if levelDetails := v.asset.LevelDetails(int(tile.RegionType)); levelDetails != nil {
-					soundEnv, areaName, known = levelDetails.SoundEnvironmentID, levelDetails.LevelDisplayName, true
-				}
-			}
-
-			if tile != nil && known {
-				v.soundEnv.SetEnv(soundEnv)
-
-				// skip showing zone change text the first time we enter the world
-				if v.lastRegionType != d2enum.RegionNone && v.lastRegionType != tile.RegionType {
-					areaChgStr := fmt.Sprintf("Entering The %s", areaName)
-					v.gameControls.SetZoneChangeText(areaChgStr)
-					v.gameControls.ShowZoneChangeText()
-					v.gameControls.HideZoneChangeTextAfter(hideZoneTextAfterSeconds)
-				}
-
-				v.lastRegionType = tile.RegionType
-			}
-		}
+		v.checkRegion()
 	}
 
 	// Bind the game controls to the player once it exists
@@ -892,6 +923,46 @@ func (v *Game) Advance(elapsed float64) error {
 	}
 
 	return nil
+}
+
+// checkRegion reads the region he stands in: its sound environment (the
+// music) and, on a change of region, the "Entering" banner. Advance runs it
+// once a second of play; a load runs it at once (M4.6 B4a), so a resumed game
+// sounds on its first frame as the saved one did -- the sound environment is
+// derived, never saved.
+func (v *Game) checkRegion() {
+	if v.localPlayer == nil || v.soundEngine == nil {
+		return
+	}
+
+	tilePosition := v.localPlayer.Position.Tile()
+	tile := v.gameClient.MapEngine.TileAt(int(tilePosition.X()), int(tilePosition.Y()))
+
+	// An authored map says its own sound environment and name (its map
+	// properties); a generated one reads levels.txt, which loads with
+	// that world (M5.3's tables burst: Strigoi's game does not load it).
+	soundEnv, areaName, known := v.gameClient.MapEngine.AuthoredRegion()
+	if tile != nil && !known {
+		// Through the locked accessor: levels.txt loads with a generated
+		// world, on whichever goroutine builds it (BUG-23).
+		if levelDetails := v.asset.LevelDetails(int(tile.RegionType)); levelDetails != nil {
+			soundEnv, areaName, known = levelDetails.SoundEnvironmentID, levelDetails.LevelDisplayName, true
+		}
+	}
+
+	if tile != nil && known {
+		v.soundEnv.SetEnv(soundEnv)
+
+		// skip showing zone change text the first time we enter the world
+		if v.lastRegionType != d2enum.RegionNone && v.lastRegionType != tile.RegionType {
+			areaChgStr := fmt.Sprintf("Entering The %s", areaName)
+			v.gameControls.SetZoneChangeText(areaChgStr)
+			v.gameControls.ShowZoneChangeText()
+			v.gameControls.HideZoneChangeTextAfter(hideZoneTextAfterSeconds)
+		}
+
+		v.lastRegionType = tile.RegionType
+	}
 }
 
 // advanceWorld moves the world clock and everything that hangs off it
@@ -2226,8 +2297,21 @@ func (v *Game) bindGameControls() error {
 		v.gameControls.SetWorldHolder(v)
 		v.gameControls.SetJournalHolder(v)
 
-		// M4.7 Q2a: Night 1's dead, around where he enters.
-		v.placeTheDead()
+		// M4.7 Q2a: Night 1's dead, around where he enters -- unless this game
+		// resumes a world save, whose dead are the file's (trap 5; M4.6 B4a):
+		// then every block goes back instead, here, after his kit and progress
+		// are bound (resumeLoad), and a refusal tears the game down once the
+		// controls below are bound (Advance, abandonLoad).
+		if v.pendingLoad != nil {
+			if err := v.resumeLoad(v.pendingLoad); err != nil {
+				v.loadFailed = err
+			} else {
+				v.pendingLoad = nil
+				v.loadResumed()
+			}
+		} else {
+			v.placeTheDead()
+		}
 
 		if err := v.inputManager.BindHandler(v.gameControls); err != nil {
 			v.Error(bindControlsErrStr + player.ID())

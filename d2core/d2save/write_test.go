@@ -181,3 +181,37 @@ func TestWriteWorldGoesThroughATemporaryFile(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, old, b3Read(t, path), "a failed write leaves the file as it was")
 }
+
+// M4.6 B4a: THE LOAD SETS A REFUSED FILE ASIDE, never overwriting it or
+// anything already set aside, under the version it holds (rule 7), and leaves
+// the .bak alone.
+func TestSetAsideKeepsWhatTheLoadRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "0.od2.world.json")
+	one, two, newer := b3Save(t, "refused"), b3Save(t, "refused again"), `{"version": 2}`
+
+	require.NoError(t, os.WriteFile(path+".bak", []byte("the last save"), 0o600))
+	require.NoError(t, os.WriteFile(path, []byte(one), 0o600))
+
+	aside, err := SetAside(path)
+	require.NoError(t, err)
+	require.Equal(t, path+".v1.unread", aside)
+	require.Equal(t, one, b3Read(t, aside))
+	b3Absent(t, path)
+	require.Equal(t, "the last save", b3Read(t, path+".bak"), "the .bak is untouched")
+
+	require.NoError(t, os.WriteFile(path, []byte(two), 0o600))
+
+	aside, err = SetAside(path)
+	require.NoError(t, err)
+	require.Equal(t, path+".v1.unread.1", aside, "a second refusal never overwrites the first")
+	require.Equal(t, one, b3Read(t, path+".v1.unread"))
+
+	require.NoError(t, os.WriteFile(path, []byte(newer), 0o600))
+
+	aside, err = SetAside(path)
+	require.NoError(t, err)
+	require.Equal(t, path+".v2.unread", aside, "a newer build's file keeps its version in the name")
+
+	_, err = SetAside(path)
+	require.Error(t, err, "nothing to set aside is an error, not a silent success")
+}

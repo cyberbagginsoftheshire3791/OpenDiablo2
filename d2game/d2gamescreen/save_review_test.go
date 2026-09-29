@@ -366,6 +366,10 @@ var b3TransientKind = map[string]string{
 	"talk":             "refused",
 	"died":             "refused",
 	"wasFighting":      "refused",
+	"pendingLoad":      "refused",
+	"loadAbandoned":    "refused",
+
+	"loadFailed": "reset:failPendingLoad",
 
 	"pendingStrikeStill":    "reset:OnTacticalTarget",
 	"journalRows":           "reset:sampleFight",

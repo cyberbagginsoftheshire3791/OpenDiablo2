@@ -174,8 +174,27 @@ func harnessDigestLine(info harnessEntityInfo) harnessDigestEntity {
 // goroutine (P3 spec §3.6). Pixels, animation frames, audio, log text, and
 // the raw frame tick are deliberately excluded: parts must be comparable
 // across process launches, and boot-frame counts differ per launch.
+//
+// SIX PARTS SINCE M4.6 B4a (29 Sep 2026): sim, process, world, entities, rng
+// and systems. "systems" is every provider's WORLD state and "process" the
+// state that is this process's own history (d2harness.Digester): the assets
+// census, the uuid stream's game count, the ui's torch-verb count -- which
+// two launches of one script share, and a game resumed from a world save in
+// another process does not. A resume reproduces world, entities, rng and
+// systems (harnessResumeDigest); the determinism proof still compares all
+// six. Screen coordinates are in neither (BUG-58; GameControls.HarnessDigest).
 func (a *App) harnessDigestParts() (map[string]string, error) {
+	parts, _, err := a.harnessDigestPartsBySystem()
+
+	return parts, err
+}
+
+// harnessDigestPartsBySystem is harnessDigestParts with each provider's
+// world-state hash beside it, by name, so a comparison that fails names the
+// system (the "systems" field of strigoi_get_state_digest).
+func (a *App) harnessDigestPartsBySystem() (map[string]string, map[string]string, error) {
 	raw := map[string]string{}
+	bySystem := map[string]string{}
 
 	var buildErr error
 
@@ -232,7 +251,7 @@ func (a *App) harnessDigestParts() (map[string]string, error) {
 			raw["entities"] = string(canon)
 		}
 
-		var sys []byte
+		var sys, proc []byte
 
 		providers := d2harness.Providers()
 		names := make([]string, 0, len(providers))
@@ -254,25 +273,45 @@ func (a *App) harnessDigestParts() (map[string]string, error) {
 
 			seen[n] = true
 
-			state, err := json.Marshal(byName[n].HarnessState())
-			if err != nil {
-				buildErr = err
-				return
+			world, process := d2harness.DigestParts(byName[n])
+
+			if world != nil {
+				state, err := json.Marshal(world)
+				if err != nil {
+					buildErr = err
+					return
+				}
+
+				sys = append(sys, []byte(n+"=")...)
+				sys = append(sys, state...)
+				sys = append(sys, '\n')
+
+				sum := sha256.Sum256(state)
+				bySystem[n] = hex.EncodeToString(sum[:])
 			}
 
-			sys = append(sys, []byte(n+"=")...)
-			sys = append(sys, state...)
-			sys = append(sys, '\n')
+			if process != nil {
+				state, err := json.Marshal(process)
+				if err != nil {
+					buildErr = err
+					return
+				}
+
+				proc = append(proc, []byte(n+"=")...)
+				proc = append(proc, state...)
+				proc = append(proc, '\n')
+			}
 		}
 
 		raw["systems"] = string(sys)
+		raw["process"] = string(proc)
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if buildErr != nil {
-		return nil, harnessErr("INTERNAL", fmt.Sprintf("digest: %v", buildErr), "")
+		return nil, nil, harnessErr("INTERNAL", fmt.Sprintf("digest: %v", buildErr), "")
 	}
 
 	parts := make(map[string]string, len(raw))
@@ -282,7 +321,25 @@ func (a *App) harnessDigestParts() (map[string]string, error) {
 		parts[name] = hex.EncodeToString(sum[:])
 	}
 
-	return parts, nil
+	return parts, bySystem, nil
+}
+
+// harnessResumeParts are the digest's parts a game resumed from a world save
+// must reproduce: not sim (the harness's own clock, which starts again at 0
+// in a relaunched process) and not process (this process's history).
+var harnessResumeParts = []string{"entities", "rng", "systems", "world"}
+
+// harnessResumeDigest is the digest over harnessResumeParts: what TestSaveResume
+// compares across a save and a load (M4.6 B4a).
+func harnessResumeDigest(parts map[string]string) string {
+	h := sha256.New()
+
+	for _, n := range harnessResumeParts {
+		h.Write([]byte(n))
+		h.Write([]byte(parts[n]))
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func harnessTotalDigest(parts map[string]string) string {
@@ -339,10 +396,17 @@ type harnessSeedOut struct {
 }
 
 type harnessDigestOut struct {
-	Digest     string            `json:"digest"`
-	Parts      map[string]string `json:"parts"`
-	SimSeconds float64           `json:"sim_seconds"`
-	Seed       int64             `json:"seed"`
+	Digest string            `json:"digest"`
+	Parts  map[string]string `json:"parts"`
+
+	// ResumeDigest is the digest over the parts a resumed game must
+	// reproduce (harnessResumeParts), and Systems each provider's world-state
+	// hash by name (M4.6 B4a).
+	ResumeDigest string            `json:"resume_digest"`
+	Systems      map[string]string `json:"systems"`
+
+	SimSeconds float64 `json:"sim_seconds"`
+	Seed       int64   `json:"seed"`
 }
 
 func harnessTimeSnapshot() harnessTimeModeOut {
@@ -525,20 +589,22 @@ func (a *App) harnessAddTimeTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_get_state_digest",
-		Description: "SHA-256 of the canonical simulation state, with per-part digests (sim, world, entities, rng, systems) so a mismatch points at the leaking part. Excludes pixels, animation, audio, logs, and raw frame ticks (P3 spec §3.6). Comparable across process launches when seeded and stepped.",
+		Description: "SHA-256 of the canonical simulation state, with per-part digests (sim, process, world, entities, rng, systems) so a mismatch points at the leaking part, and each system's own hash (systems). Excludes pixels, animation, audio, logs, raw frame ticks and screen coordinates (P3 spec §3.6; BUG-58). Comparable across process launches when seeded and stepped. resume_digest covers the parts a game resumed from a world save must reproduce: world, entities, rng, systems -- not sim (the harness's clock) or process (this process's history: files loaded, games begun, verbs counted).",
 		Annotations: harnessAnnRO(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in struct{}) (*mcp.CallToolResult, harnessDigestOut, error) {
 		harnessLogCall("strigoi_get_state_digest")
 
 		var out harnessDigestOut
 
-		parts, err := a.harnessDigestParts()
+		parts, bySystem, err := a.harnessDigestPartsBySystem()
 		if err != nil {
 			return nil, out, err
 		}
 
 		snap := harnessTimeSnapshot()
 		out.Parts = parts
+		out.Systems = bySystem
+		out.ResumeDigest = harnessResumeDigest(parts)
 		out.Digest = harnessTotalDigest(parts)
 		out.SimSeconds = snap.SimSeconds
 
