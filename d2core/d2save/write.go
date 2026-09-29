@@ -56,11 +56,11 @@ type Written struct {
 // WriteWorld writes data to path so that a crash never leaves half a file,
 // keeping what was there:
 //
-//   - a version-1 file already at path that this build READS (Decode takes
+//   - a file of this build's Version already at path that it READS (Decode takes
 //     it) is the previous save: it is copied to path + ".bak" first (rule 5:
 //     one save per hero, the last kept as .bak and not offered in game);
 //   - a file of any other version, one that is not a world file at all, or a
-//     version-1 file Decode refuses, is one this build cannot read, and rule 7
+//     file of this Version that Decode refuses, is one this build cannot read, and rule 7
 //     says it is never overwritten: it is moved aside to UnreadPath -- under a
 //     name nothing else holds, so a second such file never overwrites the
 //     first -- and .bak is left alone. (A bad version-1 file used to be
@@ -110,7 +110,7 @@ func WriteWorld(path string, data []byte) (Written, error) {
 	return out, nil
 }
 
-// readable reports whether a version-1 file is one this build reads: the
+// readable reports whether a file of this Version is one this build reads: the
 // only kind WriteWorld keeps as the .bak.
 func readable(data []byte) bool {
 	_, err := Decode(data)
@@ -122,8 +122,11 @@ func readable(data []byte) bool {
 // this build cannot read ... is neither opened nor overwritten. You are told
 // why, it is set aside, and you begin at dawn"), and says where it went. The
 // name carries the version the file holds, as WriteWorld's setting aside does
-// -- N.od2.world.json.v1.unread for a version-1 file the load refused (another
-// hero's, a torn save, a changed map), .v2.unread for a newer build's -- under
+// -- N.od2.world.json.v<Version>.unread for a file of this build's version
+// the load refused (another hero's, a torn save, a changed map), and the
+// version it holds for any other: .v<Version+1>.unread for a newer build's,
+// .v<Version-1>.unread for an older one's after a bump (rule 7: no
+// migration) -- under
 // a numbered suffix if that name is taken, so nothing set aside is ever
 // overwritten (M4.6 B4a). The load's step 1 and its teardown call it.
 //

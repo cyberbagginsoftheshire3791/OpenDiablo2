@@ -28,6 +28,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -43,13 +44,20 @@ import (
 // Any other is refused (ErrWorldVersion) and the file is set aside, never
 // overwritten (rule 7). There is no migration: when the shape changes
 // incompatibly, this number moves and the old file is set aside.
+//
+// NOTHING ELSE NAMES THE NUMBER (the raid's R0.5, 29 Sep 2026). Decode, the
+// refusal's message, WriteWorld's keep-or-set-aside and every test derive it
+// from here, so a bump is this line, testdata/world-v<Version>.json
+// regenerated and its shape hash recorded (world_shape_test.go), nothing more.
 const Version = 1
 
 // ErrWorldVersion is what a file of any version but Version is refused with.
-// The error is a *VersionError naming the version the file holds.
-var ErrWorldVersion = errors.New("d2save: this build reads world files of version 1 only")
+// The error is a *VersionError naming the version the file holds. Its message
+// names Version, not a literal (the raid's R0.5, 29 Sep 2026: "the version
+// follows Version", so a bump is the constant, the golden file and the hash).
+var ErrWorldVersion = fmt.Errorf("d2save: this build reads world files of version %d only", Version)
 
-// ErrWorldFile is what a version-1 file that no load could read is refused
+// ErrWorldFile is what a file of this Version that no load could read is refused
 // with: not JSON, a block missing or null, a block this build does not know,
 // or a block that disagrees with another (World.Check).
 var ErrWorldFile = errors.New("d2save: world file refused")
@@ -67,7 +75,7 @@ func (e *VersionError) Error() string {
 // Unwrap makes errors.Is(err, ErrWorldVersion) true.
 func (e *VersionError) Unwrap() error { return ErrWorldVersion }
 
-// FileError is a refusal of a version-1 file: Reason names the one rule that
+// FileError is a refusal of a file of this Version: Reason names the one rule that
 // refused it (the Reason* constants), Detail says what it found. Every
 // refusal Decode, Check, CheckHeroFile and SameMoment make is one, and
 // errors.Is(err, ErrWorldFile) holds for each.
@@ -453,7 +461,7 @@ func isBlock(name string) bool {
 // exactly. In order:
 //
 //  1. Not a JSON object: ErrWorldFile.
-//  2. A version that is not the integer 1 -- another number, a string, a
+//  2. A version that is not the integer Version -- another number, a string, a
 //     float, or none -- is a *VersionError (ErrWorldVersion), and nothing
 //     else is read: rule 7 sets such a file aside unread.
 //  3. A block missing, null, or unknown: ErrWorldFile.
@@ -482,7 +490,9 @@ func Decode(data []byte) (*World, error) {
 		return nil, &VersionError{Version: "absent"}
 	}
 
-	if v := string(bytes.TrimSpace(version)); v != "1" {
+	// The version follows Version (R0.5): never a literal, so the milestone's
+	// one bump is the constant, the golden file and its hash (B3-8).
+	if v := string(bytes.TrimSpace(version)); v != strconv.Itoa(Version) {
 		return nil, &VersionError{Version: v}
 	}
 
@@ -543,9 +553,9 @@ func Decode(data []byte) (*World, error) {
 }
 
 // VersionOf is the version a file holds, as written, without reading the rest:
-// "1" for a file this build may read, another number or token for one it may
-// not, "absent" for a JSON object with no version, and "" for bytes that are
-// not a JSON object at all.
+// Version, written as a whole number, for a file this build may read; another
+// number or token for one it may not; "absent" for a JSON object with no
+// version; and "" for bytes that are not a JSON object at all.
 func VersionOf(data []byte) string {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(data, &top); err != nil || top == nil {

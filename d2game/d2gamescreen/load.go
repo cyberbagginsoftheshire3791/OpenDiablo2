@@ -28,7 +28,7 @@ import (
 //     cut off (recoverPreload); read the world file (unless this process
 //     refused it and could not move it: B1); refuse it -- and fall back per
 //     rule 7, the file set aside and he begins at dawn from his sidecar --
-//     when its version is not 1 or it is not a file a load could read
+//     when its version is not d2save.Version or it is not a file a load could read
 //     (d2save.Decode), the game is a network game (rule 9), it is another
 //     hero's (World.CheckHeroFile) or a torn save (World.SameMoment); or leave
 //     it where it is, for B4b, when it holds a hunted night (B4a's own limit:
@@ -77,8 +77,8 @@ var ErrLoadRefused = errors.New("the world save cannot be resumed")
 
 // The load's refusal codes (LoadRefusal.Code), for the log and the harness.
 const (
-	LoadRefusedVersion = "VERSION" // a version other than 1 (a newer build's file)
-	LoadRefusedFile    = "FILE"    // version 1, and not a file a load could read (d2save.Decode)
+	LoadRefusedVersion = "VERSION" // a version other than d2save.Version (a newer or an older build's file)
+	LoadRefusedFile    = "FILE"    // this build's version, and not a file a load could read (d2save.Decode)
 	LoadRefusedNetwork = "NETWORK" // rule 9: a network game loads no world file
 	LoadRefusedHero    = "HERO"    // another hero's file (World.CheckHeroFile)
 	LoadRefusedTorn    = "TORN"    // a save cut off between its files (World.SameMoment)

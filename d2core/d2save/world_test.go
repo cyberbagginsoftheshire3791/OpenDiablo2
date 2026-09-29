@@ -220,16 +220,26 @@ func TestSeedsPast2To53Survive(t *testing.T) {
 	require.NotEqual(t, b3Seed, int64(asNumber["seed"].(float64)))
 }
 
-// ANY VERSION BUT 1 IS REFUSED, as a *VersionError naming it, before a single
-// other block is read.
+// ANY VERSION BUT THIS BUILD'S IS REFUSED, as a *VersionError naming it,
+// before a single other block is read.
+//
+// THE VERSION FOLLOWS Version (the raid's R0.5, 29 Sep 2026). The test was
+// written at version 1 and named for it; every literal that stood for the
+// build's own version now reads Version (cur), and the one that stood for
+// the next build's reads Version+1, so each case asserts what it asserted at
+// version 1 and still does after a bump. The name is kept: the notes and the
+// raid brief find it by it.
 func TestAVersionOtherThanOneIsRefused(t *testing.T) {
+	cur, next := strconv.Itoa(Version), strconv.Itoa(Version+1)
+
 	data := b3Encode(t, b3Fixture())
-	require.Contains(t, string(data), "\n  \"version\": 1,\n")
+	require.Contains(t, string(data), "\n  \"version\": "+cur+",\n")
 
 	for _, tc := range []struct{ version, named string }{
-		{"0", "0"}, {"2", "2"}, {"-1", "-1"}, {`"1"`, `"1"`}, {"1.0", "1.0"}, {"99999999999", "99999999999"}, {"null", "null"},
+		{"0", "0"}, {next, next}, {"-1", "-1"}, {`"` + cur + `"`, `"` + cur + `"`}, {cur + ".0", cur + ".0"},
+		{"99999999999", "99999999999"}, {"null", "null"},
 	} {
-		bad := bytes.Replace(data, []byte("\"version\": 1,"), []byte("\"version\": "+tc.version+","), 1)
+		bad := bytes.Replace(data, []byte("\"version\": "+cur+","), []byte("\"version\": "+tc.version+","), 1)
 
 		_, err := Decode(bad)
 		require.ErrorIs(t, err, ErrWorldVersion, "version %s", tc.version)
@@ -251,10 +261,11 @@ func TestAVersionOtherThanOneIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrWorldVersion)
 	require.Equal(t, "absent", VersionOf(absent))
 
-	// A version-1 file is not refused on its version (the control).
+	// A file of this build's version is not refused on its version (the
+	// control).
 	_, err = Decode(data)
 	require.NoError(t, err)
-	require.Equal(t, "1", VersionOf(data))
+	require.Equal(t, cur, VersionOf(data))
 	require.Equal(t, "", VersionOf([]byte("not json")))
 }
 
@@ -347,7 +358,8 @@ func TestCheckRefusesWhatNoLoadCouldRestore(t *testing.T) {
 		reason string
 		mutate func(w *World)
 	}{
-		"version 2 in a struct":            {ReasonVersion, func(w *World) { w.Version = 2 }},
+		// The next build's version (R0.5: Version+1, not the literal 2).
+		"the next version in a struct":     {ReasonVersion, func(w *World) { w.Version = Version + 1 }},
 		"generated with a path":            {ReasonMap, func(w *World) { w.Map.Generated = true }},
 		"authored with no path":            {ReasonMap, func(w *World) { w.Map.Path = "" }},
 		"authored with no sha":             {ReasonMap, func(w *World) { w.Map.SHA = "" }},

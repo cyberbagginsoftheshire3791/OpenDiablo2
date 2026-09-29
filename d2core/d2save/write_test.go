@@ -3,10 +3,20 @@ package d2save
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+)
+
+// THE VERSION LITERALS FOLLOW Version (the raid's R0.5, 29 Sep 2026). These
+// tests were written at version 1: a "1" in them stood for this build's
+// version and a "2" for a newer build's, so each now reads b3Cur or b3Next and
+// asserts at any Version what it asserted at 1.
+var (
+	b3Cur  = strconv.Itoa(Version)
+	b3Next = strconv.Itoa(Version + 1)
 )
 
 func b3Read(t *testing.T, path string) string {
@@ -79,32 +89,33 @@ func TestWriteWorldKeepsTheLastGeneration(t *testing.T) {
 // last save THIS build made -- is left as it was.
 func TestWriteWorldSetsAsideWhatItCannotRead(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "0.od2.world.json")
-	bak, v2, v2b := `{"version": 1, "n": "bak"}`, `{"version": 2, "n": "newer"}`, `{"version": 2, "n": "newer again"}`
+	bak, v2, v2b := `{"version": `+b3Cur+`, "n": "bak"}`, `{"version": `+b3Next+`, "n": "newer"}`,
+		`{"version": `+b3Next+`, "n": "newer again"}`
 
 	require.NoError(t, os.WriteFile(path+".bak", []byte(bak), 0o600))
 	require.NoError(t, os.WriteFile(path, []byte(v2), 0o600))
 
-	w, err := WriteWorld(path, []byte(`{"version": 1, "n": "mine"}`))
+	w, err := WriteWorld(path, []byte(`{"version": `+b3Cur+`, "n": "mine"}`))
 	require.NoError(t, err)
-	require.Equal(t, path+".v2.unread", w.SetAside)
+	require.Equal(t, path+".v"+b3Next+".unread", w.SetAside)
 	require.Empty(t, w.Bak, "a file this build cannot read is not its last save")
-	require.Equal(t, v2, b3Read(t, path+".v2.unread"))
+	require.Equal(t, v2, b3Read(t, path+".v"+b3Next+".unread"))
 	require.Equal(t, bak, b3Read(t, path+".bak"), "the .bak is untouched")
-	require.Equal(t, `{"version": 1, "n": "mine"}`, b3Read(t, path))
+	require.Equal(t, `{"version": `+b3Cur+`, "n": "mine"}`, b3Read(t, path))
 
 	// A second such file never overwrites the first set aside.
 	require.NoError(t, os.WriteFile(path, []byte(v2b), 0o600))
 
 	w, err = WriteWorld(path, []byte(b3Save(t, "mine again")))
 	require.NoError(t, err)
-	require.Equal(t, path+".v2.unread.1", w.SetAside)
-	require.Equal(t, v2, b3Read(t, path+".v2.unread"))
-	require.Equal(t, v2b, b3Read(t, path+".v2.unread.1"))
+	require.Equal(t, path+".v"+b3Next+".unread.1", w.SetAside)
+	require.Equal(t, v2, b3Read(t, path+".v"+b3Next+".unread"))
+	require.Equal(t, v2b, b3Read(t, path+".v"+b3Next+".unread.1"))
 
 	// Not a world file at all: set aside as plain .unread.
 	require.NoError(t, os.WriteFile(path, []byte("garbage"), 0o600))
 
-	w, err = WriteWorld(path, []byte(`{"version": 1}`))
+	w, err = WriteWorld(path, []byte(`{"version": `+b3Cur+`}`))
 	require.NoError(t, err)
 	require.Equal(t, path+".unread", w.SetAside)
 	require.Equal(t, "garbage", b3Read(t, path+".unread"))
@@ -117,7 +128,7 @@ func TestWriteWorldSetsAsideWhatItCannotRead(t *testing.T) {
 // aside as a version-1 file this build cannot read, and the .bak is kept.
 func TestWriteWorldNeverKeepsABadFileAsTheBak(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "0.od2.world.json")
-	good, bad := b3Save(t, "good"), `{"version": 1, "n": "torn"}`
+	good, bad := b3Save(t, "good"), `{"version": `+b3Cur+`, "n": "torn"}`
 
 	require.NoError(t, os.WriteFile(path+".bak", []byte(good), 0o600))
 	require.NoError(t, os.WriteFile(path, []byte(bad), 0o600))
@@ -125,9 +136,9 @@ func TestWriteWorldNeverKeepsABadFileAsTheBak(t *testing.T) {
 	w, err := WriteWorld(path, []byte(b3Save(t, "new")))
 	require.NoError(t, err)
 	require.Empty(t, w.Bak, "a file no load reads is not the last save")
-	require.Equal(t, path+".v1.unread", w.SetAside)
+	require.Equal(t, path+".v"+b3Cur+".unread", w.SetAside)
 	require.Equal(t, good, b3Read(t, path+".bak"), "the good .bak is kept")
-	require.Equal(t, bad, b3Read(t, path+".v1.unread"), "the bad file is set aside, not lost")
+	require.Equal(t, bad, b3Read(t, path+".v"+b3Cur+".unread"), "the bad file is set aside, not lost")
 	require.Equal(t, b3Save(t, "new"), b3Read(t, path))
 
 	// The control: a readable version-1 file IS the .bak.
@@ -144,7 +155,7 @@ func TestWriteWorldNeverKeepsABadFileAsTheBak(t *testing.T) {
 // the game ships on is Windows, where it has teeth.
 func TestWriteWorldSetsAsideAFileHeldOpen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "0.od2.world.json")
-	v2 := `{"version": 2, "n": "newer"}`
+	v2 := `{"version": ` + b3Next + `, "n": "newer"}`
 	require.NoError(t, os.WriteFile(path, []byte(v2), 0o600))
 
 	held, err := os.Open(path)
@@ -162,8 +173,8 @@ func TestWriteWorldSetsAsideAFileHeldOpen(t *testing.T) {
 	<-released
 
 	require.NoError(t, err, "a file held open for a moment is set aside once it is let go")
-	require.Equal(t, path+".v2.unread", w.SetAside)
-	require.Equal(t, v2, b3Read(t, path+".v2.unread"))
+	require.Equal(t, path+".v"+b3Next+".unread", w.SetAside)
+	require.Equal(t, v2, b3Read(t, path+".v"+b3Next+".unread"))
 }
 
 // THE WRITE GOES THROUGH A TEMPORARY FILE AND A RENAME: with the temporary
@@ -187,14 +198,14 @@ func TestWriteWorldGoesThroughATemporaryFile(t *testing.T) {
 // the .bak alone.
 func TestSetAsideKeepsWhatTheLoadRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "0.od2.world.json")
-	one, two, newer := b3Save(t, "refused"), b3Save(t, "refused again"), `{"version": 2}`
+	one, two, newer := b3Save(t, "refused"), b3Save(t, "refused again"), `{"version": `+b3Next+`}`
 
 	require.NoError(t, os.WriteFile(path+".bak", []byte("the last save"), 0o600))
 	require.NoError(t, os.WriteFile(path, []byte(one), 0o600))
 
 	aside, err := SetAside(path)
 	require.NoError(t, err)
-	require.Equal(t, path+".v1.unread", aside)
+	require.Equal(t, path+".v"+b3Cur+".unread", aside)
 	require.Equal(t, one, b3Read(t, aside))
 	b3Absent(t, path)
 	require.Equal(t, "the last save", b3Read(t, path+".bak"), "the .bak is untouched")
@@ -203,14 +214,14 @@ func TestSetAsideKeepsWhatTheLoadRefused(t *testing.T) {
 
 	aside, err = SetAside(path)
 	require.NoError(t, err)
-	require.Equal(t, path+".v1.unread.1", aside, "a second refusal never overwrites the first")
-	require.Equal(t, one, b3Read(t, path+".v1.unread"))
+	require.Equal(t, path+".v"+b3Cur+".unread.1", aside, "a second refusal never overwrites the first")
+	require.Equal(t, one, b3Read(t, path+".v"+b3Cur+".unread"))
 
 	require.NoError(t, os.WriteFile(path, []byte(newer), 0o600))
 
 	aside, err = SetAside(path)
 	require.NoError(t, err)
-	require.Equal(t, path+".v2.unread", aside, "a newer build's file keeps its version in the name")
+	require.Equal(t, path+".v"+b3Next+".unread", aside, "a newer build's file keeps its version in the name")
 
 	_, err = SetAside(path)
 	require.Error(t, err, "nothing to set aside is an error, not a silent success")
