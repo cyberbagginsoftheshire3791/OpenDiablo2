@@ -24,6 +24,32 @@ func (m *mapEntity) harnessMotion(state map[string]interface{}) {
 	}
 
 	state["waypoints"] = waypoints
+
+	// And the velocity it last stepped with, in world tiles per step (the B4b
+	// review fixes, BUG-82): the world save carries it, so a resume that lost
+	// it is visible here and not only in the renderer's debug overlay. It is
+	// recomputed by the next Step, and exact across a relaunch -- the file
+	// keeps it bit for bit.
+	//
+	// A ZERO IS REPORTED AS ZERO, whatever its sign. A walk that ends scales
+	// its velocity to length 0, which leaves -0 in a component it was
+	// heading down (0 * -y); a player loaded standing (rule 4) has +0. The
+	// two are the same standstill -- the next Step recomputes either -- and
+	// JSON writes them "0" and "-0": the first whole run with this field was
+	// red at act 4 on exactly that, his velocity [0,-0] at T and [0,0]
+	// resumed (wt-b4b-fix\saveresume-1-whole.txt).
+	vel := m.velocity.Clone()
+	vel.DivideScalar(subtilesPerTile)
+	state["velocity"] = [2]float64{unsignedZero(vel.X()), unsignedZero(vel.Y())}
+}
+
+// unsignedZero is f, with -0 made +0.
+func unsignedZero(f float64) float64 {
+	if f == 0 {
+		return 0
+	}
+
+	return f
 }
 
 // HarnessState reports the player's observable simulation state.
@@ -108,6 +134,16 @@ func (v *NPC) HarnessState() map[string]interface{} {
 		state["animation_mode"] = v.composite.GetAnimationMode()
 		state["direction"] = v.composite.GetDirection()
 	}
+
+	// The pose flags the world save carries (the B4b review fixes, BUG-82):
+	// the action held until it has played through ("" when none; "action"
+	// above is the patrol's), and the Dead pose.
+	state["held"] = ""
+	if v.held {
+		state["held"] = v.heldMode.String()
+	}
+
+	state["corpse"] = v.corpse
 
 	return state
 }

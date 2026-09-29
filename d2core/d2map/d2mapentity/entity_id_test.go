@@ -522,3 +522,58 @@ func b2bCalls(n ast.Node, names map[string]bool) bool {
 
 	return found
 }
+
+// M4.6 B4b: THE RE-KEY. A villager the map built is given his saved id IN
+// PLACE -- the same entity, another id -- and the id then counts as given, so
+// the seam never hands it out.
+func TestRekeyGivesTheEntityItsSavedIDInPlace(t *testing.T) {
+	f := b2bFactory(t)
+
+	dog := b2bNewDog(t, f, 50, 50)
+	npc := &NPC{mapEntity: newMapEntityWithID(60, 60, "")}
+
+	require.NoError(t, f.Rekey(dog, "0saved-dog"))
+	require.Equal(t, "0saved-dog", dog.ID(), "a creature answers to its saved id")
+
+	require.NoError(t, f.Rekey(npc, "0saved-villager"))
+	require.Equal(t, "0saved-villager", npc.ID(), "an NPC answers to its saved id")
+
+	require.NoError(t, f.Rekey(npc, "0saved-villager"), "the identity re-key (the harness's case) is allowed")
+
+	require.True(t, errors.Is(f.SetNextEntityID("0saved-dog"), ErrEntityID), "the seam never hands out a re-keyed id")
+	require.True(t, errors.Is(f.SetNextEntityID("0saved-villager"), ErrEntityID))
+}
+
+// Its refusals change nothing.
+func TestRekeyRefusals(t *testing.T) {
+	f := b2bFactory(t)
+	dog := b2bNewDog(t, f, 50, 50)
+	was := dog.ID()
+
+	// "0given": handed out by the seam to another creature.
+	require.NoError(t, f.SetNextEntityID("0given"))
+	require.Equal(t, "0given", b2bNewDog(t, f, 55, 55).ID())
+
+	require.NoError(t, f.SetNextEntityID("0waiting"))
+
+	cases := map[string]struct {
+		e  interface{ ID() string }
+		id string
+	}{
+		"no id":               {dog, ""},
+		"the player's word":   {dog, "player"},
+		"the id waiting":      {dog, "0waiting"},
+		"a kind a save lacks": {&Missile{AnimatedEntity: &AnimatedEntity{mapEntity: newMapEntityWithID(1, 1, "m")}}, "0x"},
+		"an id already given": {dog, "0given"},
+	}
+
+	for name, c := range cases {
+		err := f.Rekey(c.e, c.id)
+		require.True(t, errors.Is(err, ErrEntityID), "%s: %v", name, err)
+		require.Equal(t, was, dog.ID(), "%s: nothing changed", name)
+	}
+
+	id, waiting := f.PendingEntityID()
+	require.True(t, waiting)
+	require.Equal(t, "0waiting", id, "the waiting id is still waiting")
+}

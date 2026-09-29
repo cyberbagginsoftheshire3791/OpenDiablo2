@@ -2,8 +2,12 @@ package d2mapentity
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 )
 
@@ -55,5 +59,63 @@ func TestHarnessStateReportsMotion(t *testing.T) {
 	c := &Creature{mapEntity: newMapEntity(5, 5)}
 	if _, ok := c.HarnessState()["target"]; !ok {
 		t.Fatal("a creature reports its target too")
+	}
+}
+
+// THE B4b REVIEW FIXES (29 Sep 2026), BUG-82: the pose flags and the velocity
+// the world save carries are reported, so a resume that lost one is visible
+// in the digest (the review's C5: the digest had none of the three).
+func TestHarnessStateReportsThePoseAndTheVelocity(t *testing.T) {
+	c := b2bWalker(t)
+
+	state := c.HarnessState()
+	require.Equal(t, "", state["held"], "a walker holds no action")
+	require.Equal(t, false, state["corpse"])
+
+	v := c.GetVelocity()
+	require.False(t, v.IsZero(), "the walker has a velocity")
+	require.Equal(t, [2]float64{v.X() / subtilesPerTile, v.Y() / subtilesPerTile}, state["velocity"],
+		"reported in world tiles, as target and waypoints are")
+
+	require.NoError(t, c.StartAction(d2enum.MonsterAnimationModeAttack1, nil))
+	require.Equal(t, "attack", c.HarnessState()["held"])
+
+	for i := 0; i < 100 && c.held; i++ {
+		c.Advance(b2bFrame)
+	}
+
+	require.Equal(t, "", c.HarnessState()["held"], "the bite played through")
+
+	require.NoError(t, c.StartAction(d2enum.MonsterAnimationModeDeath, nil))
+	require.Equal(t, "death", c.HarnessState()["held"])
+
+	for i := 0; i < 100 && !c.corpse; i++ {
+		c.Advance(b2bFrame)
+	}
+
+	require.Equal(t, true, c.HarnessState()["corpse"])
+	require.Equal(t, "", c.HarnessState()["held"])
+
+	// A standstill is reported as zero, whatever the sign the stop left
+	// (the first whole run was red at act 4 on [0,-0] against [0,0]).
+	still := &Creature{mapEntity: newMapEntity(5, 5)}
+	still.velocity.Set(math.Copysign(0, -1), math.Copysign(0, -1))
+
+	line, err := json.Marshal(still.HarnessState()["velocity"])
+	require.NoError(t, err)
+	require.Equal(t, "[0,0]", string(line))
+
+	// An NPC (no composite: the snapshot half only, as TestNPCMotionCarriesItsPose).
+	held := &NPC{mapEntity: newMapEntity(0, 0), held: true, heldMode: d2enum.MonsterAnimationModeGetHit}
+	require.Equal(t, "GH", held.HarnessState()["held"])
+	require.Equal(t, false, held.HarnessState()["corpse"])
+
+	dead := &NPC{mapEntity: newMapEntity(0, 0), corpse: true}
+	require.Equal(t, "", dead.HarnessState()["held"])
+	require.Equal(t, true, dead.HarnessState()["corpse"])
+	require.Equal(t, [2]float64{0, 0}, dead.HarnessState()["velocity"])
+
+	if _, err := json.Marshal(held.HarnessState()); err != nil {
+		t.Fatalf("not JSON-encodable: %v", err)
 	}
 }

@@ -128,8 +128,14 @@ func (c *Creature) Render(target d2interface.Surface) {
 }
 
 // Advance moves the creature, chooses idle or walk, and advances its sprite.
+//
+// A CORPSE DOES NOT WALK, AND NEITHER DOES A MONSTER PLAYING ITS DEATH (the
+// B4b review fixes, BUG-75). StartAction ends the walk when the death begins
+// (halt); this guard is what keeps it ended if anything hands a dying
+// monster a route before its corpse lies, so the corpse lies where the death
+// began -- where Combat.fallCorpse recorded the fall.
 func (c *Creature) Advance(elapsed float64) {
-	if !c.corpse {
+	if !c.corpse && !c.dying() {
 		c.Step(elapsed)
 	}
 
@@ -220,8 +226,17 @@ func (c *Creature) StartAction(mode d2enum.MonsterAnimationMode, onFinished func
 	c.held = true
 	c.heldMode = wanted
 	c.finished = onFinished
+
+	// A death ends the walk where it begins (BUG-75; mapEntity.halt).
+	if wanted == creatureDeath {
+		c.halt()
+	}
+
 	return nil
 }
+
+// dying is a death being played: held, and not yet a corpse.
+func (c *Creature) dying() bool { return c.held && c.heldMode == creatureDeath }
 
 func (c *Creature) finishAction() {
 	done, mode := c.finished, c.heldMode
@@ -260,6 +275,18 @@ func (c *Creature) HarnessState() map[string]interface{} {
 		"speed":          c.Speed,
 		"world_x":        x,
 		"world_y":        y,
+
+		// The pose flags the world save carries (the B4b review fixes,
+		// BUG-82): the action held until it has played through ("" when
+		// none), and the Dead pose. animation_mode alone cannot tell a held
+		// attack from one a missing sheet fell back from, nor a corpse from a
+		// monster posed dead.
+		"held":   string(c.heldMode),
+		"corpse": c.corpse,
+	}
+
+	if !c.held {
+		state["held"] = ""
 	}
 
 	c.harnessMotion(state)

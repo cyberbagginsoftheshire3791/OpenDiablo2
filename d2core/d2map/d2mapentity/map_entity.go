@@ -76,6 +76,26 @@ func (m *mapEntity) StopMoving() {
 	m.setTarget(m.Position, nil)
 }
 
+// halt ends the walk where the entity stands WITHOUT TURNING IT (the B4b
+// review fixes, BUG-75): no route left, the target the place it stands, no
+// velocity, no arrival to call. A monster's death begins with it
+// (Creature.StartAction, NPC.StartAction): until then a monster slain on its
+// way in -- the quick resolve's last quarter, still walking a chase -- walked
+// on through its whole death, and its corpse came to rest up to a tile
+// further along its route than where the resolver recorded its fall
+// (Combat.fallCorpse), and than a save made in its death would put it.
+//
+// StopMoving is not used because it turns the entity: it calls setTarget,
+// which points the directioner at the entity's own position. The death is
+// drawn facing the way the monster was going; the corpse turns, as it always
+// has, when the death ends (finishAction's StopMoving).
+func (m *mapEntity) halt() {
+	m.ClearPath()
+	m.Target.Copy(&m.Position.Vector)
+	m.velocity.Set(0, 0)
+	m.done = nil
+}
+
 // SetSpeed sets the entity movement speed.
 func (m *mapEntity) SetSpeed(speed float64) {
 	m.Speed = speed

@@ -31,10 +31,18 @@ import (
 //   - drawLayer is never set on these kinds; highlight is a render flag
 //     cleared every frame.
 //   - an animation's frame. An action being played through (Action) restarts
-//     from its first frame, which the digest cannot see (it carries no frame
-//     counters) and a player barely can. A creature saved while its DEATH is
-//     held plays the death again from its first frame after a load and then
-//     lies as a corpse, as it would have. Its held action's callback
+//     from its first frame. B2b wrote that a creature saved while its DEATH is
+//     held "plays the death again from its first frame after a load and then
+//     lies as a corpse, as it would have". The B4b review measured otherwise
+//     (its B1): the death ends later than it would have, and a monster slain
+//     on its way in walked on through its death, so its corpse came to rest
+//     further along its route. So (the B4b review fixes, BUG-75 and BUG-76)
+//     a death now ends the walk where it begins (mapEntity.halt), and THE
+//     GAME NEVER SAVES A HELD ACTION: Game.SaveWorld refuses while any
+//     monster or villager holds one, as it refuses while his own swing
+//     plays, and the load refuses a file that holds one. Restoring a held
+//     action here stays exact about everything but the frame, and is
+//     unit-tested; no save or load of the game's asks it to. Its callback
 //     (finished / onHeldFinished) is not carried either: the game starts
 //     every action with a nil one (npc_body.go), so there is nothing to lose.
 //   - an NPC's patrol (Paths, path index, repetitions): only villagers

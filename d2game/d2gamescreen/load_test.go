@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2rand"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2saveref"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
@@ -115,13 +114,25 @@ func b4Busy(t *testing.T, v *Game) {
 func b4Load(t *testing.T, v *Game, w *d2save.World) error {
 	t.Helper()
 
+	// As in the game (M4.6 B4b): steps 2-4 run in CreateGame, before the
+	// controls -- and localPlayer -- are bound on the first frame; the client
+	// knows him already, and a Resolver that names him must find him there.
+	player := v.localPlayer
+	v.gameClient.Players = map[string]*d2mapentity.Player{player.ID(): player}
+	v.gameClient.PlayerID = player.ID()
+	v.localPlayer = nil
+
 	if r := v.restoreClock(w); r != nil {
+		v.localPlayer = player
 		return r
 	}
 
 	if r := v.checkLoad(w); r != nil {
+		v.localPlayer = player
 		return r
 	}
+
+	v.localPlayer = player
 
 	var doc struct {
 		Kit *d2items.Kit `json:"kit"`
@@ -211,9 +222,9 @@ func TestTheLoadResumesTheSavedMoment(t *testing.T) {
 	require.NoError(t, b4Load(t, resumed, w))
 
 	require.Equal(t, []string{
-		"clock", "validated", "health", "squads", "light", "torch", "corpses", "rising",
-		"spawns", "spawner", "notice", "pursuit", "combat", "scene", "hero", "world_rng",
-	}, resumed.loadSteps, "the load order (docs/m4.6-world-save-notes.md)")
+		"clock", "natives", "entities", "validated", "health", "squads", "light", "torch", "corpses", "rising",
+		"spawns", "spawner", "notice", "pursuit", "combat", "bodies", "scene", "hero", "world_rng",
+	}, resumed.loadSteps, "the load order (docs/m4.6-world-save-notes.md; B4b's steps 3 and bodies)")
 
 	// D1: the light model's torch, whole, and the kit's minutes zeroed --
 	// where the sidecar the load bound held them.
@@ -353,7 +364,7 @@ func TestARefusedLoadRestoresNothing(t *testing.T) {
 		require.True(t, errors.As(err, &r), "%s: refused, got %v", name, err)
 		require.Equal(t, LoadRefusedBlock, r.Code)
 		require.Equal(t, health, v.localPlayer.Stats.Health, "%s: his health was restored", name)
-		require.Equal(t, []string{"clock", "validated"}, v.loadSteps, "%s: a step ran", name)
+		require.Equal(t, []string{"clock", "natives", "entities", "validated"}, v.loadSteps, "%s: a step ran", name)
 
 		v.kit = kit
 		require.NoError(t, v.worldClock.Restore(d2world.ClockSnapshot{}))
@@ -390,9 +401,9 @@ func b4Files(t *testing.T, w *d2save.World, name string, class int) string {
 const b4Amazon = 6
 
 // STEP 1'S REFUSALS: each sets the file aside (rule 7) -- rule 9's too since
-// the B4a review (A2) -- but a hunted night's, which stays for B4b (the
-// review's B2); each writes nothing over his sidecar, keeps no copy of it, and
-// says why. THE CONTROL: a good file is taken, his own sidecar kept as
+// the B4a review (A2); each writes nothing over his sidecar, keeps no copy of
+// it, and says why. (A hunted night was refused here too, HUNTED, and left
+// for B4b; B4b resumes it: TestAHuntedNightPassesStepOne.) THE CONTROL: a good file is taken, his own sidecar kept as
 // .preload first (A1), and his sidecar written from the file, byte for byte
 // the document the save wrote.
 func TestPrepareLoadRefusals(t *testing.T) {
@@ -452,14 +463,11 @@ func TestPrepareLoadRefusals(t *testing.T) {
 	require.Nil(t, w)
 	require.Nil(t, r)
 
-	entity := d2save.Entity{ID: "0dog", Kind: d2save.KindNPC, Monstat: "fallen1", X: 10, Y: 10,
-		Motion: d2mapentity.Motion{Pos: [2]float64{50, 50}, Target: [2]float64{50, 50}}}
-
 	// Where a refused file goes: .v<Version>.unread, the version it holds
 	// (derived from d2save.Version, so the raid's version bump -- R0.5 --
-	// does not turn this red), or nowhere: a hunted night STAYS for B4b (the
-	// B4a review, B2; decision B4a-R3).
-	unread, stays := fmt.Sprintf(".v%d.unread", d2save.Version), ""
+	// does not turn this red). Every refusal sets it aside since B4b: the one
+	// that did not, a hunted night (HUNTED), is resumed now.
+	unread := fmt.Sprintf(".v%d.unread", d2save.Version)
 
 	cases := map[string]struct {
 		code, aside string
@@ -496,43 +504,6 @@ func TestPrepareLoadRefusals(t *testing.T) {
 
 			return s
 		}, ""},
-		"a monster not the map's": {LoadRefusedHunted, stays, func(w *d2save.World) string {
-			w.Entities = []d2save.Entity{entity}
-
-			return b4Files(t, w, "Saver", b4Amazon)
-		}, "is not one the map builds"},
-		"a monster's body": {LoadRefusedHunted, stays, func(w *d2save.World) string {
-			w.Entities, w.Bodies = []d2save.Entity{entity}, []d2save.Body{{ID: "0dog", Health: 3, MaxHealth: 10}}
-
-			return b4Files(t, w, "Saver", b4Amazon)
-		}, "have a body"},
-		"a pack on the map": {LoadRefusedHunted, stays, func(w *d2save.World) string {
-			w.Entities = []d2save.Entity{entity}
-			w.Spawns.Groups = []d2world.SpawnGroupSnapshot{{ID: "g:1", Row: "wolves", Code: "fallen1",
-				Members: []d2world.SpawnMemberSnapshot{{ID: "0dog", X: 10, Y: 10}}, Stage: "night"}}
-
-			return b4Files(t, w, "Saver", b4Amazon)
-		}, "pack(s) on the map"},
-		"a watch": {LoadRefusedHunted, stays, func(w *d2save.World) string {
-			w.Entities = []d2save.Entity{entity}
-			w.Notice.Watches = []d2world.WatchSnapshot{{Watcher: "0dog", Target: d2saveref.Player}}
-
-			return b4Files(t, w, "Saver", b4Amazon)
-		}, "watch(es)"},
-		"a chase": {LoadRefusedHunted, stays, func(w *d2save.World) string {
-			w.Entities = []d2save.Entity{entity}
-			w.Pursuit.Chases = []d2world.ChaseSnapshot{{Hunter: "0dog", Quarry: d2saveref.Player}}
-
-			return b4Files(t, w, "Saver", b4Amazon)
-		}, "chase(s)"},
-		"a deployed squad (D3)": {LoadRefusedHunted, stays, func(w *d2save.World) string {
-			w.Entities = []d2save.Entity{entity}
-			w.Squads.NextID = 3
-			w.Squads.Squads = append(w.Squads.Squads, d2world.SquadSnapshot{ID: "s:2", Owner: "player", Ordinal: 2,
-				Members: []d2world.SquadMemberSnapshot{{Entity: "0dog", Health: 10, Max: 10}}})
-
-			return b4Files(t, w, "Saver", b4Amazon)
-		}, "deployed model"},
 	}
 
 	for name, c := range cases {
@@ -561,16 +532,6 @@ func TestPrepareLoadRefusals(t *testing.T) {
 		rep := LastLoad()
 		require.Equal(t, c.code, rep.Refused, name)
 		require.False(t, rep.Resumed, name)
-
-		if c.aside == stays {
-			// B2: a hunted night stays where it is, whole, for B4b.
-			left, err := os.ReadFile(world)
-			require.NoError(t, err, "%s: a hunted night stays for B4b", name)
-			require.Equal(t, before, left, "%s: and is not touched", name)
-			require.Empty(t, rep.SetAside, name)
-
-			continue
-		}
 
 		aside, err := os.ReadFile(world + c.aside)
 		require.NoError(t, err, "%s: set aside as %s", name, c.aside)

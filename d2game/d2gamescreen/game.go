@@ -396,10 +396,13 @@ func CreateGame(
 
 	game.escapeMenu.OnLoad()
 
-	// M4.6 B4a, the load's step 4 (D4): every block checked against the game
-	// it is resumed into before any is restored. A refusal closes this game
-	// before its first frame (the App falls back to the dawn); a file that
-	// passes is restored on the first frame, once his kit is bound (resumeLoad).
+	// M4.6 B4a/B4b, the load's steps 3 and 4 (D4): the entities the file names
+	// rebuilt with their saved ids -- the villagers re-keyed in place, every
+	// other one built through the next-id seam (B4b) -- and then every block
+	// checked against the game it is resumed into, before any is restored. A
+	// refusal closes this game before its first frame (the App falls back to
+	// the dawn); a file that passes is restored on the first frame, once his
+	// kit is bound (resumeLoad).
 	if load != nil {
 		if refusal := game.checkLoad(load); refusal != nil {
 			game.releaseWorld()

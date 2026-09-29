@@ -25,7 +25,8 @@ import (
 // villagers the map builds draw the ids a fresh launch of that seed draws, as
 // the saved game did; and once every block is restored the stream is put
 // where the file says (harnessResume, d2rand.RestoreReader) -- after the
-// entities, trap 6, of which B4a rebuilds none. Before B4a "load last save"
+// entities, trap 6 (B4b's step 3 rebuilds them with their saved ids, which
+// draws no uuid). Before B4a "load last save"
 // continued the dead game's stream and matched no launch.
 //
 // THE DIALS (the load order's step 7). A dial is never saved (trap 7), so a

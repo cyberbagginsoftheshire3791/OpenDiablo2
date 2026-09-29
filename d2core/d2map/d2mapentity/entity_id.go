@@ -126,3 +126,60 @@ func (f *MapEntityFactory) takeEntityID() string {
 func (f *MapEntityFactory) spendEntityID() {
 	_ = f.takeEntityID()
 }
+
+// Rekey gives an entity the map already built -- a villager, an NPC or a
+// creature -- another id, IN PLACE (M4.6 B4b: the load's step 3, "villagers
+// first"). It is the seam's other half. The seam builds a saved entity with
+// its saved id; the villagers are not rebuilt -- the map builds them again, in
+// Open, before any load runs -- so a load gives each the id he was saved under
+// instead, and he stays the same entity: the game screen holds its natives by
+// the entity, not by its id (the B3 review, B3), so a re-keyed villager is
+// still native at the next save. In a harness build the map draws his id from
+// the uuid stream reseeded from the file's seed and it is already his saved
+// one (the re-key is then the identity); in the shipped game ids come from
+// crypto/rand, and every launch gives him a new one.
+//
+// Refused with ErrEntityID, changing nothing:
+//   - an id that is "" or the word "player" (SetNextEntityID's rule);
+//   - an id waiting in the seam: the next construction would wear it too;
+//   - an id the seam has already handed out, or another re-key has;
+//   - an entity that is not an NPC or a creature (the kinds a save carries).
+//
+// The id is then counted as given, so the seam never hands it out again. The
+// factory does not know which entities are on the map: MapEngine.RekeyEntity
+// adds that check (an id another entity holds) and moves the engine's own key,
+// and is the one a load calls. Re-keying an entity to the id it already has is
+// allowed (the harness's case), and still counts the id as given.
+func (f *MapEntityFactory) Rekey(e interface{ ID() string }, id string) error {
+	f.seamMu.Lock()
+	defer f.seamMu.Unlock()
+
+	switch {
+	case id == "" || id == d2saveref.Player:
+		return fmt.Errorf("%w: %q is not an entity id", ErrEntityID, id)
+	case f.nextEntityID == id:
+		return fmt.Errorf("%w: %q is waiting in the seam for the next entity built", ErrEntityID, id)
+	case f.givenIDs[id] && e.ID() != id:
+		return fmt.Errorf("%w: %q has already been handed out", ErrEntityID, id)
+	}
+
+	var me *mapEntity
+
+	switch t := e.(type) {
+	case *NPC:
+		me = &t.mapEntity
+	case *Creature:
+		me = &t.mapEntity
+	default:
+		return fmt.Errorf("%w: a %T is not a kind a save carries; only an NPC or a creature is re-keyed", ErrEntityID, e)
+	}
+
+	if f.givenIDs == nil {
+		f.givenIDs = make(map[string]bool)
+	}
+
+	me.uuid = id
+	f.givenIDs[id] = true
+
+	return nil
+}

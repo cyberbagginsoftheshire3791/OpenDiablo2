@@ -493,9 +493,9 @@ func TestAResumedLoadLetsTheCopyGo(t *testing.T) {
 	require.False(t, restored, "and nothing is held to put back")
 }
 
-// A2: A WORLD FILE THAT CANNOT BE READ IS SET ASIDE, as every refusal's is but
-// a hunted night's (before, "a file that cannot be read cannot be moved
-// either", and it stayed). A directory where the file should be is a file no
+// A2: A WORLD FILE THAT CANNOT BE READ IS SET ASIDE, as every refusal's is
+// (before, "a file that cannot be read cannot be moved either", and it
+// stayed). A directory where the file should be is a file no
 // read can take, on every system.
 func TestAnUnreadableWorldFileIsSetAside(t *testing.T) {
 	saved, save := b4Game(t)
