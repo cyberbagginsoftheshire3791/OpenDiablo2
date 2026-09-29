@@ -174,6 +174,11 @@ type LoadReport struct {
 	// otherwise than the save did (BUG-80). Each is in the log too.
 	Notes []string `json:"notes,omitempty"`
 
+	// Dropped are the villagers (their name_key) the map built and the file
+	// lacks, taken off the map again (one of Notes' kinds, BUG-79), for the
+	// notice a player sees at the start of play (M4.6 B5).
+	Dropped []string `json:"dropped,omitempty"`
+
 	// Ignored: the file was refused earlier in this process and could not be
 	// set aside, so no load reads it again until it changes (the B4a review,
 	// B1: without this the dawn that replaced it found it again, refused it
@@ -202,6 +207,10 @@ func LastLoad() LoadReport {
 
 	if r.Notes != nil {
 		r.Notes = append([]string{}, r.Notes...)
+	}
+
+	if r.Dropped != nil {
+		r.Dropped = append([]string{}, r.Dropped...)
 	}
 
 	return r
@@ -702,6 +711,7 @@ func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
 			delete(v.natives, k)
 			v.loadNote("the villager %q born at %v,%v (%s here) is not in the file, which was saved after he was "+
 				"taken off the map: taken off it again", k.nameKey, k.x, k.y, e.ID())
+			updateLastLoad(func(r *LoadReport) { r.Dropped = append(r.Dropped, k.nameKey) })
 
 			continue
 		}

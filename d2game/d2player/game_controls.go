@@ -1222,6 +1222,7 @@ func (g *GameControls) Advance(elapsed float64) error {
 	g.mapRenderer.Advance(elapsed)
 	g.hud.Advance(elapsed)
 	g.hud.advanceJournal(elapsed)
+	g.hud.advanceSaveNotice(elapsed)
 	g.inventory.Advance(elapsed)
 	g.questLog.Advance(elapsed)
 

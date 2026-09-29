@@ -369,6 +369,12 @@ func CreateGame(
 
 	// M4.6 B1: the screen's own bookkeeping, observable before it is saved.
 	d2harness.Register(sceneProvider{game})
+
+	// M4.6 B5: the save as the player meets it -- the menu's SAVE GAME and
+	// SAVE AND EXIT GAME ask the screen through d2player.MenuSaver -- and its
+	// harness provider.
+	game.escapeMenu.SetSaver(game)
+	d2harness.Register(saveProvider{game})
 	game.spawns.SetLayDead(func(member string, x, y float64) {
 		game.corpses.Fall(member, d2world.RisenRow, x, y)
 	})
@@ -447,6 +453,7 @@ func (v *Game) releaseWorld() {
 	d2harness.Unregister(v.corpses)
 	d2harness.Unregister(v.rising)
 	d2harness.Unregister(sceneProvider{v}) // M4.6 B1
+	d2harness.Unregister(saveProvider{v})  // M4.6 B5
 
 	// The world's systems die with it too (M4.1).
 	if v.worldClock != nil {
@@ -550,6 +557,15 @@ type Game struct {
 	loadSteps     []string
 	loadAbandoned bool
 	loadFailed    error
+
+	// M4.6 B5, the save as the player meets it (save_player.go): the dawn
+	// autosave's state machine, the last save asked for, the notice the load
+	// gave at the start of play, and the harness's dial that keeps the dawn
+	// from saving (save.autosave; never set in the shipped game).
+	autosave    dawnAutosave
+	lastSave    saveRecord
+	loadNotice  string
+	autosaveOff bool
 
 	// saveGeneration is the saved_at of the last world save this hero's
 	// sidecar belongs to: SaveWorld sets it, bindKit reads it from the
@@ -932,6 +948,11 @@ func (v *Game) Advance(elapsed float64) error {
 			v.gameControls.PartyPanel.UpdatePlayersList(v.gameClient.Players)
 		}
 	}
+
+	// M4.6 B5, rule 10: the dawn autosave, at the END of the frame -- after
+	// everything the dawn's frame did (the night paid, the watch, the
+	// journal) -- and at the end of every frame after while it is refused.
+	v.advanceAutosave()
 
 	return nil
 }
@@ -2349,6 +2370,10 @@ func (v *Game) bindGameControls() error {
 		// The controls are the harness's "ui" system while this screen lives
 		// (P3 spec §3.5); OnUnload unregisters them.
 		d2harness.Register(v.gameControls)
+
+		// M4.6 B5, rule 7: what the load that opened this game did, if he
+		// should hear it -- a save set aside, a villager gone.
+		v.noticeTheLoad()
 
 		break
 	}

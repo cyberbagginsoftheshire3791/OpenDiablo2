@@ -237,3 +237,51 @@ const (
 	JournalStateDone   = "Done."
 	JournalStateFailed = "Failed."
 )
+
+// M4.6 B5, the save reaches the player (29 Sep 2026). The escape menu's
+// entries keep Diablo II's capitals (the menu's own style; Strigoi's font set
+// draws them in Uncial Antiqua); the lines under them, and the notices on the
+// HUD, are sentences. Every refusal is said in plain words, never by its code:
+// the code is the harness's and the log's.
+const (
+	MenuSaveGame         = "SAVE GAME"
+	MenuSaveAndExit      = "SAVE AND EXIT GAME"
+	MenuExitWithoutSave  = "EXIT WITHOUT SAVING"
+	MenuSavedNotice      = "Game saved."
+	MenuSaveFailed       = "The game could not be saved: its files could not be written.\nYour last save stands."
+	MenuExitWithoutSaved = "Leave now and you come back to your last save."
+
+	// The refusals (d2gamescreen's SaveRefused* codes), for the menu and the
+	// close hook's log line.
+	SaveRefusedFightWords   = "You can't save during a fight."
+	SaveRefusedSettleWords  = "You can't save while blows are still landing.\nTry again in a moment."
+	SaveRefusedTalkWords    = "You can't save while you are talking."
+	SaveRefusedJournalWords = "You can't save with your journal open."
+	SaveRefusedLoadoutWords = "You can't save until you have chosen your gear."
+	SaveRefusedDeadWords    = "The dead can't save."
+	SaveRefusedNetworkWords = "A network game can't be saved."
+	SaveRefusedNotYetWords  = "You can't save yet: the game is still starting."
+	SaveRefusedOtherWords   = "You can't save right now."
+
+	// The dawn autosave (rule 10): quiet notices, one per dawn at most.
+	AutosaveTaken     = "Dawn. The game is saved."
+	AutosaveTakenLate = "The dawn's save is made."
+	AutosaveDropped   = "The dawn's save could not be made today. Your last save stands."
+	AutosaveFailed    = "The dawn's save could not be written. Your last save stands."
+
+	// The load's notices at the start of play (rule 7: a save this build
+	// cannot resume is set aside, never deleted, and he wakes at dawn).
+	LoadRefusedVersionWords = "Your save is from another version of the game."
+	LoadRefusedFileWords    = "Your save could not be read."
+	LoadRefusedNetworkWords = "A network game does not resume your save."
+	LoadRefusedHeroWords    = "The save beside this hero is another hero's."
+	LoadRefusedTornWords    = "Your save was cut off while it was being written."
+	LoadRefusedSidecarWords = "Your save could not be put in place."
+	LoadRefusedMapWords     = "The village has changed since you saved."
+	LoadRefusedNativesWords = "The villagers are not the ones you saved with."
+	LoadRefusedOtherWords   = "Your last night could not be restored."
+	LoadWakeAtDawn          = "You wake at dawn. The save is kept, set aside -- not deleted."
+	LoadWakeAtDawnInPlace   = "You wake at dawn. The save is left where it was, unread."
+	LoadVillagerGone        = "Your save is restored. A villager who was gone when you saved is gone again."
+	LoadVillagersGone       = "Your save is restored. %d villagers who were gone when you saved are gone again."
+)

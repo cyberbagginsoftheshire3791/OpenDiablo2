@@ -304,11 +304,16 @@ type harnessSaveGameOut struct {
 }
 
 type harnessQuitIn struct {
-	Confirm bool `json:"confirm" jsonschema:"must be true"`
+	Confirm  bool `json:"confirm" jsonschema:"must be true"`
+	Graceful bool `json:"graceful,omitempty" jsonschema:"true: close the way the window's close button does (M4.6 B5, rule 3) -- the game in play saved as SAVE AND EXIT GAME saves it (refused in a fight, and then left unsaved) and unloaded, before the process exits. false (default): exit at once, nothing saved"`
 }
 
 type harnessQuitOut struct {
 	Quitting bool `json:"quitting"`
+
+	// Close is what the close hook did, for a graceful quit with a game in
+	// play (M4.6 B5): saved, or refused with its code and reason, unloaded.
+	Close *d2gamescreen.CloseReport `json:"close,omitempty"`
 }
 
 func (a *App) harnessAddSessionTools(srv *mcp.Server) {
@@ -692,7 +697,9 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 				return
 			}
 
-			res, err := game.SaveWorld(d2gamescreen.SaveOptions{Omit: in.Omit, To: to})
+			// M4.6 B5: through SaveWorldAs, so a real save is the "save"
+			// provider's last save and takes a dawn autosave that waits.
+			res, err := game.SaveWorldAs(d2gamescreen.SaveByHarness, d2gamescreen.SaveOptions{Omit: in.Omit, To: to})
 
 			out = harnessSaveGameOut{
 				SavePath: res.SavePath, WorldPath: res.WorldPath, SidecarPath: res.SidecarPath,
@@ -724,13 +731,28 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_quit",
-		Description: "Write the run manifest and exit the game process. Requires confirm=true.",
+		Description: "Write the run manifest and exit the game process. Requires confirm=true. graceful=true closes the way the window's close button does first (M4.6 B5): the game in play is saved as SAVE AND EXIT GAME saves it -- refused in a fight, and left unsaved -- and unloaded, and close reports what it did.",
 		Annotations: harnessAnnMut(true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessQuitIn) (*mcp.CallToolResult, harnessQuitOut, error) {
 		harnessLogCall("strigoi_quit")
 
 		if !in.Confirm {
 			return nil, harnessQuitOut{}, harnessErr("BAD_ARGUMENT", "confirm must be true", "this exits the game process")
+		}
+
+		out := harnessQuitOut{Quitting: true}
+
+		// M4.6 B5: a graceful quit is the window's close (close.go), on the
+		// game goroutine, before the process goes.
+		if in.Graceful {
+			err := harnessOnUpdate(func() {
+				if rep, ok := a.closeTheGame("the harness's graceful quit"); ok {
+					out.Close = &rep
+				}
+			})
+			if err != nil {
+				return nil, harnessQuitOut{}, err
+			}
 		}
 
 		a.harnessWriteManifest()
@@ -741,7 +763,11 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 			os.Exit(0)
 		}()
 
-		return harnessText("quitting"), harnessQuitOut{Quitting: true}, nil
+		if out.Close != nil {
+			return harnessText("closed (%s); quitting", out.Close.String()), out, nil
+		}
+
+		return harnessText("quitting"), out, nil
 	})
 }
 

@@ -24,5 +24,6 @@ func strigoiHelp() []string {
 		"Q opens your journal: what you have learned, and your tasks.",
 		"Click a villager to talk: 1-9 to answer, Esc to walk away.",
 		"H shows or hides this help.   Esc opens the game menu.",
+		"Esc, then SAVE GAME: saved where you stand. Every dawn you see saves too.",
 	}
 }

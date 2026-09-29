@@ -63,9 +63,13 @@ import (
 //	   at T -- so he lives, and act 3 requires blows and rounds after T and no
 //	   quick resolve), dawn comes (the night paid, the watch kept, the
 //	   rite, the soul pressure's count) and the torch burns out; S_U. Then he
-//	   is wounded and leaves through the menu, which writes his .od2 and his
-//	   sidecar and not the world file (B5's): the files a load finds beside
-//	   the world file are two hours and a wound later than it.
+//	   is wounded and leaves for the main menu without saving the world (the
+//	   harness's navigate: since M4.6 B5 what the escape menu's EXIT WITHOUT
+//	   SAVING does -- its SAVE AND EXIT GAME writes the world file first),
+//	   which writes his .od2 and his sidecar and not the world file: the files
+//	   a load finds beside the world file are two hours and a wound later
+//	   than it. The dawn in those two hours saves nothing: the script keeps
+//	   the dawn autosave off (autosaveOffDial).
 //	4  A new process in the same home: start_game{save_path} -- NO seed, as
 //	   the shipped game has none to give (the B4a review, C1: the seed the
 //	   script asked for is this process's, not the world's) -- RESUMES the file
@@ -208,10 +212,20 @@ type dialWrite struct {
 	Value         any
 }
 
+// autosaveOffDial keeps the dawn from saving by itself (M4.6 B5, rule 10).
+// This script's subject is the save IT makes at T: act 1 crosses day 1's dawn
+// before T, and acts 3 and 6 cross day 2's after it, and an autosave there
+// would write the dawn's moment over T's file -- act 4 would load the dawn,
+// and 6b's "load last save" too. The dawn autosave is TestTheDawnAutosave's
+// (save_player_test.go). Every dial list below carries it, so a relaunch and
+// "load last save" re-apply it as they re-apply the rest.
+var autosaveOffDial = dialWrite{"save", "autosave", false}
+
 // startDials are the dials act 1 sets as the game begins: no pack, nothing
 // notices him from further than half a tile, and the dead rise only when the
 // script says.
 var startDials = []dialWrite{
+	autosaveOffDial,
 	{"spawns", "chance", 0},
 	{"spawns", "notice_radius", 0.5},
 	{"rising", "edge_floor", 0},
@@ -246,6 +260,7 @@ const (
 // rounds and 45 blows, ending enemies_routed, and he lives at 214 of 237 --
 // in the same 9 s of wall time, and two resumes of T agree to the digest.
 var huntedDials = []dialWrite{
+	autosaveOffDial,
 	{"spawns", "chance", 0},
 	{"spawns", "notice_radius", huntedNoticeRadius},
 	{"spawns", "max_groups", huntedMaxGroups},
@@ -262,6 +277,7 @@ var huntedDials = []dialWrite{
 // evening names none -- and act 6i uses them: a quick resolve is where a save
 // finds the slain still falling.
 var quickResolvedDials = []dialWrite{
+	autosaveOffDial,
 	{"spawns", "chance", 0},
 	{"spawns", "notice_radius", huntedNoticeRadius},
 	{"spawns", "max_groups", huntedMaxGroups},
@@ -827,8 +843,10 @@ func eveningActs1to3(t *testing.T) evening {
 			str(c, "time_of_day"), str(c, "stage"), lightState(s))
 	}
 
-	// He leaves through the menu, wounded: SAVE AND EXIT writes his .od2 and
-	// his sidecar (OnUnload) and not the world file (B5's) -- so the load in
+	// He leaves for the menu, wounded, without saving the world (the
+	// harness's navigate -- since M4.6 B5 the escape menu's EXIT WITHOUT
+	// SAVING; its SAVE AND EXIT GAME would write the world file first): his
+	// .od2 and his sidecar are written (OnUnload) and not the world file -- so the load in
 	// act 4 finds an .od2 of another health and a sidecar with no torch (it
 	// burnt out) beside the world file of T, and the world file must win.
 	hurt := mustNum(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "health") - 37
@@ -1161,6 +1179,13 @@ func keptEvening(t *testing.T, from string) evening {
 
 		ev.savedDial = dials
 	}
+
+	// An evening kept before M4.6 B5 names no autosave dial: its acts after
+	// T cross a dawn too (see autosaveOffDial).
+	if !hasDial(ev.savedDial, autosaveOffDial) {
+		ev.savedDial = append(append([]dialWrite{}, ev.savedDial...), autosaveOffDial)
+	}
+
 	ev.od2Left, ev.sidecarLeft, ev.fileT = mustRead(t, filepath.Join(from, "hero.od2")),
 		mustRead(t, filepath.Join(from, "hero.od2.strigoi.json")), mustRead(t, filepath.Join(from, "hero.od2.world.json"))
 	ev.od2T, ev.sidecarT = mustRead(t, filepath.Join(from, "hero-at-t.od2")), mustRead(t, filepath.Join(from, "hero-at-t.od2.strigoi.json"))
@@ -1194,6 +1219,17 @@ func keptEvening(t *testing.T, from string) evening {
 	t.Logf("acts 1-3 taken from the evening kept at %s", from)
 
 	return ev
+}
+
+// hasDial is whether dials writes d's system and field.
+func hasDial(dials []dialWrite, d dialWrite) bool {
+	for _, w := range dials {
+		if w.System == d.System && w.Field == d.Field {
+			return true
+		}
+	}
+
+	return false
 }
 
 // eveningActs4to6 relaunches and resumes (acts 4-6), then takes the in-process
