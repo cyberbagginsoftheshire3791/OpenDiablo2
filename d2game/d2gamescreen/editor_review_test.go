@@ -3,6 +3,7 @@ package d2gamescreen
 import (
 	"bytes"
 	"errors"
+	"image"
 	"os"
 	"path"
 	"path/filepath"
@@ -301,17 +302,17 @@ func TestEditorResolve(t *testing.T) {
 	root := t.TempDir()
 	inside := filepath.Join(root, "data", "strigoi", "maps", "copy.tmj")
 
-	disk, asset, got, err := editorResolve(inside, []string{t.TempDir(), root})
+	disk, asset, got, workdir, err := editorResolve(inside, []string{t.TempDir(), root})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if disk != inside || asset != "data/strigoi/maps/copy.tmj" || got != root {
-		t.Fatalf("editorResolve(%s) = %s, %s, %s", inside, disk, asset, got)
+	if disk != inside || asset != "data/strigoi/maps/copy.tmj" || got != root || workdir {
+		t.Fatalf("editorResolve(%s) = %s, %s, %s, workdir %v", inside, disk, asset, got, workdir)
 	}
 
 	outside := filepath.Join(t.TempDir(), "maps", "copy.tmj")
-	if _, _, _, err := editorResolve(outside, []string{root}); err == nil {
+	if _, _, _, _, err := editorResolve(outside, []string{root}); err == nil {
 		t.Fatalf("editorResolve(%s) opened a map outside the game's folders", outside)
 	}
 
@@ -320,13 +321,28 @@ func TestEditorResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	disk, asset, got, err = editorResolve("", nil)
+	disk, asset, got, workdir, err = editorResolve("", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if want := filepath.Join(cwd, filepath.FromSlash(DefaultEditorMap)); disk != want || asset != DefaultEditorMap || got != cwd {
-		t.Fatalf("the default map resolves to %s, %s, %s; want %s, %s, %s", disk, asset, got, want, DefaultEditorMap, cwd)
+	if want := filepath.Join(cwd, filepath.FromSlash(DefaultEditorMap)); disk != want || asset != DefaultEditorMap ||
+		got != cwd || !workdir {
+		t.Fatalf("the default map resolves to %s, %s, %s, workdir %v; want %s, %s, %s, workdir true",
+			disk, asset, got, workdir, want, DefaultEditorMap, cwd)
+	}
+
+	// The same relative path with the working directory among the game's own
+	// folders -- the game started from its own folder, as Play Strigoi.bat
+	// starts it -- is found under that folder, not by the fallback.
+	disk, _, got, workdir, err = editorResolve("", []string{cwd})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := filepath.Join(cwd, filepath.FromSlash(DefaultEditorMap)); disk != want || got != cwd || workdir {
+		t.Fatalf("from its own folder the default map resolves to %s, %s, workdir %v; want %s, %s, workdir false",
+			disk, got, workdir, want, cwd)
 	}
 
 	if !filepath.IsAbs(disk) {
@@ -341,3 +357,73 @@ type playtestNavigator struct {
 }
 
 func (n *playtestNavigator) ToPlaytest(mapPath string) { n.played = mapPath }
+
+// THE SECOND 28 SEP REVIEW, C: NAMES. At 0.25 the palette cut the headman's
+// name to "headman ..." (a name was fitted to the room left before the
+// palette); at the fit zoom "start" was drawn over the smith's mark (names kept
+// apart from each other, not from the marks). editorPlaceLabel now places a
+// name whole, wholly inside the map's view, clear of every other mark by
+// edLabelClear and of every name -- right, left, above, below, then a line or
+// more away with a leader -- or not at all. TestWorldEditor acts 2 and 3
+// measure the same on the running screen.
+func TestEditorPlacesANameWholeInsideTheViewAndClearOfMarks(t *testing.T) {
+	view := mapViewRect()
+	const w, h, half = 120, edLineH, 3
+
+	// Room on the right: beside the mark, on its own line, no leader.
+	own := editorMarkRect(200, 200, half)
+
+	r, leader, ok := editorPlaceLabel(own, w, h, view, nil, nil)
+	if !ok || leader || r.Min.X != own.Max.X+edLabelGap || r.Dx() != w || r.Min.Y > 200 || r.Max.Y < 200 {
+		t.Fatalf("with room, the name went to %v (leader %v, %v) for the mark %v", r, leader, ok, own)
+	}
+
+	// The headman at 0.25: his mark 60 px before the palette, his name 120
+	// wide. It goes on the LEFT, whole, not cut at the palette's edge.
+	own = editorMarkRect(view.Max.X-60, 200, half)
+
+	r, _, ok = editorPlaceLabel(own, w, h, view, nil, nil)
+	if !ok || !r.In(view) || r.Dx() != w || r.Max.X > own.Min.X {
+		t.Fatalf("near the palette the name went to %v (%v); want it whole, left of the mark, inside %v", r, ok, view)
+	}
+
+	// ...and with the woman's mark just left of where that would go, it does
+	// not sit against hers (the second review's 0.25 screenshot, as first
+	// fixed): it keeps edLabelClear from her mark.
+	woman := editorMarkRect(own.Min.X-edLabelGap-w-5, 200, half)
+
+	r, _, ok = editorPlaceLabel(own, w, h, view, []image.Rectangle{woman}, nil)
+	if !ok || r.Overlaps(woman.Inset(-edLabelClear)) || !r.In(view) {
+		t.Fatalf("beside the woman's mark %v the headman's name went to %v (%v)", woman, r, ok)
+	}
+
+	// "start" beside the smith: another's mark where the name would go moves
+	// it off the mark.
+	own = editorMarkRect(300, 300, half)
+	smith := editorMarkRect(own.Max.X+edLabelGap+10, 300, half)
+
+	r, _, ok = editorPlaceLabel(own, w, h, view, []image.Rectangle{smith}, nil)
+	if !ok || r.Overlaps(smith) || !r.In(view) {
+		t.Fatalf("beside the smith's mark %v the name went to %v (%v)", smith, r, ok)
+	}
+
+	// Another name in every place near the mark: a line away, with a leader.
+	taken := []image.Rectangle{
+		image.Rect(own.Min.X-200, own.Min.Y-h-4, own.Max.X+200, own.Max.Y+h+4),
+	}
+
+	r, leader, ok = editorPlaceLabel(own, w, h, view, nil, taken)
+	if !ok || !leader || r.Overlaps(taken[0]) {
+		t.Fatalf("with the names around it taken, the name went to %v (leader %v, %v)", r, leader, ok)
+	}
+
+	// Nowhere clear: not drawn at all.
+	if r, _, ok := editorPlaceLabel(own, w, h, view, nil, []image.Rectangle{view}); ok {
+		t.Fatalf("with the whole view taken the name was still placed, at %v", r)
+	}
+
+	// Off the view (a person scrolled out of it): not drawn.
+	if r, _, ok := editorPlaceLabel(editorMarkRect(view.Min.X-200, 200, half), w, h, view, nil, nil); ok {
+		t.Fatalf("a name for a person off the view was placed at %v", r)
+	}
+}

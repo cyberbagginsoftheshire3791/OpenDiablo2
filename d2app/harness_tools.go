@@ -602,6 +602,7 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 
 		go func() {
 			time.Sleep(harnessQuitDelay)
+			clearOwnPlaytests() // a playtest's hero folder, if one is open (second 28 Sep review)
 			os.Exit(0)
 		}()
 

@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.12.5"         // 28 Sep: the World Editor's "editor" provider (settable zoom), game_info's map_* and playtest fields, and the harness refuses to open the working tree's village in the editor
+	harnessVersion     = "0.12.6"         // 28 Sep (second editor review): the editor guard refuses the whole source tree; the editor provider reports grid, label_zoom and each person's mark and label; the menu's ui provider reports main_menu_error. 0.12.5: the "editor" provider (settable zoom), game_info's map_* and playtest fields
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessQueueDepth  = 64
 	harnessRingCap     = 5000
@@ -190,29 +190,84 @@ func (a *App) harnessEarlyInit() {
 	d2gamescreen.EditorOpenGuard = harnessEditorGuard
 }
 
-// harnessEditorGuard refuses to open the working tree's own village in the World
-// Editor while the harness is on (28 Sep review, B1). The playtest launcher runs
-// the game with the REPOSITORY as its working directory (playtest/launcher.go),
-// so under a bare -editor the editor opened data/strigoi/maps/village.tmj in the
-// tree -- and a scripted Ctrl+S would have written it. A script edits a COPY and
-// passes the copy's absolute path; a harness build started without -harness is
-// the game, and opens what it is told.
-func harnessEditorGuard(disk string) error {
+// harnessEditorGuard refuses, while the harness is on, to open in the World
+// Editor any map in the SOURCE TREE (28 Sep reviews: B1, then the second
+// review's B). The playtest launcher runs the game with the REPOSITORY as its
+// working directory (playtest/launcher.go), so a map the editor found there is
+// the working tree's own file, and a scripted Delete + Ctrl+S writes it. The
+// first guard compared against village.tmj alone; the second review opened a
+// copy of it, second.tmj, in the same folder, and overwrote that.
+//
+// So two refusals, either enough on its own:
+//
+//   - workdir: the path was found by the working-directory fallback -- a
+//     relative path under none of the game's own folders (editorResolve). Under
+//     the harness that folder is the repository, so the fallback is dropped.
+//   - the source tree: the path lies under a folder whose go.mod is this
+//     game's module (harnessSourceTree). That catches the one case the first
+//     does not: a harness build run from the repository root, whose own folder
+//     IS the working tree.
+//
+// What is left is the game's own folders outside any source tree: the mirror of
+// data/strigoi the launcher lays beside its temporary exe, or
+// %AppData%\OpenDiablo2. A script edits a copy there and passes the copy's
+// absolute path. A harness build started WITHOUT -harness is the game, and
+// opens what it is told. So does the game Play Strigoi.bat starts: it runs from
+// its own folder, so the village is found under that folder rather than by the
+// fallback, and the game sets no guard at all.
+func harnessEditorGuard(disk string, workdir bool) error {
 	if harness.enabled == nil || !*harness.enabled {
 		return nil
 	}
 
-	shipped, err := filepath.Abs(filepath.FromSlash(d2gamescreen.DefaultEditorMap))
-	if err != nil {
-		return nil
+	if workdir {
+		return fmt.Errorf("the playtest harness opens a map in the editor only from the game's own folders "+
+			"(beside the exe, or %%AppData%%\\OpenDiablo2), never by the working directory, which the playtest "+
+			"launcher sets to the repository: %s would be the working tree's own file, and a scripted Ctrl+S "+
+			"would write it. Copy the map into the game's folder and pass the copy's absolute path to -editor", disk)
 	}
 
-	if strings.EqualFold(filepath.Clean(disk), filepath.Clean(shipped)) {
-		return fmt.Errorf("the playtest harness does not open %s in the editor: a scripted Ctrl+S would write "+
-			"the shipped village in the working tree. Copy it and pass the copy's absolute path to -editor", shipped)
+	if tree := harnessSourceTree(disk); tree != "" {
+		return fmt.Errorf("the playtest harness does not open %s in the editor: it is inside the source tree %s, "+
+			"and a scripted Ctrl+S would write it. Copy it outside the tree and pass the copy's absolute path "+
+			"to -editor", disk, tree)
 	}
 
 	return nil
+}
+
+// harnessSourceTree is the folder at or above path whose go.mod declares this
+// game's module -- the source tree path is in -- or "" when there is none. The
+// module line is read rather than any go.mod taken: a map under some other Go
+// project is not this repository's file.
+func harnessSourceTree(path string) string {
+	dir := filepath.Dir(filepath.Clean(path))
+
+	for {
+		if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil && harnessIsGameModule(data) {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+
+		dir = parent
+	}
+}
+
+// harnessGameModule is the module path this repository's go.mod declares.
+const harnessGameModule = "github.com/OpenDiablo2/OpenDiablo2"
+
+func harnessIsGameModule(gomod []byte) bool {
+	for _, line := range strings.Split(string(gomod), "\n") {
+		if f := strings.Fields(line); len(f) == 2 && f[0] == "module" && strings.Trim(f[1], `"`) == harnessGameModule {
+			return true
+		}
+	}
+
+	return false
 }
 
 // harnessInputService installs the scripted overlay at the d2input seam

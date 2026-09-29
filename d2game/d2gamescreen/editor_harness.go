@@ -114,6 +114,8 @@ func (p editorProvider) HarnessState() map[string]interface{} {
 		"tab":           tab,
 		"map_size":      []int{e.doc.Size().X, e.doc.Size().Y},
 		"view":          []int{view.Min.X, view.Min.Y, view.Max.X, view.Max.Y},
+		"grid":          e.showGrid,
+		"label_zoom":    edLabelZoom,
 		"tabs":          p.tabs(),
 		"rows":          p.rows(),
 		"structures":    p.structures(),
@@ -222,7 +224,9 @@ func (p editorProvider) structures() []interface{} {
 }
 
 // people is every person and the player_start, with where each is drawn -- the
-// markers B5 added.
+// markers B5 added -- and, from the last frame drawn, the box his mark covers
+// and where his name went ("label", absent when it was not drawn, and
+// "label_text", what was drawn there: the second 28 Sep review's C).
 func (p editorProvider) people() []interface{} {
 	e := p.e
 	out := []interface{}{}
@@ -240,6 +244,15 @@ func (p editorProvider) people() []interface{} {
 		if e.mapRenderer != nil {
 			x, y := e.mapRenderer.WorldToScreen(o.X, o.Y)
 			person["screen"] = []int{x, y}
+		}
+
+		if d, ok := e.peopleDrawn[o.ID]; ok {
+			person["mark"] = []int{d.mark.Min.X, d.mark.Min.Y, d.mark.Max.X, d.mark.Max.Y}
+
+			if !d.label.Empty() {
+				person["label"] = []int{d.label.Min.X, d.label.Min.Y, d.label.Max.X, d.label.Max.Y}
+				person["label_text"] = d.text
+			}
 		}
 
 		out = append(out, person)

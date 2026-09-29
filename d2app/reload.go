@@ -38,6 +38,14 @@ func (a *App) advanceReload() {
 		if a.reloadFrames > reloadWaitFrames {
 			a.Errorf("reload: gave up waiting for the last game to close; %s not opened", a.reloadPath)
 			a.reloadPath = ""
+
+			// During a playtest the reload was the playtest hero's, and the menu
+			// it went by is -- for a playtest -- the editor (second 28 Sep
+			// review: the game used to sit on the REAL main menu with the
+			// playtest still running and the scratch map still set).
+			if a.playtest != nil {
+				a.endPlaytest("the playtest's \"load last save\" gave up waiting for its last game to close")
+			}
 		}
 
 		return

@@ -504,7 +504,18 @@ this doc fails until it agrees.
   and the menu's WORLD EDITOR button (the repository's village) is refused while
   the next normal game is built from the launch map. The mouse wheel and the
   right-drag pan are still not driven: the harness has no wheel verb and cannot
-  move the cursor with a button held.
+  move the cursor with a button held. **Since the second review (28 Sep):** act
+  2 turns the grid off with G before it counts holes -- the grid's lines sit on
+  the seams and hid half of them -- and a hole must be the background colour
+  EXACTLY; acts 2-3 count none at the fit zoom, 0.15, 0.5 and 0.25, and read
+  the people's names from the provider (none at the fit zoom until the cursor
+  is on a person; at 0.25 everyone named, whole, inside the view, clear of every
+  mark and name); act 4 clicks the greyed Terrain tab between picking the house
+  and clicking the map (B4). And a second script,
+  `TestWorldEditorRefusesTheWorkingTree`, is the second review's B done the
+  reviewer's way: a copy of the village written into the WORKING TREE,
+  `-editor` naming it by its relative path, refused with the guard's reason
+  (read from the menu's `main_menu_error`), the file unchanged.
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -594,7 +605,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.12.5)
+## The tools (37; harness 0.12.6)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1101,7 +1112,11 @@ opens on, which draws no buttons -- then `main_menu`, `multiplayer`, `tcp_ip`,
 `other_multiplayer`, `project_website`, `map_engine_test`, `world_editor`,
 `credits`, `cinematics`, `exit`), each `{x, y, w, h, visible, text, label_x,
 label_y, label_w, label_h}` in screen pixels -- the label rect is where the
-button drew its label when up.
+button drew its label when up. Since 0.12.6 (28 Sep, the second editor review)
+also `main_menu_error`: the line the menu was opened with, `""` for none -- why
+the last thing that sent the game back to the menu failed (a game that could not
+start, a map the World Editor refused), so a script can tell the harness's
+refusal from any other way back.
 
 **`editor`** (World Editor review, 28 Sep 2026) -- while the World Editor is the
 screen (`d2gamescreen/editor_harness.go`; registered at the end of
@@ -1114,7 +1129,11 @@ gid, footprint:[x0,y0,x1,y1]}`), `map_size`; the screen -- `zoom`, `fit_zoom`,
 `view` (the map area), `world_to_screen` (`origin`, `x_axis`, `y_axis`: world
 x, y is on screen at origin + x*x_axis + y*y_axis), `map_corners` (top, right,
 bottom, left), `people` (each `{id, name, class, tile, screen}` -- where B5's
-marker is drawn), `tabs` and the palette `rows` on show with their rectangles,
+marker is drawn -- and, from 0.12.6, from the last frame drawn: `mark`, the box
+his mark covers, and `label` / `label_text`, where his name went and what was
+drawn there, absent when it was not drawn), `grid` (whether the grid is on --
+G toggles it) and `label_zoom` (below it only the hovered or selected person is
+named), `tabs` and the palette `rows` on show with their rectangles,
 `tool`, `picked`, `selected`, `tab`; and `hover` -- the tile under the cursor
 and, with a piece held, the ghost's own verdict `can_place` / `why`. **Settable:
 `zoom`** -- the harness has no wheel verb, so setting it calls
@@ -1122,7 +1141,14 @@ and, with a piece held, the ghost's own verdict `can_place` / `why`. **Settable:
 map area. And from 0.12.5 **the harness refuses to open the working tree's
 `data/strigoi/maps/village.tmj` in the editor** (`harnessEditorGuard`): the game
 runs with the repository as its working directory, and a scripted Ctrl+S would
-have written the shipped village. A script edits a copy by its absolute path.
+have written the shipped village. **From 0.12.6 (the second editor review,
+28 Sep) it refuses anything in the source tree**, not the village alone -- the
+reviewer overwrote a second working-tree map, `second.tmj`, opened by its
+relative path: under `-harness` the editor drops the working-directory fallback
+(a relative path under none of the game's own folders) and refuses any path
+under a folder whose `go.mod` is this game's module. A script edits a copy in
+the launcher's mirror beside the exe (or `%AppData%\OpenDiablo2`) by its
+absolute path.
 
 Entity state today — `Player`: name, class, act, gold, level, experience,
 health/mana/stamina with maxima, the four attributes, in_town, running,

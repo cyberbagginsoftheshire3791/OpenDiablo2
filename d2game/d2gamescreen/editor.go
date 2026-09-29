@@ -80,6 +80,13 @@ const (
 	edMaxPeople     = 32 // name labels for people; more are marked but not named
 	edNoticeLines   = 7  // how much of a refused map's reason the notice shows
 
+	// edLabelZoom is the zoom below which people's names are drawn only for
+	// the one under the cursor and the one selected (the second 28 Sep
+	// review: at the fit zoom the village's people stand a few pixels apart
+	// and "start" was drawn over the smith's mark). Their marks are drawn at
+	// every zoom. [DIAL]
+	edLabelZoom = 0.2
+
 	// edMinScale is the viewport's OWN minScale (viewport.go:36), not a
 	// rounder number above it: a 48x48 map is 7680 ortho pixels wide and the
 	// map's view is 592, so the whole village only fits at 0.077 -- an editor
@@ -235,6 +242,10 @@ type Editor struct {
 	noticeLbl  *d2ui.Label
 	personLbls []*d2ui.Label
 
+	// peopleDrawn is where drawPeople put each person's mark and name on the
+	// last frame, for the harness (editorProvider.people).
+	peopleDrawn map[int]editorPersonDrawn
+
 	canvas *d2ui.CustomWidget
 
 	*d2util.Logger
@@ -254,13 +265,13 @@ func CreateEditor(
 	navigator d2interface.Navigator,
 	l d2util.LogLevel,
 ) (*Editor, error) {
-	disk, assetPath, root, err := editorResolve(mapPath, editorAssetRoots())
+	disk, assetPath, root, workdir, err := editorResolve(mapPath, editorAssetRoots())
 	if err != nil {
 		return nil, err
 	}
 
 	if EditorOpenGuard != nil {
-		if err := EditorOpenGuard(disk); err != nil {
+		if err := EditorOpenGuard(disk, workdir); err != nil {
 			return nil, err
 		}
 	}
@@ -327,13 +338,15 @@ func CreateEditor(
 const DefaultEditorMap = "data/strigoi/maps/village.tmj"
 
 // EditorOpenGuard, when it is set, may refuse a map before the editor opens it.
-// The game leaves it nil. The playtest harness sets one (d2app/harness.go) that
-// refuses the working tree's own village: the harness runs the game with the
-// repository as its working directory, so a script that pressed Ctrl+S in an
-// editor opened with a bare -editor would have overwritten the shipped
-// data/strigoi/maps/village.tmj (28 Sep review, B1). disk is the absolute path
-// editorResolve settled on.
-var EditorOpenGuard func(disk string) error //nolint:gochecknoglobals // a harness seam, nil in the game
+// The game leaves it nil. The playtest harness sets one (d2app/harness.go): the
+// harness runs the game with the repository as its working directory, so a
+// script that pressed Ctrl+S in an editor opened on a file in the source tree
+// would have overwritten it (28 Sep review, B1, and the second review's B,
+// which found the first guard covered village.tmj alone). disk is the absolute
+// path editorResolve settled on; workdir says it got there by the
+// working-directory fallback -- a relative path under none of the game's own
+// folders -- rather than by one of those folders.
+var EditorOpenGuard func(disk string, workdir bool) error //nolint:gochecknoglobals // a harness seam, nil in the game
 
 // editorAssetRoots are the folders the game's loader reads loose files from, in
 // its own order: the executable's folder, then %AppData%\OpenDiablo2 -- the two
@@ -363,7 +376,12 @@ func editorAssetRoots() []string {
 // COPY of data/strigoi -- the playtest's read-back check catches it before a
 // game starts on the wrong bytes; see playtest.) An ABSOLUTE path under none of
 // them is refused: the game could not load it, nor the art beside it.
-func editorResolve(asked string, roots []string) (disk, assetPath, root string, err error) {
+//
+// workdir is true exactly when the file was found by that last, relative rule --
+// under the working directory, not under one of roots. A game run from its own
+// folder never needs it (its folder is roots[0]); the playtest harness, which
+// runs the game from the REPOSITORY, refuses it (EditorOpenGuard).
+func editorResolve(asked string, roots []string) (disk, assetPath, root string, workdir bool, err error) {
 	if strings.TrimSpace(asked) == "" {
 		asked = DefaultEditorMap
 	}
@@ -379,7 +397,7 @@ func editorResolve(asked string, roots []string) (disk, assetPath, root string, 
 
 	abs, err := filepath.Abs(native)
 	if err != nil {
-		return "", "", "", fmt.Errorf("resolving %s: %w", asked, err)
+		return "", "", "", false, fmt.Errorf("resolving %s: %w", asked, err)
 	}
 
 	disk = filepath.Clean(abs)
@@ -400,19 +418,19 @@ func editorResolve(asked string, roots []string) (disk, assetPath, root string, 
 			continue
 		}
 
-		return disk, filepath.ToSlash(rel), filepath.Clean(ra), nil
+		return disk, filepath.ToSlash(rel), filepath.Clean(ra), false, nil
 	}
 
 	if relative {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return "", "", "", err
+			return "", "", "", false, err
 		}
 
-		return disk, editorAssetPath(asked), cwd, nil
+		return disk, editorAssetPath(asked), cwd, true, nil
 	}
 
-	return "", "", "", fmt.Errorf("%s is outside the game's own folders (%s), so the game could not load it or "+
+	return "", "", "", false, fmt.Errorf("%s is outside the game's own folders (%s), so the game could not load it or "+
 		"the art beside it; copy it under data/strigoi/maps in the game's folder", disk, strings.Join(roots, ", "))
 }
 
@@ -577,7 +595,10 @@ func (e *Editor) engine() d2mapedit.Engine {
 // where the last save sits in it, so undoing back to the saved map is clean
 // again (28 Sep review, C).
 func (e *Editor) dirty() bool {
-	return e.stack.Dirty()
+	// An editor with no history has nothing unsaved. Only a unit test holds
+	// one (d2app's playtest tests hand back a bare Editor); CreateEditor always
+	// builds the stack.
+	return e.stack != nil && e.stack.Dirty()
 }
 
 // editorOneLine is an error as one line of the status bar: the validator's
@@ -1741,15 +1762,42 @@ func (e *Editor) drawGhost(target d2interface.Surface) {
 // SELECTABLE as they always were -- a click on the tile selects the person on it
 // -- and nothing here moves them: dragging is v1.
 //
-// Names that would land on one another -- the headman and the woman at the well
-// stand two tiles apart, which is a few pixels at the zoom the editor opens on
-// -- are moved a line up or down until they are clear, with a leader line back
-// to the mark, and a name with no room left before the palette is not drawn.
+// NAMES (the second 28 Sep review). At the fit zoom the village's people stand a
+// few pixels apart, and "start" was drawn over the smith's mark; at 0.25 the
+// headman's name ran into the palette and was cut to "headman ...". So:
+//
+//   - below edLabelZoom a name is drawn only for the person under the cursor
+//     and the one selected -- the marks say where everyone is, the cursor says
+//     who;
+//   - a name is placed clear of every other mark -- with room to spare, so it
+//     never sits against someone else's and reads as his -- and every name
+//     already placed: beside its own mark, right or left, or centred just above
+//     or below it; failing those, beside it up to three lines up or down, with
+//     a leader line back to the mark (editorPlaceLabel);
+//   - it is drawn whole and wholly inside the map's view, or not at all -- it
+//     is never cut short, and never drawn under the palette.
 func (e *Editor) drawPeople(target d2interface.Surface) {
-	half := int(math.Max(3, math.Round(6*e.mapRenderer.Scale())))
+	scale := e.mapRenderer.Scale()
+	half := int(math.Max(3, math.Round(6*scale)))
 	view := mapViewRect()
-	named := 0
-	placed := make([]image.Rectangle, 0, edMaxPeople)
+
+	type person struct {
+		o      d2mapedit.Object
+		x, y   int
+		colour uint32
+		name   string
+	}
+
+	people := make([]person, 0, edMaxPeople)
+	marks := make([]image.Rectangle, 0, edMaxPeople)
+
+	if e.peopleDrawn == nil {
+		e.peopleDrawn = map[int]editorPersonDrawn{}
+	}
+
+	for id := range e.peopleDrawn {
+		delete(e.peopleDrawn, id)
+	}
 
 	for _, o := range e.doc.Objects() {
 		var colour uint32
@@ -1781,50 +1829,139 @@ func (e *Editor) drawPeople(target d2interface.Surface) {
 			editorFillRect(target, x-half, y+half-1, 2*half, 1, edColSwatchBg)
 		}
 
-		lx, ly := x+half+3, y-edLineH/2
-		room := view.Max.X - lx
+		mark := editorMarkRect(x, y, half)
+		marks = append(marks, mark)
+		people = append(people, person{o: o, x: x, y: y, colour: colour, name: name})
+		e.peopleDrawn[o.ID] = editorPersonDrawn{mark: mark}
+	}
 
-		if named >= len(e.personLbls) || room < 24 || y < view.Min.Y || y > view.Max.Y {
+	hx, hy, hovering := e.hoverTile()
+	names := make([]image.Rectangle, 0, len(people))
+	named := 0
+
+	for i, p := range people {
+		if named >= len(e.personLbls) {
+			break
+		}
+
+		t := p.o.Tile()
+		if scale < edLabelZoom && p.o.ID != e.selected && (!hovering || t.X != hx || t.Y != hy) {
 			continue
 		}
 
 		lbl := e.personLbls[named]
-		named++
+		w, _ := lbl.GetTextMetrics(editorPlain(p.name))
 
-		w, _ := lbl.GetTextMetrics(editorFit(lbl, editorPlain(name), room))
-		r := editorClearOf(image.Rect(lx, ly, lx+w, ly+edLineH), placed)
-		placed = append(placed, r)
+		others := append(append(make([]image.Rectangle, 0, len(marks)), marks[:i]...), marks[i+1:]...)
 
-		if r.Min.Y != ly {
-			editorLine(target, x, y, r.Min.X-1, r.Min.Y+edLineH/2, colour)
+		r, leader, ok := editorPlaceLabel(marks[i], w, edLineH, view, others, names)
+		if !ok {
+			continue
 		}
 
-		e.text(target, lbl, r.Min.X, r.Min.Y, colour, name, room)
+		named++
+		names = append(names, r)
+
+		if leader {
+			end := r.Min.X - 1
+			if r.Max.X <= p.x {
+				end = r.Max.X
+			}
+
+			editorLine(target, p.x, p.y, end, r.Min.Y+edLineH/2, p.colour)
+		}
+
+		// maxW is the name's own width, so editorFit never has to cut it.
+		e.text(target, lbl, r.Min.X, r.Min.Y, p.colour, p.name, w+1)
+
+		d := e.peopleDrawn[p.o.ID]
+		d.label, d.text = r, p.name
+		e.peopleDrawn[p.o.ID] = d
 	}
 }
 
-// editorClearOf moves a label's rectangle a line at a time -- down one, up one,
-// down two, up two -- until it overlaps none of the ones already placed, and
-// gives up where it started after three lines each way.
-func editorClearOf(r image.Rectangle, placed []image.Rectangle) image.Rectangle {
-	for _, lines := range []int{0, 1, -1, 2, -2, 3, -3} {
-		try := r.Add(image.Pt(0, lines*edLineH))
+// editorPersonDrawn is where one person's mark and name went on the last
+// frame; label is empty when the name was not drawn.
+type editorPersonDrawn struct {
+	mark, label image.Rectangle
+	text        string
+}
+
+// editorMarkRect is the box a person's mark (or the start's cross) covers on
+// screen, a pixel of margin all round.
+func editorMarkRect(x, y, half int) image.Rectangle {
+	return image.Rect(x-half-1, y-half-1, x+half+2, y+half+2)
+}
+
+// edLabelClear is how far a name keeps from another person's mark, and edLabelGap
+// from its own. A name that touches someone else's mark reads as his: on the
+// second review's 0.25 screenshot the headman's name, flipped left of his own
+// mark, began one pixel after the woman's. [DIAL]
+const (
+	edLabelClear = 8
+	edLabelGap   = 2
+)
+
+// editorPlaceLabel finds where a w x h name goes for the mark whose box is own.
+// It tries, in order: beside the mark on the right, beside it on the left,
+// centred just above it, centred just below it -- and then the right and the
+// left again a line down, up, two down, two up, three down, three up, which
+// want a leader line back to the mark (leader). The first place wholly inside
+// view that keeps edLabelClear from every one of marks (the OTHER people's) and
+// overlaps none of names is taken; ok is false when there is none, and the
+// name is not drawn.
+func editorPlaceLabel(own image.Rectangle, w, h int, view image.Rectangle,
+	marks, names []image.Rectangle) (r image.Rectangle, leader, ok bool) {
+	mid := (own.Min.Y + own.Max.Y) / 2
+	centre := (own.Min.X+own.Max.X)/2 - w/2
+	right, left := own.Max.X+edLabelGap, own.Min.X-edLabelGap-w
+
+	type place struct {
+		x, y   int
+		leader bool
+	}
+
+	places := []place{
+		{right, mid - h/2, false},
+		{left, mid - h/2, false},
+		{centre, own.Min.Y - edLabelGap - h, false},
+		{centre, own.Max.Y + edLabelGap, false},
+	}
+
+	for _, x := range []int{right, left} {
+		for _, lines := range []int{1, -1, 2, -2, 3, -3} {
+			places = append(places, place{x, mid - h/2 + lines*h, true})
+		}
+	}
+
+	for _, p := range places {
+		try := image.Rect(p.x, p.y, p.x+w, p.y+h)
+		if !try.In(view) {
+			continue
+		}
 
 		clear := true
 
-		for _, p := range placed {
-			if try.Overlaps(p) {
+		for _, m := range marks {
+			if try.Overlaps(m.Inset(-edLabelClear)) {
+				clear = false
+				break
+			}
+		}
+
+		for _, n := range names {
+			if !clear || try.Overlaps(n) {
 				clear = false
 				break
 			}
 		}
 
 		if clear {
-			return try
+			return try, p.leader, true
 		}
 	}
 
-	return r
+	return image.Rectangle{}, false, false
 }
 
 // drawNotice puts the engine's refusal in the middle of the map's view (28 Sep

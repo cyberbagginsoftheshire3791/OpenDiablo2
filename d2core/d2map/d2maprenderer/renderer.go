@@ -526,12 +526,23 @@ func (mr *MapRenderer) renderShadow(tile d2ds1.Tile, target d2interface.Surface)
 // viewport puts ortho point anchor + (u, v). TestDrawTileArtScalesTheArt
 // measures the painted pixels, not the positions.
 //
-// seamPad is one screen pixel of overdraw on each axis. Neighbouring floor
-// tiles are placed on whole pixels (OrthoToScreen floors) while their scaled
-// size is fractional, and a nearest-neighbour shrink of interlocking diamonds
-// leaves hairline gaps between them; drawing each tile one pixel wider and
-// taller closes them, and a pixel of overlap between two pieces of ground is
-// invisible. It is never applied at 1.0.
+// NEIGHBOURING TILES MEET (the second 28 Sep review). Every tile's top-left is
+// floored to a whole pixel (OrthoToScreen), so scaling its art by the view's
+// scale alone -- n art pixels to n*s screen pixels -- leaves each tile's far
+// edge up to a pixel short of where its neighbour's floored anchor landed, and
+// a nearest-neighbour shrink of interlocking diamonds shows it as rows of
+// one-pixel holes. The first fix drew every tile one pixel bigger; the second
+// review measured 449 of 84,552 map pixels still empty at the fit zoom with the
+// grid off (0.53%). Now the art is sized to the grid of floored anchors itself:
+// its far corner goes where the viewport floors the far corner of its own ortho
+// box -- the pixel the next tile's anchor is floored to -- and seamPad (one
+// pixel) goes over that, for the diagonal neighbours, whose anchors are floored
+// on their own. Measured with a 40 x 40 field of the game's diamond through
+// renderFloor (TestTheGroundHasNoSeamsAtTheEditorsZooms): 0 holes at twelve
+// zooms from 0.0769 to 0.75, where the one-pixel pad alone left 1,222 at 0.077;
+// and on the running editor with the grid off (TestWorldEditor), 0 at the fit
+// zoom, 0.15, 0.25 and 0.5, where the first fix left 465, 328, 0 and 16. It is
+// never applied at 1.0.
 func (mr *MapRenderer) drawTileArt(target d2interface.Surface, img d2interface.Surface) {
 	s := mr.viewport.Scale()
 	if s == defaultScale {
@@ -540,23 +551,31 @@ func (mr *MapRenderer) drawTileArt(target d2interface.Surface, img d2interface.S
 	}
 
 	w, h := img.GetSize()
-	target.PushScale(seamScale(w, s), seamScale(h, s))
+	target.PushScale(mr.tileArtScale(w, h))
 	target.Render(img)
 	target.Pop()
 }
 
-// seamPad is how many screen pixels of overdraw drawTileArt adds to a scaled
-// tile on each axis. See there. [DIAL]
+// seamPad is how many screen pixels of overdraw drawTileArt adds past the
+// floored far corner of a scaled tile on each axis. See there. [DIAL]
 const seamPad = 1.0
 
-// seamScale is the scale that draws n art pixels as n*s screen pixels plus
-// seamPad. An image with no size is drawn at s, which draws nothing anyway.
-func seamScale(n int, s float64) float64 {
-	if n <= 0 {
-		return s
+// tileArtScale is the scale, on each axis, drawTileArt draws a w x h picture at
+// with the viewport's translation on its top-left: the picture's far corner
+// lands on the floored screen position of its own far corner in ortho space,
+// seamPad further on. An image with no size is drawn at the view's scale, which
+// draws nothing anyway.
+func (mr *MapRenderer) tileArtScale(w, h int) (sx, sy float64) {
+	s := mr.viewport.Scale()
+	if w <= 0 || h <= 0 {
+		return s, s
 	}
 
-	return (float64(n)*s + seamPad) / float64(n)
+	ox, oy := mr.viewport.GetTranslationOrtho()
+	x0, y0 := mr.viewport.OrthoToScreen(ox, oy)
+	x1, y1 := mr.viewport.OrthoToScreen(ox+float64(w), oy+float64(h))
+
+	return (float64(x1-x0) + seamPad) / float64(w), (float64(y1-y0) + seamPad) / float64(h)
 }
 
 func (mr *MapRenderer) renderMapDebug(mapDebugVisLevel int, target d2interface.Surface, startX, startY, endX, endY int) {

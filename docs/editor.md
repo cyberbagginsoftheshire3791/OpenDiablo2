@@ -22,11 +22,16 @@ directory is by then; the harness reports it. The game reads maps from its own
 folder, so a map it can play lives under `data/strigoi/maps` beside the game: a
 relative path means what it always meant, and an absolute path outside the
 game's folders is refused with the reason, because the game could load neither
-it nor its art. **The playtest harness refuses to open the working tree's own
-`data/strigoi/maps/village.tmj`** (`-editor` alone, or the menu button): it runs
-the game with the repository as its working directory, so a scripted `Ctrl+S`
-would have written the shipped village. A script edits a copy and passes the
-copy's absolute path.
+it nor its art. **The playtest harness refuses to open anything in the source
+tree** (second review, 28 Sep -- until then it refused `village.tmj` alone): it
+runs the game with the repository as its working directory, so a scripted
+`Ctrl+S` would have written the working tree's file. Under `-harness` a map is
+opened only from the game's own folders -- the `data/strigoi` mirror beside the
+exe, or `%AppData%\OpenDiablo2` -- never by the working-directory fallback, and
+never from under a folder whose `go.mod` is this game's module. A script edits a
+copy there and passes the copy's absolute path. Without `-harness` nothing
+changes: `Play Strigoi.bat` starts the game from its own folder, so the village
+is found under that folder and opens and saves as it always has.
 
 ## The keys
 
@@ -64,18 +69,46 @@ pictures: the editor opens on the whole village at about 0.08, and that first
 screen was full-size trees and houses on anchors a twelfth of their size apart,
 every floor tile hanging (80(1-s), 40(1-s)) pixels off its own diamond and a
 placed house hidden behind the forest. `MapRenderer.drawTileArt` now pushes the
-zoom onto the surface for every floor, wall and shadow at any scale but 1.0,
-with one pixel of overdraw so neighbouring tiles on whole-pixel anchors leave no
-hairline seams. **At 1.0 -- the only scale the game ever draws at -- it is the
-old `target.Render(img)` and nothing else.**
+zoom onto the surface for every floor, wall and shadow at any scale but 1.0.
+**At 1.0 -- the only scale the game ever draws at -- it is the old
+`target.Render(img)` and nothing else.**
+
+**The ground has no seams at the zooms measured** -- which is what can be said,
+and all that is said. The first fix drew each tile one pixel bigger than the
+zoom and called the seams closed; the second review (28 Sep) turned the grid
+off and counted **449 of 84,552 map pixels empty at the fit zoom (0.53%)** --
+the grid is drawn along the tile edges, exactly where the seams are, so with it
+on the acceptance script saw half of them. Now each tile's art is sized to the
+grid of floored anchors itself (`MapRenderer.tileArtScale`: its far corner lands
+where the viewport floors the far corner of its own box, the pixel the next
+tile's anchor is floored to, plus one pixel for the diagonal neighbours). On the
+running editor, grid off, `TestWorldEditor` counts **0 empty pixels inside the
+map's diamond at the fit zoom (0.0771), 0.15, 0.25 and 0.5** (84,535, 235,144,
+282,240 and 282,240 pixels looked at); with the first fix put back, 465, 328, 0
+and 16. Other zooms are covered by a software model of the same draw
+(`TestTheGroundHasNoSeamsAtTheEditorsZooms`, twelve zooms from 0.0769 to 0.75),
+not by the GPU -- and the model is not the GPU: it counted 0 for the first fix at
+0.15 and 0.5, where the game showed 328 and 16.
 
 **People and the start are marked** (B5). The view is the engine's map with no
 entities in it, so each person the map places gets his tile outlined and a
 square where he stands, in blue, with his name beside it; the `player_start` is
-an orange cross named "start". The marks are sized with the zoom, and names that
-would land on one another are moved a line up or down with a leader line back to
-the mark. They are selectable as they always were -- a click on the tile selects
-the person on it -- and cannot be dragged (v1).
+an orange cross named "start". The marks are sized with the zoom. They are
+selectable as they always were -- a click on the tile selects the person on it
+-- and cannot be dragged (v1).
+
+**Names** (second review, 28 Sep: at the fit zoom "start" was drawn over the
+smith's mark, and at 0.25 the palette cut the headman's name to "headman ...").
+Below a zoom of 0.2 (`edLabelZoom`) only the person under the cursor, and the
+one selected, is named -- at the fit zoom the village's people stand a few
+pixels apart, and the marks say where everyone is. At 0.2 and above everyone is
+named. A name is drawn **whole and wholly inside the map's view, or not at
+all** -- never cut short, never under the palette -- and clear of every other
+person's mark (by 8 px, so it never sits against someone else's and reads as
+his) and every other name: beside its mark on the right, or the left, or
+centred just above or below it, and failing those up to three lines away with a
+leader line back to the mark (`editorPlaceLabel`). A person scrolled out of the
+view, or behind the palette, is not named.
 
 **A map the game refuses says so where you are looking** (C). The engine's own
 parser runs on every open and every edit; when it refuses, a red notice sits in
@@ -244,11 +277,12 @@ Said here rather than left to be assumed (brought up to date 28 Sep):
   (read the notch, multiply or divide by 1.15) are the part no script has run.
 - **The right-drag pan has not been driven by a script**: `strigoi_click` can
   hold a button down but cannot move the cursor while it does.
-- **`Ctrl+S`, `Ctrl+Z`, `Ctrl+Y` and `P` ARE driven**, on the keyboard, by
-  `playtest/editor_test.go` -- against a copy of the village in the game's own
-  folder, never the shipped file, which the harness now refuses to open in the
-  editor. A palette row and a map tile are picked with the mouse, the tile being
-  one the ghost itself said yes to.
+- **`Ctrl+S`, `Ctrl+Z`, `Ctrl+Y`, `P` and `G` ARE driven**, on the keyboard,
+  by `playtest/editor_test.go` -- against a copy of the village in the game's
+  own folder, never a file in the source tree, which the harness refuses to open
+  in the editor (`TestWorldEditorRefusesTheWorkingTree` shows it). A palette
+  row, the greyed Terrain tab and a map tile are clicked with the mouse, the tile
+  being one the ghost itself said yes to.
 - **The WORLD EDITOR menu button was unreadable in the default game** until
   BUG-27 was fixed (28 Sep, `docs/bugs.md`): every main-menu label was drawn in
   the stone's own grey under Strigoi's fonts. It reads now; `-editor` on the
@@ -283,8 +317,43 @@ defects are BUG-28..BUG-34 in `docs/bugs.md`.
 | C | Duplicating at the east edge said "bare ground". | `footprintIsClear` checks the map's bounds first. | `TestEditorDuplicateAtTheEdgeSaysOffTheMap` (red: `nc8-dup-bare-ground.txt`). |
 | C | `ToPlaytest` did not tell the harness its screen. | It notes `playtest` (then `game`), and the way back notes `world_editor`; `strigoi_get_game_info` also reports `playtest`, `playtest_save_dir` and the map setting (`map_asked`, `map_built`, `map_error`). | `TestWorldEditor` acts 7-8 read them. |
 
+(`TestTheHarnessRefusesToEditTheShippedVillage`, B1's row, is
+`TestTheHarnessRefusesToEditTheSourceTree` since the second review; A1's seam
+pad and B5's "labels kept apart" were both found short by it -- below.)
+
 **What this did not do.** No wheel event or right-drag pan has been driven by a
 script (above). The notice is drawn over a map the engine refused; the editor
 still offers no "set the file aside" prompt (v1, `SetAside` is a defer row). A
 playtest's hero cannot be chosen: he is always Playtest with the default
 loadout. People can be selected and deleted but not moved or added (v1).
+
+## Second review (28 Sep) and fixes
+
+A second independent review drove the editor on `f833e691` and confirmed it is
+now built properly: the data side and the first review's fixes held. It found
+one B and five C. Josh asked for every fix to be documented; each is below with
+its fix, the test that holds it, and that test's **negative control** -- the fix
+taken out and the test watched going red. Where an option was open the
+reviewer's recommended one was taken. Logs: `strigoi-harness-runs\wt-editor-fix2\`
+(the reds in `nc\`, the green acceptance run `pt-green2.txt`, the scale-1.0
+comparison `scale1\compare.txt`, and the whole playtest suite `pt-suite.txt`:
+69 of 73 green; the four reds -- each a missed click on a HUD, inventory or
+crafting button, none in code this branch touched -- are green run one at a time,
+`pt-rerun4-branch.txt`; another session was running its own gate on the laptop). New bugs: BUG-35..BUG-38 in `docs/bugs.md`;
+BUG-28 and BUG-33 are brought up to date there.
+
+| | finding | fix | test (negative control) |
+|---|---|---|---|
+| B | **The harness guard protected only `village.tmj`.** Under `-harness`, `-editor=data/strigoi/maps/second.tmj` (a copy in the working tree) opened the working-tree file -- `editorResolve` falls back to the working directory, which the launcher sets to the repository -- and a scripted Delete + `Ctrl+S` overwrote it. (BUG-35) | The recommended option. Under `-harness` the editor refuses any map found by the working-directory fallback (`editorResolve` now says when it used it) and any map under a folder whose `go.mod` is this game's module (`harnessSourceTree`) -- which also covers a harness build run from the repository root, whose own folder IS the tree. What is left is the game's own folders outside the tree: the mirror beside the exe, `%AppData%\OpenDiablo2`. **Josh's launch is untouched:** the game sets no guard, and a game started from its own folder -- `Play Strigoi.bat` -- finds the village under that folder, not by the fallback (`TestEditorResolve`'s new case; and live, `wt-editor-fix2\josh-layout\`: this branch's game copied with `data/strigoi` into a folder of its own, started from that folder with a bare `-editor`, opened that folder's village and `Ctrl+S` saved it). | `TestWorldEditorRefusesTheWorkingTree` (playtest, the reviewer's own steps): a second map in the working tree, opened by the same relative path, goes to the main menu with the guard's reason (read from the `ui` provider's new `main_menu_error`), and the file is unchanged. Red with the guard returning nil: "opened ... the working tree's own file" (`nc\nc2-pt-no-guard.txt`). `TestTheHarnessRefusesToEditTheSourceTree` (unit; red with the first guard put back: `nc\nc1-unit-village-only.txt`). Act 9 still refuses the menu button's village. |
+| C | **Seams at the fit zoom.** One pixel of overdraw left rows of one-pixel holes: 449 of 84,552 map pixels empty with the grid off (0.53%), over the script's own 0.5% line; act 2 measured with the grid ON, whose lines sit on the seams, and saw half. (BUG-28, reopened and fixed) | Act 2 turns the grid off with `G` (and checks the provider says so) before it counts. Each tile is sized to its neighbours' floored anchors plus one pixel (`MapRenderer.tileArtScale`) -- measured against 2 px of plain overdraw and a symmetric pad, all three 0 in the model; this one draws the least over. The hole instrument counts the background colour EXACTLY (every background pixel of the reviewer's own grid-off screenshot is exact but one), since within two levels it counted a dark timber at 0.5. `docs/editor.md`'s "no hairline seams" is replaced by what is measured (above). | `TestWorldEditor` acts 2-3, grid off: **0 holes at 0.0771, 0.15, 0.25 and 0.5**; red with the first fix put back: 465, 328, 0 and 16 (`nc\nc6-pt-seam-pad-only.txt`). `TestTheGroundHasNoSeamsAtTheEditorsZooms` (a 40 x 40 field of the game's diamond through `renderFloor`, twelve zooms, five sub-pixel camera offsets: 0 holes; red: 1,222 at 0.077 -- `nc\nc5-seam-pad-only.txt`), with its own control `TestTheSeamInstrumentSeesAMissingTile`. **Scale 1.0 unchanged:** master `ddc3ea7c` and this branch, the same seeded, paused, stepped frames -- **0 of 480,000 pixels differ** at all three (md5s identical to the reviewer's); control 437,893 (`scale1\compare.txt`). `TestDrawTileArtAtScale1IsTheUnscaledDraw` still holds. |
+| C | **Throwaway playtest hero folders were left behind** when the game exited during a playtest or within ~1.5 s after one; three sat in `%TEMP%`. (BUG-36) | A playtest hero's folder is named for its process (`strigoi-playtest-<pid>-<random>`). At start-up `App.Run` clears every `strigoi-playtest-*` folder that is **not in use** -- its process no longer running (`processAlive`: OpenProcess and the exit code, since an exited process can still be opened); an older build's folder with no process in its name once it is 10 minutes old -- so four games sharing the laptop never take each other's hero. On the way out -- the window closing, the console's `quit`, the harness's `strigoi_quit` -- a game removes its own. What that misses (a killed process; the main menu's EXIT button, which calls `os.Exit` from `d2gamescreen`) the next start-up clears. | `TestStalePlaytestFoldersAreClearedAndLiveOnesKept` (unit: a running process's folder kept, an exited one's and an old legacy one cleared, a fresh legacy one kept; red when liveness is not asked: `nc\nc3-sweep-ignores-live.txt`); `TestAProcessClearsItsOwnPlaytestFoldersAsItExits`. **Live:** the three leftovers (`...-1390003002`, `...-2358539398`, `...-3739554505`) were cleared by this branch's first game at start-up (`temp-leftovers-before.txt`, `temp-leftovers-after.txt`). |
+| C | **B4 was only unit-tested** (a held piece judged by its own tab). | `TestWorldEditor` act 4 clicks the greyed Terrain tab after picking the house and before the map click, and checks the editor shows Terrain and still holds the house. | Red with BUG-33's fix reverted: "the ghost said yes to none of the tiles tried: Terrain: ..." (`nc\nc7-pt-viewed-tab.txt`). |
+| C | **Names overlapped at low zoom**: at the fit zoom "start" sat over the smith's mark; at 0.25 the palette cut the headman's name to "headman ...". (BUG-37) | The recommended option, both halves. Below 0.2 only the person under the cursor (and the one selected) is named; a name is placed whole and wholly inside the map's view or not at all, clear of every other mark by 8 px and of every name, right / left / above / below its mark and then a line or more away with a leader (`editorPlaceLabel`). The first attempt at this fix flipped the headman's name left, where it began one pixel after the woman's mark and read as hers; hence the 8 px. | `TestWorldEditor` act 2 (fit: no name with the cursor off the map; the smith's alone with it on his tile) and act 3 (0.25: every person named, whole, inside the view, 2 px clear of every mark, no two names overlapping) read the provider's new record of what was drawn (`people[].mark`, `label`, `label_text`). Red with the old placement: "start's name lies over or against ... the smith's mark", "headman (Warriv)'s name is drawn as "headman ..."" (`nc\nc8-pt-old-names.txt`). `TestEditorPlacesANameWholeInsideTheViewAndClearOfMarks` (unit). **Screenshots, looked at:** before -- the reviewer's `wt-editor-review2\out\20260928-170744-16652\r2-01-fit-00001246.png` and `r2-02-zoom025-00001253.png`; after -- `pt\TestWorldEditor\20260928-175059-34864\editor-fit-00000020.png`, `editor-fit-hover-smith-00000031.png`, `editor-025-00000072.png`, `editor-050-00000056.png`. |
+| C | **A playtest could outlive its game** (code reading): if the death screen's "load last save" gave up waiting during a playtest, the game sat on the REAL main menu with the playtest still active and the scratch map still set. (BUG-38) | `advanceReload`'s give-up now ends the playtest (the editor comes back, the map setting is restored, the hero's folder is queued). And `App.advancePlaytestEnd`, every frame, ends any playtest whose game has gone by a way that did not end it: a playtest running, no reload pending, the screen settled, and not a game. | Not reachable by a script (the give-up needs the old game's server to hold its port for 600 frames), so `TestEveryWayOffAPlaytestEndsIt` drives the state transition: the give-up ends it; a pending reload does not; a settled non-game screen does. Red with the give-up's `endPlaytest` removed and the net dark (`nc\nc4-playtest-outlives-reload.txt`), and with the net alone dark (`nc\nc4b-no-net.txt`). |
+
+**What this did not do.** The main menu's EXIT button still calls `os.Exit` from
+`d2gamescreen` and does not clear a playtest folder on the way out (the next
+start-up does). A playtest folder whose process id has been reused by a running
+program is kept until that program exits. The seam count is proven at four
+zooms on the GPU and twelve in the software model, not at every zoom. No wheel
+or right-drag pan has been driven by a script (above).

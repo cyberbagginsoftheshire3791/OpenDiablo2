@@ -49,10 +49,20 @@ func (p mainMenuProvider) HarnessState() map[string]interface{} {
 		}
 	}
 
+	// The line the menu was opened with, if any: why the last thing that sent
+	// the game back here failed -- a game that could not start, or a map the
+	// World Editor refused (the second 28 Sep review's B: a script must tell
+	// the harness's refusal from any other way back to the menu).
+	menuError := ""
+	if v.errorLabel != nil {
+		menuError = v.errorLabel.GetText()
+	}
+
 	return map[string]interface{}{
 		"screen":            "main_menu",
 		"main_menu_page":    mainMenuPageName(v.screenMode),
 		"main_menu_buttons": buttons,
+		"main_menu_error":   menuError,
 	}
 }
 

@@ -341,6 +341,11 @@ func (a *App) LoadConfig() (*d2config.Configuration, error) {
 
 // Run executes the application and kicks off the entire game process
 func (a *App) Run() (err error) {
+	// Throwaway playtest heroes' folders earlier games left behind (second 28
+	// Sep review); and this game's own, whenever the window closes.
+	a.clearStalePlaytests()
+	defer clearOwnPlaytests()
+
 	// add our possible config directories
 	_ = a.asset.AddSource(filepath.Dir(d2config.LocalConfigPath()), types.AssetSourceFileSystem)
 	_ = a.asset.AddSource(filepath.Dir(d2config.DefaultConfigPath()), types.AssetSourceFileSystem)
@@ -507,6 +512,7 @@ func (a *App) advanceOnce(elapsedUnscaled, elapsed, elapsedLastScreenAdvance, cu
 	}
 
 	a.advanceReload()
+	a.advancePlaytestEnd()
 	a.advancePlaytestCleanup()
 
 	a.ui.Advance(elapsed)

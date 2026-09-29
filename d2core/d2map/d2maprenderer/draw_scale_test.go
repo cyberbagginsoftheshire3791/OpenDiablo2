@@ -337,19 +337,137 @@ func TestDrawTileArtAtScale1IsTheUnscaledDraw(t *testing.T) {
 	}
 }
 
-// TestSeamScale pins the seam pad's arithmetic: n pixels at scale s become
-// n*s + seamPad screen pixels.
-func TestSeamScale(t *testing.T) {
+// TestTileArtScale pins the seam arithmetic: a picture's far corner lands on the
+// floored screen position of its ortho far corner, seamPad further on.
+func TestTileArtScale(t *testing.T) {
 	for _, c := range []struct {
-		n int
-		s float64
-	}{{160, 0.08}, {80, 0.25}, {300, 0.5}, {160, 2}} {
-		if got, want := float64(c.n)*seamScale(c.n, c.s), float64(c.n)*c.s+seamPad; math.Abs(got-want) > 1e-9 {
-			t.Errorf("seamScale(%d, %v) draws %v px, want %v", c.n, c.s, got, want)
+		w, h   int
+		s      float64
+		ox, oy float64
+	}{{160, 80, 0.077, 123.4, 56.7}, {160, 80, 0.25, -80, 0}, {160, 300, 0.5, 13, -222}, {160, 80, 2, 7.5, 3.25}} {
+		mr := testRenderer(c.s, diamondArt(8, 8), 3, 7, d2enum.TileFloor)
+		mr.viewport.PushTranslationOrtho(c.ox, c.oy)
+
+		x0, y0 := mr.viewport.GetTranslationScreen()
+		x1, y1 := mr.viewport.OrthoToScreen(c.ox+float64(c.w), c.oy+float64(c.h))
+		sx, sy := mr.tileArtScale(c.w, c.h)
+
+		if got, want := float64(x0)+float64(c.w)*sx, float64(x1)+seamPad; math.Abs(got-want) > 1e-9 {
+			t.Errorf("at %v a %d-wide picture's far edge is at %v, want %v", c.s, c.w, got, want)
+		}
+
+		if got, want := float64(y0)+float64(c.h)*sy, float64(y1)+seamPad; math.Abs(got-want) > 1e-9 {
+			t.Errorf("at %v a %d-tall picture's far edge is at %v, want %v", c.s, c.h, got, want)
+		}
+
+		if sx, sy := mr.tileArtScale(0, 0); sx != c.s || sy != c.s {
+			t.Errorf("an empty image is drawn at %v,%v, not the view's scale %v", sx, sy, c.s)
+		}
+	}
+}
+
+// TestTheGroundHasNoSeamsAtTheEditorsZooms is the second 28 Sep review's C: at
+// the editor's fit zoom the ground had rows of one-pixel holes, 449 of 84,552
+// map pixels with the grid off (0.53%) -- and TestWorldEditor, measuring with
+// the grid ON, whose lines sit on the seams, saw half of them. This lays a
+// 40 x 40 field of the game's own floor diamond (the placeholder grass's alpha,
+// row for row) through the real renderFloor at the editor's zooms, with the
+// camera at five sub-pixel offsets, and counts the pixels well inside the
+// field's diamond that nothing painted -- the acceptance script's instrument
+// (inkOutsideTheMap: 3 px in from the edge), on a software surface that samples
+// the art nearest-neighbour at each pixel's centre, as the GPU does.
+//
+// Negative control (28 Sep 2026): size the art by the view's scale plus the
+// one-pixel pad -- (w*s+1)/w, the first fix -- and this fails at the fit zooms:
+// "at 0.077 1222 of 292569 pixels inside the field are holes" (log
+// strigoi-harness-runs\wt-editor-fix2\nc\nc5-seam-pad-only.txt).
+func TestTheGroundHasNoSeamsAtTheEditorsZooms(t *testing.T) {
+	offsets := [][2]float64{{0, 0}, {0.3, 0.7}, {0.5, 0.5}, {0.91, 0.13}, {17.25, 3.6}}
+
+	for _, scale := range []float64{0.0769, 0.077, 0.08, 0.1, 0.12, 0.15, 0.18, 0.2, 0.25, 0.33, 0.5, 0.75} {
+		holes, inside := 0, 0
+
+		for _, off := range offsets {
+			h, in := groundHoles(scale, off, nil)
+			holes, inside = holes+h, inside+in
+		}
+
+		if inside == 0 {
+			t.Fatalf("the instrument: at %v no pixel is inside the field", scale)
+		}
+
+		if holes != 0 {
+			t.Errorf("at %v %d of %d pixels inside the field are holes", scale, holes, inside)
+		}
+	}
+}
+
+// TestTheSeamInstrumentSeesAMissingTile is the instrument's own control: the
+// same field with its middle tile left out has a tile's worth of holes -- about
+// its diamond's area, w*h*s*s/2 -- and none where the tile is drawn.
+func TestTheSeamInstrumentSeesAMissingTile(t *testing.T) {
+	const scale = 0.25
+
+	holes, _ := groundHoles(scale, [2]float64{0.3, 0.7}, func(tx, ty int) bool { return tx == 20 && ty == 20 })
+
+	diamond := tileSurfaceWidth * tileSurfaceHeight * scale * scale / 2
+	if float64(holes) < diamond*0.6 || float64(holes) > diamond*1.2 {
+		t.Fatalf("with one tile left out the instrument counts %d holes; the tile's diamond is %.0f pixels",
+			holes, diamond)
+	}
+}
+
+// groundHoles lays a 40 x 40 field of the game's floor diamond through the real
+// renderFloor at scale, the camera on the field's middle plus off (ortho
+// pixels), leaving out the tiles skip names, and counts the pixels at least
+// three pixels inside the field's diamond that nothing painted.
+func groundHoles(scale float64, off [2]float64, skip func(tx, ty int) bool) (holes, inside int) {
+	const (
+		n   = 40
+		pad = 3.0
+	)
+
+	target := newPaintSurface(800, 600)
+	mr := testRenderer(scale, diamondArt(tileSurfaceWidth, tileSurfaceHeight), 3, 7, d2enum.TileFloor)
+
+	cx, cy := mr.viewport.WorldToOrtho(n/2, n/2)
+	moveTestCamera(mr.viewport, cx+off[0], cy+off[1])
+
+	var tile d2ds1.Tile
+	tile.Style, tile.Sequence = 3, 7
+
+	for ty := 0; ty < n; ty++ {
+		for tx := 0; tx < n; tx++ {
+			if skip != nil && skip(tx, ty) {
+				continue
+			}
+
+			mr.viewport.PushTranslationWorld(float64(tx), float64(ty))
+			mr.renderFloor(tile, target)
+			mr.viewport.PopTranslation()
 		}
 	}
 
-	if got := seamScale(0, 0.5); got != 0.5 {
-		t.Errorf("an empty image is drawn at the view's scale, got %v", got)
+	topX, topY := mr.viewport.WorldToScreenF(0, 0)
+	rightX, _ := mr.viewport.WorldToScreenF(n, 0)
+	_, bottomY := mr.viewport.WorldToScreenF(n, n)
+	leftX, midY := mr.viewport.WorldToScreenF(0, n)
+	hw, hh := (rightX-leftX)/2, (bottomY-topY)/2
+
+	for j := 0; j < target.h; j++ {
+		for i := 0; i < target.w; i++ {
+			fx, fy := float64(i)+0.5, float64(j)+0.5
+			if math.Abs(fx-topX)/(hw-pad)+math.Abs(fy-midY)/(hh-pad) > 1 {
+				continue
+			}
+
+			inside++
+
+			if !target.opaque[j*target.w+i] {
+				holes++
+			}
+		}
 	}
+
+	return holes, inside
 }

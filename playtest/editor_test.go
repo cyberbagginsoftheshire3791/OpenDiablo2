@@ -38,7 +38,9 @@ import (
 // both from the same place. The repository's own village is never opened: the
 // harness now REFUSES to open it in the editor (act 9 shows the refusal), because
 // the game runs with the repository as its working directory and a scripted
-// Ctrl+S under a bare -editor would have written it.
+// Ctrl+S under a bare -editor would have written it -- and since the second
+// review it refuses anything else in the source tree too
+// (TestWorldEditorRefusesTheWorkingTree, below).
 //
 // Two launches, nine acts:
 //
@@ -48,12 +50,17 @@ import (
 //	    map area (C), and Ctrl+S and P both refuse it (B2);
 //	the authoring copy:
 //	 1. -editor opens THAT file (disk_path), clean;
-//	 2. the first screen reads (A1): at the fit zoom the map's ink stays inside
-//	    its own diamond (plus the height of its tallest art above it), the
-//	    diamond is covered, and every person and the start carry a marker (B5);
-//	 3. a scripted zoom to 0.25 through the provider's zoom field, which calls
-//	    the wheel's own zoomAbout;
-//	 4. a house placed by CLICKS -- a palette row, then a map tile the ghost
+//	 2. the first screen reads (A1): at the fit zoom, with the grid turned off
+//	    by G, the map's ink stays inside its own diamond (plus the height of its
+//	    tallest art above it), NOT ONE pixel inside it is a hole (the second
+//	    review), and every person and the start carry a marker (B5); no name is
+//	    drawn until the cursor is on a person, and then his, clear of every mark;
+//	 3. scripted zooms to 0.15, 0.5 and 0.25 through the provider's zoom field,
+//	    which calls the wheel's own zoomAbout: no holes at any of them; at 0.25
+//	    every person is named, whole, inside the map's view, clear of every mark
+//	    and every other name (the second review);
+//	 4. a house placed by CLICKS -- a palette row, then the greyed Terrain tab
+//	    (B4: the house is judged by its own tab), then a map tile the ghost
 //	    itself says yes to -- and the house's pixels appear on its footprint;
 //	 5. Ctrl+S on the keyboard: the file parses with the ENGINE's parser, holds
 //	    the new footprint, names it "peasant-house" (C), keeps a .bak; Ctrl+Z and
@@ -140,11 +147,22 @@ func TestWorldEditor(t *testing.T) {
 		t.Fatalf("act 2: the editor opened at zoom %v, not its fit %v", z, fit)
 	}
 
+	// THE GRID OFF (the second 28 Sep review). The grid is drawn along the
+	// tile edges -- exactly where seams are -- so with it on the hole count
+	// below saw half of them: 228 of 84,552 with the grid on, 449 with it off.
+	// G turns it off, the way a hand does, and the provider says it went.
+	s.call("strigoi_key", map[string]any{"key": "g"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if st = editorState(s); flag(t, st, "grid") {
+		t.Fatal("act 2: G left the grid on, so the seam count below would see only half the seams")
+	}
+
 	shot, shotPath := screenshot(t, s, "editor-fit")
 	tallest := tallestArt(t, authoring)
 
 	stray, uncovered, inside := inkOutsideTheMap(shot, st, float64(tallest)*fit+2)
-	t.Logf("act 2: at the fit zoom %.3f: %d map pixel(s) outside the diamond (+%d px of art above it), "+
+	t.Logf("act 2: at the fit zoom %.4f, grid off: %d map pixel(s) outside the diamond (+%d px of art above it), "+
 		"%d of %d pixels inside it uncovered -- %s", fit, stray, int(float64(tallest)*fit+2), uncovered, inside, shotPath)
 
 	if stray > 40 {
@@ -152,41 +170,96 @@ func TestWorldEditor(t *testing.T) {
 			"drawn at the zoom (A1) -- %s", stray, shotPath)
 	}
 
-	// Half a percent. MEASURED 28 Sep: 228 of 84535 (0.27%) with the seam pad,
-	// 767 (0.91%) with it set to 0 -- the hairline gaps between floor tiles
-	// on whole-pixel anchors (strigoi-harness-runs\wt-editor-fix\measure-r4-*).
-	if uncovered*200 > inside {
-		t.Errorf("act 2: %d of %d pixels inside the map's diamond are empty: the ground has holes (%s)",
-			uncovered, inside, shotPath)
+	// NONE. MEASURED 28 Sep (second review, grid off): 449 of 84,552 (0.53%)
+	// with the art scaled by the view plus one pixel -- over the half-percent
+	// line this used to hold, which the grid had hidden. With each tile sized
+	// to its neighbours' floored anchors (MapRenderer.tileArtScale), 0.
+	// Negative control: the first fix put back, this act and act 3 count 465,
+	// 328, 16 and 0 at the fit zoom, 0.15, 0.5 and 0.25
+	// (strigoi-harness-runs\wt-editor-fix2\nc\nc6-pt-seam-pad-only.txt).
+	if uncovered > 0 {
+		t.Errorf("act 2: %d of %d pixels inside the map's diamond are empty at the fit zoom: the ground has "+
+			"seams (%s)", uncovered, inside, shotPath)
 	}
 
 	for _, missing := range unmarkedPeople(shot, st) {
 		t.Errorf("act 2: no marker where %s stands (B5) -- %s", missing, shotPath)
 	}
 
-	// --- act 3: the scripted zoom ---------------------------------------------
-	st = sub(s.call("strigoi_set_system_field", map[string]any{"system": "editor", "field": "zoom", "value": 0.25}),
-		"state")
-	if z := mustNum(t, st, "zoom"); math.Abs(z-0.25) > 1e-9 {
-		t.Fatalf("act 3: zoom reads %v after setting 0.25", z)
+	// Names at the fit zoom (the second review: "start" was drawn over the
+	// smith's mark). Below the label zoom only the person under the cursor is
+	// named: none while the cursor is off the map, and the smith once it is on
+	// his tile -- his name clear of every mark, whole, inside the map's view.
+	if n := checkLabels(t, st, "act 2 (fit zoom, cursor parked)", shotPath); n != 0 {
+		t.Errorf("act 2: at the fit zoom %.3f (under the label zoom %v) %d name(s) are drawn with the cursor off "+
+			"the map -- %s", fit, st["label_zoom"], n, shotPath)
 	}
 
-	s.call("strigoi_step", map[string]any{"frames": 3})
+	smith := personNamed(t, st, "smith")
+	sx, sy := tileScreen(st, num(smith, "tile_x")+0.5, num(smith, "tile_y")+0.5)
+	s.call("strigoi_move_cursor", map[string]any{"x": int(sx), "y": int(sy)})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	_, hoverPath := screenshot(t, s, "editor-fit-hover-smith")
+	st = editorState(s)
+
+	if checkLabels(t, st, "act 2 (fit zoom, over the smith)", hoverPath) != 1 ||
+		len(list(personNamed(t, st, "smith"), "label")) != 4 {
+		t.Errorf("act 2: at the fit zoom, with the cursor on the smith's tile, his name is not the one drawn -- %s",
+			hoverPath)
+	}
+
+	parkCursor(s)
+
+	// --- act 3: the scripted zoom ---------------------------------------------
+	// The seam count at the zooms either side of the one act 4 works at, then
+	// 0.25 itself: none at any of them, grid off. (With the art scaled by the
+	// view plus one pixel the model counted none at 0.15, 0.25 and 0.5 but
+	// 1,222 at 0.077 -- TestTheGroundHasNoSeamsAtTheEditorsZooms.)
+	for _, z := range []float64{0.15, 0.5, 0.25} {
+		st = sub(s.call("strigoi_set_system_field", map[string]any{"system": "editor", "field": "zoom", "value": z}),
+			"state")
+		if got := mustNum(t, st, "zoom"); math.Abs(got-z) > 1e-9 {
+			t.Fatalf("act 3: zoom reads %v after setting %v", got, z)
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 3})
+		zshot, zpath := screenshot(t, s, fmt.Sprintf("editor-%03d", int(math.Round(z*100))))
+
+		_, uncovered, inside = inkOutsideTheMap(zshot, st, float64(tallest)*z+2)
+		t.Logf("act 3: at %v, grid off, %d of %d pixels inside the map's diamond uncovered -- %s",
+			z, uncovered, inside, zpath)
+
+		if uncovered > 0 {
+			t.Errorf("act 3: %d of %d pixels inside the map's diamond are empty at %v: the ground has seams (%s)",
+				uncovered, inside, z, zpath)
+		}
+	}
+
 	before, beforePath := screenshot(t, s, "editor-025")
+	st = editorState(s)
 
-	// The same instrument at 0.25. MEASURED 28 Sep: 1 pixel of 282240 even with
-	// the seam pad at 0 -- at 0.25 every tile's anchor is a whole pixel, so the
-	// pad matters at the fit zoom (act 2), not here; this is the coverage check.
-	_, uncovered, inside = inkOutsideTheMap(before, st, float64(tallest)*0.25+2)
-	t.Logf("act 3: at 0.25, %d of %d pixels inside the map's diamond uncovered -- %s", uncovered, inside, beforePath)
-
-	if uncovered*200 > inside {
-		t.Errorf("act 3: %d of %d pixels inside the map's diamond are empty at 0.25: the ground has seams (%s)",
-			uncovered, inside, beforePath)
+	// Names at 0.25 (the second review: the palette cut the headman's name to
+	// "headman ..."): every person named, each name whole, inside the map's
+	// view, and clear of every mark and every other name.
+	if n, want := checkLabels(t, st, "act 3 (0.25)", beforePath), len(list(st, "people")); n != want {
+		t.Errorf("act 3: at 0.25 %d of %d people are named -- %s", n, want, beforePath)
 	}
 
 	// --- act 4: a house placed by clicks ---------------------------------------
+	// Picked in the Buildings tab, then the greyed Terrain tab clicked before
+	// the map is: the house is judged by ITS tab, not the one on show (B4,
+	// BUG-33 -- until the second review only its unit test said so). Negative
+	// control: canPlace asking the tab on show again, and the ghost says no to
+	// every tile with Terrain's reason (wt-editor-fix2\nc\nc7-pt-viewed-tab.txt).
 	house := pickRow(t, s, "Peasant house")
+	pickTab(t, s, "Terrain")
+
+	if st := editorState(s); str(st, "tab") != "Terrain" || str(st, "tool") != "place" || str(st, "picked") == "" {
+		t.Fatalf("act 4: after clicking the Terrain tab the editor shows %q, tool %q, holding %q",
+			str(st, "tab"), str(st, "tool"), str(st, "picked"))
+	}
+
 	x, y := placeByGhost(t, s, authoring, 3)
 
 	st = editorState(s)
@@ -410,6 +483,99 @@ func TestWorldEditor(t *testing.T) {
 	t.Logf("act 9: the WORLD EDITOR button's village was refused, and the next game was built from %s", launchMap)
 }
 
+// TestWorldEditorRefusesTheWorkingTree is the second 28 Sep review's B, driven
+// the way the reviewer drove it. The first guard refused data/strigoi/maps/
+// village.tmj alone; the reviewer copied the village to a second map in the SAME
+// working-tree folder, launched the harness game with -editor naming it by its
+// relative path -- which the editor resolved against the working directory, the
+// repository -- and a scripted Delete + Ctrl+S overwrote the working-tree file.
+// Under the harness the editor now refuses any map found by that fallback, and
+// any map inside the source tree (d2app/harness.go harnessEditorGuard).
+//
+// The act: a second map in the working tree, opened under the harness by the
+// same relative path. It must be refused -- the game goes to the main menu with
+// the guard's own reason -- and the file must be as it was.
+//
+// Negative control (28 Sep 2026): make harnessEditorGuard return nil and this
+// goes red -- the editor opens the working tree's file. Log:
+// strigoi-harness-runs\wt-editor-fix2\nc\nc2-pt-no-guard.txt.
+func TestWorldEditorRefusesTheWorkingTree(t *testing.T) {
+	if os.Getenv("STRIGOI_HARNESS_ADDR") != "" {
+		t.Skip("attached to a running game; this script launches its own with -editor")
+	}
+
+	repoRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "data", "strigoi", "maps", "village.tmj"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const rel = "data/strigoi/maps/zz-harness-guard-second.tmj"
+
+	second := filepath.Join(repoRoot, filepath.FromSlash(rel))
+	if err := os.WriteFile(second, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		for _, p := range []string{second, d2mapedit.BackupPath(second)} {
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				t.Logf("LEFT A FILE IN THE WORKING TREE: %v", err)
+			}
+		}
+	})
+
+	before := hashFile(t, second)
+
+	s := startWith(t, "-editor="+rel)
+
+	screen := ""
+
+	for i := 0; i < 60 && screen != "main_menu" && screen != "world_editor"; i++ {
+		s.call("strigoi_step", map[string]any{"frames": 10})
+
+		info := s.call("strigoi_get_game_info", map[string]any{})
+		if !flag(t, info, "loading") {
+			screen = str(info, "screen")
+		}
+	}
+
+	if screen == "world_editor" {
+		t.Fatalf("under the harness -editor=%s opened %q -- the working tree's own file; a scripted Ctrl+S would "+
+			"write it", rel, str(editorState(s), "disk_path"))
+	}
+
+	if screen != "main_menu" {
+		t.Fatalf("under the harness -editor=%s went to %q, not the main menu with the refusal", rel, screen)
+	}
+
+	why := ""
+
+	for i := 0; i < 30 && why == ""; i++ {
+		if s.callErr("strigoi_get_system_state", map[string]any{"system": "ui"}) == "" {
+			why = str(uiState(s), "main_menu_error")
+		}
+
+		if why == "" {
+			s.call("strigoi_step", map[string]any{"frames": 10})
+		}
+	}
+
+	if !strings.Contains(why, "never by the working directory") {
+		t.Fatalf("the main menu says %q, not the harness's refusal of the working directory", why)
+	}
+
+	if h := hashFile(t, second); h != before {
+		t.Fatalf("THE WORKING TREE'S FILE CHANGED: %s -> %s", before[:16], h[:16])
+	}
+
+	t.Logf("-editor=%s is refused under the harness: %q; the file is as it was", rel, why)
+}
+
 // editorRefusesABrokenMap is act 0, a launch of its own: a copy of the village
 // whose grass PNG is cut after 40 bytes -- a real signature and size, no
 // picture. The validator (which reads the header) passes it and the engine
@@ -502,6 +668,111 @@ func editorRefusesABrokenMap(t *testing.T, mirror string, raw []byte) {
 }
 
 // ---- the instruments ----------------------------------------------------------
+
+// checkLabels is the names' instrument (the second 28 Sep review's C), read
+// from the editor provider's record of the last frame drawn: every name drawn
+// lies wholly inside the map's view, is the person's whole name, keeps two
+// pixels from every mark and overlaps no other name. It answers how many names
+// were drawn. Negative control: the names placed as the second review found
+// them, and it reports "start" over the smith's mark at the fit zoom and the
+// headman's name drawn as "headman ..." at 0.25
+// (strigoi-harness-runs\wt-editor-fix2\nc\nc8-pt-old-names.txt).
+func checkLabels(t *testing.T, st map[string]any, act, shot string) int {
+	t.Helper()
+
+	view := viewRect(st)
+
+	type box struct {
+		who string
+		r   image.Rectangle
+	}
+
+	var marks, names []box
+
+	for _, v := range list(st, "people") {
+		p, _ := v.(map[string]any)
+
+		who := str(p, "name")
+		if str(p, "class") == "player_start" {
+			who = "start"
+		}
+
+		if m := rectOf(list(p, "mark")); !m.Empty() {
+			marks = append(marks, box{who, m})
+		}
+
+		l := rectOf(list(p, "label"))
+		if l.Empty() {
+			continue
+		}
+
+		if got := str(p, "label_text"); got != who {
+			t.Errorf("%s: %s's name is drawn as %q -- %s", act, who, got, shot)
+		}
+
+		if !l.In(view) {
+			t.Errorf("%s: %s's name %v is not wholly inside the map's view %v -- %s", act, who, l, view, shot)
+		}
+
+		names = append(names, box{who, l})
+	}
+
+	if len(marks) == 0 {
+		t.Errorf("%s: the provider reports no marks at all -- %s", act, shot)
+	}
+
+	for i, n := range names {
+		// Two pixels round every mark: a name glued to someone else's mark
+		// reads as his (the headman's, flipped left at 0.25, began one pixel
+		// after the woman's mark in this fix's first run).
+		for _, m := range marks {
+			if n.r.Overlaps(m.r.Inset(-2)) {
+				t.Errorf("%s: %s's name %v lies over or against %s's mark %v -- %s", act, n.who, n.r, m.who, m.r,
+					shot)
+			}
+		}
+
+		for _, o := range names[i+1:] {
+			if n.r.Overlaps(o.r) {
+				t.Errorf("%s: %s's name %v lies over %s's %v -- %s", act, n.who, n.r, o.who, o.r, shot)
+			}
+		}
+	}
+
+	return len(names)
+}
+
+// personNamed is the provider's row for the person whose name holds name, with
+// his tile as tile_x and tile_y.
+func personNamed(t *testing.T, st map[string]any, name string) map[string]any {
+	t.Helper()
+
+	for _, v := range list(st, "people") {
+		p, _ := v.(map[string]any)
+		if strings.Contains(str(p, "name"), name) {
+			if tile := list(p, "tile"); len(tile) == 2 {
+				p["tile_x"], p["tile_y"] = tile[0], tile[1]
+			}
+
+			return p
+		}
+	}
+
+	t.Fatalf("no person named %q on the map", name)
+
+	return nil
+}
+
+// rectOf reads a provider rectangle, [x0, y0, x1, y1]; empty for anything else.
+func rectOf(v []any) image.Rectangle {
+	if len(v) != 4 {
+		return image.Rectangle{}
+	}
+
+	f := func(i int) int { n, _ := v[i].(float64); return int(n) }
+
+	return image.Rect(f(0), f(1), f(2), f(3))
+}
 
 // editorState is the editor's harness provider.
 func editorState(s *session) map[string]any {
@@ -780,6 +1051,13 @@ func near(c color.Color, want color.RGBA, tol int) bool {
 // at full size on anchors scaled to 0.08 fails it by thousands of pixels. It
 // also counts the pixels well inside the diamond that are background: a hole
 // in the ground.
+//
+// A HOLE IS THE BACKGROUND EXACTLY (the second 28 Sep review). The editor fills
+// the view with edColVoid and nothing else paints it, so a seam shows that
+// colour to the bit: every background pixel of the reviewer's own grid-off
+// screenshot at the fit zoom is exact but one (193,724 of 193,725). Within two
+// levels, as the ink test below allows, a dark timber in a structure's art
+// (0x0b0c0e) counted as one at 0.5.
 func inkOutsideTheMap(img image.Image, st map[string]any, above float64) (stray, uncovered, inside int) {
 	corners := list(st, "map_corners")
 	pt := func(i int) (float64, float64) {
@@ -811,7 +1089,7 @@ func inkOutsideTheMap(img image.Image, st map[string]any, above float64) (stray,
 			if math.Abs(fx-cx)/(hw-pad)+math.Abs(fy-cy)/(hh-pad) <= 1 {
 				inside++
 
-				if void {
+				if near(img.At(x, y), editorVoid, 0) {
 					uncovered++
 				}
 
