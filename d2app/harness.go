@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	harnessVersion     = "0.14.0"         // 29 Sep (M4.6 B4a): a load resumes the world file -- start_game reports it (load) and refuses a seed the file was not saved on; the digest gains a process part, resume_digest and each system's hash, and leaves screen coordinates out (BUG-58); game_info reports the last load and the script's dials; ui reports kit_torch_left. 0.13.1, 29 Sep (M4.6 B3 review): strigoi_save_game's to must be under %APPDATA% or a temp folder, outside the source tree and none of his files (BAD_ARGUMENT), world_path absolute, a block the load's checks refuse is INTERNAL; strigoi_remove_entity drops the body (body_dropped). 0.13.0, 28 Sep (M4.6 B3): strigoi_save_game is Game.SaveWorld -- the world file, the .od2 and the sidecar, refusals by code, omit/to, world_path; the scene provider reports natives and the map; a creature reports creature_id. 0.12.6, 28 Sep (second editor review): the editor guard refuses the whole source tree; the editor provider reports grid, label_zoom and each person's mark and label; the menu's ui provider reports main_menu_error. 0.12.5: the "editor" provider (settable zoom), game_info's map_* and playtest fields
+	harnessVersion     = "0.14.1"         // 29 Sep (M4.6 B4a review fixes): start_game's seed refusal only for a file the load's step 1 takes; the load report says preload and ignored; start_seed, ui.talent_cells and ui.journal_notice are in the digest's process part; meters.stamina is settable; p:1 is always the current local player. 0.14.0, 29 Sep (M4.6 B4a): a load resumes the world file -- start_game reports it (load) and refuses a seed the file was not saved on; the digest gains a process part, resume_digest and each system's hash, and leaves screen coordinates out (BUG-58); game_info reports the last load and the script's dials; ui reports kit_torch_left. 0.13.1, 29 Sep (M4.6 B3 review): strigoi_save_game's to must be under %APPDATA% or a temp folder, outside the source tree and none of his files (BAD_ARGUMENT), world_path absolute, a block the load's checks refuse is INTERNAL; strigoi_remove_entity drops the body (body_dropped). 0.13.0, 28 Sep (M4.6 B3): strigoi_save_game is Game.SaveWorld -- the world file, the .od2 and the sidecar, refusals by code, omit/to, world_path; the scene provider reports natives and the map; a creature reports creature_id. 0.12.6, 28 Sep (second editor review): the editor guard refuses the whole source tree; the editor provider reports grid, label_zoom and each person's mark and label; the menu's ui provider reports main_menu_error. 0.12.5: the "editor" provider (settable zoom), game_info's map_* and playtest fields
 	harnessDefaultAddr = "127.0.0.1:6670" // the game server owns 6669
 	harnessQueueDepth  = 64
 	harnessRingCap     = 5000
@@ -482,22 +482,29 @@ func harnessOnDraw(fn func()) error { return harnessRunOn(harness.drawQ, fn) }
 
 // harnessHandleFor assigns stable sequential handles: p:1 for the local
 // player, e:N for everything else in first-seen order. Caller holds no lock.
+//
+// P:1 IS ALWAYS THE CURRENT LOCAL PLAYER (BUG-64, found by the B4a review
+// fixes, 29 Sep 2026). A process that played hero A, then hero B (another
+// seed, so another id), then A again pointed p:1 at B for good: A's id already
+// had its handle, so the reverse map was never put back, and every tool that
+// reads "p:1" (strigoi_get_player) answered UNKNOWN_HANDLE in A's game.
 func harnessHandleFor(id, localPlayerID string) string {
 	harness.mu.Lock()
 	defer harness.mu.Unlock()
+
+	if id != "" && id == localPlayerID {
+		harness.handles[id] = "p:1"
+		harness.rhandles["p:1"] = id
+
+		return "p:1"
+	}
 
 	if h, ok := harness.handles[id]; ok {
 		return h
 	}
 
-	var h string
-
-	if id != "" && id == localPlayerID {
-		h = "p:1"
-	} else {
-		harness.handleSeq++
-		h = fmt.Sprintf("e:%d", harness.handleSeq)
-	}
+	harness.handleSeq++
+	h := fmt.Sprintf("e:%d", harness.handleSeq)
 
 	harness.handles[id] = h
 	harness.rhandles[h] = id

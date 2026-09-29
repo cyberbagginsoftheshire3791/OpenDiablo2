@@ -248,7 +248,16 @@ deferral written only in a commit message is a deferral that has been lost.
   load's own verbs (`PrepareLoad`, `Game.restoreClock`, `checkLoad`,
   `resumeLoad`, `abandonLoad`, `SetLoadAside`, `App.FallBackToDawn`,
   `d2save.SetAside`, `d2server.SetNextStartPosition`, `Player.StandAt`,
-  `GameControls.RestoreRun`, `LastLoad`) as wire.
+  `GameControls.RestoreRun`, `LastLoad`) as wire. **The B4a review fixes (29
+  Sep 2026)** added the load's safety verbs as wire -- `keepPreload`,
+  `restorePreload`, `RestorePreload`, `recoverPreload` (his sidecar kept
+  before a load writes over it, put back on any refusal, a crashed load
+  undone: BUG-60), `ignoreFromNowOn` (a refused file that cannot be moved is
+  not read again: BUG-62), `refuseNetworkReload` (rule 9 on "load last
+  save"), `d2server.ClearNextGame` -- and `PeekLoad` as observe (start_game's
+  seed check reads step 1's verdict; the shipped game has no script).
+  `d2server.ArmedForNextGame` is read by tests only and is not on the
+  register.
 
 The rule for this section: **if the gate cannot express it, write it here on
 the day you defer it, and name the milestone that picks it up.**

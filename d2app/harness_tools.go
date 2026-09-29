@@ -1223,16 +1223,17 @@ func harnessWriteKit(a *App, savePath, loadout string) error {
 }
 
 // harnessWorldSeed is the seed of the world save beside a hero save, when a
-// file a load could read is there (M4.6 B4a: start_game refuses to resume it
-// on another seed).
+// load would take it (M4.6 B4a: start_game refuses to resume it on another
+// seed). A file the load's step 1 refuses anyway -- another hero's, a torn
+// save, a hunted night, one this build cannot read -- has no seed to hold the
+// script to: the game begins at dawn on the seed the script asked for (the B4a
+// review, C2: the refusal used to fire first, for a file the load would never
+// have resumed). A file that passes step 1 and is refused after the game
+// opens (a changed map, a block) still holds the script to its seed: that
+// game, and the dawn that replaces it, run on the file's (C3).
 func harnessWorldSeed(savePath string) (int64, bool) {
-	data, err := os.ReadFile(d2save.WorldPath(savePath)) // nolint:gosec // the hero's own save
-	if err != nil {
-		return 0, false
-	}
-
-	w, err := d2save.Decode(data)
-	if err != nil {
+	w, refusal := d2gamescreen.PeekLoad(savePath)
+	if w == nil || refusal != nil {
 		return 0, false
 	}
 

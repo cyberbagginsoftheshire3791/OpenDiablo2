@@ -2,6 +2,7 @@ package d2world
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"testing"
 )
@@ -429,5 +430,60 @@ func TestMetersHarnessStateIsEncodable(t *testing.T) {
 		if _, ok := state[key]; !ok {
 			t.Errorf("the assertion needs %q and the provider does not report it", key)
 		}
+	}
+}
+
+// windedBody is a testBody with a wind (Winded), as the hero's stats are.
+type windedBody struct {
+	testBody
+	stamina, maxStamina float64
+}
+
+func (b *windedBody) SetStamina(s float64) error {
+	if s < 0 || s > b.maxStamina {
+		return fmt.Errorf("stamina %v is not between 0 and %v", s, b.maxStamina)
+	}
+
+	b.stamina = s
+
+	return nil
+}
+
+// The B4a review, A3: the "stamina" field stands a winded body at a wind --
+// test setup, as "health" is, so the world save's acceptance test can save a
+// wind a fresh game does not have (the village's tiles are a town's, where
+// running never spends it). Through the squads (the game's "meters") too. A
+// body with no wind refuses it, and so does a wind the body refuses.
+func TestTheMetersStandAWindedBodyAtAWind(t *testing.T) {
+	c := NewClock(DefaultClockDials())
+	defer c.Close()
+
+	m := NewMeters(c, DefaultMeterDials())
+	defer m.Close()
+
+	body := &windedBody{testBody: testBody{health: 10, max: 10}, maxStamina: 84}
+	m.SetBody(body)
+
+	if err := m.HarnessSet("stamina", 30.5); err != nil || body.stamina != 30.5 {
+		t.Fatalf("stamina 30.5: err %v, the body's wind %v", err, body.stamina)
+	}
+
+	if err := m.HarnessSet("stamina", 90.0); err == nil || body.stamina != 30.5 {
+		t.Fatalf("a wind past his maximum is refused and changes nothing: err %v, wind %v", err, body.stamina)
+	}
+
+	s := NewSquads(c, DefaultMeterDials(), nil)
+	defer s.Close()
+
+	s.BindPlayer(body, "p:1")
+
+	if err := s.HarnessSet("stamina", 12.0); err != nil || body.stamina != 12 {
+		t.Fatalf("through the squads: err %v, wind %v", err, body.stamina)
+	}
+
+	m.SetBody(&testBody{health: 10, max: 10})
+
+	if err := m.HarnessSet("stamina", 1.0); err == nil {
+		t.Fatal("a body with no wind refuses a stamina")
 	}
 }

@@ -989,11 +989,21 @@ func (w *World) CheckHeroFile(od2 []byte) error {
 // forward; so a sidecar of another generation means a save was cut off between
 // its files. B4's load calls it in step 1 and, on a refusal, falls back per
 // rule 7.
+//
+// A sidecar of NO generation is the other way the pair parts (the B4a review,
+// A2): a game that did not resume a world file carries none in its kit saves
+// (d2gamescreen's bindKit), so his sidecar has moved on past this file, which
+// is older than what he has -- and is refused as such, never resumed over it.
 func (w *World) SameMoment(sidecar []byte) error {
 	var sc embeddedSidecar
 
 	if err := json.Unmarshal(sidecar, &sc); err != nil {
 		return refuse(ReasonPairMoment, "his sidecar is not a kit file: %v", err)
+	}
+
+	if sc.Generation == "" && w.SavedAt != "" {
+		return refuse(ReasonPairMoment, "his sidecar is of no world save -- a game that did not resume this world file of %q "+
+			"has written it since, so this file is older than what he has", w.SavedAt)
 	}
 
 	if sc.Generation != w.SavedAt {

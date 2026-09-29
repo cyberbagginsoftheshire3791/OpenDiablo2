@@ -24,17 +24,20 @@ import (
 // docs/m4.6-world-save-notes.md ("The B4 load order"), and does every step of
 // it that names no hostile entity:
 //
-//  1. BEFORE Open (PrepareLoad, from App.ToCreateGame): read the world file;
-//     refuse it -- and fall back per rule 7, the file set aside and he begins
-//     at dawn from his sidecar -- when its version is not 1 or it is not a file
-//     a load could read (d2save.Decode), the game is a network game (rule 9),
-//     it is another hero's (World.CheckHeroFile) or a torn save
-//     (World.SameMoment), or it holds a hunted night (B4a's own limit: packs,
-//     watches, chases, an entity the map does not build, a monster's body, a
-//     deployed squad -- all B4b's). Then write the embedded sidecar over his
-//     sidecar file. The App hands the server the file's seed and his saved
-//     place (SetNextGameSeed, SetNextStartPosition) and, in a harness build,
-//     the uuid stream its seed from byte 0.
+//  1. BEFORE Open (PrepareLoad, from App.ToCreateGame): undo a load a crash
+//     cut off (recoverPreload); read the world file (unless this process
+//     refused it and could not move it: B1); refuse it -- and fall back per
+//     rule 7, the file set aside and he begins at dawn from his sidecar --
+//     when its version is not 1 or it is not a file a load could read
+//     (d2save.Decode), the game is a network game (rule 9), it is another
+//     hero's (World.CheckHeroFile) or a torn save (World.SameMoment); or leave
+//     it where it is, for B4b, when it holds a hunted night (B4a's own limit:
+//     packs, watches, chases, an entity the map does not build, a monster's
+//     body, a deployed squad). Then KEEP HIS OWN SIDECAR (in memory and as
+//     .preload: preload.go) and write the embedded sidecar over his sidecar
+//     file. The App hands the server the file's seed and his saved place
+//     (SetNextGameSeed, SetNextStartPosition) and, in a harness build, the
+//     uuid stream its seed from byte 0.
 //  2. In CreateGame, right after NewClock: the clock, validated and restored
 //     (trap 1 -- every system built after it samples it).
 //  3. (B4b: rebuild the entities. B4a rebuilds none, and checks instead that
@@ -56,11 +59,12 @@ import (
 //  6. The world RNG, after everything that draws from it (trap 6); in a
 //     harness build the uuid stream's count and
 //  7. the dials a script set (the resume hook).
-//  8. ANY REFUSAL AT ANY STEP TEARS THE WHOLE GAME DOWN and falls back per
-//     rule 7. A half-restored world never runs a frame: the first frame of a
-//     loading game binds and restores before anything else in Advance, and a
-//     game that fails to restore holds its world, writes nothing on the way
-//     out, and is replaced by the dawn (abandonLoad).
+//  8. ANY REFUSAL AT ANY STEP TEARS THE WHOLE GAME DOWN, PUTS HIS OWN SIDECAR
+//     BACK (SetLoadAside: the B4a review, A1) and falls back per rule 7, on
+//     the file's seed. A half-restored world never runs a frame: the first
+//     frame of a loading game binds and restores before anything else in
+//     Advance, and a game that fails to restore holds its world, writes
+//     nothing on the way out, and is replaced by the dawn (abandonLoad).
 //
 // WHAT B4a LEAVES TO B4b: every entity the map does not build (packs, the
 // risen, deployed squad models) and everything that points at one -- the
@@ -102,11 +106,23 @@ func refuseLoad(code, format string, args ...interface{}) *LoadRefusal {
 }
 
 // setsAside reports whether a refusal moves the file out of the way (rule 7).
-// A network game's refusal does not: the file is a good single-player save,
-// and the next single-player load resumes it (decision B4a-2). Nor does a
-// sidecar that could not be written: the fault is the disk's, not the file's.
+//
+// EVERY REFUSAL BUT A HUNTED NIGHT'S (the B4a review, 29 Sep 2026). HUNTED is
+// not a file this build cannot read but one B4a cannot resume yet and B4b
+// will: it stays where it is, and he begins at dawn with his sidecar untouched
+// (decision B4a-R3, the review's B2: most real saves -- every dusk, night and
+// dawn save measured -- are hunted, and setting each aside would throw away
+// the saves B4b is being built to resume). A network game's refusal and a
+// sidecar that could not be written used to leave the file too (decision
+// B4a-2, OVERTURNED by decision B4a-R1): a session that did not resume the
+// file carried its generation in every kit save, so the next single-player
+// load resumed the old moment over everything that session had earned
+// (BUG-61). They set it aside now. The file a load leaves (HUNTED, or one that
+// could not be moved) is made harmless the other way: a game that did not
+// resume it never writes its generation (bindKit), so the file reads TORN the
+// moment his sidecar moves on.
 func (r *LoadRefusal) setsAside() bool {
-	return r.Code != LoadRefusedNetwork && r.Code != LoadRefusedSidecar
+	return r.Code != LoadRefusedHunted
 }
 
 // LoadReport is what the last load did, for the harness (strigoi_start_game,
@@ -137,6 +153,26 @@ type LoadReport struct {
 	// dawn game keeps this report -- it finds no world file, having set it
 	// aside -- so the refusal it replaced is still what the harness reads.
 	FellBack bool `json:"fell_back,omitempty"`
+
+	// Preload is what became of the copy of his sidecar step 1 keeps before
+	// it writes the world file's over it (the B4a review, A1; preload.go):
+	// "restored" -- the load was refused after that write and his own was put
+	// back, byte for byte; "recovered" -- a load a crash cut off was undone at
+	// this start; "discarded" -- a copy a crash left behind was older than the
+	// world save beside it; "kept" -- a copy a crash left behind could not be
+	// judged and was moved to .preload.kept, never offered and never deleted.
+	Preload string `json:"preload,omitempty"`
+
+	// Ignored: the file was refused earlier in this process and could not be
+	// set aside, so no load reads it again until it changes (the B4a review,
+	// B1: without this the dawn that replaced it found it again, refused it
+	// again, and reloaded -- 51 teardowns in 25 s).
+	Ignored bool `json:"ignored,omitempty"`
+
+	// carried: this report was kept by the dawn that replaced its game, and
+	// the load after that one starts its own (a script's next start_game of
+	// the same hero used to read the old refusal as its own).
+	carried bool
 }
 
 // nolint:gochecknoglobals // one load at a time, reported to the harness
@@ -175,27 +211,70 @@ func updateLastLoad(f func(r *LoadReport)) {
 // It returns where the file went. afterOpen is a refusal that tears an opened
 // game down (FellBack). The App calls it for a refusal CreateGame returned;
 // PrepareLoad and abandonLoad call it for their own.
+//
+// FIRST IT PUTS HIS SIDECAR BACK (the B4a review, A1; BUG-60). Step 1 writes
+// the world file's copy of his sidecar over his own before the game opens; a
+// refusal after that -- the seed, the map, the villagers or a block (steps 2,
+// 4 and 5), or the sidecar's own write -- used to leave the world file's copy
+// there, so the dawn he fell back to had the saved moment's experience and
+// standing, everything he had earned since was gone, and his .od2 (not
+// rewritten by a load) was of the later moment: two moments mixed. Now every
+// refusal of a prepared load restores the copy step 1 kept, byte for byte,
+// before anything else, and the dawn is his own last-entered dawn -- the same
+// dawn a refusal at step 1 gives. A refusal with nothing kept restores
+// nothing.
+//
+// A FILE THAT CANNOT BE SET ASIDE IS IGNORED FOR THE REST OF THIS PROCESS (the
+// B4a review, B1; BUG-62). The move is retried for half a second
+// (d2items.RenameRetrying, inside d2save.SetAside); if the file is still held
+// it stays, and until it changes no load in this process reads it again --
+// the dawn that replaces a refused game used to find it, refuse it, tear down
+// and reload, for ever.
 func SetLoadAside(savePath string, refusal *LoadRefusal, afterOpen bool) string {
 	worldPath := d2save.WorldPath(savePath)
 	aside := ""
 
+	restored, restoreErr := restorePreload(savePath)
+
 	var asideErr error
 
 	if refusal.setsAside() {
-		aside, asideErr = d2save.SetAside(worldPath)
+		aside, asideErr = setAsideWorld(worldPath)
+		if asideErr != nil {
+			ignoreFromNowOn(worldPath, refusal)
+		}
 	}
 
 	updateLastLoad(func(r *LoadReport) {
 		r.WorldPath, r.Found, r.Resumed = worldPath, true, false
 		r.Refused, r.Reason, r.SetAside, r.FellBack = refusal.Code, refusal.Detail, aside, afterOpen
 
+		if restored {
+			r.Preload = "restored"
+		}
+
+		if restoreErr != nil {
+			r.Reason += fmt.Sprintf(" (and his own sidecar could not be put back: %v -- it is kept as %s)",
+				restoreErr, preloadPath(savePath))
+		}
+
 		if asideErr != nil {
-			r.Reason += fmt.Sprintf(" (and it could not be set aside: %v)", asideErr)
+			r.Reason += fmt.Sprintf(" (and it could not be set aside: %v -- no load reads it again in this run)", asideErr)
 		}
 	})
 
 	return aside
 }
+
+// setAsideWorld is d2save.SetAside, and writeStepOne the sidecar write of
+// step 1 (d2items.WriteHero); a test swaps them for the failures it cannot
+// cause portably -- a file held open, a write the disk refuses half done.
+//
+// nolint:gochecknoglobals // seams for failures a unit test cannot cause portably
+var (
+	setAsideWorld = d2save.SetAside
+	writeStepOne  = d2items.WriteHero
+)
 
 // PrepareLoad is the load's step 1, before the game client opens: the world
 // file beside the hero save at savePath, read and checked by everything that
@@ -207,6 +286,9 @@ func SetLoadAside(savePath string, refusal *LoadRefusal, afterOpen bool) string 
 //
 // network is a network game (a LAN host or a client): rule 9 refuses loads as
 // it refuses saves, because the TCP handlers race the counted world stream.
+// Since the B4a review (A2, decision B4a-R1) the refused file is SET ASIDE, as
+// every other refusal's but a hunted night's is: his hero, kit and progress
+// carry on into the network game; the saved night does not.
 func PrepareLoad(savePath string, network bool) (*d2save.World, *LoadRefusal) {
 	worldPath := d2save.WorldPath(savePath)
 	prev := LastLoad()
@@ -217,30 +299,76 @@ func PrepareLoad(savePath string, network bool) (*d2save.World, *LoadRefusal) {
 		return nil, nil
 	}
 
+	// A1: a load a crash cut off between step 1's write and its end is undone
+	// before anything reads his sidecar (preload.go).
+	recovered := recoverPreload(savePath)
+	if recovered != "" {
+		updateLastLoad(func(rep *LoadReport) { rep.Preload = recovered })
+	}
+
+	// B1: a file refused earlier in this process that could not be set aside
+	// is not read again until it changes. The dawn that replaces a torn-down
+	// load keeps that refusal as its report.
+	if r := ignoredRefusal(worldPath); r != nil {
+		if prev.WorldPath == worldPath && prev.Refused != "" && !prev.carried {
+			prev.Steps, prev.carried = []string{}, true
+			setLastLoad(prev)
+		}
+
+		updateLastLoad(func(rep *LoadReport) {
+			rep.Found, rep.Refused, rep.Ignored = true, r.Code, true
+			if rep.Reason == "" {
+				rep.Reason = r.Detail
+			}
+
+			if recovered != "" {
+				rep.Preload = recovered
+			}
+		})
+
+		return nil, r
+	}
+
 	data, err := os.ReadFile(worldPath) // nolint:gosec // the hero's own save
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		// The dawn that replaces a load refused after its game opened: the
-		// refusal is still the report (FellBack).
-		if prev.FellBack && prev.WorldPath == worldPath {
+		// refusal is still the report (FellBack) -- for that dawn only.
+		if prev.FellBack && prev.WorldPath == worldPath && !prev.carried {
+			prev.carried = true
 			setLastLoad(prev)
 		}
 
 		return nil, nil
 	case err != nil:
 		// Unreadable is not "not there": say so, and begin at dawn. It is
-		// not set aside -- a file that cannot be read cannot be moved either.
+		// set aside like every other refusal (the B4a review, A2) -- a file
+		// held open cannot be moved either, and is then ignored for the rest
+		// of this run (B1).
 		r := refuseLoad(LoadRefusedFile, "reading %s: %v", worldPath, err)
-		updateLastLoad(func(rep *LoadReport) { rep.Found, rep.Refused, rep.Reason = true, r.Code, r.Detail })
+		SetLoadAside(savePath, r, false)
 
 		return nil, r
 	}
 
-	w, refusal := checkWorldFile(savePath, data, network)
+	w, sidecar, refusal := checkWorldFile(savePath, data, network)
 	if refusal != nil {
 		SetLoadAside(savePath, refusal, false)
 
 		return nil, refusal
+	}
+
+	// A1: HIS OWN SIDECAR IS KEPT BEFORE THE WORLD FILE'S IS WRITTEN OVER IT,
+	// in memory and as N.od2.strigoi.json.preload, so any refusal from here
+	// on can put it back (SetLoadAside) and a crash before the load ends is
+	// undone at the next start (recoverPreload). A copy that cannot be kept
+	// is a load that could not be undone: refused, before anything is
+	// written.
+	if err := keepPreload(savePath, sidecar); err != nil {
+		r := refuseLoad(LoadRefusedSidecar, "keeping his sidecar before the load: %v", err)
+		SetLoadAside(savePath, r, false)
+
+		return nil, r
 	}
 
 	// The world file's sidecar is his sidecar now: it is the kit, progress,
@@ -250,15 +378,15 @@ func PrepareLoad(savePath string, network bool) (*d2save.World, *LoadRefusal) {
 	// death screen's copy -- taken by bindKit from this file -- is the save's.
 	// The torch's minutes in it are NOT zeroed here (decision B4a-1): the load
 	// zeroes them in the kit it binds (D1), so a fall back to dawn keeps them.
-	var doc bytes.Buffer
-	if err := json.Indent(&doc, w.Sidecar, "", "  "); err != nil {
+	doc, err := stepOneSidecar(w)
+	if err != nil {
 		r := refuseLoad(LoadRefusedFile, "the world file's sidecar: %v", err)
 		SetLoadAside(savePath, r, false)
 
 		return nil, r
 	}
 
-	if err := d2items.WriteHero(d2items.SidecarPath(savePath), doc.Bytes()); err != nil {
+	if err := writeStepOne(d2items.SidecarPath(savePath), doc); err != nil {
 		r := refuseLoad(LoadRefusedSidecar, "writing his sidecar from the world file: %v", err)
 		SetLoadAside(savePath, r, false)
 
@@ -270,45 +398,88 @@ func PrepareLoad(savePath string, network bool) (*d2save.World, *LoadRefusal) {
 	return w, nil
 }
 
+// stepOneSidecar is the document step 1 writes over his sidecar: the world
+// file's embedded sidecar, re-indented as d2items.HeroBytes writes it.
+func stepOneSidecar(w *d2save.World) ([]byte, error) {
+	var doc bytes.Buffer
+	if err := json.Indent(&doc, w.Sidecar, "", "  "); err != nil {
+		return nil, err
+	}
+
+	return doc.Bytes(), nil
+}
+
+// PeekLoad is step 1's checks and nothing else: the world file beside the
+// save at savePath, and whether a single-player load would take it -- no
+// file set aside, nothing written, no report. The harness's start_game asks
+// it before refusing a seed the file was not saved on (the B4a review, C2):
+// a file the load refuses anyway begins at dawn on the seed the script asked
+// for, so that seed is no reason to refuse the start. nil, nil: no file.
+func PeekLoad(savePath string) (*d2save.World, *LoadRefusal) {
+	worldPath := d2save.WorldPath(savePath)
+	if savePath == "" {
+		return nil, nil
+	}
+
+	if r := ignoredRefusal(worldPath); r != nil {
+		return nil, r
+	}
+
+	data, err := os.ReadFile(worldPath) // nolint:gosec // the hero's own save
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil, nil
+	case err != nil:
+		return nil, refuseLoad(LoadRefusedFile, "reading %s: %v", worldPath, err)
+	}
+
+	w, _, r := checkWorldFile(savePath, data, false)
+
+	return w, r
+}
+
 // checkWorldFile is step 1's refusals, in order: rule 9, the file itself, the
-// hero it belongs to, the moment of his sidecar, and B4a's own limit.
-func checkWorldFile(savePath string, data []byte, network bool) (*d2save.World, *LoadRefusal) {
+// hero it belongs to, the moment of his sidecar, and B4a's own limit. It
+// returns his sidecar file as it read it, which step 1 keeps (A1).
+func checkWorldFile(savePath string, data []byte, network bool) (*d2save.World, []byte, *LoadRefusal) {
 	if network {
-		return nil, refuseLoad(LoadRefusedNetwork, "a network game resumes no world save (rule 9); he begins at dawn, and the file waits for a single-player game")
+		return nil, nil, refuseLoad(LoadRefusedNetwork,
+			"a network game resumes no world save (rule 9); he begins with his hero, kit and progress, and the saved night is set aside")
 	}
 
 	w, err := d2save.Decode(data)
 	if err != nil {
 		if errors.Is(err, d2save.ErrWorldVersion) {
-			return nil, refuseLoad(LoadRefusedVersion, "%v", err)
+			return nil, nil, refuseLoad(LoadRefusedVersion, "%v", err)
 		}
 
-		return nil, refuseLoad(LoadRefusedFile, "%v", err)
+		return nil, nil, refuseLoad(LoadRefusedFile, "%v", err)
 	}
 
 	od2, err := os.ReadFile(savePath) // nolint:gosec // the hero's own save
 	if err != nil {
-		return nil, refuseLoad(LoadRefusedHero, "reading his .od2: %v", err)
+		return nil, nil, refuseLoad(LoadRefusedHero, "reading his .od2: %v", err)
 	}
 
 	if err := w.CheckHeroFile(od2); err != nil {
-		return nil, refuseLoad(LoadRefusedHero, "%v", err)
+		return nil, nil, refuseLoad(LoadRefusedHero, "%v", err)
 	}
 
 	sidecar, err := os.ReadFile(d2items.SidecarPath(savePath)) // nolint:gosec // the hero's own save
 	if err != nil {
-		return nil, refuseLoad(LoadRefusedTorn, "his sidecar: %v -- the world file's moment has no sidecar beside it", err)
+		return nil, nil, refuseLoad(LoadRefusedTorn, "his sidecar: %v -- the world file's moment has no sidecar beside it", err)
 	}
 
 	if err := w.SameMoment(sidecar); err != nil {
-		return nil, refuseLoad(LoadRefusedTorn, "%v", err)
+		return nil, nil, refuseLoad(LoadRefusedTorn, "%v", err)
 	}
 
 	if why := huntedNight(w); why != "" {
-		return nil, refuseLoad(LoadRefusedHunted, "%s -- a hunted night is burst B4b's to resume", why)
+		return nil, nil, refuseLoad(LoadRefusedHunted,
+			"%s -- a hunted night is burst B4b's to resume; the file stays for it, and he begins at dawn", why)
 	}
 
-	return w, nil
+	return w, sidecar, nil
 }
 
 // huntedNight is why a file is not a quiet evening, or "": B4a resumes a world
@@ -689,7 +860,8 @@ func (v *Game) restoreScene(s d2save.Scene) {
 
 // loadFallback is the App's way back from a load refused after its game was
 // opened: the game is closed, and the same hero opened again -- with the world
-// file set aside, at dawn -- on the seed this game ran on.
+// file set aside and his own sidecar put back, at dawn -- on the file's seed
+// (the B4a review, C3; before it, the seed this game ran on).
 type loadFallback interface {
 	FallBackToDawn(savePath string, seed int64, reason string)
 }
@@ -715,6 +887,14 @@ func (v *Game) abandonLoad(err error) {
 		return
 	}
 
+	// C3 (the B4a review): the dawn that replaces a refused load runs on the
+	// FILE's seed, wherever it was refused. The game ran on it too unless the
+	// refusal is SEED, which is exactly the case the file's seed must win.
+	seed := v.gameClient.Seed
+	if v.pendingLoad != nil {
+		seed = v.pendingLoad.Seed
+	}
+
 	v.loadAbandoned = true
 	v.pendingLoad = nil
 
@@ -723,6 +903,8 @@ func (v *Game) abandonLoad(err error) {
 		refusal = refuseLoad(LoadRefusedBlock, "%v", err)
 	}
 
+	// His own sidecar goes back first (A1, inside SetLoadAside), then the
+	// file is set aside, then the dawn opens on what he had.
 	save := v.gameClient.SaveFilePath
 	aside := SetLoadAside(save, refusal, true)
 	reason := fmt.Sprintf("the world save was not resumed: %v", refusal)
@@ -734,7 +916,7 @@ func (v *Game) abandonLoad(err error) {
 	v.Errorf("LOAD refused, torn down: %s", reason)
 
 	if fb, ok := v.navigator.(loadFallback); ok {
-		fb.FallBackToDawn(save, v.gameClient.Seed, reason)
+		fb.FallBackToDawn(save, seed, reason)
 
 		return
 	}
@@ -744,9 +926,12 @@ func (v *Game) abandonLoad(err error) {
 	}
 }
 
-// loadResumed is a load that restored every block: the report says so, and
-// the log names the moment and the steps.
+// loadResumed is a load that restored every block: the report says so, the
+// log names the moment and the steps, and the copy of his sidecar step 1 kept
+// is let go (A1): the world file's moment is his now.
 func (v *Game) loadResumed() {
+	forgetPreload(v.gameClient.SaveFilePath)
+
 	savedAt := ""
 
 	updateLastLoad(func(r *LoadReport) {
@@ -755,4 +940,22 @@ func (v *Game) loadResumed() {
 	})
 
 	v.Infof("LOAD resumed the world saved at %s: %v", savedAt, v.loadSteps)
+}
+
+// refuseNetworkReload is rule 9 for the death screen's "load last save" out
+// of a network game (the B4a review, C4): the world file beside his save, if
+// one is there, is refused NETWORK and set aside before the App reopens him
+// as a local game, so the reload begins at dawn with his hero, kit and
+// progress -- never at a single-player night the network game did not play.
+func refuseNetworkReload(savePath string) {
+	if savePath == "" {
+		return
+	}
+
+	if _, err := os.Stat(d2save.WorldPath(savePath)); err != nil {
+		return
+	}
+
+	SetLoadAside(savePath, refuseLoad(LoadRefusedNetwork,
+		"\"load last save\" out of a network game resumes no world save (rule 9); he begins at dawn, and the saved night is set aside"), false)
 }

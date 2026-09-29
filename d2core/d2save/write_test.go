@@ -215,3 +215,22 @@ func TestSetAsideKeepsWhatTheLoadRefused(t *testing.T) {
 	_, err = SetAside(path)
 	require.Error(t, err, "nothing to set aside is an error, not a silent success")
 }
+
+// The B4a review, A2: SetAside moves a world file it cannot read, under plain
+// ".unread" (its version cannot be named); only a file that is not there is
+// an error. A directory where the file should be is one no read can take, on
+// every system.
+func TestSetAsideMovesAFileItCannotRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "0.od2.world.json")
+	require.NoError(t, os.Mkdir(path, 0o750))
+
+	aside, err := SetAside(path)
+	require.NoError(t, err)
+	require.Equal(t, path+".unread", aside)
+
+	_, err = os.Stat(path)
+	require.True(t, os.IsNotExist(err))
+
+	_, err = SetAside(path)
+	require.Error(t, err, "nothing there is still an error")
+}

@@ -415,21 +415,35 @@ func (g *GameControls) handIconsReport() map[string]interface{} {
 // clock is the controls' own frame clock, the sum of every frame's delta since
 // they were made, for click-repeat timing -- so a game resumed in another
 // process, or by "load last save", reads 0 where the saved one read its count.
+//
+// And two more since the B4a review fixes (29 Sep 2026, BUG-63), found when
+// act 1 of TestSaveResume first took a talent and owed neglect a fraction:
+// talent_cells, the talent panel's cells, which exist only once the panel has
+// been opened in this process (a resumed game that never opened it reports
+// none; whether each is taken is progress.talents, which the systems part
+// keeps), and journal_notice, the journal's timed line on the HUD ("Written in
+// my journal: ..."), which a resumed game has not shown. Both are this
+// process's presentation, compared by the determinism proof and not across a
+// resume.
 func (g *GameControls) HarnessDigest() (world, process map[string]interface{}) {
 	world = g.HarnessState()
-	process = map[string]interface{}{"torch_verbs": world["torch_verbs"], "clock": world["clock"]}
+
+	rect := []string{"x", "y", "w", "h"}
+
+	process = map[string]interface{}{
+		"torch_verbs": world["torch_verbs"], "clock": world["clock"],
+		"talent_cells": withoutKeys(world["talent_cells"], rect...), "journal_notice": world["journal_notice"],
+	}
 
 	for _, key := range []string{
 		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button", "clock_strip_hours_to_dusk",
+		"talent_cells", "journal_notice",
 	} {
 		delete(world, key)
 	}
 
-	rect := []string{"x", "y", "w", "h"}
-
 	world["bars"] = withoutKeys(world["bars"], rect...)
 	world["kit_rows"] = withoutKeys(world["kit_rows"], rect...)
-	world["talent_cells"] = withoutKeys(world["talent_cells"], rect...)
 
 	if talk, ok := world["talk_view"].(map[string]interface{}); ok {
 		talk = copyMap(talk)

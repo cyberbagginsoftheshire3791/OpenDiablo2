@@ -21,6 +21,18 @@ func SetNextGameSeed(seed int64) {
 	atomic.StoreInt64(&nextGameSeed, seed)
 }
 
+// ArmedForNextGame reports whether a seed and a start position are armed for
+// the next game server -- handed over by a load (or a script) and not yet
+// taken. Observability for the B4a review's C5: a game that never opened must
+// leave neither behind.
+func ArmedForNextGame() (seed, start bool) {
+	nextStart.Lock()
+	start = nextStart.set
+	nextStart.Unlock()
+
+	return atomic.LoadInt64(&nextGameSeed) != 0, start
+}
+
 // takeNextGameSeed consumes the override, or mints the default wall-clock
 // seed when none is set.
 func takeNextGameSeed() int64 {

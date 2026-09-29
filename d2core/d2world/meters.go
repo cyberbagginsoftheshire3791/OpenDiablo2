@@ -123,6 +123,16 @@ type Body interface {
 	SetHealth(int)
 }
 
+// Winded is a Body with a wind the harness can stand it at: the hero's
+// stamina, which running spends outside the village (the village's tiles are
+// a town's, where it never drains). The meters do not spend it; the "stamina"
+// settable field writes it, so a script can put him below his maximum -- the
+// world save's acceptance test must save a wind a fresh game does not have
+// (the B4a review, A3). SetStamina refuses a wind below 0 or past his maximum.
+type Winded interface {
+	SetStamina(float64) error
+}
+
 // Meters is the survival model (S1 §5). It drains on the world clock, kills
 // by neglect, and exposes the states R2's combat rules are written in —
 // ReactionAvailable and Shaken — so that M4.5's resolver reads the same
@@ -384,7 +394,7 @@ func (m *Meters) HarnessState() map[string]interface{} {
 
 // HarnessSettableFields lists the test-setup writes the meters allow.
 func (m *Meters) HarnessSettableFields() []string {
-	return []string{"activity", "consume", "fatigue", "food", "health", "water"}
+	return []string{"activity", "consume", "fatigue", "food", "health", "stamina", "water"}
 }
 
 // HarnessSet writes one allow-listed field. The three meters are directly
@@ -430,6 +440,18 @@ func (m *Meters) HarnessSet(field string, value interface{}) error {
 		m.body.SetHealth(int(f))
 
 		return nil
+
+	case "stamina":
+		// His wind, as health above is his health: test setup (B4a review,
+		// A3). Only a body that has a wind takes it.
+		f, ok := toFloat(value)
+		w, winded := m.body.(Winded)
+
+		if !ok || !winded {
+			return fmt.Errorf("stamina wants a number and a body with a wind, got %v", value)
+		}
+
+		return w.SetStamina(f)
 
 	default:
 		return fmt.Errorf("no settable field %q", field)

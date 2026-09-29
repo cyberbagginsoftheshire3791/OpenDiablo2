@@ -576,8 +576,28 @@ this doc fails until it agrees.
   and he at dawn. Two knobs for the negative controls: `STRIGOI_SAVE_RESUME_
   ONLY=b4a` skips act 7, and `STRIGOI_SAVE_RESUME_FROM=<dir>` takes acts 1-3
   from an evening a green run kept at `pt\TestSaveResume\evening` (the files he
-  left with, the world file of T, S_T and S_U) and runs acts 4-6e in about ten
-  seconds.
+  left with, the world file of T, S_T and S_U) and runs acts 4-6g in about
+  fifteen seconds.
+  **The B4a review fixes (29 Sep 2026)** changed and added, in the same test:
+  act 1 now makes every field the load restores ON HIM differ from what a
+  fresh game gives him, and says so in its precondition (`heroNotFresh`): the
+  run toggle on (the HUD's button), his wind below its maximum (the meters'
+  new `stamina` field), a talent taken (Long Marches, from the panel), a
+  fraction of a health point owed to neglect (seven minutes parched), his
+  facing not a fresh game's -- T is 01:37 now. Act 4 starts with NO seed, as
+  the shipped game does, and requires the game on the file's. `refusedToDawn`
+  takes the seed and his sidecar before the attempt, and requires the sidecar
+  byte for byte after the refusal -- his own, never the file's copy. 6c
+  (another hero's) starts on seed 7, which the file was not saved on: a file
+  step 1 refuses anyway is no reason to refuse the start. 6e is the review's
+  A1 probe: his files as act 3 left them beside T's file with the map changed
+  -- `MAP`, fell back, his sidecar act 3's byte for byte, his experience act
+  3's, `load.preload` "restored". **6f** (the review's A2 probe): T's file
+  hidden for one session, which earns 20 experience; the next load finds it
+  TORN (the session's saves carry no generation of it) and sets it aside, the
+  20 kept. **6g** (the review's B1 probe, Windows): the file held open so it
+  cannot be set aside -- one teardown, one dawn, `load.ignored`, the file
+  whole where it was.
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -638,8 +658,10 @@ game logs are the user's to delete; the harness prunes nothing.
 
 Coordinates are **world tiles** (`Position.World()`) everywhere except the
 low-level input tools, which take **screen pixels** (800×600). The local
-player is always handle `p:1`; other entities are `e:N` in first-seen order
-(stable under a seed, per process). Errors come back as `CODE: message — hint`
+player is always handle `p:1` -- the CURRENT game's local player, even when
+a script comes back to a hero after another hero's game on another seed
+(BUG-64, fixed 29 Sep 2026: `p:1` used to stay the other hero's) -- and other
+entities are `e:N` in first-seen order (stable under a seed, per process). Errors come back as `CODE: message — hint`
 with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING ·
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · AWAITING_PLAYER · CLOCK_FROZEN ·
@@ -669,7 +691,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.14.0)
+## The tools (37; harness 0.14.1)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -695,9 +717,9 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | Tool | What |
 |---|---|
 | `strigoi_ping` | Liveness, commit, harness version, mode, tick, uptime |
-| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game; since 0.14.0 (29 Sep, M4.6 B4a) `load`, what the last game's world-save load did (`world_path`, `found`, `resumed`, `saved_at`, `refused` and `reason`, `set_aside`, `fell_back`, and `steps`, the load order as it ran), and `dials`, the script's dials a load re-applies |
+| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game; since 0.14.0 (29 Sep, M4.6 B4a) `load`, what the last game's world-save load did (`world_path`, `found`, `resumed`, `saved_at`, `refused` and `reason`, `set_aside`, `fell_back`, and `steps`, the load order as it ran), and `dials`, the script's dials a load re-applies; since the B4a review fixes (29 Sep) the load report also says `preload` (what became of the copy of his sidecar step 1 keeps: `restored` after a refusal, `recovered`/`discarded`/`kept` for one a crash left) and `ignored` (a file refused earlier in the run that could not be set aside, not read again until it changes) |
 | `strigoi_navigate` | main_menu · character_select · select_hero · credits |
-| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame. **Since 0.14.0 (M4.6 B4a) a `save_path` with a world file beside it RESUMES it** (the game goes through `App.ToCreateGame`, as every way in does): the file's seed and uuid stream, its moment restored before the first frame, `load` in the result saying what the load did (`resumed`, or `refused` with its code and `set_aside`; a refusal falls back to dawn). A `seed` other than the one the world file was saved on is `BAD_ARGUMENT` and starts nothing; no `seed` resumes the file's |
+| `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame. **Since 0.14.0 (M4.6 B4a) a `save_path` with a world file beside it RESUMES it** (the game goes through `App.ToCreateGame`, as every way in does): the file's seed and uuid stream, its moment restored before the first frame, `load` in the result saying what the load did (`resumed`, or `refused` with its code and `set_aside`; a refusal falls back to dawn). A `seed` other than the one the world file was saved on is `BAD_ARGUMENT` and starts nothing -- **for a file the load's step 1 would take** (since the B4a review fixes, 29 Sep: `d2gamescreen.PeekLoad`); a file step 1 refuses anyway (another hero's, a torn save, a hunted night, one this build cannot read) holds the script to no seed, and the game begins at dawn on the seed asked for. No `seed` resumes the file's |
 | `strigoi_save_game` | **Save the game (M4.6 B3, harness 0.13.0): `Game.SaveWorld`.** Writes the world file `N.od2.world.json`, then the `.od2`, then the kit sidecar -- one moment in all three, the sidecar the same bytes the world file embeds -- keeping each previous generation as `.bak`, then re-takes the death screen's "as he entered" copy. Refused, touching no file, with `FIGHTING` (a fight running or not yet settled), `DEAD`, `TALKING`, `JOURNAL`, `LOADOUT`, `NETWORK` (rule 9) or `NOT_READY` (no hero in the world yet). `to` writes ONLY the world file, at that path (his `.od2`, sidecar, `.bak`s and the death copy untouched); `omit:[block...]` leaves top-level blocks out and needs `to` (`BAD_ARGUMENT` otherwise, and for a name that is not a block). Returns `save_path`, `world_path`, `sidecar_path`, `written`, `kept` (the `.bak`s), `set_aside` (a file this build could not read, moved aside -- rule 7), `omitted`, `blocks`, `bytes`. Until 0.13.0 it wrote the `.od2` alone and refused nothing. **`to` is fenced (0.13.1, the B3 review's B5):** it is made absolute and must lie under `%APPDATA%` (the game's own folder -- under the playtest launcher, the test's private home) or the temporary folder, and never inside a source tree of this game (a folder whose `go.mod` is this module: the World Editor's guard, `harnessSourceTree`); and it may not be one of HIS files -- anything in his save folder named after his save (`N.od2`, `N.od2.bak`, the sidecar, the world file and its `.bak`), with or without `omit` (`Game.SaveWorld`, `ErrBadSaveArgument`). Each is `BAD_ARGUMENT` and writes nothing. Before, a relative `to` resolved in the game's working directory, which the launcher sets to the repository, and a file there was set aside as `.unread` and replaced. `world_path` echoes the absolute path. A block the load's own checks would refuse -- each system's `Validate`/`CheckSnapshot` run on what the save took -- fails the save `INTERNAL` naming the block, touching no file |
 | `strigoi_quit` | Manifest + exit (confirm: true) |
 
@@ -853,8 +875,17 @@ B4a. `TestTownWalkDeterministic` pins the fresh-launch half, and `d2app`'s
 file. **A load also re-applies the script's dials** (never saved, trap 7):
 `strigoi_set_system_field` records every write to a field
 `harnessDialFields` lists as a dial, and the resume hook writes the last value
-of each again (`TestTheLoadReappliesTheScriptsDialsAndNothingElse`). See
-`docs/m4.6-world-save-notes.md`, "B4a".
+of each again (`TestTheLoadReappliesTheScriptsDialsAndNothingElse`). **Since
+the B4a review fixes (29 Sep 2026) every settable field of every provider is
+classified**: a dial (`harnessDialFields`, which gained the village's
+`rite_radius`, `seen_radius` and `watch_radius` -- the review's B3: "load last
+save" used to put them back at the data's) or named as state or a verb
+(`harnessNotDials`). `TestEverySettableFieldIsADialOrNamedState` reads every
+provider's `HarnessName` and `HarnessSettableFields` from the SOURCE (every
+type with a `HarnessSet`, so a provider added tomorrow is read too) and fails
+on a field in neither list or in both, and on a listed field no provider has:
+a new settable field has to be classified to pass. See
+`docs/m4.6-world-save-notes.md`, "B4a" and "B4a review fixes".
 
 **`pursuit`** (M4.3a) reports the live chases and their dials; settable
 `arrive_within`, `release`, `repath_tiles`. **`strigoi_click` takes `hold_frames`** (c-2b, 19 Sep 2026), and the tool count
@@ -1128,7 +1159,12 @@ everything S1 §5's assertion is written in — `food`, `water`, `fatigue`,
 `neglect_damage`, `damage_owed` (the fraction of a health point neglect owes
 between steps, which the world save carries; M4.6 review fixes), `has_body`,
 and `health` / `max_health` when a body is attached. Settable: `food`, `water`, `fatigue`, `activity`, and `consume`
-(`{"kind": "food"|"water"|"rest", "amount": <points>}`).
+(`{"kind": "food"|"water"|"rest", "amount": <points>}`); `health`; and since the
+B4a review fixes (29 Sep 2026) **`stamina`**, his wind, for a body that has one
+(`d2world.Winded`: the hero's stats) -- test setup as `health` is, between 0
+and his maximum. The village's tiles are a town's, where running never spends
+his wind, so without it no script could save a wind a fresh game does not have
+(`TestSaveResume` act 1; the review's A3). The player entity reports it.
 
 **Direction, because it is the easiest thing here to get backwards:** Food
 and Water run 100 (full) down to 0 (empty); **Fatigue runs the other way**,
@@ -1318,7 +1354,13 @@ The digest's parts are `sim` (the harness's clock), `process`, `world`,
 out of `systems` by the providers that carry any (`d2harness.Digester`): the
 assets census (every file this process loaded, and how often), the uuid
 provider's game counts, the ui's `torch_verbs` and `clock` (the controls'
-frame clock), the journal's `last_written`. Two launches of one script agree on
+frame clock), the journal's `last_written` -- and since the B4a review fixes
+(29 Sep 2026) the harness's own `start_seed` (the seed `start_game` was asked
+for, which the world part used to carry: a load with no seed resumed the
+file's world exactly and differed in part `world` alone -- the review's C1),
+and the ui's `talent_cells` (the talent panel's cells, which exist only once
+the panel has been opened in this process) and `journal_notice` (the
+journal's timed HUD line) -- BUG-63. Two launches of one script agree on
 all six -- the proof above still compares every part, and leak #2, in the
 assets census, would still be caught there. A game RESUMED from a world save is
 not the same script: it reproduces `world`, `entities`, `rng` and `systems`,

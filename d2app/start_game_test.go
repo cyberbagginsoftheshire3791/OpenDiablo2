@@ -10,6 +10,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen"
+	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2server"
 )
 
 // countingConn is a game client that counts what startGame did with it.
@@ -100,6 +101,46 @@ func TestStartGameAnswersAScreenOrAReason(t *testing.T) {
 
 		if !strings.Contains(reason, c.wantReason) {
 			t.Errorf("%s: reason %q; want it to say %q", name, reason, c.wantReason)
+		}
+	}
+}
+
+// THE B4a REVIEW, C5: A GAME THAT NEVER OPENED LEAVES NOTHING ARMED FOR THE
+// NEXT. A load hands the server its seed and his start position before the
+// client is made; when the client could not be made, or the game could not be
+// joined, no server took them. Only the position used to be dropped, so the
+// next game -- any hero's -- began on the refused world file's seed.
+// (noGameOpened also puts his own sidecar back for a load step 1 prepared:
+// d2gamescreen's TestARefusalAfterStepOnePutsHisSidecarBack, RestorePreload.)
+func TestAGameThatNeverOpenedLeavesNothingArmed(t *testing.T) {
+	d2server.SetNextGameSeed(1462)
+	d2server.SetNextStartPosition(143.4, 112.9)
+
+	noGameOpened("", nil)
+
+	if seed, start := d2server.ArmedForNextGame(); seed || start {
+		t.Fatalf("a game that never opened left the next one armed: seed %v, start position %v", seed, start)
+	}
+}
+
+// BUG-64 (found by the B4a review fixes, 29 Sep 2026): p:1 is always the
+// CURRENT local player. Hero A, then hero B (another seed, another id), then
+// A again: p:1 used to stay B's, and strigoi_get_player answered
+// UNKNOWN_HANDLE in A's game.
+func TestP1IsAlwaysTheCurrentLocalPlayer(t *testing.T) {
+	harness.mu.Lock()
+	if harness.handles == nil {
+		harness.handles, harness.rhandles = map[string]string{}, map[string]string{}
+	}
+	harness.mu.Unlock()
+
+	for _, id := range []string{"hero-a", "hero-b", "hero-a"} {
+		if h := harnessHandleFor(id, id); h != "p:1" {
+			t.Fatalf("%s is the local player and its handle is %q", id, h)
+		}
+
+		if got, ok := harnessIDForHandle("p:1"); !ok || got != id {
+			t.Fatalf("p:1 is %q, not the local player %s", got, id)
 		}
 	}
 }

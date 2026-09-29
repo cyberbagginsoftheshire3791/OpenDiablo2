@@ -55,6 +55,16 @@ func ClearNextStartPosition() {
 	nextStart.set = false
 }
 
+// ClearNextGame drops everything a load armed for the next game server --
+// its seed (SetNextGameSeed) and its start position -- when no server took
+// them: the game never opened (the B4a review, C5; before it only the start
+// position was dropped, and the next game of any hero began on the refused
+// world file's seed).
+func ClearNextGame() {
+	SetNextGameSeed(0)
+	ClearNextStartPosition()
+}
+
 // takeNextStartPosition consumes the one-shot.
 func takeNextStartPosition() startPosition {
 	nextStart.Lock()

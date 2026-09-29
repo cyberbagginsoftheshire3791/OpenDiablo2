@@ -37,6 +37,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2render/ebiten"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2term"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2ui"
@@ -766,7 +767,7 @@ func (a *App) ToCreateGame(filePath string, connType d2clientconnectiontype.Clie
 			reason = err.Error()
 		}
 
-		d2server.ClearNextStartPosition()
+		noGameOpened(filePath, load)
 		a.Error(reason)
 		a.ToMainMenu(gameStartFailed + reason)
 
@@ -790,18 +791,20 @@ func (a *App) ToCreateGame(filePath string, connType d2clientconnectiontype.Clie
 		// A world save CreateGame refused (the load's steps 2 and 4): the
 		// client is closed, the file set aside, and the same hero opened
 		// again at dawn.
+		// His own sidecar goes back first (A1, inside SetLoadAside), and the
+		// dawn runs on the FILE's seed (the B4a review, C3): for every refusal
+		// but SEED it is the seed this game ran on, and for SEED it is the
+		// one the game should have run on.
 		var loadRefused *d2gamescreen.LoadRefusal
 		if load != nil && errors.As(createErr, &loadRefused) {
 			aside := d2gamescreen.SetLoadAside(filePath, loadRefused, true)
-			a.FallBackToDawn(filePath, gameClient.Seed,
+			a.FallBackToDawn(filePath, load.Seed,
 				fmt.Sprintf("the world save was not resumed: %v; set aside as %q", loadRefused, aside))
 
 			return
 		}
 
-		// A load whose game never opened leaves no start position behind for
-		// the next game (its server would have taken it).
-		d2server.ClearNextStartPosition()
+		noGameOpened(filePath, load)
 		a.Error(reason)
 		a.ToMainMenu(reason)
 
@@ -814,16 +817,31 @@ func (a *App) ToCreateGame(filePath string, connType d2clientconnectiontype.Clie
 
 // FallBackToDawn is rule 7 for a world save refused after its game was
 // opened (M4.6 B4a): the game in play is left, and the same hero opened again
-// -- the world file already set aside, so at dawn from his sidecar -- on the
-// seed the refused game ran on, through the main menu like "load last save"
-// (ReloadGame: the old game's server must let go of its port first). The
-// reason goes to the log; the notice a player sees is B5's.
+// -- the world file already set aside and his own sidecar put back (the B4a
+// review, A1), so at his own dawn -- on the world file's seed (the review's
+// C3), through the main menu like "load last save" (ReloadGame: the old
+// game's server must let go of its port first). The reason goes to the log;
+// the notice a player sees is B5's.
 func (a *App) FallBackToDawn(savePath string, seed int64, reason string) {
 	a.Errorf("LOAD torn down, so he begins at dawn: %s", reason)
 
 	d2server.SetNextGameSeed(seed)
 	a.harnessFallBack(seed) // no-op unless built with -tags harness
 	a.ReloadGame(savePath)
+}
+
+// noGameOpened is what a game that never opened leaves behind: nothing armed
+// for the next one -- neither the seed nor the start position a load handed
+// the server, which no server took (the B4a review, C5: the seed used to stay
+// armed, and the next game, whatever it was, began on the refused file's
+// seed) -- and, for a load step 1 prepared, his own sidecar back where the
+// world file's copy was written (A1).
+func noGameOpened(filePath string, load *d2save.World) {
+	d2server.ClearNextGame()
+
+	if load != nil {
+		d2gamescreen.RestorePreload(filePath)
+	}
 }
 
 // gameStartFailed begins the main menu's line when a game could not start.

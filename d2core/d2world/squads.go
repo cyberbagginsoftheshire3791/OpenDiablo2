@@ -624,7 +624,7 @@ func (sq *squad) modelReport(m *model) map[string]interface{} {
 // FIELDS, not new harness tools, so the tool count stays 36.
 func (s *Squads) HarnessSettableFields() []string {
 	return []string{
-		"activity", "consume", "fatigue", "food", "health", "water",
+		"activity", "consume", "fatigue", "food", "health", "stamina", "water",
 		"selected", "squad", "squad_add", "squad_remove",
 	}
 }
@@ -633,7 +633,7 @@ func (s *Squads) HarnessSettableFields() []string {
 // selected squad's meters; the collection verbs act on the owner.
 func (s *Squads) HarnessSet(field string, value interface{}) error {
 	switch field {
-	case "activity", "consume", "fatigue", "food", "health", "water":
+	case "activity", "consume", "fatigue", "food", "health", "stamina", "water":
 		sel := s.squads[s.selected]
 		if sel == nil {
 			return fmt.Errorf("no selected squad %q", s.selected)

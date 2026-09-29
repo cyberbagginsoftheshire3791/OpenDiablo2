@@ -212,7 +212,12 @@ func (a *App) harnessDigestPartsBySystem() (map[string]string, map[string]string
 			raw["rng"] = ""
 		} else {
 			entities := client.MapEngine.Entities()
-			raw["world"] = fmt.Sprintf("seed=%d start_seed=%d entities=%d", client.Seed, seed, len(entities))
+
+			// The seed the game RUNS on is the world's; the seed start_game
+			// was asked for is this process's (the B4a review, C1): a load
+			// with no seed resumes the file's world exactly, and its
+			// start_seed is 0. It goes to the process part, below.
+			raw["world"] = fmt.Sprintf("seed=%d entities=%d", client.Seed, len(entities))
 			raw["rng"] = fmt.Sprintf("world_draws=%d", client.MapEngine.RandDraws())
 
 			ids := make([]string, 0, len(entities))
@@ -304,7 +309,7 @@ func (a *App) harnessDigestPartsBySystem() (map[string]string, map[string]string
 		}
 
 		raw["systems"] = string(sys)
-		raw["process"] = string(proc)
+		raw["process"] = fmt.Sprintf("start_seed=%d\n", seed) + string(proc)
 	})
 	if err != nil {
 		return nil, nil, err

@@ -51,3 +51,22 @@ func TestNextStartPositionIsOneShotAndLocal(t *testing.T) {
 	ClearNextStartPosition()
 	assert.False(t, takeNextStartPosition().set, "a cleared position is not taken")
 }
+
+// The B4a review, C5: a game that never opened leaves nothing armed for the
+// next -- the seed a load handed the server as well as his start position
+// (before, only the position was dropped, and the next game of any hero began
+// on the refused file's seed).
+func TestClearNextGameClearsTheSeedAndThePosition(t *testing.T) {
+	SetNextGameSeed(1462)
+	SetNextStartPosition(143.4, 112.9)
+
+	seed, start := ArmedForNextGame()
+	assert.True(t, seed && start, "armed")
+
+	ClearNextGame()
+
+	seed, start = ArmedForNextGame()
+	assert.False(t, seed, "the seed is cleared")
+	assert.False(t, start, "the start position is cleared")
+	assert.NotEqual(t, int64(1462), takeNextGameSeed(), "and no server takes it")
+}

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -37,7 +38,12 @@ import (
 //	   day where first light laid them down (a risen body Closed), the watch
 //	   promised in a talk and stood at the headman's post from true dark, and
 //	   his torch lit. The precondition names every block and requires it
-//	   non-empty.
+//	   non-empty -- and (the B4a review, A3) every field the load restores ON
+//	   HIM differs from what a fresh game gives him: his run toggle on, his
+//	   wind below its maximum, a talent taken, a fraction of a health point
+//	   owed to neglect, his facing not the fresh one. Before, the run toggle
+//	   and the wind at T were a fresh game's, so no control could fail on
+//	   them.
 //	2  At T -- 01:30 of the third day, standing still at the post -- the save,
 //	   which moves nothing (the digest before and after is one digest).
 //	3  120 world minutes more: dawn comes (the night paid, the watch kept, the
@@ -45,11 +51,13 @@ import (
 //	   is wounded and leaves through the menu, which writes his .od2 and his
 //	   sidecar and not the world file (B5's): the files a load finds beside
 //	   the world file are two hours and a wound later than it.
-//	4  A new process in the same home: start_game{save_path, seed 99} RESUMES
-//	   the file (the load reports it, and its steps), and S_R0 = S_T: the
-//	   resume digest -- world, entities, rng and every system's world state --
-//	   and each named system. The world file won over the later .od2 (his
-//	   health) and the later sidecar (a kit whose torch had burnt out).
+//	4  A new process in the same home: start_game{save_path} -- NO seed, as
+//	   the shipped game has none to give (the B4a review, C1: the seed the
+//	   script asked for is this process's, not the world's) -- RESUMES the file
+//	   on its own seed (the load reports it, and its steps), and S_R0 = S_T:
+//	   the resume digest -- world, entities, rng and every system's world
+//	   state -- and each named system. The world file won over the later .od2
+//	   (his health) and the later sidecar (a kit whose torch had burnt out).
 //	5  Saved again at once: the file is T's file byte for byte, but saved_at
 //	   and the sidecar's generation (which is saved_at).
 //	6  120 world minutes: S_R = S_U.
@@ -58,9 +66,22 @@ import (
 //	   this process: S = S_T again, the uuid stream and the script's dials
 //	   put back by the load.
 //	6c-6e THE REFUSALS, each falling back to dawn with the file set aside
-//	   (rule 7): another hero's world file (6c), a torn save -- the sidecar of
-//	   another generation (6d) -- and a changed map (6e, D5), which is refused
-//	   after the game opened and so tears that game down.
+//	   (rule 7) and his own sidecar, byte for byte, beside it: another hero's
+//	   world file (6c) -- started on seed 7, which the file was not saved on:
+//	   a file step 1 refuses anyway holds the script to no seed (the review's
+//	   C2) -- a torn save, the sidecar of another generation (6d), and a
+//	   changed map (6e, D5), refused after the game opened and so tearing that
+//	   game down: THE REVIEW'S A1 PROBE -- the files as act 3 left them, the
+//	   sidecar two hours later than the file, and after the teardown his
+//	   sidecar is still act 3's, not the file's copy (BUG-60).
+//	6f THE REVIEW'S A2 PROBE (BUG-61): a session that did not resume the file
+//	   -- a network game's, rebuilt here by hiding the file, as the review did
+//	   -- earns experience; the next single-player load must not write the
+//	   file's older copy over it. The file reads TORN (that session's saves
+//	   carry no generation of it) and is set aside; his experience stays.
+//	6g THE REVIEW'S B1 PROBE (BUG-62; Windows): a file refused after its game
+//	   opened, held open so it cannot be set aside. One teardown, one dawn --
+//	   not a reload loop -- and his own sidecar beside it.
 //
 // THE COMPARISON (BUG-58 fixed, 29 Sep 2026): the digest's resume_digest is
 // every part a resumed game must reproduce -- not sim (the harness's clock)
@@ -355,6 +376,9 @@ func eveningActs1to3(t *testing.T) evening {
 
 	ev := evening{save: str(game, "save_path")}
 
+	// What a fresh game gives him, for act 1's precondition on rule 4 (A3).
+	fresh := heroOf(t, s)
+
 	for _, d := range eveningDials {
 		setField(s, d.System, d.Field, d.Value)
 	}
@@ -480,8 +504,32 @@ func eveningActs1to3(t *testing.T) evening {
 	setField(s, "meters", "fatigue", 10.0)
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
+	// --- 1: every field the load restores on him, not a fresh game's (A3) --
+	// Seven minutes parched: a fraction of a health point owed to neglect
+	// (2 an hour: 0.23, no whole point taken), then water again.
+	setField(s, "meters", "water", 0.0)
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 7})
+	setField(s, "meters", "water", 90.0)
+
+	// A talent taken with the pick his level gave him (Long Marches: it
+	// changes no health).
+	s.call("strigoi_key", map[string]any{"key": "t"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+	clickCell(t, s, "long-marches")
+	clickCell(t, s, "long-marches")
+	s.call("strigoi_key", map[string]any{"key": "t"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	// His run toggle on, by the HUD's button; his wind below its maximum (the
+	// village's tiles are a town's, where running never spends it, so the
+	// meters' test-setup field stands him at a wind).
+	clickRunButton(t, s)
+	setField(s, "meters", "stamina", 31.25)
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
 	// --- 1: THE PRECONDITION: every block B4a resumes is non-empty ---------
 	eveningPrecondition(t, s)
+	heroNotFresh(t, s, fresh)
 
 	// --- 2: the save at T --------------------------------------------------
 	ev.sT = snapWorld(t, s)
@@ -581,6 +629,59 @@ func eveningPrecondition(t *testing.T, s *session) {
 	}
 }
 
+// heroFields is what the load restores on him (rule 4, step 5) and what a
+// fresh game gives him instead.
+type heroFields struct {
+	Run       bool
+	Stamina   float64
+	Max       float64
+	Facing    float64
+	Talents   int
+	OwedHurts float64
+}
+
+func heroOf(t *testing.T, s *session) heroFields {
+	t.Helper()
+
+	p := sub(s.call("strigoi_get_player", map[string]any{}), "state")
+
+	return heroFields{
+		Run: flag(t, p, "run_toggled"), Stamina: mustNum(t, p, "stamina"), Max: mustNum(t, p, "max_stamina"),
+		Facing: mustNum(t, p, "direction"), Talents: len(asList(progressState(s)["talents"])),
+		OwedHurts: mustNum(t, metersState(s), "damage_owed"),
+	}
+}
+
+// heroNotFresh is act 1's precondition on rule 4 (the B4a review, A3): every
+// field the load restores on him differs from what a fresh game gives him, so
+// a restore left out cannot pass for one made. Before, the run toggle was off
+// and his wind full at T -- both a fresh game's -- and the controls that took
+// out their restores stayed green.
+func heroNotFresh(t *testing.T, s *session, fresh heroFields) {
+	t.Helper()
+
+	at := heroOf(t, s)
+
+	checks := []struct {
+		what string
+		ok   bool
+	}{
+		{"his run toggle on (a fresh game's is off)", at.Run && !fresh.Run},
+		{"his wind below its maximum (a fresh game's is full)", at.Stamina < at.Max && fresh.Stamina == fresh.Max},
+		{"a talent taken (a fresh hero has none)", at.Talents > 0 && fresh.Talents == 0},
+		{"a fraction of a health point owed to neglect (a fresh body owes none)", at.OwedHurts > 0 && fresh.OwedHurts == 0},
+		{"his facing not a fresh game's", at.Facing != fresh.Facing},
+	}
+
+	for _, c := range checks {
+		if !c.ok {
+			t.Fatalf("act 1: the precondition on rule 4 fails: %s (at T %+v; fresh %+v)", c.what, at, fresh)
+		}
+	}
+
+	t.Logf("act 1: at T he differs from a fresh game in every restored field: %+v (fresh %+v)", at, fresh)
+}
+
 // keepEvening writes acts 1-3's evening beside the run's logs, for the
 // controls (STRIGOI_SAVE_RESUME_FROM).
 func keepEvening(t *testing.T, s *session, ev evening) {
@@ -659,11 +760,20 @@ func eveningActs4to6(t *testing.T, ev evening) {
 	s.call("strigoi_pause", map[string]any{})
 
 	// --- 4: relaunch, load, S_R0 = S_T --------------------------------------
-	g := s.call("strigoi_start_game", map[string]any{"save_path": ev.save, "seed": 99, "wait_seconds": 90})
+	// No seed: the shipped game has none to give, and the load resumes the
+	// file's. The digest's world part is the world's seed, not the one the
+	// script asked for (the B4a review, C1: start_seed moved to the process
+	// part; with it in the world part this act was red on part world alone).
+	g := s.call("strigoi_start_game", map[string]any{"save_path": ev.save, "wait_seconds": 90})
 
 	load := sub(g, "load")
 	if !flag(t, load, "resumed") || str(load, "saved_at") != str(worldFile(t, "act 4", ev.fileT), "saved_at") {
 		t.Fatalf("act 4: start_game resumes the world file: %v", load)
+	}
+
+	// The file keeps its seeds as strings (int64, B1 notes section 2).
+	if got, want := fmt.Sprint(int64(num(g, "seed"))), str(worldFile(t, "act 4", ev.fileT), "seed"); got != want {
+		t.Fatalf("act 4: a load with no seed runs on the file's (%s); the game runs on %s", want, got)
 	}
 
 	for _, d := range ev.savedDial {
@@ -730,7 +840,10 @@ func eveningActs4to6(t *testing.T, ev evening) {
 		t.Fatal(err)
 	}
 
-	refusedToDawn(t, s, "act 6c (another hero's)", otherSave, "HERO", ev.fileT, false)
+	// On seed 7, which the file was not saved on: step 1 refuses another
+	// hero's file anyway, so the seed is no reason to refuse the start, and
+	// his dawn runs on it (the B4a review, C2).
+	refusedToDawn(t, s, "act 6c (another hero's)", otherSave, "HERO", 7, ev.fileT, mustRead(t, otherSave+".strigoi.json"), false)
 
 	// --- 6d: a torn save: his sidecar of another generation -----------------
 	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
@@ -741,29 +854,179 @@ func eveningActs4to6(t *testing.T, ev evening) {
 		t.Fatal(err)
 	}
 
-	refusedToDawn(t, s, "act 6d (a torn save)", ev.save, "TORN", fileR, false)
+	refusedToDawn(t, s, "act 6d (a torn save)", ev.save, "TORN", 99, fileR, torn, false)
 
-	// --- 6e: a changed map (D5), refused after the game opened --------------
+	// --- 6e: a changed map (D5), refused after the game opened: A1's probe ---
+	// His files as act 3 left them -- the .od2 and the sidecar two hours and
+	// a wound later than T, the sidecar of T's generation -- and T's file
+	// with its map changed. Step 1 writes the file's copy of his sidecar
+	// before the map is checked; the refusal must put his own back.
 	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
 	awaitMenu(t, s)
 
-	moved := regexp.MustCompile(`"sha": "[0-9a-f]{64}"`).ReplaceAll(fileR, []byte(`"sha": "`+strings.Repeat("0", 64)+`"`))
-	if bytes.Equal(moved, fileR) {
+	moved := regexp.MustCompile(`"sha": "[0-9a-f]{64}"`).ReplaceAll(ev.fileT, []byte(`"sha": "`+strings.Repeat("0", 64)+`"`))
+	if bytes.Equal(moved, ev.fileT) {
 		t.Fatal("act 6e: the file names no map sha to change (the default game builds the authored village)")
 	}
 
-	if err := os.WriteFile(ev.save+".world.json", moved, 0o600); err != nil {
+	actThree(t, ev, moved)
+
+	fell := refusedToDawn(t, s, "act 6e (a changed map)", ev.save, "MAP", 99, moved, ev.sidecarLeft, true)
+	if str(fell, "preload") != "restored" {
+		t.Fatalf("act 6e: the report says his own sidecar was put back: %v", fell)
+	}
+
+	if got, want := mustNum(t, progressState(s), "xp"), xpOf(t, ev.sidecarLeft); got != want {
+		t.Fatalf("act 6e: his dawn is his own -- act 3's %v experience, not the file's copy; he has %v", want, got)
+	}
+
+	// --- 6f: a session that did not resume the file: A2's probe ------------
+	eveningActs6fg(t, s, ev, moved)
+}
+
+// actThree puts his files back as act 3 left them -- his .od2 and sidecar two
+// hours and a wound later than T, the sidecar of T's generation -- beside the
+// world file given.
+func actThree(t *testing.T, ev evening, world []byte) {
+	t.Helper()
+
+	for path, data := range map[string][]byte{ev.save: ev.od2Left, ev.save + ".strigoi.json": ev.sidecarLeft, ev.save + ".world.json": world} {
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// xpOf is a sidecar document's experience.
+func xpOf(t *testing.T, sidecar []byte) float64 {
+	t.Helper()
+
+	var sc struct {
+		Progress struct {
+			XP float64 `json:"xp"`
+		} `json:"progress"`
+	}
+
+	if err := json.Unmarshal(sidecar, &sc); err != nil {
+		t.Fatalf("the sidecar is not JSON: %v", err)
+	}
+
+	return sc.Progress.XP
+}
+
+// eveningActs6fg are the review's A2 and B1 probes (the B4a review, 29 Sep
+// 2026): a session that did not resume the world file must not lose what it
+// earned to the next load (6f), and a file that cannot be set aside must not
+// loop (6g).
+func eveningActs6fg(t *testing.T, s *session, ev evening, moved []byte) {
+	t.Helper()
+
+	// --- 6f: T's file, resumable beside his act-3 files, and a session that
+	// never read it: a network game's (rule 9), rebuilt here as the review
+	// rebuilt it, by hiding the file for one session. He earns 20.
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	world := ev.save + ".world.json"
+	actThree(t, ev, ev.fileT)
+
+	if err := os.Rename(world, world+".hidden"); err != nil {
 		t.Fatal(err)
 	}
 
-	sidecar := worldFile(t, "act 6e", fileR)["sidecar"]
-	doc, _ := json.MarshalIndent(sidecar, "", "  ")
+	g := s.call("strigoi_start_game", map[string]any{"save_path": ev.save, "seed": 99, "wait_seconds": 90})
+	if l := sub(g, "load"); flag(t, l, "found") || flag(t, l, "resumed") {
+		t.Fatalf("act 6f: the session does not see the file: %v", l)
+	}
 
-	if err := os.WriteFile(ev.save+".strigoi.json", doc, 0o600); err != nil {
+	earned := mustNum(t, progressState(s), "xp") + 20
+	setField(s, "progress", "grant_xp", 20.0)
+	s.call("strigoi_step", map[string]any{"frames": 2})
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	after := mustRead(t, ev.save+".strigoi.json")
+	if xpOf(t, after) != earned {
+		t.Fatalf("act 6f: the session's experience is on disk: %v, want %v", xpOf(t, after), earned)
+	}
+
+	if err := os.Rename(world+".hidden", world); err != nil {
 		t.Fatal(err)
 	}
 
-	refusedToDawn(t, s, "act 6e (a changed map)", ev.save, "MAP", moved, true)
+	// The next single-player load: the file does not pair with a sidecar that
+	// session wrote -- TORN, set aside -- and his 20 stay. Before the fix the
+	// session's kit saves carried the file's generation, the load resumed T,
+	// and his sidecar went back to T's experience (the review: 125 -> 55).
+	refusedToDawn(t, s, "act 6f (a session that did not resume it)", ev.save, "TORN", 99, ev.fileT, after, false)
+
+	if got := mustNum(t, progressState(s), "xp"); got != earned {
+		t.Fatalf("act 6f: his experience is the session's %v; he has %v", earned, got)
+	}
+
+	// --- 6g: held open, so it cannot be set aside: one dawn, not a loop ----
+	if runtime.GOOS != "windows" {
+		t.Logf("act 6g skipped: only Windows refuses to move a file held open")
+		return
+	}
+
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+	actThree(t, ev, moved)
+
+	held, err := os.Open(world)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	torn := tornDowns(t, s)
+	g = s.call("strigoi_start_game", map[string]any{"save_path": ev.save, "seed": 99, "wait_seconds": 90})
+	load := sub(g, "load")
+
+	fellBack, _ := load["fell_back"].(bool)
+	ignored, _ := load["ignored"].(bool)
+
+	if str(load, "refused") != "MAP" || !fellBack || !ignored || str(load, "set_aside") != "" {
+		_ = held.Close()
+		t.Fatalf("act 6g: refused MAP after the game opened, not set aside, and ignored by the dawn: %v", load)
+	}
+
+	// Give a loop the time it had in the review (51 teardowns in 25 s).
+	time.Sleep(3 * time.Second)
+
+	n := tornDowns(t, s) - torn
+	_ = held.Close()
+
+	if n != 1 {
+		t.Fatalf("act 6g: one teardown and one dawn; the log has %d teardowns", n)
+	}
+
+	if got := mustRead(t, ev.save+".strigoi.json"); !bytes.Equal(got, ev.sidecarLeft) {
+		t.Fatal("act 6g: his own sidecar is back beside the file that could not be moved")
+	}
+
+	if got := mustRead(t, world); !bytes.Equal(got, moved) {
+		t.Fatal("act 6g: the file stays whole where it was")
+	}
+
+	c := clockState(s)
+	if !flag(t, s.call("strigoi_get_game_info", map[string]any{}), "in_game") || str(c, "stage") != "dawn" {
+		t.Fatalf("act 6g: he is in a game at dawn: %v", c)
+	}
+
+	t.Logf("act 6g PASS: refused MAP, the file held and not moved, one teardown, his own dawn (%s)", str(load, "reason"))
+}
+
+// tornDowns counts the teardowns of refused loads in the game's log.
+func tornDowns(t *testing.T, s *session) int {
+	t.Helper()
+
+	data, err := os.ReadFile(s.LogPath)
+	if err != nil {
+		t.Fatalf("reading the game's log: %v", err)
+	}
+
+	return strings.Count(string(data), "LOAD torn down")
 }
 
 // awaitGame waits -- in wall time, stepping nothing, so the resumed world is
@@ -813,14 +1076,24 @@ func awaitMenu(t *testing.T, s *session) {
 	t.Fatal("the game did not leave for the menu")
 }
 
-// refusedToDawn starts the hero at save and requires the load refused with
-// code, the file set aside whole (rule 7), and him at dawn in a living game.
-// afterOpen is a refusal that tears an opened game down (fell_back).
-func refusedToDawn(t *testing.T, s *session, act, save, code string, file []byte, afterOpen bool) {
+// refusedToDawn starts the hero at save on seed and requires the load refused
+// with code, the file set aside whole (rule 7), his sidecar byte for byte the
+// one given -- his own, never the world file's copy (the B4a review, A1) --
+// and him at dawn in a living game on that seed. afterOpen is a refusal that
+// tears an opened game down (fell_back). It returns the load's report.
+func refusedToDawn(t *testing.T, s *session, act, save, code string, seed int, file, sidecar []byte, afterOpen bool) map[string]any {
 	t.Helper()
 
-	g := s.call("strigoi_start_game", map[string]any{"save_path": save, "seed": 99, "wait_seconds": 90})
+	g := s.call("strigoi_start_game", map[string]any{"save_path": save, "seed": seed, "wait_seconds": 90})
 	load := sub(g, "load")
+
+	if got := num(g, "seed"); got != float64(seed) {
+		t.Fatalf("%s: his dawn runs on seed %d; the game runs on %v", act, seed, got)
+	}
+
+	if got := mustRead(t, save+".strigoi.json"); !bytes.Equal(got, sidecar) {
+		t.Fatalf("%s: his sidecar is his own, byte for byte, after the refusal:\n want %s\n  got %s", act, cut(string(sidecar)), cut(string(got)))
+	}
 
 	// fell_back is written only when true (omitempty).
 	fellBack, _ := load["fell_back"].(bool)
@@ -842,7 +1115,9 @@ func refusedToDawn(t *testing.T, s *session, act, save, code string, file []byte
 		t.Fatalf("%s: he begins at dawn, alive: %v", act, c)
 	}
 
-	t.Logf("%s PASS: refused %s (%s), set aside as %s; he begins at dawn", act, code, str(load, "reason"), filepath.Base(aside))
+	t.Logf("%s PASS: refused %s (%s), set aside as %s; his own sidecar beside it; he begins at dawn", act, code, str(load, "reason"), filepath.Base(aside))
+
+	return load
 }
 
 // saveVerbActs is act 7, burst B3's: the save verb and its refusals, in a

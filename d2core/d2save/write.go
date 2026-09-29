@@ -126,10 +126,18 @@ func readable(data []byte) bool {
 // hero's, a torn save, a changed map), .v2.unread for a newer build's -- under
 // a numbered suffix if that name is taken, so nothing set aside is ever
 // overwritten (M4.6 B4a). The load's step 1 and its teardown call it.
+//
+// A FILE THAT CANNOT BE READ IS STILL MOVED (the B4a review, A2): the load
+// refuses it FILE and sets it aside like any other, under plain ".unread" --
+// its version cannot be named. Only a file that is not there is an error
+// before the move.
 func SetAside(path string) (string, error) {
 	data, err := os.ReadFile(path) // nolint:gosec // the hero's own save
-	if err != nil {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
 		return "", fmt.Errorf("d2save: reading the world file to set it aside: %w", err)
+	case err != nil:
+		return setAside(path, "")
 	}
 
 	return setAside(path, VersionOf(data))

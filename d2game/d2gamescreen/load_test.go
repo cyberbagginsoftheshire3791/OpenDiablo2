@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -388,10 +389,12 @@ func b4Files(t *testing.T, w *d2save.World, name string, class int) string {
 // amazon is his class's number in the .od2 (d2enum.HeroAmazon).
 const b4Amazon = 6
 
-// STEP 1'S REFUSALS: each sets the file aside (rule 7) -- but for rule 9's,
-// whose file is a good single-player save -- writes nothing over his sidecar,
-// and says why. THE CONTROL: a good file is taken, and his sidecar is written
-// from it, byte for byte the document the save wrote.
+// STEP 1'S REFUSALS: each sets the file aside (rule 7) -- rule 9's too since
+// the B4a review (A2) -- but a hunted night's, which stays for B4b (the
+// review's B2); each writes nothing over his sidecar, keeps no copy of it, and
+// says why. THE CONTROL: a good file is taken, his own sidecar kept as
+// .preload first (A1), and his sidecar written from the file, byte for byte
+// the document the save wrote.
 func TestPrepareLoadRefusals(t *testing.T) {
 	saved, save := b4Game(t)
 	b4Busy(t, saved)
@@ -410,14 +413,20 @@ func TestPrepareLoadRefusals(t *testing.T) {
 
 	// The control.
 	dir := b4Files(t, copyOf(), "Saver", b4Amazon)
-	require.NoError(t, os.WriteFile(d2items.SidecarPath(dir), []byte(`{"version": 1, "generation": "`+good.SavedAt+`", "kit": {}}`), 0o600))
+	his := []byte(`{"version": 1, "generation": "` + good.SavedAt + `", "kit": {}}`)
+	require.NoError(t, os.WriteFile(d2items.SidecarPath(dir), his, 0o600))
 
 	w, r := PrepareLoad(dir, false)
 	require.Nil(t, r)
 	require.NotNil(t, w)
 
+	kept, err := os.ReadFile(preloadPath(dir))
+	require.NoError(t, err)
+	require.Equal(t, string(his), string(kept), "his own sidecar is kept before step 1 writes over it (A1)")
+
 	written, err := os.ReadFile(d2items.SidecarPath(dir))
 	require.NoError(t, err)
+	forgetPreload(dir)
 
 	// The document the save wrote into both files: the live kit's torch reads
 	// zero (the L key) and heroBytes writes the carried torch's minutes in.
@@ -446,14 +455,20 @@ func TestPrepareLoadRefusals(t *testing.T) {
 	entity := d2save.Entity{ID: "0dog", Kind: d2save.KindNPC, Monstat: "fallen1", X: 10, Y: 10,
 		Motion: d2mapentity.Motion{Pos: [2]float64{50, 50}, Target: [2]float64{50, 50}}}
 
+	// Where a refused file goes: .v<Version>.unread, the version it holds
+	// (derived from d2save.Version, so the raid's version bump -- R0.5 --
+	// does not turn this red), or nowhere: a hunted night STAYS for B4b (the
+	// B4a review, B2; decision B4a-R3).
+	unread, stays := fmt.Sprintf(".v%d.unread", d2save.Version), ""
+
 	cases := map[string]struct {
 		code, aside string
 		files       func(w *d2save.World) string
 		says        string
 	}{
-		"a newer build's file": {LoadRefusedVersion, ".v2.unread", func(w *d2save.World) string {
+		"a newer build's file": {LoadRefusedVersion, fmt.Sprintf(".v%d.unread", d2save.Version+1), func(w *d2save.World) string {
 			s := b4Files(t, w, "Saver", b4Amazon)
-			require.NoError(t, os.WriteFile(d2save.WorldPath(s), []byte(`{"version": 2}`), 0o600))
+			require.NoError(t, os.WriteFile(d2save.WorldPath(s), []byte(fmt.Sprintf(`{"version": %d}`, d2save.Version+1)), 0o600))
 
 			return s
 		}, ""},
@@ -463,54 +478,54 @@ func TestPrepareLoadRefusals(t *testing.T) {
 
 			return s
 		}, ""},
-		"another hero's": {LoadRefusedHero, ".v1.unread", func(w *d2save.World) string {
+		"another hero's": {LoadRefusedHero, unread, func(w *d2save.World) string {
 			return b4Files(t, w, "Otherman", b4Amazon)
 		}, ""},
-		"another class": {LoadRefusedHero, ".v1.unread", func(w *d2save.World) string {
+		"another class": {LoadRefusedHero, unread, func(w *d2save.World) string {
 			return b4Files(t, w, "Saver", b4Amazon-1)
 		}, ""},
-		"a torn save": {LoadRefusedTorn, ".v1.unread", func(w *d2save.World) string {
+		"a torn save": {LoadRefusedTorn, unread, func(w *d2save.World) string {
 			s := b4Files(t, w, "Saver", b4Amazon)
 			require.NoError(t, os.WriteFile(d2items.SidecarPath(s), []byte(`{"version": 1, "generation": "an older save", "kit": {}}`), 0o600))
 
 			return s
 		}, ""},
-		"no sidecar": {LoadRefusedTorn, ".v1.unread", func(w *d2save.World) string {
+		"no sidecar": {LoadRefusedTorn, unread, func(w *d2save.World) string {
 			s := b4Files(t, w, "Saver", b4Amazon)
 			require.NoError(t, os.Remove(d2items.SidecarPath(s)))
 
 			return s
 		}, ""},
-		"a monster not the map's": {LoadRefusedHunted, ".v1.unread", func(w *d2save.World) string {
+		"a monster not the map's": {LoadRefusedHunted, stays, func(w *d2save.World) string {
 			w.Entities = []d2save.Entity{entity}
 
 			return b4Files(t, w, "Saver", b4Amazon)
 		}, "is not one the map builds"},
-		"a monster's body": {LoadRefusedHunted, ".v1.unread", func(w *d2save.World) string {
+		"a monster's body": {LoadRefusedHunted, stays, func(w *d2save.World) string {
 			w.Entities, w.Bodies = []d2save.Entity{entity}, []d2save.Body{{ID: "0dog", Health: 3, MaxHealth: 10}}
 
 			return b4Files(t, w, "Saver", b4Amazon)
 		}, "have a body"},
-		"a pack on the map": {LoadRefusedHunted, ".v1.unread", func(w *d2save.World) string {
+		"a pack on the map": {LoadRefusedHunted, stays, func(w *d2save.World) string {
 			w.Entities = []d2save.Entity{entity}
 			w.Spawns.Groups = []d2world.SpawnGroupSnapshot{{ID: "g:1", Row: "wolves", Code: "fallen1",
 				Members: []d2world.SpawnMemberSnapshot{{ID: "0dog", X: 10, Y: 10}}, Stage: "night"}}
 
 			return b4Files(t, w, "Saver", b4Amazon)
 		}, "pack(s) on the map"},
-		"a watch": {LoadRefusedHunted, ".v1.unread", func(w *d2save.World) string {
+		"a watch": {LoadRefusedHunted, stays, func(w *d2save.World) string {
 			w.Entities = []d2save.Entity{entity}
 			w.Notice.Watches = []d2world.WatchSnapshot{{Watcher: "0dog", Target: d2saveref.Player}}
 
 			return b4Files(t, w, "Saver", b4Amazon)
 		}, "watch(es)"},
-		"a chase": {LoadRefusedHunted, ".v1.unread", func(w *d2save.World) string {
+		"a chase": {LoadRefusedHunted, stays, func(w *d2save.World) string {
 			w.Entities = []d2save.Entity{entity}
 			w.Pursuit.Chases = []d2world.ChaseSnapshot{{Hunter: "0dog", Quarry: d2saveref.Player}}
 
 			return b4Files(t, w, "Saver", b4Amazon)
 		}, "chase(s)"},
-		"a deployed squad (D3)": {LoadRefusedHunted, ".v1.unread", func(w *d2save.World) string {
+		"a deployed squad (D3)": {LoadRefusedHunted, stays, func(w *d2save.World) string {
 			w.Entities = []d2save.Entity{entity}
 			w.Squads.NextID = 3
 			w.Squads.Squads = append(w.Squads.Squads, d2world.SquadSnapshot{ID: "s:2", Owner: "player", Ordinal: 2,
@@ -536,37 +551,59 @@ func TestPrepareLoadRefusals(t *testing.T) {
 		require.ErrorIs(t, r, ErrLoadRefused)
 		require.Contains(t, r.Detail, c.says, "%s: refused by its own clause", name)
 
+		now, nowErr := os.ReadFile(d2items.SidecarPath(s))
+		require.Equal(t, sidecarErr == nil, nowErr == nil, "%s: the sidecar is as it was", name)
+		require.Equal(t, sidecar, now, "%s: a refused load wrote his sidecar", name)
+
+		_, err = os.Stat(preloadPath(s))
+		require.True(t, os.IsNotExist(err), "%s: a refusal at step 1 keeps no copy of his sidecar", name)
+
+		rep := LastLoad()
+		require.Equal(t, c.code, rep.Refused, name)
+		require.False(t, rep.Resumed, name)
+
+		if c.aside == stays {
+			// B2: a hunted night stays where it is, whole, for B4b.
+			left, err := os.ReadFile(world)
+			require.NoError(t, err, "%s: a hunted night stays for B4b", name)
+			require.Equal(t, before, left, "%s: and is not touched", name)
+			require.Empty(t, rep.SetAside, name)
+
+			continue
+		}
+
 		aside, err := os.ReadFile(world + c.aside)
 		require.NoError(t, err, "%s: set aside as %s", name, c.aside)
 		require.Equal(t, before, aside, "%s: set aside whole", name)
 
 		_, err = os.Stat(world)
 		require.True(t, os.IsNotExist(err), "%s: the world file is out of the way", name)
-
-		now, nowErr := os.ReadFile(d2items.SidecarPath(s))
-		require.Equal(t, sidecarErr == nil, nowErr == nil, "%s: the sidecar is as it was", name)
-		require.Equal(t, sidecar, now, "%s: a refused load wrote his sidecar", name)
-
-		rep := LastLoad()
-		require.Equal(t, c.code, rep.Refused, name)
 		require.Equal(t, world+c.aside, rep.SetAside, name)
-		require.False(t, rep.Resumed, name)
 	}
 
-	// Rule 9: refused, and NOT set aside -- it is a good single-player save.
+	// Rule 9: refused, and SET ASIDE like every other refusal (the B4a
+	// review, A2; decision B4a-R1 overturns B4a-2, which left it for the next
+	// single-player load -- and that load resumed the old moment over the
+	// network evening, BUG-61). His hero, kit and progress carry on: his
+	// sidecar is not touched.
 	s := b4Files(t, copyOf(), "Saver", b4Amazon)
 	sidecar, _ := os.ReadFile(d2items.SidecarPath(s))
+	file, _ := os.ReadFile(d2save.WorldPath(s))
 
 	w, r = PrepareLoad(s, true)
 	require.Nil(t, w)
 	require.Equal(t, LoadRefusedNetwork, r.Code)
 
 	_, err = os.Stat(d2save.WorldPath(s))
-	require.NoError(t, err, "a network game leaves the world file where it is")
+	require.True(t, os.IsNotExist(err), "a network game sets the world file aside")
+
+	aside, err := os.ReadFile(d2save.WorldPath(s) + unread)
+	require.NoError(t, err)
+	require.Equal(t, file, aside, "set aside whole")
+	require.Equal(t, d2save.WorldPath(s)+unread, LastLoad().SetAside)
 
 	now, _ := os.ReadFile(d2items.SidecarPath(s))
-	require.Equal(t, sidecar, now)
-	require.Empty(t, LastLoad().SetAside)
+	require.Equal(t, sidecar, now, "his sidecar is his, untouched")
 }
 
 // THE DAWN AFTER A REFUSAL THAT TORE A GAME DOWN keeps the refusal as its
@@ -585,7 +622,7 @@ func TestTheDawnAfterATornDownLoadKeepsItsReport(t *testing.T) {
 	require.NotNil(t, w)
 
 	aside := SetLoadAside(s, refuseLoad(LoadRefusedMap, "the map moved"), true)
-	require.Equal(t, d2save.WorldPath(s)+".v1.unread", aside)
+	require.Equal(t, d2save.WorldPath(s)+fmt.Sprintf(".v%d.unread", d2save.Version), aside)
 
 	w, r = PrepareLoad(s, false)
 	require.Nil(t, w)
@@ -595,6 +632,12 @@ func TestTheDawnAfterATornDownLoadKeepsItsReport(t *testing.T) {
 	require.True(t, rep.FellBack)
 	require.Equal(t, LoadRefusedMap, rep.Refused)
 	require.Equal(t, aside, rep.SetAside)
+
+	// For that dawn only: the hero's next load starts a report of its own
+	// (the B4a review fixes: act 6f read the old refusal as its own).
+	_, _ = PrepareLoad(s, false)
+	require.False(t, LastLoad().FellBack, "the next load of the same hero reports itself")
+	require.Empty(t, LastLoad().Refused)
 
 	_, _ = PrepareLoad(filepath.Join(t.TempDir(), "2.od2"), false)
 	require.Empty(t, LastLoad().Refused, "another hero's load starts a report of its own")

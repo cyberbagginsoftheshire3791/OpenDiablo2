@@ -93,7 +93,13 @@ func harnessResume(saved *d2save.UUIDStream) []string {
 // game is tuned by, never state the world file carries -- by system. Every
 // other settable field is state (meters, light sources, open bodies, a
 // group's morale) or a verb (commit, despawn, release, round), and a load
-// must never write it again over what it restored.
+// must never write it again over what it restored: those are named in
+// harnessNotDials, below, and EVERY settable field of every provider is in
+// exactly one of the two lists (TestEverySettableFieldIsADialOrNamedState
+// reads the providers' own HarnessSettableFields from the source and fails
+// on a field in neither -- the B4a review, B3: the village's three radii were
+// dials the list had missed, so "load last save" put the church, the
+// watching village and the headman's post back at the data's radii).
 //
 // nolint:gochecknoglobals // a fixed table
 var harnessDialFields = map[string][]string{
@@ -107,6 +113,43 @@ var harnessDialFields = map[string][]string{
 	"pursuit": {"arrive_within", "repath_tiles"},
 	"rising":  {"edge_floor", "hasty_weight", "p", "pressure"},
 	"spawns":  {"chance", "check_minutes", "max_groups", "notice_lit_level", "notice_radius", "rout_at"},
+	// M4.7 step 4's and J1's radii: where the rite and the watching village
+	// reach, and how far from the headman's post a watch is still kept. The
+	// data's (dialogue.json's village block), never saved.
+	"village": {"rite_radius", "seen_radius", "watch_radius"},
+}
+
+// harnessNotDials are the settable fields that are NOT dials, by system, and
+// why: state a load restores, or a verb. A load never re-applies them. The
+// list is here so that a new settable field has to be classified to pass
+// TestEverySettableFieldIsADialOrNamedState -- a field in neither list is a
+// question nobody answered.
+//
+// nolint:gochecknoglobals // a fixed table
+var harnessNotDials = map[string][]string{
+	// verbs: a round committed, a disengage taken, a round stepped.
+	"combat": {"commit", "disengage", "round"},
+	// the editor's view, not a game's.
+	"editor": {"zoom"},
+	// state: the light model's sources (the file's light block).
+	"light": {"carried_burn", "carried_lit", "carried_source", "place_source", "remove_source"},
+	// state: the meters (the file's squads block) and his body's health and
+	// wind (hero.health, hero.stamina); verbs: consume, the squads' add and
+	// remove. Two providers answer to "meters" (Meters alone, and Squads,
+	// which the game registers); their fields are listed together.
+	"meters": {
+		"activity", "consume", "fatigue", "food", "health", "stamina", "water",
+		"selected", "squad", "squad_add", "squad_remove",
+	},
+	// a verb: experience granted (the sidecar's progress).
+	"progress": {"grant_xp"},
+	// a verb: a chase released.
+	"pursuit": {"release"},
+	// state: a group's morale, the open bodies (the file's spawns block); a
+	// verb: a group despawned.
+	"spawns": {"despawn", "morale", "open_bodies"},
+	// state: his standing (the sidecar's village block).
+	"village": {"rep"},
 }
 
 // nolint:gochecknoglobals // the script's dials, for this process

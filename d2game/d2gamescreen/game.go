@@ -543,7 +543,8 @@ type Game struct {
 
 	// saveGeneration is the saved_at of the last world save this hero's
 	// sidecar belongs to: SaveWorld sets it, bindKit reads it from the
-	// sidecar, and every kit save writes it, so the sidecar and the world
+	// sidecar of a game that resumes that save (and of no other: the B4a
+	// review, A2), and every kit save writes it, so the sidecar and the world
 	// file agree until the next world save (the B3 review, B7).
 	saveGeneration string
 
@@ -2053,6 +2054,18 @@ type playerBody struct{ player *d2mapentity.Player }
 func (b playerBody) CurrentHealth() int { return b.player.Stats.Health }
 func (b playerBody) MaxHealth() int     { return b.player.Stats.MaxHealth }
 func (b playerBody) SetHealth(h int)    { b.player.Stats.Health = h }
+
+// SetStamina is d2world.Winded: his wind, for the "stamina" settable field
+// (test setup; the B4a review, A3). Between 0 and his maximum.
+func (b playerBody) SetStamina(s float64) error {
+	if s < 0 || s > float64(b.player.Stats.MaxStamina) {
+		return fmt.Errorf("stamina %v is not between 0 and his maximum %d", s, b.player.Stats.MaxStamina)
+	}
+
+	b.player.Stats.Stamina = s
+
+	return nil
+}
 
 // squadDeployer places and removes the map entity a squad MODEL is (M4.4c-1,
 // ruled ask 10(b): a model is a real thing on the map). It is the Squads

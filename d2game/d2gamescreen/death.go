@@ -128,6 +128,15 @@ func (v *Game) LoadLastSave() {
 		return
 	}
 
+	// RULE 9 ON THIS PATH TOO (the B4a review, C4). The App reopens him as a
+	// LOCAL game (App.ReloadGame), so a network game's death would resume the
+	// single-player world file beside his save. A network game's load is
+	// refused and the file set aside, as it is when a network game starts
+	// (PrepareLoad): there it normally already was, and this finds nothing.
+	if !v.gameClient.IsSinglePlayer() {
+		refuseNetworkReload(v.gameClient.SaveFilePath)
+	}
+
 	// The App opens it once this game has gone (its server holds the port
 	// until then). A navigator without that -- a test fake -- gets the
 	// character select, where the same save is one click away.

@@ -832,7 +832,7 @@ var Register = []Entry{
 	// beside the save. These are its verbs; the B2 and B3 rows above that it
 	// calls moved to wire with it.
 	{sym(pkgScreen, "PrepareLoad"), BucketWire, VerdictLive,
-		"The load's step 1, before the client opens: the world file read and checked by everything that needs no game (version, rule 9, whose it is, a torn save, a hunted night), set aside on a refusal, and his sidecar written from it. App.ToCreateGame calls it for every game. If it went dark no save would ever resume.", ""},
+		"The load's step 1, before the client opens: the world file read and checked by everything that needs no game (version, rule 9, whose it is, a torn save, a hunted night), set aside on a refusal (all but a hunted night's, since the B4a review fixes), his own sidecar kept (.preload) and then written from the file. App.ToCreateGame calls it for every game. If it went dark no save would ever resume.", ""},
 	{sym(pkgScreen, "Game.restoreClock"), BucketWire, VerdictLive,
 		"The load's step 2: the clock checked and restored in CreateGame right after NewClock (trap 1).", ""},
 	{sym(pkgScreen, "Game.checkLoad"), BucketWire, VerdictLive,
@@ -842,11 +842,31 @@ var Register = []Entry{
 	{sym(pkgScreen, "Game.abandonLoad"), BucketWire, VerdictLive,
 		"Step 8 for a refusal on the first frame: the world held, nothing written on the way out, the file set aside, the dawn opened in its place (App.FallBackToDawn).", ""},
 	{sym(pkgScreen, "SetLoadAside"), BucketWire, VerdictLive,
-		"Rule 7's setting aside for every refusal, with the report the harness reads. PrepareLoad, abandonLoad and App.ToCreateGame call it.", ""},
+		"Rule 7's setting aside for every refusal, with the report the harness reads -- his own sidecar put back first when step 1 had written the file's over it, and a file that cannot be moved ignored for the run (the B4a review fixes, A1 and B1). PrepareLoad, abandonLoad and App.ToCreateGame call it.", ""},
 	{sym(pkgApp, "App.FallBackToDawn"), BucketWire, VerdictLive,
-		"A load refused after its game opened: that game left and the same hero opened again at dawn, on the seed it ran on, through ReloadGame.", ""},
+		"A load refused after its game opened: that game left and the same hero opened again at dawn, on the world file's seed (the B4a review fixes, C3; before, the seed it ran on), through ReloadGame.", ""},
 	{sym(pkgSave, "SetAside"), BucketWire, VerdictLive,
-		"Moves a world file the load refuses out of the way under the version it holds, never over anything set aside before (rule 7).", ""},
+		"Moves a world file the load refuses out of the way under the version it holds -- a file it cannot read as plain .unread (the B4a review fixes, A2) -- never over anything set aside before (rule 7).", ""},
+	// THE B4a REVIEW FIXES (29 Sep 2026): his sidecar kept before a load
+	// writes over it and put back on any refusal (A1, BUG-60), a refused file
+	// that cannot be moved not read again (B1, BUG-62), rule 9 on the death
+	// screen's path (C4), the seed a game that never opened left armed (C5).
+	{sym(pkgScreen, "keepPreload"), BucketWire, VerdictLive,
+		"Step 1 keeps his own sidecar, in memory and as N.od2.strigoi.json.preload, before it writes the world file's over it. If it went dark a refusal after step 1 would have nothing to put back, and his later progress would be lost (BUG-60).", ""},
+	{sym(pkgScreen, "restorePreload"), BucketWire, VerdictLive,
+		"Puts his own sidecar back, byte for byte, on any refusal of a load step 1 prepared (SetLoadAside). If it went dark the dawn he fell back to would have the saved moment's experience and standing, and everything since would be gone (BUG-60).", ""},
+	{sym(pkgScreen, "RestorePreload"), BucketWire, VerdictLive,
+		"The App's half of the same: a load prepared whose game never opened (the client not made, the host not reached, CreateGame failing for another reason) puts his own sidecar back (App.ToCreateGame, noGameOpened).", ""},
+	{sym(pkgScreen, "recoverPreload"), BucketWire, VerdictLive,
+		"The next start after a crash cut a load off between step 1's write and its end: the copy put back when his sidecar is still exactly what step 1 wrote, discarded when a later world save overtook it, kept aside otherwise. PrepareLoad calls it first.", ""},
+	{sym(pkgScreen, "ignoreFromNowOn"), BucketWire, VerdictLive,
+		"A refused world file that could not be set aside is not read again in this run (SetLoadAside). If it went dark the dawn replacing a refused game would find the file, refuse it and reload for ever (BUG-62: 51 teardowns in 25 s).", ""},
+	{sym(pkgScreen, "refuseNetworkReload"), BucketWire, VerdictLive,
+		"Rule 9 on the death screen's \"load last save\" out of a network game: the world file refused and set aside before the App reopens him as a local game (Game.LoadLastSave; the B4a review, C4).", ""},
+	{sym(pkgScreen, "PeekLoad"), BucketObserve, VerdictHarnessOnly,
+		"Step 1's checks and nothing else, for start_game's seed refusal (harnessWorldSeed): a file step 1 refuses anyway holds a script to no seed (the B4a review, C2). It reads; it writes and sets aside nothing.", ""},
+	{sym(pkgServer, "ClearNextGame"), BucketWire, VerdictLive,
+		"A game that never opened leaves neither the seed nor the start position a load armed (App.ToCreateGame, noGameOpened; the B4a review, C5: the seed used to stay armed for the next game of any hero).", ""},
 	{sym(pkgServer, "SetNextStartPosition"), BucketWire, VerdictLive,
 		"Hands the next game server the sub-tile he was saved at, so a resumed game opens with him there rather than at the village gate. App.ToCreateGame calls it for a load.", ""},
 	{sym(pkgEntity, "Player.StandAt"), BucketWire, VerdictLive,

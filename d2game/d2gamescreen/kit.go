@@ -48,8 +48,20 @@ func (v *Game) bindKit() {
 	defer v.bindLand(extras.Land)
 
 	// The world save this sidecar belongs to, carried forward by every kit
-	// save until the next world save (the B3 review, B7).
-	v.saveGeneration = extras.Generation
+	// save until the next world save (the B3 review, B7) -- BY A GAME THAT
+	// RESUMED THAT WORLD SAVE, and by no other (the B4a review, A2; BUG-61).
+	// A game that began without resuming it -- a network game, the dawn after
+	// a refusal, a world file hidden or held -- is not its continuation: had
+	// its kit saves carried the file's generation, the file and his sidecar
+	// would still pair (SameMoment), and the next load would write the file's
+	// older copy over everything this game earned. Its saves carry none, so a
+	// world file it did not resume reads TORN once his sidecar moves on, and
+	// is set aside with his progress kept. (SaveWorld sets the generation of
+	// a world save this game makes.)
+	v.saveGeneration = ""
+	if v.pendingLoad != nil {
+		v.saveGeneration = extras.Generation
+	}
 
 	switch {
 	case err == nil:
