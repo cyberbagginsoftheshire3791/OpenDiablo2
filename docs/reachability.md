@@ -277,6 +277,16 @@ deferral written only in a commit message is a deferral that has been lost.
   alone. `Combat.Rejoin` keeps its row: `RejoinFight` calls it, so it stays
   live in the game, and its bool form is what the M4.7 and R1 unit tests
   assert (`rejoin_test.go`, one of the 289 that may not be edited).
+- **The raid-r1 follow-up (29 Sep 2026), BUG-73.** One row, wire and live:
+  `d2world.CheckClockWatches`, the world file's cross-check of the combat
+  block's live clock fights against its watches and chases -- the load's step
+  4 (`Game.checkLoad`) calls it, and the save's `validateSnapshots`. The
+  load's call is what makes it live (the save verb is harness-only until B5),
+  so the gate sees that line go dark; it cannot see the save's go, and the
+  instrument for that is the game screen's
+  `TestASaveThatTookASwappedClockBlockWritesNothing` (control
+  `bug73-no-save-call`: red). The load's own instrument is
+  `TestAClockFightsSwappedQuarryIsRefused` (control `bug73-no-load-call`: red).
 
 The rule for this section: **if the gate cannot express it, write it here on
 the day you defer it, and name the milestone that picks it up.**

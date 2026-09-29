@@ -573,6 +573,10 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 		{"notice", v.notice.Validate(w.Notice, r)},
 		{"pursuit", v.pursuit.Validate(w.Pursuit, r)},
 		{"combat", v.combat.Validate(w.Combat, seed)},
+		// BUG-73: each live clock fight held against the FILE's watches and
+		// chases. Only the file holds both halves here: the combat model's
+		// notice is this new game's, which watches no one until step 5.
+		{"combat", d2world.CheckClockWatches(w.Combat, w.Notice, w.Pursuit)},
 		{"world rng", w.RNG.World.Check(seed, d2rand.StreamWorld)},
 		{"scene", checkStage(w.Scene.LastStage)},
 	}

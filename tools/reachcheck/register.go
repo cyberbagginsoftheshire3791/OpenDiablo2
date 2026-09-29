@@ -372,6 +372,8 @@ var Register = []Entry{
 		"M4.7 step 3b: a Downed man who stands again is back in the fight he fell in -- Game.raiseTheDead, through Combat.RejoinFight.", ""},
 	{sym(pkgWorld, "Combat.RejoinFight"), BucketWire, VerdictLive,
 		"The raid R1 review's B2 (BUG-69): Rejoin, saying whose fight -- Game.raiseTheDead (rejoinHisFight) notes his journal's reraised only for HIS fight, rose for a man standing again into a fight he is not in.", ""},
+	{sym(pkgWorld, "CheckClockWatches"), BucketWire, VerdictLive,
+		"The raid-r1 follow-up (BUG-73; the merge scout's N3): the load's step 4 (Game.checkLoad) holds each live clock fight's living enemies against the FILE's watches and chases -- one aware of another and chasing another is one pruneOrEnd would have let go -- so a file whose clock fights' quarries were swapped is refused BLOCK instead of resumed and diverging. SaveWorld runs it on the file it assembled (validateSnapshots), harness-only until B5, so the load is what keeps it live. If it went dark such a file would load again; the d2gamescreen test TestAClockFightsSwappedQuarryIsRefused is the instrument.", ""},
 	{sym(pkgWorld, "Spawns.Member"), BucketWire, VerdictLive,
 		"M4.7 step 3b: the new member's watcher, for Combat.Rejoin -- Game.raiseTheDead.", ""},
 	{sym(pkgWorld, "Corpses.DownedMember"), BucketWire, VerdictLive,

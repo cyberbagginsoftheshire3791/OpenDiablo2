@@ -210,6 +210,94 @@ func checkClockFight(f CombatClockFightSnapshot, started int) error {
 	return nil
 }
 
+// CheckClockWatches is the world file's cross-check of the combat block's
+// live clock fights against the notice and pursuit blocks (BUG-73; the merge
+// scout's N3, strigoi-harness-runs\wt-merge-scout\merge-notes.md). Neither
+// Combat.Validate nor Notice.Validate can make it: at the load's step 4 the
+// combat model's notice is the new game's, which watches no one (the file's
+// watches are restored only at step 5, after every block's Validate has
+// passed), so only the file holds both halves. Game.checkLoad calls it
+// after the blocks' own checks, and Game.validateSnapshots calls it on the
+// file a save has assembled, as B3 runs every check of the load at save.
+//
+// NOTHING ELSE TIES A CLOCK FIGHT TO ITS ENEMIES. Its quarry is an entity id,
+// and Validate asks only that the id resolves. So a file whose two clock
+// fights had their quarries swapped was accepted, and the resumed world
+// diverged from the saved one: at the first step each fight's enemies were
+// found aware of another fight's quarry and let go (pruneOrEnd), both fights
+// ended, and new ones opened in their place.
+//
+// THE RULE IS pruneOrEnd's OWN, as the save found it. At the end of every
+// clock step pruneOrEnd lets go of each living enemy (not dead, routed or
+// broken off) whose NOTICED watch names someone other than its fight's
+// quarry (awareOfAnother), and a frame's every watch and awareness change is
+// made before the combat model steps (Game.advanceWorld: the tables step the
+// notice model, the rising stands the Downed, and then combat). So no file a
+// frame leaves holds such an enemy -- unless its chase still names the
+// quarry: a harness strigoi_watch moves the watch and not the chase, and a
+// save between that verb and the next frame is the game's own state. A
+// living enemy of a live clock fight is therefore refused when its watch is
+// noticed and names another AND it does not chase the fight's quarry.
+//
+// WHAT IS NOT REFUSED, because the game makes it: a gone enemy's row, with
+// or without a watch or an entity (the review's B1, BUG-68); a living enemy
+// whose watch names another and is NOT noticed (awareOfAnother lets it stay
+// while it is in reach: a Downed man standing again into the village's fight
+// is watching him, a spawn table's watch, until he sees him; a retarget that
+// has not been noticed yet); a living enemy with no watch at all (a harness
+// strigoi_unwatch keeps it in its fight while it is in reach); and any chase,
+// or none (a chase started on an earlier target is never moved, and a
+// watcher that cannot walk has none). The one-fight rule (the review's A1,
+// BUG-67) is Combat's own and is not read here: this reads each fight's
+// enemies against the watches alone.
+//
+// Only the ids are compared: a clock fight's quarry is never he, so a watch
+// or chase on PlayerRef is always another quarry's.
+func CheckClockWatches(combat CombatSnapshot, notice NoticeSnapshot, pursuit PursuitSnapshot) error {
+	if len(combat.Clock.Live) == 0 {
+		return nil
+	}
+
+	watches := make(map[string]WatchSnapshot, len(notice.Watches))
+	for _, w := range notice.Watches {
+		watches[w.Watcher] = w
+	}
+
+	chases := make(map[string]string, len(pursuit.Chases))
+	for _, ch := range pursuit.Chases {
+		chases[ch.Hunter] = ch.Quarry
+	}
+
+	for i, f := range combat.Clock.Live {
+		gone := map[string]bool{}
+
+		for _, set := range [][]string{f.Dead, f.Routed, f.Broke} {
+			for _, id := range set {
+				gone[id] = true
+			}
+		}
+
+		for _, id := range f.Enemies {
+			w, watching := watches[id]
+
+			if gone[id] || !watching || !w.Noticed || w.Target == f.Quarry || chases[id] == f.Quarry {
+				continue
+			}
+
+			chase := "nothing"
+			if q, ok := chases[id]; ok {
+				chase = fmt.Sprintf("%q", q)
+			}
+
+			return fmt.Errorf("combat snapshot: clock.live[%d] %s (after %q): its living enemy %s is aware of %q and chases %s; "+
+				"a clock fight lets go of an enemy aware of another at the end of every step, so no save holds one",
+				i, f.ID, f.Quarry, id, w.Target, chase)
+		}
+	}
+
+	return nil
+}
+
 // clockFightsOf builds the saved clock fights as live encounters, resolving
 // each quarry and enemy through the Resolver the game attached. It is
 // Validate's last check and Restore's build: one code for both, so what
