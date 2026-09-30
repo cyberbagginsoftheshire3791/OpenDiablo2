@@ -567,6 +567,15 @@ type Game struct {
 	loadNotice  string
 	autosaveOff bool
 
+	// The B5 review fixes (save_player.go): closing is the close hook under
+	// way (its settle frames take no autosave of their own); and
+	// exitSavedHero is a SAVE AND EXIT or a close whose save wrote his
+	// .od2 and sidecar, so the unload that follows does not write them again
+	// (rule 5: the .od2's .bak is the save before, not this one; C2). Any
+	// frame of this screen clears it.
+	closing       bool
+	exitSavedHero bool
+
 	// saveGeneration is the saved_at of the last world save this hero's
 	// sidecar belongs to: SaveWorld sets it, bindKit reads it from the
 	// sidecar of a game that resumes that save (and of no other: the B4a
@@ -766,7 +775,13 @@ func (v *Game) OnUnload() error {
 	// NOR AFTER A LOAD REFUSED ON ITS FIRST FRAME (M4.6 B4a): its world is
 	// half the file's and half the dawn's, and his .od2 and sidecar stay as
 	// the load found them for the dawn that replaces this game.
-	if shouldSaveOnUnload(v.localPlayer) && !v.loadAbandoned {
+	//
+	// NOR AFTER A SAVE AND EXIT, OR A CLOSE, THAT SAVED (the M4.6 B5 review,
+	// C2; BUG-101): SaveWorld wrote his .od2 and sidecar a moment ago, and no
+	// frame ran since (exitSavedHero; any frame clears it). A second
+	// write of the same moment kept the first as the .od2's .bak, so the .bak
+	// was this moment, not the save before it (rule 5).
+	if v.unloadSavesHero() {
 		if err := v.OnPlayerSave(); err != nil {
 			v.Errorf("leaving: his .od2 was not saved: %v", err)
 		}
@@ -795,6 +810,13 @@ func (v *Game) OnUnload() error {
 	return nil
 }
 
+// unloadSavesHero is whether OnUnload writes his .od2 and sidecar: he is
+// alive, the load did not tear this game down on its first frame, and no SAVE
+// AND EXIT or close has just written them (see OnUnload).
+func (v *Game) unloadSavesHero() bool {
+	return shouldSaveOnUnload(v.localPlayer) && !v.loadAbandoned && !v.exitSavedHero
+}
+
 // Render renders the Gameplay screen
 func (v *Game) Render(screen d2interface.Surface) {
 	if v.gameClient.RegenMap {
@@ -820,6 +842,11 @@ func (v *Game) Render(screen d2interface.Surface) {
 // Advance runs the update logic on the Gameplay screen
 // nolint:gocyclo // not need to change
 func (v *Game) Advance(elapsed float64) error {
+	// A frame after SAVE AND EXIT's save is a moment its .od2 did not see:
+	// the unload writes it again (C2 above, OnUnload). The screen manager
+	// unloads before it advances, so none normally runs.
+	v.exitSavedHero = false
+
 	// A host that refused this join -- the client launched the other game,
 	// -classic or not -- sends the player back to the main menu with its
 	// reason, once (the tables burst's review, B1, 27 Sep 2026). Nothing

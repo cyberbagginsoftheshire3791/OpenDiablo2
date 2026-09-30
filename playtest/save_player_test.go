@@ -27,9 +27,15 @@ import (
 //	                             fight." and offers EXIT WITHOUT SAVING, which
 //	                             writes no world file, and he comes back to his
 //	                             last save. SAVE AND EXIT GAME saves and leaves.
+//	                             His .od2 read-only: SAVE GAME fails, puts the
+//	                             world file back, and says his last save stands
+//	                             -- which the next load shows is true (A2).
 //	TestTheDawnAutosave          the first dawn he lives to see saves the game on
 //	                             its own frame; a relaunch resumes that moment,
-//	                             and the resumed dawn does not save again.
+//	                             and the resumed dawn does not save again. A save
+//	                             before the dawn, resumed, crosses the dawn with
+//	                             its own in-frame autosave and is the original
+//	                             game a second after dawn (B3).
 //	TestTheDawnAutosaveWaitsOutAFight
 //	                             a fight across first light: the autosave is
 //	                             PENDING through every refused frame, and taken
@@ -38,10 +44,14 @@ import (
 //	TestTheCloseHook             the graceful quit (the window's close) at 20:00
 //	                             saves and a relaunch resumes it; closed in a
 //	                             fight, it leaves unsaved, promptly, and he
-//	                             comes back to his last save.
+//	                             comes back to his last save. Closed with a talk
+//	                             open, with his journal open, and in the moment
+//	                             after a fight, it saves (A1).
 //	TestTheLoadNotice            a world file this build cannot read is set aside
 //	                             (kept, never deleted) and he wakes at dawn, told
-//	                             so; a save with a villager gone says so.
+//	                             so; a save with a villager gone says so; a save
+//	                             cut off between its files resumes the save
+//	                             before it, the .bak, and says so (A2).
 //
 // Every script's hero lives in the test's own %APPDATA% (the launcher's
 // testHome), never Josh's saves.
@@ -58,6 +68,12 @@ const (
 	b5WakeAtDawn    = "You wake at dawn. The save is kept, set aside -- not deleted."
 	b5OtherVersion  = "Your save is from another version of the game."
 	b5VillagerGone  = "Your save is restored. A villager who was gone when you saved is gone again."
+
+	// The B5 review fixes.
+	b5SaveFailed      = "The game could not be saved: its files could not be written.\nYour last save stands."
+	b5LeaveToLastSave = "Leave now and you come back to your last save."
+	b5CutOff          = "Your save was cut off while it was being written."
+	b5BakResumed      = "The save before it is restored. The cut-off save is kept, set aside -- not deleted."
 )
 
 // b5Dials are the dials every B5 script sets as its game begins, and again
@@ -331,6 +347,56 @@ func TestTheMenuSaves(t *testing.T) {
 	b5Resume(t, s, "act 5", save, savedX, b5Dials)
 	sameWorld(t, "act 5 (SAVE AND EXIT GAME resumes)", sX, snapWorld(t, s))
 	t.Logf("act 5 PASS: SAVE AND EXIT GAME saved (saved_at %s) and left; the load is that moment", savedX)
+
+	// --- act 6: his .od2 cannot be written: the world file is put back ---------
+	// The B5 review, A2 (BUG-98). His .od2 read-only (a sync client or a
+	// scanner holding it does the same): SAVE GAME writes the world file,
+	// fails at his .od2, and puts the world file back as it was, so the three
+	// files are still his last save's -- and "Your last save stands" is true.
+	// Before the fix the world file stayed the new one beside the old sidecar,
+	// the next load was refused TORN, and he woke at dawn, his last save only
+	// in the .bak (the review's probe B).
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 20})
+
+	before = hashFiles(t, files)
+
+	if err := os.Chmod(save, 0o444); err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = os.Chmod(save, 0o644) }()
+
+	menuPick(t, s, "act 6", b5SaveGame)
+	m = escapeMenuOf(s)
+
+	if ls := lastSaveOf(s); str(ls, "result") != "failed" {
+		t.Fatalf("act 6: the save failed: %v", ls)
+	}
+
+	if !equalHashes(before, hashFiles(t, files)) {
+		t.Fatalf("act 6: the failed save left his files changed -- the world file must be put back as it was:\n before %v\n after  %v",
+			before, hashFiles(t, files))
+	}
+
+	if got := b5SavedAt(t, "act 6", save); got != savedX {
+		t.Fatalf("act 6: the world file is still his last save (%s), not %s", savedX, got)
+	}
+
+	if note := str(m, "note"); !flag(t, m, "open") || !flag(t, m, "exit_refused") ||
+		!strings.HasPrefix(note, b5SaveFailed) || !strings.HasSuffix(note, b5LeaveToLastSave) {
+		t.Fatalf("act 6: a failed save keeps the menu up and says his last save stands -- true, since it was put back: %v", m)
+	}
+
+	menuPick(t, s, "act 6", b5ExitUnsaved)
+	awaitMenu(t, s)
+
+	if err := os.Chmod(save, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	b5Resume(t, s, "act 6", save, savedX, b5Dials)
+	sameWorld(t, "act 6 (a failed save: his last save, not TORN)", sX, snapWorld(t, s))
+	t.Logf("act 6 PASS: his .od2 read-only, SAVE GAME failed and put the world file back (%q); the next load resumed his last save", str(m, "note"))
 }
 
 // b5ToDawn steps frames, one at a time, until the autosave leaves idle (the
@@ -370,6 +436,20 @@ func TestTheDawnAutosave(t *testing.T) {
 		t.Fatalf("the premise: no world file before the dawn (%v)", err)
 	}
 
+	// --- act 0: a save before the dawn, kept for act 3 (B3) -------------------
+	s.call("strigoi_save_game", map[string]any{})
+
+	savedT0 := b5SavedAt(t, "act 0", save)
+	filesT0 := map[string][]byte{}
+
+	for _, f := range b5Files(save) {
+		filesT0[f] = mustRead(t, f)
+	}
+
+	if a := autosaveOf(s); str(a, "state") != "idle" {
+		t.Fatalf("act 0: a save at night leaves the autosave idle: %v", a)
+	}
+
 	frames := b5ToDawn(t, s, "act 1")
 
 	a := autosaveOf(s)
@@ -389,6 +469,10 @@ func TestTheDawnAutosave(t *testing.T) {
 	sA := snapWorld(t, s)
 	t.Logf("act 1 PASS: %d frames from 02:38 the dawn armed and took the autosave (saved_at %s)", frames, savedA)
 
+	// A second of the day after the dawn's save, for act 3.
+	s.call("strigoi_step", map[string]any{"frames": 60})
+	sDay := snapWorld(t, s)
+
 	// --- act 2: relaunch, load: the dawn's moment --------------------------
 	s = b5Relaunch(t, s)
 	b5Resume(t, s, "act 2", save, savedA, b5Dials)
@@ -407,6 +491,70 @@ func TestTheDawnAutosave(t *testing.T) {
 	}
 
 	t.Logf("act 2 PASS: relaunched, resumed the dawn's moment; the resumed dawn armed nothing")
+
+	// --- act 3: the save before the dawn, resumed, crosses the dawn (B3) ------
+	// The B5 review's B3: no resume comparison crossed a dawn with the
+	// in-frame autosave on both sides. His files as act 0 left them; the
+	// resumed game steps to the dawn -- its own autosave taken on its own
+	// frame, the same frame as the original's -- and a second on, and is the
+	// original game a second after its dawn. The autosave, taken inside a
+	// frame on both sides, moved nothing either would not.
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	for f, data := range filesT0 {
+		if err := os.WriteFile(f, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	b5Resume(t, s, "act 3", save, savedT0, b5Dials)
+
+	if again := b5ToDawn(t, s, "act 3"); again != frames {
+		t.Fatalf("act 3: the resumed game's dawn armed %d frames from the save, the original's %d", again, frames)
+	}
+
+	if a := autosaveOf(s); str(a, "state") != "taken" || str(a, "by") != "dawn" {
+		t.Fatalf("act 3: the resumed game's dawn took its own autosave: %v", a)
+	}
+
+	s.call("strigoi_step", map[string]any{"frames": 60})
+	sameWorld(t, "act 3 (a save before the dawn, resumed across it: the autosave on both sides)", sDay, snapWorld(t, s))
+	t.Logf("act 3 PASS: resumed the save of 02:38, crossed the dawn (%d frames, its own autosave), and a second on it is the original game", frames)
+
+	// --- act 4: ...and with no autosave at all, the same world ---------------
+	// The in-frame autosave MOVES NOTHING (rule 10; B3): until now that rested
+	// on act 7a of TestSaveResume, a save between frames. The same resume and
+	// the same frames with the autosave off (the harness's dial) are the
+	// original game too -- so the dawn's save, taken inside the dawn's frame,
+	// changed nothing the game would not have been without it.
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	for f, data := range filesT0 {
+		if err := os.WriteFile(f, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	b5Resume(t, s, "act 4", save, savedT0, append(append([]dialWrite{}, b5Dials...), autosaveOffDial))
+
+	if again := b5ToDawn(t, s, "act 4"); again != frames {
+		t.Fatalf("act 4: the dawn came %d frames from the save, the original's %d", again, frames)
+	}
+
+	if a := autosaveOf(s); str(a, "state") != "off" {
+		t.Fatalf("act 4: with the dial off the dawn saves nothing: %v", a)
+	}
+
+	s.call("strigoi_step", map[string]any{"frames": 60})
+	sameWorld(t, "act 4 (the same frames with no autosave: the in-frame save moved nothing)", sDay, snapWorld(t, s))
+
+	if got := b5SavedAt(t, "act 4", save); got != savedT0 {
+		t.Fatalf("act 4: with the dial off no save was written: the world file is %s, not act 0's %s", got, savedT0)
+	}
+
+	t.Log("act 4 PASS: the same resume and frames with the autosave off is the same world: the dawn's in-frame save moved nothing")
 }
 
 func TestTheDawnAutosaveWaitsOutAFight(t *testing.T) {
@@ -557,6 +705,137 @@ func TestTheCloseHook(t *testing.T) {
 	b5Resume(t, s, "act 3", save, savedC, b5Dials)
 	sameWorld(t, "act 3 (a refused close: back to his last save)", sC, snapWorld(t, s))
 	t.Logf("act 3 PASS: closed in a fight in %v, unsaved; he comes back to his last save", took)
+
+	// THE B5 REVIEW, A1 (BUG-97): a close refused for what only holds the
+	// screen left without saving -- the journal (Q) or a talk open, or the
+	// second after a fight -- and nothing said so. The close ends them, lets
+	// the fight's end settle, and saves.
+
+	// --- act 4: closed with a talk open -----------------------------------------
+	talkTo(t, s, nativeHandle(t, s))
+
+	if st := saveState(s); str(st, "refused_now") != "TALKING" {
+		t.Fatalf("act 4: the premise: a talk is open and a save is refused TALKING: %v", st)
+	}
+
+	atClose := mustNum(t, clockState(s), "world_minutes")
+	out = s.call("strigoi_quit", map[string]any{"confirm": true, "graceful": true})
+
+	closed = sub(out, "close")
+	if !flag(t, closed, "saved") || strings.Join(stringsOf(closed["ended"]), ",") != "talk" {
+		t.Fatalf("act 4: closed with a talk open, the close ends the talk and saves: %v", out)
+	}
+
+	s.stop()
+
+	savedK := b5SavedAt(t, "act 4", save)
+	if savedK == savedC {
+		t.Fatal("act 4: the close wrote no new save")
+	}
+
+	s = start(t)
+	b5Resume(t, s, "act 4", save, savedK, b5Dials)
+
+	if got := mustNum(t, clockState(s), "world_minutes"); got != atClose || flag(t, uiState(s), "talk_open") {
+		t.Fatalf("act 4: the resumed game is the moment of the close (minute %v, no talk open): minute %v, talk open %v",
+			atClose, got, uiState(s)["talk_open"])
+	}
+
+	t.Logf("act 4 PASS: closed with a talk open: ended, saved (saved_at %s), resumed at the moment of the close", savedK)
+
+	// --- act 5: closed with his journal open, an hour after his last save -------
+	// The moment is taken with the journal open (opening it reads what it
+	// shows, which the save keeps), and the resumed game is compared with it
+	// open again: the journal is the one thing the close ended.
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 60})
+	s.call("strigoi_key", map[string]any{"key": "q"})
+
+	if st := saveState(s); !flag(t, uiState(s), "journal_open") || str(st, "refused_now") != "JOURNAL" {
+		t.Fatalf("act 5: the premise: his journal is open and a save is refused JOURNAL: %v", st)
+	}
+
+	sJ := snapWorld(t, s)
+
+	out = s.call("strigoi_quit", map[string]any{"confirm": true, "graceful": true})
+
+	closed = sub(out, "close")
+	if !flag(t, closed, "saved") || strings.Join(stringsOf(closed["ended"]), ",") != "journal" {
+		t.Fatalf("act 5: closed with his journal open, the close ends it and saves: %v", out)
+	}
+
+	s.stop()
+
+	savedJ := b5SavedAt(t, "act 5", save)
+	if savedJ == savedK {
+		t.Fatal("act 5: the close wrote no new save")
+	}
+
+	s = start(t)
+	b5Resume(t, s, "act 5", save, savedJ, b5Dials)
+
+	if flag(t, uiState(s), "journal_open") {
+		t.Fatal("act 5: the resumed game opens with his journal closed")
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "q"})
+	sameWorld(t, "act 5 (closed with the journal open: the hour is kept)", sJ, snapWorld(t, s))
+
+	// And he closes it again (it takes his keys while it is open).
+	s.call("strigoi_key", map[string]any{"key": "q"})
+
+	if flag(t, uiState(s), "journal_open") {
+		t.Fatal("act 5: Q closes the journal again")
+	}
+	t.Logf("act 5 PASS: closed an hour after his last save with his journal open: ended, saved (saved_at %s), the hour kept", savedJ)
+
+	// --- act 6: closed in the moment after a fight ------------------------------
+	// The dog dies (every blow a crit); the fight is over, and the save is
+	// still refused while its end settles -- the dog's death playing out, his
+	// last swing -- which frames cure: the close runs them, then saves.
+	b5Fight(t, s)
+	setField(s, "combat", "forced_band", "crit")
+
+	for i := 0; flag(t, combatState(s), "fighting"); i++ {
+		if i > 3000 {
+			t.Fatalf("act 6: the fight never ended: %v", combatState(s))
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 1})
+	}
+
+	if st := saveState(s); str(st, "refused_now") != "FIGHTING" {
+		t.Fatalf("act 6: the premise: the fight is over and a save is still refused while it settles: %v", st)
+	}
+
+	xpAtClose := mustNum(t, progressState(s), "xp")
+	atClose = mustNum(t, clockState(s), "world_minutes")
+	out = s.call("strigoi_quit", map[string]any{"confirm": true, "graceful": true})
+
+	closed = sub(out, "close")
+	if !flag(t, closed, "saved") || num(closed, "settle_frames") < 1 {
+		t.Fatalf("act 6: closed in the moment after a fight, the close lets it settle and saves: %v", out)
+	}
+
+	s.stop()
+
+	savedF := b5SavedAt(t, "act 6", save)
+	if savedF == savedJ {
+		t.Fatal("act 6: the close wrote no new save")
+	}
+
+	s = start(t)
+	b5Resume(t, s, "act 6", save, savedF, b5Dials)
+
+	if got := mustNum(t, clockState(s), "world_minutes"); got < atClose || got > atClose+20 {
+		t.Fatalf("act 6: the resumed game is the close's moment, a few settled frames on: minute %v, the close at %v", got, atClose)
+	}
+
+	if xp := mustNum(t, progressState(s), "xp"); xp < xpAtClose || flag(t, combatState(s), "fighting") {
+		t.Fatalf("act 6: the fight's end is kept: xp %v (at the close %v), fighting %v", xp, xpAtClose, combatState(s)["fighting"])
+	}
+
+	t.Logf("act 6 PASS: closed in the moment after a fight: %v settle frames (%v ms), saved (saved_at %s), resumed",
+		closed["settle_frames"], closed["settle_ms"], savedF)
 }
 
 func TestTheLoadNotice(t *testing.T) {
@@ -619,10 +898,13 @@ func TestTheLoadNotice(t *testing.T) {
 	s.call("strigoi_save_game", map[string]any{})
 	savedV := b5SavedAt(t, "act 2", save)
 
+	fileV := mustRead(t, world)
+
 	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
 	awaitMenu(t, s)
 	b5Resume(t, s, "act 2", save, savedV, b5Dials)
 
+	sV := snapWorld(t, s)
 	load = sub(s.call("strigoi_get_game_info", map[string]any{}), "load")
 	if len(stringsOf(load["dropped"])) != 1 {
 		t.Fatalf("act 2: the load took the one villager the file lacks off the map: %v", load)
@@ -633,4 +915,64 @@ func TestTheLoadNotice(t *testing.T) {
 	}
 
 	t.Logf("act 2 PASS: resumed with %v gone, and he was told", load["dropped"])
+
+	// --- act 3: a save cut off between its files: the save before it -------
+	// The B5 review, A2 (BUG-98). What a crash, or a close past its limit,
+	// leaves when it falls after the world file landed and before his .od2
+	// and sidecar: the new world file beside the last save's .od2 and
+	// sidecar, and the last save itself kept as the world file's .bak. The
+	// world file is TORN; its .bak is his sidecar's moment -- the last whole
+	// save -- so the load resumes the .bak, sets the torn file aside (kept,
+	// never lost) and tells him. Before the fix he woke at dawn.
+	od2V, sidecarV := mustRead(t, save), mustRead(t, save+".strigoi.json")
+	if gen := generationOf(t, sidecarV); gen != savedV {
+		t.Fatalf("act 3: the premise: his sidecar is the last save's (%s): %s", savedV, gen)
+	}
+
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 15})
+	s.call("strigoi_save_game", map[string]any{})
+
+	cutAt := b5SavedAt(t, "act 3", save)
+	cutFile := mustRead(t, world)
+
+	if bak := mustRead(t, world+".bak"); !bytes.Equal(bak, fileV) {
+		t.Fatal("act 3: the premise: the new save kept the last one as the world file's .bak")
+	}
+
+	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+	awaitMenu(t, s)
+
+	// The cut: his .od2 and sidecar as the last save left them.
+	if err := os.WriteFile(save, od2V, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(save+".strigoi.json", sidecarV, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b5Resume(t, s, "act 3", save, savedV, b5Dials)
+
+	load = sub(s.call("strigoi_get_game_info", map[string]any{}), "load")
+	aside = str(load, "set_aside")
+
+	if !flag(t, load, "from_bak") || !strings.HasSuffix(aside, ".torn.unread") {
+		t.Fatalf("act 3: the torn world file (saved %s) was set aside as .torn.unread and its .bak resumed: %v", cutAt, load)
+	}
+
+	if !filepath.IsAbs(aside) {
+		aside = filepath.Join(filepath.Dir(save), aside)
+	}
+
+	if kept := mustRead(t, aside); !bytes.Equal(kept, cutFile) {
+		t.Fatalf("act 3: the file set aside at %s is the cut-off save, byte for byte (never lost)", aside)
+	}
+
+	want = b5CutOff + "\n" + b5BakResumed
+	if got := str(uiState(s), "save_notice"); got != want {
+		t.Fatalf("act 3: the notice is %q, want %q", got, want)
+	}
+
+	sameWorld(t, "act 3 (a save cut off: the save before it, resumed)", sV, snapWorld(t, s))
+	t.Logf("act 3 PASS: the world file cut off at %s was set aside as %s, the .bak (%s) resumed, and he was told", cutAt, filepath.Base(aside), savedV)
 }

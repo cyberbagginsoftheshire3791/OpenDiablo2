@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
 )
@@ -21,12 +22,19 @@ import (
 //     a fight.") and the exit entry reads EXIT WITHOUT SAVING. The menu is
 //     d2player's; it asks through d2player.MenuSaver, which Game implements
 //     here (SaveRefusedNow, SaveFromMenu).
-//   - THE CLOSE HOOK (rule 3): the window's close button, Alt-F4, and the
-//     harness's graceful quit do what SAVE AND EXIT does -- the world file,
-//     his .od2 and his sidecar, in B3's order and generation, then the unload
-//     that writes his .od2 and sidecar as it always did. Refused (a fight), it
-//     leaves without saving and he comes back to his last save. It never
-//     blocks the close: the save runs under a limit (CloseGame).
+//   - THE CLOSE HOOK (rule 3): the window's close button, Alt-F4, the
+//     console's quit and the harness's graceful quit do what SAVE AND EXIT
+//     does -- the world file, his .od2 and his sidecar, in B3's order and
+//     generation, then the unload. What only holds the screen is ended first
+//     -- a talk, the journal, as a death ends them -- and the moment after a
+//     fight is let settle, frames run until it clears (the B5 review, A1).
+//     ONLY HIS LIVE FIGHT, HIS DEATH OR A NETWORK GAME makes a close leave
+//     without saving what he played (rule 3: "In a fight it leaves without
+//     saving, and you come back to your last save"). A game still starting,
+//     or his gear not yet chosen, has played nothing -- the world has not
+//     moved since it opened -- and is left as it is. It never blocks the
+//     close: the save runs under a limit (CloseGame), and every file it
+//     writes is a temporary file and a rename (the B5 review, B1).
 //   - THE DAWN AUTOSAVE (rule 10, ruled 27 Sep: "every dawn he lives to see"):
 //     armed on the frame the night is paid (earnExperience, where
 //     nightSurvived and dawnWatch settle the night), taken at the end of that
@@ -37,13 +45,14 @@ import (
 //     with a villager the file lacks taken off the map, says so on the HUD at
 //     the start of play.
 //
-// EVERY REFUSAL IS "NOT NOW". Nothing here branches on a refusal's code to
-// decide whether to retry: the pending autosave retries on any *SaveRefusal,
-// whatever it names -- a fight, a talk, a monster's held action (BUG-87, while
-// that refusal exists) -- and gives up only when the day is over. The codes
-// pick the WORDS a person reads (saveRefusalWords), nothing else. So a
-// refusal the save gains or loses (the held action's, on save-held) changes
-// no line of the logic.
+// EVERY REFUSAL IS "NOT NOW" TO THE AUTOSAVE. Nothing in its machine branches
+// on a refusal's code to decide whether to retry: the pending autosave
+// retries on any *SaveRefusal, whatever it names -- a fight, a talk, a blow or
+// a death still playing, whatever the save refuses in the build this is part
+// of -- and gives up only when the day is over. The codes pick the WORDS a
+// person reads (saveRefusalWords), and the close hook's settle (the one
+// refusal a few frames cure: FIGHTING with no fight of his), nothing else. So
+// a refusal the save gains or loses changes no line of the autosave's logic.
 
 // The game's callers of the world save (saveRecord.By, the "save" provider).
 const (
@@ -227,14 +236,39 @@ func (v *Game) SaveWorldAs(by string, opts SaveOptions) (SaveResult, error) {
 
 // --- the menu (d2player.MenuSaver) ------------------------------------------
 
-// SaveRefusedNow is why the game cannot be saved now, in his words, or "".
-// It is the save's own refusal (saveRefusal), asked and not acted on: a read.
+// SaveRefusedNow is the menu's note when the game cannot be saved now -- why,
+// in his words, and what leaving does -- or "" when it can. It is the save's
+// own refusal (saveRefusal), asked and not acted on: a read.
 func (v *Game) SaveRefusedNow() string {
 	if r := v.saveRefusal(); r != nil {
-		return saveRefusalWords(r.Code, v.combat != nil && v.combat.Fighting())
+		return v.refusalWords(r) + "\n" + v.leaveWords(true)
 	}
 
 	return ""
+}
+
+// hisFight is whether HIS fight is running (the combat model's encounter): a
+// FIGHTING refusal without one is the moment after a fight, which a moment
+// cures.
+func (v *Game) hisFight() bool {
+	return v.combat != nil && v.combat.Fighting()
+}
+
+// leaveWords is the menu's last line when a save is not made: what EXIT
+// WITHOUT SAVING does (the B5 review, C1 and A2). In a network game leaving
+// keeps his hero and gear and not the night -- there is no "last save" of a
+// network game to come back to. Otherwise he comes back to his last save --
+// when it stands: a save that failed and could not put the world file back
+// may have left it torn, and then the line says what he can do.
+func (v *Game) leaveWords(lastSaveStands bool) string {
+	switch {
+	case v.gameClient != nil && !v.gameClient.IsSinglePlayer():
+		return d2player.MenuLeaveNetwork
+	case !lastSaveStands:
+		return d2player.MenuLeaveNotWhole
+	}
+
+	return d2player.MenuExitWithoutSaved
 }
 
 // SaveFromMenu is SAVE GAME (exit false) and SAVE AND EXIT GAME (exit true).
@@ -246,41 +280,85 @@ func (v *Game) SaveFromMenu(exit bool) d2player.MenuSaveResult {
 		by = SaveByExit
 	}
 
-	_, err := v.SaveWorldAs(by, SaveOptions{})
+	res, err := v.SaveWorldAs(by, SaveOptions{})
 	if err == nil {
 		v.Infof("SAVE from the menu (%s)", by)
 
-		if !exit && v.gameControls != nil {
+		if exit {
+			// SAVE AND EXIT's unload need not write his .od2 and sidecar
+			// again: this save just did (the B5 review, C2).
+			v.exitSavedHero = true
+		} else if v.gameControls != nil {
 			v.gameControls.SaveNotice(d2player.MenuSavedNotice, d2player.SaveNoticeSeconds)
 		}
 
 		return d2player.MenuSaveResult{Saved: true}
 	}
 
-	words := v.saveWords(err)
+	words, stands := v.saveWords(res, err)
 	v.lastSave.Words = words
 	v.Infof("SAVE from the menu (%s) not made: %v", by, err)
 
-	return d2player.MenuSaveResult{Words: words}
+	return d2player.MenuSaveResult{Words: words + "\n" + v.leaveWords(stands)}
 }
 
-// saveWords is what a save's error says to him: a refusal in plain words, or
-// that the files could not be written.
-func (v *Game) saveWords(err error) string {
+// saveWords is what a save's error says to him -- a refusal in plain words,
+// or that the files could not be written -- and whether his last save stands.
+// A failed save's words are chosen from what it left written (the B5 review,
+// A2; BUG-98): "Your last save stands" only when the world file is not among
+// res.Written -- never written, or put back as it was.
+func (v *Game) saveWords(res SaveResult, err error) (words string, lastSaveStands bool) {
 	var refusal *SaveRefusal
-	if !errors.As(err, &refusal) {
-		return d2player.MenuSaveFailed
+	if errors.As(err, &refusal) {
+		return v.refusalWords(refusal), true
 	}
 
-	return saveRefusalWords(refusal.Code, v.combat != nil && v.combat.Fighting())
+	if worldFileLeftWritten(res) {
+		return d2player.MenuSaveFailedNotWhole, false
+	}
+
+	if errors.Is(err, ErrRefusedFileHeld) {
+		return d2player.MenuSaveFailedHeld, true
+	}
+
+	return d2player.MenuSaveFailed, true
+}
+
+// worldFileLeftWritten is a failed save that wrote the world file and could
+// not put it back: the one failure after which his last save may not stand.
+func worldFileLeftWritten(res SaveResult) bool {
+	for _, p := range res.Written {
+		if p != "" && p == res.WorldPath {
+			return true
+		}
+	}
+
+	return false
+}
+
+// refusalWords is a refusal in his words: saveRefusalWords, and NOT_READY's
+// two reasons that are not a game still starting -- a game with no hero save,
+// and a hero with no kit file -- in words of their own (the B5 review, C4).
+func (v *Game) refusalWords(r *SaveRefusal) string {
+	if r.Code == SaveRefusedNotReady {
+		switch r.Reason {
+		case saveReasonNoHeroSave:
+			return d2player.SaveRefusedNoSaveWords
+		case saveReasonNoKit:
+			return d2player.SaveRefusedNoKitWords
+		}
+	}
+
+	return saveRefusalWords(r.Code, v.hisFight())
 }
 
 // saveRefusalWords is a refusal, by its code, in his words (rule 2: "The menu
 // says so"). hisFight is whether HIS fight is running: a FIGHTING refusal
-// without one is the moment after a fight -- its end not yet applied, a blow
-// or a death still playing (his swing, or a monster's held action: BUG-76 and
-// BUG-87) -- which a moment cures. A code this function does not know is
-// "not now" in general words, never a code on the screen.
+// without one is the moment after a fight -- its end not yet applied, his
+// last swing, a blow or a death still playing (a monster's held action,
+// BUG-76's refusal: it remains on this branch until BUG-87's fix, save-held,
+// merges and drops it) -- which a moment cures. A code this function does not
+// know is "not now" in general words, never a code on the screen.
 func saveRefusalWords(code string, hisFight bool) string {
 	switch code {
 	case SaveRefusedFighting:
@@ -324,16 +402,38 @@ type CloseReport struct {
 	// or a panic inside the hook.
 	Error string `json:"error,omitempty"`
 
+	// Ended is what the close ended before it saved, because it only held
+	// the screen and ends safely (the B5 review, A1): "talk", "journal", and
+	// "menu" (the escape menu, which pauses the world a fight's end must
+	// settle in).
+	Ended []string `json:"ended,omitempty"`
+
+	// SettleFrames is how many frames the close ran for the moment after a
+	// fight to settle before it saved (the B5 review, A1): 0 when nothing
+	// needed it, at most closeSettleFrames; SettleMillis the wall time they
+	// took (at most closeSettleBudget).
+	SettleFrames int   `json:"settle_frames,omitempty"`
+	SettleMillis int64 `json:"settle_ms,omitempty"`
+
 	// Unloaded: the screen's own unload ran after the save -- his .od2 and
 	// sidecar written as SAVE AND EXIT's unload writes them, the client closed.
 	Unloaded    bool   `json:"unloaded"`
 	UnloadError string `json:"unload_error,omitempty"`
 
 	// TimedOut: the hook had not finished within its limit, and the close went
-	// on without it (the files are as the save left them: B3's order means a
-	// save cut off between them is refused TORN at the next load and set aside,
-	// never half-resumed).
+	// on without it. The limit falls between files (the B5 review, B1): from
+	// then no write begins, and the one in flight is waited for (closeGrace);
+	// every file the close writes is a temporary file and a rename, so each
+	// is whole, old or new. A save cut off between its files is refused TORN
+	// at the next load, which resumes the .bak -- the last save -- when it is
+	// his sidecar's moment.
 	TimedOut bool `json:"timed_out,omitempty"`
+
+	// CutMidWrite: timed out, and a file's write was still running at the
+	// end of the grace (a disk that hangs past it). That file is a temporary
+	// one -- no write is ever made in place (d2items.WriteFileAtomic) -- and
+	// the file it would replace is whole.
+	CutMidWrite bool `json:"cut_mid_write,omitempty"`
 }
 
 func (r CloseReport) String() string {
@@ -351,15 +451,25 @@ func (r CloseReport) String() string {
 
 // CloseGame is the close hook's game half: what SAVE AND EXIT GAME does --
 // the save (SaveWorld: the world file, then his .od2, then his sidecar, the
-// generation in both), then the screen's unload, which writes his .od2 and
-// sidecar as it always has (a dead hero's never) and closes the client -- run
-// under limit, so the close never hangs on it. A refused save (a fight) still
-// unloads: he leaves without saving and comes back to his last save.
+// generation in both), then the screen's unload, which closes the client
+// (and writes his .od2 and sidecar only when the save did not: the B5
+// review, C2) -- run under limit, so the close never hangs on it. First a
+// talk and the journal are ended and the moment after a fight is let settle
+// (closeNow). A save refused for a reason no moment cures (his fight, his
+// death, a network game) still unloads: he leaves without saving and comes
+// back to his last save.
 //
 // The hook runs on its own goroutine while the caller -- the game goroutine,
 // in ebiten's Update or the harness's queue -- waits for it and does nothing
-// else; past the limit the caller stops waiting and the process leaves. The
-// App calls it once and runs no frame after it (App.closeTheGame).
+// else; past the limit the caller stops waiting, lets the write in flight
+// finish, and the process leaves. The App calls it once and runs no frame
+// after it (App.closeTheGame).
+//
+// EVERY FILE IS WRITTEN WHOLE OR NOT AT ALL (the B5 review, B1; BUG-99): no
+// write is ever made in place (d2items.WriteFileAtomic), so a process that
+// leaves at any instant leaves no half file; and at the limit no write
+// begins and the one in flight is let finish (waitForClose), so the close
+// gives up between files, never inside one.
 func (v *Game) CloseGame(limit time.Duration) CloseReport {
 	done := make(chan CloseReport, 1)
 
@@ -380,7 +490,17 @@ func (v *Game) CloseGame(limit time.Duration) CloseReport {
 	return waitForClose(done, limit)
 }
 
-// waitForClose is the close hook's limit: the hook's report, or TimedOut.
+// closeGrace is how long the close waits, past its limit, for a file whose
+// write has begun (the B5 review, B1): longer than one write's retries
+// (d2items.RenameRetrying waits two seconds in all for a refused rename), so a
+// write that has begun ends -- written, or refused whole -- before the process
+// does. A write still running after it is a disk that hangs.
+const closeGrace = 3 * time.Second
+
+// waitForClose is the close hook's limit: the hook's report, or TimedOut. At
+// the limit the writes are cut (d2items.CutWrites): no file begins from then,
+// and the one in flight is waited for, up to closeGrace, so the limit falls
+// between files.
 func waitForClose(done <-chan CloseReport, limit time.Duration) CloseReport {
 	timer := time.NewTimer(limit)
 	defer timer.Stop()
@@ -389,9 +509,17 @@ func waitForClose(done <-chan CloseReport, limit time.Duration) CloseReport {
 	case rep := <-done:
 		return rep
 	case <-timer.C:
-		return CloseReport{TimedOut: true}
+		finished := cutWrites(closeGrace)
+
+		return CloseReport{TimedOut: true, CutMidWrite: !finished}
 	}
 }
+
+// cutWrites is d2items.CutWrites; a unit test swaps it to see the limit reach
+// it without cutting the package's other tests' writes.
+//
+// nolint:gochecknoglobals // a seam for a unit test, as unloadOnClose is
+var cutWrites = d2items.CutWrites
 
 // unloadOnClose is the close hook's unload: the screen's own OnUnload. A test
 // swaps it -- a unit game has no controls or client to unbind -- to see the
@@ -400,20 +528,78 @@ func waitForClose(done <-chan CloseReport, limit time.Duration) CloseReport {
 // nolint:gochecknoglobals // a seam for a unit test, as setAsideWorld is
 var unloadOnClose = func(v *Game) error { return v.OnUnload() }
 
-// closeNow is the hook's work: the save, then the unload.
+// The close's settle (the B5 review, A1): the moment after a fight -- FIGHTING
+// with no fight of his: its end not yet applied, his last swing, a blow or a
+// death still playing out -- and the close runs frames until it clears, then
+// saves. His swing and the fight's end are a frame or two; a monster's held
+// action (BUG-76's refusal, which stays on this branch until save-held, BUG-87's
+// fix, merges) outlasts them: BUG-87 measured a clock fight's refusal at up to
+// 6.53 s at the shipped round. So the settle runs up to eight seconds of game
+// time -- and never more than closeSettleBudget of the close's wall time
+// (closeLimit is ten), so the save and the unload always have time left.
+const (
+	closeFrameSeconds = 1.0 / 60
+	closeSettleFrames = 8 * 60
+	closeSettleBudget = 4 * time.Second
+)
+
+// settleFrame is one frame of the close's settle: the screen's own Advance,
+// run on the hook's goroutine while the game goroutine waits for it. A unit
+// test swaps it -- a unit game has no client to advance.
+//
+// nolint:gochecknoglobals // a seam for a unit test, as unloadOnClose is
+var settleFrame = func(v *Game) error { return v.Advance(closeFrameSeconds) }
+
+// closeNow is the hook's work: what only holds the screen ended, the moment
+// after a fight settled, the save, then the unload (the B5 review, A1; BUG-97).
+//
+//   - A TALK AND THE JOURNAL END, as a death ends them (noticeDeath): they
+//     hold the world and refuse the save (TALKING, JOURNAL), and neither is
+//     anything the world file keeps. Before, a close with the journal open
+//     left without saving and nothing said so.
+//   - THE MOMENT AFTER A FIGHT SETTLES (settleForClose): frames run until the
+//     save is no longer refused for it.
+//   - ONLY HIS LIVE FIGHT, HIS DEATH OR A NETWORK GAME LEAVES UNSAVED what he
+//     played: his own fight (rule 3: "In a fight it leaves without saving,
+//     and you come back to your last save"), his death (a dead hero is never
+//     saved), a network game (rule 9). A game not ready to be saved (still
+//     starting) or a loadout not yet chosen is refused too, and loses
+//     nothing: the world has been held, or not yet built, since the game
+//     opened. Until save-held merges, one more: a village's fight whose held
+//     actions (BUG-87) outlast the settle's eight seconds.
 func (v *Game) closeNow(rep *CloseReport) {
-	_, err := v.SaveWorldAs(SaveByClose, SaveOptions{})
+	v.closing = true
+
+	if v.talk != nil {
+		rep.Ended = append(rep.Ended, "talk")
+	}
+
+	if v.journalOpen {
+		rep.Ended = append(rep.Ended, "journal")
+	}
+
+	v.EndTalk()
+	v.journalOpen = false
+
+	v.settleForClose(rep)
+
+	res, err := v.SaveWorldAs(SaveByClose, SaveOptions{})
 
 	var refusal *SaveRefusal
 
 	switch {
 	case err == nil:
 		rep.Saved = true
+
+		// The unload need not write his .od2 and sidecar again: this save
+		// just did (the B5 review, C2).
+		v.exitSavedHero = true
 	case errors.As(err, &refusal):
 		rep.Refused, rep.Reason = refusal.Code, refusal.Reason
-		rep.Words = saveRefusalWords(refusal.Code, v.combat != nil && v.combat.Fighting())
+		rep.Words = v.refusalWords(refusal)
 	default:
 		rep.Error = err.Error()
+		rep.Words, _ = v.saveWords(res, err)
 	}
 
 	v.Infof("CLOSE the save: %s", *rep)
@@ -423,6 +609,36 @@ func (v *Game) closeNow(rep *CloseReport) {
 	}
 
 	rep.Unloaded = true
+}
+
+// settleForClose runs frames while the save is refused FIGHTING with no fight
+// of his, up to closeSettleFrames and closeSettleBudget, and records how many
+// in rep. It stops at once on any other refusal -- his own fight among them,
+// which a frame may open -- and on none. The escape menu, which pauses the
+// world a fight's end must settle in, is put away first.
+func (v *Game) settleForClose(rep *CloseReport) {
+	began := time.Now()
+
+	defer func() { rep.SettleMillis = time.Since(began).Milliseconds() }()
+
+	for rep.SettleFrames < closeSettleFrames && time.Since(began) < closeSettleBudget {
+		r := v.saveRefusal()
+		if r == nil || r.Code != SaveRefusedFighting || v.hisFight() {
+			return
+		}
+
+		if rep.SettleFrames == 0 && v.escapeMenu != nil && v.escapeMenu.IsOpen() {
+			v.escapeMenu.Dismiss()
+			rep.Ended = append(rep.Ended, "menu")
+		}
+
+		if err := settleFrame(v); err != nil {
+			v.Errorf("CLOSE a frame of the settle failed: %v", err)
+			return
+		}
+
+		rep.SettleFrames++
+	}
 }
 
 // --- the dawn autosave (rule 10) ---------------------------------------------
@@ -448,15 +664,21 @@ func (v *Game) armDawnAutosave(day int) {
 // frame did (the night's experience, the watch, the journal), and at the end
 // of every frame after while it is refused.
 func (v *Game) advanceAutosave() {
-	if v.autosave.State != AutosavePending || v.worldClock == nil {
+	// The close's settle frames save nothing of their own: the close's save
+	// comes after them, and covers a waiting autosave (the B5 review, A1).
+	if v.autosave.State != AutosavePending || v.worldClock == nil || v.closing {
 		return
 	}
 
 	a := &v.autosave
 	now := v.worldClock.WorldMinutes()
 
+	var res SaveResult
+
 	switch a.step(v.worldClock.Stage(), now, func() error {
-		_, err := v.SaveWorldAs(SaveByDawn, SaveOptions{})
+		r, err := v.SaveWorldAs(SaveByDawn, SaveOptions{})
+		res = r
+
 		return err
 	}) {
 	case autosaveSaved:
@@ -478,7 +700,13 @@ func (v *Game) advanceAutosave() {
 		v.saveNotice(d2player.AutosaveDropped)
 	case autosaveBroke:
 		v.Errorf("AUTOSAVE the dawn of day %d: the save failed: %s", a.Day, a.Error)
-		v.saveNotice(d2player.AutosaveFailed)
+
+		// Chosen from what the failed save left written (the B5 review, A2).
+		if worldFileLeftWritten(res) {
+			v.saveNotice(d2player.AutosaveFailedNotWhole)
+		} else {
+			v.saveNotice(d2player.AutosaveFailed)
+		}
 	case autosaveNothing:
 	}
 }
@@ -519,8 +747,22 @@ func (v *Game) noticeTheLoad() {
 // told why, it is set aside, and you begin at dawn"); or a resume that took a
 // villager the file lacks off the map (BUG-79's note). Its other notes (a
 // label this build words otherwise, BUG-80) change nothing he could see.
+//
+// A NETWORK GAME'S refusal does not say he wakes at dawn (the B5 review, C1): a
+// LAN client joins the host's world at the host's hour. It says what comes with
+// him and that the saved night is kept.
+//
+// A TORN FILE WHOSE .bak WAS RESUMED (the B5 review, A2) says so: the save
+// that was cut off is kept, set aside, and the save before it is where he is.
 func loadNoticeText(r LoadReport) string {
 	switch {
+	case r.Refused == LoadRefusedNetwork:
+		kept := d2player.LoadNetworkKept
+		if r.SetAside == "" {
+			kept = d2player.LoadNetworkKeptInPlace
+		}
+
+		return loadRefusalWords(r.Refused) + "\n" + kept
 	case r.Refused != "":
 		wake := d2player.LoadWakeAtDawn
 		if r.SetAside == "" {
@@ -528,6 +770,8 @@ func loadNoticeText(r LoadReport) string {
 		}
 
 		return loadRefusalWords(r.Refused) + "\n" + wake
+	case r.Resumed && r.FromBak:
+		return d2player.LoadRefusedTornWords + "\n" + d2player.LoadTornResumedBak
 	case r.Resumed && len(r.Dropped) == 1:
 		return d2player.LoadVillagerGone
 	case r.Resumed && len(r.Dropped) > 1:
@@ -584,7 +828,7 @@ func (p saveProvider) HarnessState() map[string]interface{} {
 	refusedNow, reasonNow, wordsNow := "", "", ""
 	if r := v.saveRefusal(); r != nil {
 		refusedNow, reasonNow = r.Code, r.Reason
-		wordsNow = saveRefusalWords(r.Code, v.combat != nil && v.combat.Fighting())
+		wordsNow = v.refusalWords(r)
 	}
 
 	ls := v.lastSave

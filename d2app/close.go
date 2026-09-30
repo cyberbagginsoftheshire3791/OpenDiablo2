@@ -16,17 +16,26 @@ import (
 // the renderer holds the close (ebiten.SetWindowClosingHandled), calls
 // onWindowClose on the game goroutine, and ends the loop after it. The
 // harness's strigoi_quit{graceful: true} calls the same closeTheGame, which is
-// how the playtests reach this path: a script cannot press a window's X.
+// how the playtests reach this path: a script cannot press a window's X. The
+// console's quit calls it too (the B5 review, C3).
 //
-// The game's half is d2gamescreen.Game.CloseGame: SaveWorld -- the world file,
-// his .od2, his sidecar, in B3's order, the generation in both -- then the
-// screen's own unload, under closeLimit. A refused save (a fight) still
-// unloads. A hook that has not finished by the limit is left behind and the
-// close goes on: B3's order means a save cut off between its files is refused
-// TORN at the next load and set aside (rule 7), never half-resumed.
+// The game's half is d2gamescreen.Game.CloseGame: a talk and the journal
+// ended and the moment after a fight let settle (the B5 review, A1), then
+// SaveWorld -- the world file, his .od2, his sidecar, in B3's order, the
+// generation in both -- then the screen's own unload, under closeLimit. Only
+// his live fight, his death or a network game leaves without saving what he
+// played; the unload runs either way. A hook that has not finished by the
+// limit is left behind and the close goes on -- but between files, never
+// inside one (the B5 review, B1): no file is ever written in place, only
+// through a temporary file and a rename, and at the limit no write begins and
+// the one in flight is let finish (d2gamescreen's closeGrace). A save cut off
+// between its files is refused TORN at the next load, which then resumes the
+// world file's .bak -- the last whole save -- when it is his sidecar's moment.
 
 // closeLimit bounds the close hook. A save is tens of milliseconds and the
-// unload less; ten seconds is a hung disk, not a slow one.
+// unload less; the settle after a fight runs at most four seconds of it
+// (d2gamescreen's closeSettleBudget); ten seconds is a hung disk, not a slow
+// one.
 const closeLimit = 10 * time.Second
 
 // windowCloseHandled is a renderer that can hand its window's close to the App

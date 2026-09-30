@@ -72,9 +72,12 @@ const saveGameLayoutID layoutID = -3
 // only these two questions and the words that come back, never a refusal's
 // code, so a refusal the save gains or loses changes nothing here.
 type MenuSaver interface {
-	// SaveRefusedNow is why the game cannot be saved at this moment, in the
-	// player's words, or "" when it can. The menu asks it as it opens: the
-	// world is paused under the menu, so the answer holds while it is up.
+	// SaveRefusedNow is the note under the entries when the game cannot be
+	// saved at this moment -- why, in the player's words, and what leaving
+	// without saving does (the B5 review fixes: that depends on the game --
+	// a network game has no last save to come back to) -- or "" when it can.
+	// The menu asks it as it opens: the world is paused under the menu, so
+	// the answer holds while it is up.
 	SaveRefusedNow() string
 
 	// SaveFromMenu saves the game. exit is SAVE AND EXIT GAME (the menu leaves
@@ -83,7 +86,8 @@ type MenuSaver interface {
 	SaveFromMenu(exit bool) MenuSaveResult
 }
 
-// MenuSaveResult is what SaveFromMenu did: saved, or not and why, in words.
+// MenuSaveResult is what SaveFromMenu did: saved, or not -- and then Words is
+// the whole note the menu shows: why, and what leaving does.
 type MenuSaveResult struct {
 	Saved bool
 	Words string
@@ -533,7 +537,7 @@ func (m *EscapeMenu) askSave() {
 		return
 	}
 
-	m.showSave(true, why+"\n"+MenuExitWithoutSaved)
+	m.showSave(true, why)
 }
 
 // showSave sets the exit entry's words and the line under the entries.
@@ -579,7 +583,7 @@ func (m *EscapeMenu) saveGame() {
 	}
 
 	if res := m.saver.SaveFromMenu(false); !res.Saved {
-		m.showSave(true, res.Words+"\n"+MenuExitWithoutSaved)
+		m.showSave(true, res.Words)
 		return
 	}
 
@@ -587,9 +591,10 @@ func (m *EscapeMenu) saveGame() {
 }
 
 // saveAndExit is the exit entry: SAVE AND EXIT GAME saves, then leaves for the
-// main menu (whose unload writes his .od2 and sidecar as it always did, after
-// the save's own three files); EXIT WITHOUT SAVING leaves at once, and his
-// last save stands (rule 2). A save that fails keeps him here, the entry turned
+// main menu (whose unload does not write his .od2 and sidecar again: the save
+// wrote them -- the B5 review, C2); EXIT WITHOUT SAVING leaves at once, and
+// his last save stands (rule 2; in a network game, his hero and gear go with
+// him). A save that fails keeps him here, the entry turned
 // to EXIT WITHOUT SAVING, so leaving unsaved is always his choice, never the
 // menu's.
 func (m *EscapeMenu) saveAndExit() {
@@ -599,11 +604,22 @@ func (m *EscapeMenu) saveAndExit() {
 	}
 
 	if res := m.saver.SaveFromMenu(true); !res.Saved {
-		m.showSave(true, res.Words+"\n"+MenuExitWithoutSaved)
+		m.showSave(true, res.Words)
 		return
 	}
 
 	m.navigator.ToMainMenu()
+}
+
+// Dismiss puts the menu away, whatever it shows, with no sound (the B5
+// review, A1): the window's close runs the frames that let a fight's end
+// settle before it saves, and the world is paused under the menu.
+func (m *EscapeMenu) Dismiss() {
+	if !m.isOpen {
+		return
+	}
+
+	m.close()
 }
 
 func (m *EscapeMenu) playSound() {

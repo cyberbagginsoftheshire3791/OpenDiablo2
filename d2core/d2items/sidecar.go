@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -180,11 +181,34 @@ func KeepGeneration(path string) error {
 	return nil
 }
 
-// Rename retries: how many, and how long between.
-const (
-	renameTries = 20
-	renamePause = 25 * time.Millisecond
-)
+// renameBackoff is how long RenameRetrying waits after each refused rename:
+// twenty short waits first (half a second: a reader's poll, Explorer's
+// preview, a scanner's glance -- the 23 Sep measurement's holders), then four
+// longer ones, doubling (a second and a half more: an antivirus scan of the
+// whole file). Two seconds in all; then the refusal is the write's failure
+// (the M4.6 B5 review, B1).
+//
+// nolint:gochecknoglobals // a unit test shortens it
+var renameBackoff = func() []time.Duration {
+	pauses := make([]time.Duration, 0, 24)
+
+	for i := 0; i < 20; i++ {
+		pauses = append(pauses, 25*time.Millisecond)
+	}
+
+	for d := 100 * time.Millisecond; d <= 800*time.Millisecond; d *= 2 {
+		pauses = append(pauses, d)
+	}
+
+	return pauses
+}()
+
+// renameFile is os.Rename; a unit test swaps it for a rename that is refused
+// (a file held open, which only Windows refuses a rename for) or one that
+// blocks (a hung disk).
+//
+// nolint:gochecknoglobals // a seam for the failures a unit test cannot cause portably
+var renameFile = os.Rename
 
 // WriteFileAtomic writes data to path through a temporary file and a rename,
 // so a crash mid-write never leaves half a file.
@@ -193,32 +217,154 @@ const (
 // has the target open -- measured 23 Sep 2026: the kit playtest's polling
 // reader, and in the field an antivirus scan, the search indexer or Explorer's
 // preview would do the same. The save was simply lost. So the rename is
-// retried for half a second (RenameRetrying), and if the target stays locked
-// the data is written in place: a save that is not atomic beats a save that is
-// not made.
+// retried (RenameRetrying: half a second of short waits, then longer ones,
+// two seconds in all).
+//
+// IT NEVER WRITES IN PLACE (the M4.6 B5 review, B1; BUG-99). Until the review
+// a target that stayed locked was written in place with os.WriteFile -- "a
+// save that is not atomic beats a save that is not made". The world save
+// changed that trade: a save is three files that are one moment, and a
+// process that leaves in the middle of an in-place write (the window's close
+// under its limit, a crash, a power cut) leaves half a file where his save
+// was -- a world file no load reads, or an .od2 that no longer opens. A
+// refused rename is now the write's failure, and the save that asked for it
+// deals with that whole: the world save puts its world file back as it was
+// (Game.SaveWorld's rollback), so his last save stands; a kit save is made
+// again by the next one. The retry is what the in-place write was for, and
+// stays; only the fallback is gone.
 //
 // THE TEMPORARY FILE IS FLUSHED TO DISK BEFORE THE RENAME (M4.6 B3 review,
 // 29 Sep 2026): without it a power cut soon after the rename can leave the
 // new name pointing at blocks the disk never received -- an empty or torn
 // save where the old one was. One Sync per save is cheap beside the save.
+//
+// Once the close's limit has passed (CutWrites) no write begins at all.
+//
+// A write that fails leaves no temporary file behind (the B5 review's probe
+// B found a stray N.od2.tmp beside a read-only .od2).
 func WriteFileAtomic(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := writeSynced(tmp, data); err != nil {
+	if err := beginWrite(path); err != nil {
 		return err
 	}
 
-	err := RenameRetrying(tmp, path)
-	if err == nil {
-		return nil
+	defer endWrite()
+
+	tmp := path + ".tmp"
+	if err := writeSynced(tmp, data); err != nil {
+		_ = os.Remove(tmp)
+
+		return err
 	}
 
-	if werr := os.WriteFile(path, data, 0o600); werr != nil {
-		return fmt.Errorf("save %s: rename: %v; direct write: %w", path, err, werr)
-	}
+	if err := RenameRetrying(tmp, path); err != nil {
+		_ = os.Remove(tmp)
 
-	_ = os.Remove(tmp)
+		return fmt.Errorf("save %s: the rename was refused for %v, and a save is never written in place: %w",
+			path, renameBackoffTotal(), err)
+	}
 
 	return nil
+}
+
+// renameBackoffTotal is how long RenameRetrying waits in all.
+func renameBackoffTotal() time.Duration {
+	var total time.Duration
+
+	for _, d := range renameBackoff {
+		total += d
+	}
+
+	return total
+}
+
+// THE CLOSE'S WRITES (the M4.6 B5 review, B1; BUG-99). The window's close
+// saves the game under a limit (d2app's closeLimit): a hung disk -- an
+// antivirus scan, a sync client -- must not hang the close, so past the limit
+// the process leaves without the hook. Two rules make that safe for the
+// files:
+//
+//   - No write is ever made in place (WriteFileAtomic). Every file is a
+//     temporary file and a rename, and a rename is whole or not at all, so a
+//     process that leaves at ANY instant leaves each file as it was or as it
+//     became -- never half of one.
+//   - CutWrites: when the limit passes, no write BEGINS, and the close waits
+//     (a grace longer than one write's retries) for the one in flight to
+//     finish, so the close gives up between files, never inside one. The
+//     save's order (the world file, his .od2, his sidecar) and the load's
+//     fallback to the world file's .bak cover a cut between files
+//     (d2gamescreen: SaveWorld's rollback, the load's TORN fallback).
+//
+// The cut is process-wide and one-way in the game: a closing process never
+// writes again. uncutWrites is the unit tests' reset.
+
+// ErrWritesCut is a write asked for after the close's limit passed.
+var ErrWritesCut = errors.New("the game is closing and its time is up: no file is written from here")
+
+// nolint:gochecknoglobals // one process, one close
+var writes struct {
+	sync.Mutex
+	cut      bool
+	inFlight int
+}
+
+// CutWrites is the close's limit reached: from now on no WriteFileAtomic
+// begins (ErrWritesCut), and it waits up to grace for the writes in flight to
+// end. finished is false when one was still running at the end of the grace
+// (a disk that hangs past it: the process leaves in the middle of that
+// write's temporary file, and the file it would have replaced is whole).
+func CutWrites(grace time.Duration) (finished bool) {
+	writes.Lock()
+	writes.cut = true
+	writes.Unlock()
+
+	deadline := time.Now().Add(grace)
+
+	for {
+		writes.Lock()
+		n := writes.inFlight
+		writes.Unlock()
+
+		if n == 0 {
+			return true
+		}
+
+		if time.Now().After(deadline) {
+			return false
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// uncutWrites undoes CutWrites. The game never calls it (a closing process
+// ends); a unit test does, so the next test can write.
+func uncutWrites() {
+	writes.Lock()
+	defer writes.Unlock()
+
+	writes.cut = false
+}
+
+// beginWrite counts a write in flight, or refuses it after the cut.
+func beginWrite(path string) error {
+	writes.Lock()
+	defer writes.Unlock()
+
+	if writes.cut {
+		return fmt.Errorf("save %s: %w", path, ErrWritesCut)
+	}
+
+	writes.inFlight++
+
+	return nil
+}
+
+// endWrite is a write done.
+func endWrite() {
+	writes.Lock()
+	defer writes.Unlock()
+
+	writes.inFlight--
 }
 
 // writeSynced writes data to a new file at path and flushes it to disk
@@ -241,20 +387,24 @@ func writeSynced(path string, data []byte) error {
 	return err
 }
 
-// RenameRetrying renames from to to, retrying for half a second while the
-// rename is refused -- on Windows, while anything else holds either file open
-// (WriteFileAtomic's lesson). The world save's setting aside of a file it
-// cannot read goes through it too (d2save, the B3 review's C item): the file
-// being moved is exactly the kind a reader or a scanner has open.
+// RenameRetrying renames from to to, retrying while the rename is refused --
+// on Windows, while anything else holds either file open (WriteFileAtomic's
+// lesson) -- for two seconds, the waits growing (renameBackoff). The world
+// save's setting aside of a file it cannot read goes through it too (d2save,
+// the B3 review's C item): the file being moved is exactly the kind a reader
+// or a scanner has open.
 func RenameRetrying(from, to string) error {
-	var err error
+	err := renameFile(from, to)
+	if err == nil {
+		return nil
+	}
 
-	for i := 0; i < renameTries; i++ {
-		if err = os.Rename(from, to); err == nil {
+	for _, pause := range renameBackoff {
+		time.Sleep(pause)
+
+		if err = renameFile(from, to); err == nil {
 			return nil
 		}
-
-		time.Sleep(renamePause)
 	}
 
 	return err

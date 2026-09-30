@@ -80,6 +80,13 @@ const (
 	SaveRefusedLoadout  = "LOADOUT"
 )
 
+// Two NOT_READY reasons the player is told in words of their own (the B5
+// review, C4): the rest of NOT_READY is a game still starting.
+const (
+	saveReasonNoHeroSave = "this game opened no hero save"
+	saveReasonNoKit      = "he has no kit file to save beside him"
+)
+
 // ErrSaveRefused is what every refusal wraps: errors.Is(err, ErrSaveRefused).
 var ErrSaveRefused = errors.New("the game cannot be saved now")
 
@@ -132,8 +139,14 @@ type SaveResult struct {
 	Kept        []string `json:"kept"`
 	SetAside    string   `json:"set_aside,omitempty"`
 	Omitted     []string `json:"omitted"`
-	Blocks      []string `json:"blocks"`
-	Bytes       int      `json:"bytes"`
+
+	// PutBack is the world file a save wrote and then put back as it was,
+	// because a later file of the same save could not be written (the M4.6
+	// B5 review, A2): it is not in Written, and the last save stands. ""
+	// when there was nothing to put back.
+	PutBack string   `json:"put_back,omitempty"`
+	Blocks  []string `json:"blocks"`
+	Bytes   int      `json:"bytes"`
 }
 
 // saveBuild is the build the world file says wrote it (SetSaveBuild).
@@ -206,6 +219,20 @@ func readUUIDStream() *d2save.UUIDStream {
 //
 // nolint:gochecknoglobals // a test's probe; nothing in the program sets it
 var saveProbe func(w *d2save.World)
+
+// writeHeroSave is step 2, his .od2 through the server (Game.OnPlayerSave). A
+// unit test swaps it: a unit game has no server, and the B5 review's A2 is a
+// step 2 that fails after the world file is written.
+//
+// nolint:gochecknoglobals // a seam for a unit test, as setAsideWorld is
+var writeHeroSave = func(v *Game) error { return v.OnPlayerSave() }
+
+// ErrRefusedFileHeld is a save refused because the world file beside his save
+// is one the load refused and could not set aside (the M4.6 B5 review, B2;
+// BUG-100): rule 7 says such a file is never overwritten, and it is still
+// held, so it cannot be moved out of the way first. Not a refusal (a moment
+// cannot cure it): the save fails, and says so.
+var ErrRefusedFileHeld = errors.New("the save beside his that could not be read is still held open and cannot be set aside, so it is not written over")
 
 // SaveWorld saves the game: the world file, then his .od2, then his sidecar,
 // then the death screen's copy (see the top of this file). A refusal is a
@@ -286,9 +313,21 @@ func (v *Game) SaveWorld(opts SaveOptions) (SaveResult, error) {
 	res.WorldPath = d2save.WorldPath(res.SavePath)
 	res.SidecarPath = v.kitPath
 
+	// 0. A file the load refused and could not move is not written over
+	// (rule 7; the B5 review, B2): WriteWorld would keep a readable one as
+	// the .bak -- and the save after that would lose it. It is set aside now,
+	// under the load's own name for it, or the save is not made.
+	if aside, err := setAsideRefusedWorld(res.WorldPath); err != nil {
+		return res, err
+	} else if aside != "" {
+		res.SetAside = aside
+	}
+
 	// 1. The world.
 	w, err := d2save.WriteWorld(res.WorldPath, data)
-	res.SetAside = w.SetAside
+	if w.SetAside != "" {
+		res.SetAside = w.SetAside
+	}
 
 	if err != nil {
 		return res, fmt.Errorf("writing the world file: %w", err)
@@ -300,8 +339,14 @@ func (v *Game) SaveWorld(opts SaveOptions) (SaveResult, error) {
 	// 2. His .od2, through the server as it always was: a local client's
 	// packet is a direct call, so the file is written when this returns, and
 	// its error comes back (d2server, M4.6 B3).
-	if err := v.OnPlayerSave(); err != nil {
-		return res, fmt.Errorf("the world file is written and his .od2 is not: %w", err)
+	//
+	// A STEP THAT FAILS AFTER THE WORLD FILE IS WRITTEN PUTS IT BACK (the B5
+	// review, A2; BUG-98): the new world file beside the old sidecar is a
+	// torn save, which the next load refuses TORN -- and his last save would
+	// survive only as the .bak. So the world file goes back to what WriteWorld
+	// replaced, and the three files are one moment again: the last save's.
+	if err := writeHeroSave(v); err != nil {
+		return v.putBackWorld(res, w, fmt.Errorf("the world file is written and his .od2 is not: %w", err))
 	}
 
 	res.Written = append(res.Written, res.SavePath)
@@ -310,9 +355,12 @@ func (v *Game) SaveWorld(opts SaveOptions) (SaveResult, error) {
 		res.Kept = append(res.Kept, d2items.BakPath(res.SavePath))
 	}
 
-	// 3. His sidecar: the same bytes the world file carries.
+	// 3. His sidecar: the same bytes the world file carries. Failed, the
+	// world file goes back too (A2): his .od2 stays the newer moment, as it is
+	// after every EXIT WITHOUT SAVING, and the world file carries the hero
+	// the load restores.
 	if err := d2items.WriteHero(v.kitPath, sidecar); err != nil {
-		return res, fmt.Errorf("the world file and his .od2 are written and his sidecar is not: %w", err)
+		return v.putBackWorld(res, w, fmt.Errorf("the world file and his .od2 are written and his sidecar is not: %w", err))
 	}
 
 	res.Written = append(res.Written, v.kitPath)
@@ -329,6 +377,56 @@ func (v *Game) SaveWorld(opts SaveOptions) (SaveResult, error) {
 	return res, nil
 }
 
+// putBackWorld is a save that failed after its world file was written (the B5
+// review, A2): the world file is put back as it was (d2save.RestoreWorld), so
+// the last save stands, and res says so -- the world file out of Written and
+// in PutBack. If it cannot be put back, Written keeps it and the error says
+// so: the words a player reads are chosen from Written (saveFailedWords), and
+// never say his last save stands when it may not.
+func (v *Game) putBackWorld(res SaveResult, w d2save.Written, cause error) (SaveResult, error) {
+	if err := d2save.RestoreWorld(w); err != nil {
+		v.Errorf("SAVE failed after the world file was written (%v), and it could not be put back: %v", cause, err)
+
+		return res, fmt.Errorf("%w; and the world file could not be put back: %v", cause, err)
+	}
+
+	kept := res.Written[:0]
+
+	for _, p := range res.Written {
+		if p != res.WorldPath {
+			kept = append(kept, p)
+		}
+	}
+
+	res.Written, res.PutBack = kept, res.WorldPath
+
+	v.Warningf("SAVE failed after the world file was written (%v); the world file is put back as it was, and the last save stands", cause)
+
+	return res, cause
+}
+
+// setAsideRefusedWorld is step 0 of a save (the B5 review, B2; BUG-100): the
+// world file at worldPath, if the load refused it earlier in this run and
+// could not set it aside (ignoredRefusal), is set aside now, under the name
+// the load gives that refusal -- it is never kept as the .bak, which the save
+// after this one would overwrite. It returns where it went, or "" for any
+// other file; still held, the save fails (ErrRefusedFileHeld).
+func setAsideRefusedWorld(worldPath string) (string, error) {
+	r := ignoredRefusal(worldPath)
+	if r == nil {
+		return "", nil
+	}
+
+	aside, err := setAsideWorld(worldPath, r.Code)
+	if err != nil {
+		return "", fmt.Errorf("%w (%s, refused %s at the load: %v)", ErrRefusedFileHeld, worldPath, r.Code, err)
+	}
+
+	forgetIgnored(worldPath)
+
+	return aside, nil
+}
+
 // saveRefusal is why a save cannot be made now, or nil.
 func (v *Game) saveRefusal() *SaveRefusal {
 	refuse := func(code, format string, args ...interface{}) *SaveRefusal {
@@ -342,7 +440,7 @@ func (v *Game) saveRefusal() *SaveRefusal {
 		// Rule 9: the TCP handlers race the counted world stream (C13).
 		return refuse(SaveRefusedNetwork, "a network game is not saved")
 	case v.gameClient.SaveFilePath == "":
-		return refuse(SaveRefusedNotReady, "this game opened no hero save")
+		return refuse(SaveRefusedNotReady, saveReasonNoHeroSave)
 	case v.localPlayer == nil || v.localPlayer.Stats == nil:
 		return refuse(SaveRefusedNotReady, "he is not in the world yet")
 	case v.pendingLoad != nil || v.loadAbandoned:
@@ -365,7 +463,7 @@ func (v *Game) saveRefusal() *SaveRefusal {
 	case v.choosingLoadout:
 		return refuse(SaveRefusedLoadout, "he is choosing his loadout")
 	case v.kit == nil || v.kitPath == "":
-		return refuse(SaveRefusedNotReady, "he has no kit file to save beside him")
+		return refuse(SaveRefusedNotReady, saveReasonNoKit)
 	case v.worldClock == nil || v.light == nil || v.squads == nil || v.spawns == nil || v.spawner == nil ||
 		v.notice == nil || v.pursuit == nil || v.corpses == nil || v.rising == nil || v.combat == nil:
 		return refuse(SaveRefusedNotReady, "the world's systems are not all built")

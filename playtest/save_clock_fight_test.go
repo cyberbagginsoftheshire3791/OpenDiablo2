@@ -468,6 +468,7 @@ var scHeldRe = regexp.MustCompile(`still playing its (\S+?):`)
 // save's world_path when it is made, its reason when it is refused).
 func scCall(s *session, name string, args map[string]any) (map[string]any, string) {
 	s.t.Helper()
+	s.refuseRealSaves(name, args)
 
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()

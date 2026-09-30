@@ -176,8 +176,9 @@ func TestARefusalAfterStepOnePutsHisSidecarBack(t *testing.T) {
 }
 
 // A1: A FAILED WRITE AT STEP 1 PUTS HIS OWN BACK TOO (SIDECAR). The write can
-// fail half done (WriteFileAtomic falls back to writing in place while
-// Windows holds the target); what was his is restored from the copy.
+// fail half done (WriteFileAtomic fell back to writing in place while Windows
+// held the target, until the M4.6 B5 review's B1; a seam here, as a disk that
+// fails mid-write); what was his is restored from the copy.
 func TestAFailedStepOneWritePutsHisSidecarBack(t *testing.T) {
 	saved, save := b4Game(t)
 	b4Busy(t, saved)
@@ -289,7 +290,7 @@ func TestAFileThatCannotBeSetAsideIsNotReadAgain(t *testing.T) {
 	s, before, _ := b4Prepared(t, good)
 
 	was := setAsideWorld
-	setAsideWorld = func(string) (string, error) { return "", errors.New("the process cannot access the file") }
+	setAsideWorld = func(string, string) (string, error) { return "", errors.New("the process cannot access the file") }
 
 	defer func() { setAsideWorld = was }()
 

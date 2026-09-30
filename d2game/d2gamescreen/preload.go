@@ -277,3 +277,12 @@ func ignoredRefusal(worldPath string) *LoadRefusal {
 
 	return &r
 }
+
+// forgetIgnored is a refused file that was set aside after all (a save's step
+// 0, the M4.6 B5 review, B2): nothing at its path is that file any more.
+func forgetIgnored(worldPath string) {
+	ignored.Lock()
+	defer ignored.Unlock()
+
+	delete(ignored.files, worldPath)
+}

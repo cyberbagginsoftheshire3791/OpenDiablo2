@@ -267,6 +267,15 @@ func TestTheLoadsNotice(t *testing.T) {
 		{"a villager gone", LoadReport{Found: true, Resumed: true, Dropped: []string{"Warriv"}}, d2player.LoadVillagerGone},
 		{"two gone", LoadReport{Found: true, Resumed: true, Dropped: []string{"Warriv", "Akara"}},
 			strings.Replace(d2player.LoadVillagersGone, "%d", "2", 1)},
+
+		// The B5 review fixes: a network game does not wake at dawn (C1); a
+		// torn file whose .bak was resumed says so (A2).
+		{"a network game", LoadReport{Found: true, Refused: LoadRefusedNetwork, SetAside: "x"},
+			d2player.LoadRefusedNetworkWords + "\n" + d2player.LoadNetworkKept},
+		{"a network game, the file left in place", LoadReport{Found: true, Refused: LoadRefusedNetwork, Ignored: true},
+			d2player.LoadRefusedNetworkWords + "\n" + d2player.LoadNetworkKeptInPlace},
+		{"a torn file, its .bak resumed", LoadReport{Found: true, Resumed: true, FromBak: true, SetAside: "x.torn.unread"},
+			d2player.LoadRefusedTornWords + "\n" + d2player.LoadTornResumedBak},
 	}
 
 	for _, c := range cases {
@@ -285,12 +294,16 @@ func TestTheMenuAsksTheSave(t *testing.T) {
 	require.Empty(t, v.SaveRefusedNow(), "the control: a savable game is not refused")
 
 	v.talk = &d2dialogue.Talk{NodeID: "greet"}
-	require.Equal(t, d2player.SaveRefusedTalkWords, v.SaveRefusedNow())
+
+	// Why, and what leaving does (the B5 review: the note is the game's, so a
+	// network game can say its own).
+	note := d2player.SaveRefusedTalkWords + "\n" + d2player.MenuExitWithoutSaved
+	require.Equal(t, note, v.SaveRefusedNow())
 
 	for _, exit := range []bool{false, true} {
 		res := v.SaveFromMenu(exit)
 		require.False(t, res.Saved)
-		require.Equal(t, d2player.SaveRefusedTalkWords, res.Words)
+		require.Equal(t, note, res.Words)
 		require.Equal(t, "refused", v.lastSave.Result)
 		require.Equal(t, SaveRefusedTalking, v.lastSave.Code)
 	}
@@ -299,15 +312,28 @@ func TestTheMenuAsksTheSave(t *testing.T) {
 	require.True(t, errors.Is(err, os.ErrNotExist), "a refused menu save writes nothing")
 }
 
-// TestTheCloseHookNeverBlocks: a refused close (a fight's edge) is not saved,
-// writes no world file, and still unloads; a close whose unload hangs is left
-// behind at the limit; and the limit itself returns on time.
+// TestTheCloseHookNeverBlocks: a refused close (his death: since the B5
+// review a fight's edge settles and saves, TestTheCloseLetsTheMomentAfterA
+// FightSettle) is not saved, writes no world file, and still unloads; a close
+// whose unload hangs is left behind at the limit, and the limit cuts the
+// writes (between files: d2items.CutWrites); and the limit itself returns on
+// time.
 func TestTheCloseHookNeverBlocks(t *testing.T) {
 	v, save := b3SavableGame(t)
-	v.wasFighting = true
+	v.died = true
 
-	unloads := 0
+	unloads, cuts := 0, 0
 	defer func(was func(*Game) error) { unloadOnClose = was }(unloadOnClose)
+	defer func(was func(time.Duration) bool) { cutWrites = was }(cutWrites)
+
+	// The limit's cut is the process's; here it is counted, so the package's
+	// later tests can still write.
+	cutWrites = func(grace time.Duration) bool {
+		require.Equal(t, closeGrace, grace)
+		cuts++
+
+		return true
+	}
 
 	unloadOnClose = func(*Game) error {
 		unloads++
@@ -316,11 +342,12 @@ func TestTheCloseHookNeverBlocks(t *testing.T) {
 
 	rep := v.CloseGame(5 * time.Second)
 	require.False(t, rep.Saved)
-	require.Equal(t, SaveRefusedFighting, rep.Refused)
-	require.Equal(t, d2player.SaveRefusedSettleWords, rep.Words)
+	require.Equal(t, SaveRefusedDead, rep.Refused)
+	require.Equal(t, d2player.SaveRefusedDeadWords, rep.Words)
 	require.True(t, rep.Unloaded, "a refused close still closes")
 	require.Equal(t, 1, unloads)
 	require.False(t, rep.TimedOut)
+	require.Zero(t, cuts, "a close within its limit cuts nothing")
 
 	entries, err := os.ReadDir(filepath.Dir(save))
 	require.NoError(t, err)
@@ -332,7 +359,7 @@ func TestTheCloseHookNeverBlocks(t *testing.T) {
 	// A panic inside the hook is a report, not a crash of the close (a game
 	// of its own: each hook below may leave its goroutine behind).
 	v2, _ := b3SavableGame(t)
-	v2.wasFighting = true
+	v2.died = true
 	unloadOnClose = func(*Game) error { panic("b5") }
 	rep = v2.CloseGame(5 * time.Second)
 	require.Contains(t, rep.Error, "panic in the close hook")
@@ -340,7 +367,7 @@ func TestTheCloseHookNeverBlocks(t *testing.T) {
 	// An unload that never returns: the hook is left behind at the limit, and
 	// the close goes on.
 	v3, _ := b3SavableGame(t)
-	v3.wasFighting = true
+	v3.died = true
 	release, finished := make(chan struct{}), make(chan struct{})
 
 	unloadOnClose = func(*Game) error {
@@ -356,6 +383,7 @@ func TestTheCloseHookNeverBlocks(t *testing.T) {
 
 	require.True(t, rep.TimedOut)
 	require.Less(t, took, 3*time.Second, "the close waited %v past a 150 ms limit", took)
+	require.Equal(t, 1, cuts, "at the limit the writes are cut")
 
 	// Let the hook go before the game's cleanup, so nothing races it.
 	close(release)

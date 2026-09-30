@@ -895,6 +895,29 @@ var Register = []Entry{
 		"The dawn autosave, at the end of every frame: taken, or pending through every refused frame and dropped when night falls (Game.Advance).", ""},
 	{sym(pkgScreen, "Game.noticeTheLoad"), BucketWire, VerdictLive,
 		"Rule 7's telling: a load refused and set aside, or resumed with a villager gone, said on the HUD at the start of play (bindGameControls).", ""},
+	// THE M4.6 B5 REVIEW FIXES (29 Sep 2026): what keeps a close from leaving
+	// unsaved over a journal, a talk or the moment after a fight (A1), a
+	// failed save from tearing the last one (A2), a torn save from waking him
+	// at dawn (A2), a close from giving up inside a file (B1), and a file the
+	// load refused from being written over (B2). Each is a wire row: if one
+	// went dark its defect would be back, and the playtests' own saves --
+	// strigoi_save_game -- would never show it.
+	{sym(pkgScreen, "Game.settleForClose"), BucketWire, VerdictLive,
+		"The close's settle (A1, BUG-97): frames run while the save is refused FIGHTING with no fight of his, then the close saves. Game.closeNow calls it. If it went dark a close in the second after a fight would leave unsaved again.", ""},
+	{sym(pkgPlayer, "EscapeMenu.Dismiss"), BucketWire, VerdictLive,
+		"Puts the escape menu away for the close's settle (the world is paused under the menu, so a fight's end could not settle behind it). Game.settleForClose calls it.", ""},
+	{sym(pkgScreen, "Game.putBackWorld"), BucketWire, VerdictLive,
+		"A save that fails after its world file landed puts it back (A2, BUG-98), so the three files are the last save's and \"Your last save stands\" is true. SaveWorld's steps 2 and 3 call it.", ""},
+	{sym(pkgSave, "RestoreWorld"), BucketWire, VerdictLive,
+		"The world file put back from the .bak WriteWorld kept, or removed when there was none (A2). Game.putBackWorld calls it.", ""},
+	{sym(pkgScreen, "resumeTheBak"), BucketWire, VerdictLive,
+		"A TORN world file whose .bak is his sidecar's moment: the torn file set aside, the .bak resumed in its place (A2). PrepareLoad calls it. If it went dark a save cut off between its files would wake him at dawn, his last save only in the .bak.", ""},
+	{sym(pkgSave, "SetAsideTorn"), BucketWire, VerdictLive,
+		"A torn world file set aside as .torn.unread, a name that says what is wrong with it (C5, BUG-104). setAsideFor calls it for every TORN refusal.", ""},
+	{sym(pkgScreen, "setAsideRefusedWorld"), BucketWire, VerdictLive,
+		"A save's step 0 (B2, BUG-100): a world file the load refused and could not set aside is set aside before the save writes, never kept as the .bak; still held, the save is not made. SaveWorld calls it.", ""},
+	{sym(pkgItems, "CutWrites"), BucketWire, VerdictLive,
+		"The close's limit (B1, BUG-99): no write begins after it, and the one in flight is let finish, so the close gives up between files. waitForClose calls it through cutWrites.", ""},
 	{sym(pkgSave, "Encode"), BucketWire, VerdictLive,
 		"Writes the world file's bytes, every block in order (omit is the negative controls'). Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgSave, "WriteWorld"), BucketWire, VerdictLive,
@@ -965,7 +988,7 @@ var Register = []Entry{
 	{sym(pkgHero, "DeleteHero"), BucketWire, VerdictLive,
 		"The hero screen's Delete: every file of his -- world file, .bak and .tmp generations, files set aside -- his .od2 last (the B3 review, A1). If it went dark the next hero made would inherit a deleted hero's world file.", ""},
 	{sym(pkgItems, "RenameRetrying"), BucketWire, VerdictLive,
-		"The Windows lesson as one function: a rename refused while a file is held is retried for half a second. WriteFileAtomic (every save) and the world file's setting aside go through it (the B3 review's C item).", ""},
+		"The Windows lesson as one function: a rename refused while a file is held is retried -- half a second of short waits, then longer ones, two seconds in all since the M4.6 B5 review (B1), which also made a rename still refused the write's failure, never an in-place write. WriteFileAtomic (every save) and the world file's setting aside go through it (the B3 review's C item).", ""},
 	{sym(pkgEntity, "Creature.SetCreatureID"), BucketWire, VerdictLive,
 		"The game spawner (and the terminal's spawnmon) records the bestiary entry beside every NewCreature, so every creature the game places can be saved and rebuilt. If it went dark, every creature would refuse the save.", ""},
 	{sym(pkgItems, "KeepGeneration"), BucketWire, VerdictLive,

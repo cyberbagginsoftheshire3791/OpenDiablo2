@@ -305,7 +305,17 @@ func harnessBinary(repoRoot string) (string, error) {
 			exe += ".exe"
 		}
 
-		build := exec.Command("go", "build", "-tags", "harness", "-o", exe, ".")
+		args := []string{"build", "-tags", "harness"}
+
+		// A negative control's source mutation as a build overlay (go help
+		// build: -overlay), so the worktree is never changed while the gate,
+		// the reach gate or another script reads it (the M4.6 B5 review
+		// fixes' playtest controls). Unset in every ordinary run.
+		if overlay := os.Getenv("STRIGOI_HARNESS_OVERLAY"); overlay != "" {
+			args = append(args, "-overlay", overlay)
+		}
+
+		build := exec.Command("go", append(args, "-o", exe, ".")...)
 		build.Dir = repoRoot
 
 		if out, err := build.CombinedOutput(); err != nil {
@@ -510,6 +520,7 @@ func (s *session) gameTail(n int) string {
 // call invokes a tool and fails the test on transport or tool errors.
 func (s *session) call(name string, args map[string]any) map[string]any {
 	s.t.Helper()
+	s.refuseRealSaves(name, args)
 
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
@@ -543,6 +554,81 @@ func (s *session) call(name string, args map[string]any) map[string]any {
 	}
 
 	return out
+}
+
+// ATTACHED MODE NEVER WRITES THE REAL USER'S SAVES (the M4.6 B5 review, C8;
+// BUG-103). A launched game has a private %APPDATA% (startWith's testHome), so
+// its heroes, its saves and its dawn autosaves are the test's. A game attached
+// through STRIGOI_HARNESS_ADDR was started by hand, with whatever %APPDATA%
+// its starter had -- on the laptop, Josh's, where his heroes are. So when the
+// session is attached, the verbs that write a hero's files there -- a hero
+// made (strigoi_start_game with hero_name), a save (strigoi_save_game without
+// to), the window's close (strigoi_quit graceful, which saves) -- fail the
+// test before they are sent, unless the game reports a saves_dir that is not
+// this user's own (a game started with APPDATA pointed somewhere private).
+func (s *session) refuseRealSaves(name string, args map[string]any) {
+	s.t.Helper()
+
+	if !s.attached || !writesHeroFiles(name, args) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+
+	res, err := s.sess.CallTool(ctx, &mcp.CallToolParams{Name: "strigoi_get_game_info", Arguments: map[string]any{}})
+	if err != nil || res.IsError {
+		s.t.Fatalf("%s: attached to a running game, and its saves_dir could not be read (%v): refused, so as not to write "+
+			"the real user's saves", name, err)
+	}
+
+	info := map[string]any{}
+
+	if raw, err := json.Marshal(res.StructuredContent); err == nil {
+		_ = json.Unmarshal(raw, &info)
+	}
+
+	dir, _ := info["saves_dir"].(string)
+	real := realSavesDir()
+
+	if dir == "" || real == "" || strings.EqualFold(filepath.Clean(dir), filepath.Clean(real)) {
+		s.t.Fatalf("%s: attached to a running game whose saves are the real user's (%q): refused -- it would write a hero's "+
+			"files there. Unset STRIGOI_HARNESS_ADDR (a launched game has a private %%APPDATA%%), or start the game "+
+			"with APPDATA pointed at a folder of its own", name, dir)
+	}
+}
+
+// writesHeroFiles is whether a call writes a hero's files in the game's saves
+// folder: a hero made, a save to his own files, a close (which saves).
+func writesHeroFiles(name string, args map[string]any) bool {
+	switch name {
+	case startGameTool:
+		hero, _ := args["hero_name"].(string)
+		_, hasClass := args["hero_class"]
+
+		return hero != "" || hasClass
+	case "strigoi_save_game":
+		to, _ := args["to"].(string)
+
+		return to == ""
+	case "strigoi_quit":
+		graceful, _ := args["graceful"].(bool)
+
+		return graceful
+	}
+
+	return false
+}
+
+// realSavesDir is this user's own saves folder -- the test process runs with
+// the real %APPDATA% -- or "" when it cannot be known.
+func realSavesDir() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+
+	return filepath.Join(dir, "OpenDiablo2", "Saves")
 }
 
 // startGameTool is the one tool that brings a game screen -- and with it a
@@ -596,6 +682,7 @@ func (s *session) dropToPolicy() {
 // callErr invokes a tool and returns the tool-error text ("" on success).
 func (s *session) callErr(name string, args map[string]any) string {
 	s.t.Helper()
+	s.refuseRealSaves(name, args)
 
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()

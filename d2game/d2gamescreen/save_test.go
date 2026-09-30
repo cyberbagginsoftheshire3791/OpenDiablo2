@@ -245,6 +245,8 @@ var b3GameClasses = map[string]string{
 	"lastSave":        "D: the last save this screen asked for, for the harness's save provider (process history)",
 	"loadNotice":      "D: what the load that opened this screen told him (M4.6 B5); a resumed game's own load says its own",
 	"autosaveOff":     "D: the harness's dial save.autosave, re-applied by a load as every dial is; false in the shipped game",
+	"closing":         "D: the close hook under way (the B5 review, A1): its settle frames take no autosave of their own, and the process ends after it; never in a file",
+	"exitSavedHero":   "D: a SAVE AND EXIT or close whose save wrote his .od2 and sidecar, so the unload does not write them again (the B5 review, C2); any frame clears it",
 	"pendingLoad":     "T: a world save checked and not yet restored: its first frame restores it before anything else runs, and NOT_READY refuses a save meanwhile (M4.6 B4a)",
 	"loadSteps":       "D: the load's own record of the steps it ran, for the harness's report; a fresh screen's is empty",
 	"loadAbandoned":   "T: a load refused on its first frame: the game is torn down, and NOT_READY refuses a save from it",
