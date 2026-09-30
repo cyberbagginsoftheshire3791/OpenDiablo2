@@ -80,6 +80,13 @@ import (
 // the load's step 3 (ENTITY, NATIVES: RestoreMotion refuses a held action
 // that carries no frame). One that holds none is the same file either side
 // of the amendment: action_at is written only with an action.
+//
+// SAVING IS A PLAYER'S SINCE THE SAVE-HELD x B5 MERGE (29 Sep 2026): the
+// escape menu, the window's close and the dawn write world files in his own
+// folder now, so an amendment from here on is refused FILE in every save he
+// has made -- set aside, never read with a field at zero and never lost, but
+// his to know before it ships. The golden file and its shape hash stood
+// through the merge (B5 changed no shape).
 const Version = 2
 
 // ErrWorldVersion is what a file of any version but Version is refused with.

@@ -466,8 +466,10 @@ func TestPrepareLoadRefusals(t *testing.T) {
 	// Where a refused file goes: .v<Version>.unread, the version it holds
 	// (derived from d2save.Version, so the raid's version bump -- R0.5 --
 	// does not turn this red). Every refusal sets it aside since B4b: the one
-	// that did not, a hunted night (HUNTED), is resumed now.
-	unread := fmt.Sprintf(".v%d.unread", d2save.Version)
+	// that did not, a hunted night (HUNTED), is resumed now. A torn one goes
+	// to .torn.unread since the B5 review (C5): its version is not what is
+	// wrong with it.
+	unread, torn := fmt.Sprintf(".v%d.unread", d2save.Version), ".torn.unread"
 
 	cases := map[string]struct {
 		code, aside string
@@ -492,13 +494,13 @@ func TestPrepareLoadRefusals(t *testing.T) {
 		"another class": {LoadRefusedHero, unread, func(w *d2save.World) string {
 			return b4Files(t, w, "Saver", b4Amazon-1)
 		}, ""},
-		"a torn save": {LoadRefusedTorn, unread, func(w *d2save.World) string {
+		"a torn save": {LoadRefusedTorn, torn, func(w *d2save.World) string {
 			s := b4Files(t, w, "Saver", b4Amazon)
 			require.NoError(t, os.WriteFile(d2items.SidecarPath(s), []byte(`{"version": 1, "generation": "an older save", "kit": {}}`), 0o600))
 
 			return s
 		}, ""},
-		"no sidecar": {LoadRefusedTorn, unread, func(w *d2save.World) string {
+		"no sidecar": {LoadRefusedTorn, torn, func(w *d2save.World) string {
 			s := b4Files(t, w, "Saver", b4Amazon)
 			require.NoError(t, os.Remove(d2items.SidecarPath(s)))
 

@@ -175,6 +175,10 @@ type HUD struct {
 	journal       *journalOverlay
 	journalWidget *d2ui.CustomWidget
 
+	// M4.6 B5: the save's and the load's notices (save_notice.go).
+	saveNotice       *saveNoticeOverlay
+	saveNoticeWidget *d2ui.CustomWidget
+
 	// Death screen v0: over everything.
 	death       *deathOverlay
 	deathWidget *d2ui.CustomWidget
@@ -257,6 +261,7 @@ func NewHUD(
 		death:             newDeathOverlay(ui),
 		talk:              newTalkOverlay(ui),
 		journal:           newJournalOverlay(ui),
+		saveNotice:        newSaveNoticeOverlay(ui),
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -407,6 +412,12 @@ func (h *HUD) loadCustomWidgets() {
 	h.journalWidget.SetPosition(0, 0)
 	h.journalWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
 	h.panelGroup.AddWidget(h.journalWidget)
+
+	// M4.6 B5: the save's notice, over the panels and under the death screen.
+	h.saveNoticeWidget = h.uiManager.NewCustomWidget(h.renderSaveNotice, screenWidth, screenHeight)
+	h.saveNoticeWidget.SetPosition(0, 0)
+	h.saveNoticeWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.saveNoticeWidget)
 
 	// Death screen v0, added last so it draws over every other panel.
 	h.deathWidget = h.uiManager.NewCustomWidget(h.renderDeath, screenWidth, screenHeight)

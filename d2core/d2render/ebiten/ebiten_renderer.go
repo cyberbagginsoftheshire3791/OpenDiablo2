@@ -36,10 +36,32 @@ type Renderer struct {
 	renderCallback
 	*GlyphPrinter
 	lastRenderError error
+
+	// onClose is the App's close hook (M4.6 B5): the window's close button and
+	// Alt-F4 call it, then end the loop (SetCloseHandler).
+	onClose func()
+}
+
+// SetCloseHandler hands the window's close to f (M4.6 B5, the build plan's
+// rule 3): when the window is asked to close -- its close button, Alt-F4, the
+// system closing it -- the loop stops advancing the game, calls f once on the
+// game's goroutine, and ends (ebiten.Termination, which RunGame returns as a
+// clean exit). Without a handler the window closes as ebiten closes it, with
+// nothing called. Set it before Run.
+func (r *Renderer) SetCloseHandler(f func()) {
+	r.onClose = f
 }
 
 // Update calls the game's logical update function (the `Advance` method)
 func (r *Renderer) Update() error {
+	// M4.6 B5: the close is the App's first (SetCloseHandler). No frame of the
+	// game advances once the window is closing.
+	if r.onClose != nil && ebiten.IsWindowBeingClosed() {
+		r.onClose()
+
+		return ebiten.Termination
+	}
+
 	if r.updateCallback == nil {
 		return errors.New("no update callback defined for ebiten renderer")
 	}
@@ -111,6 +133,9 @@ func (r *Renderer) Run(f renderCallback, u updateCallback, width, height int, ti
 	ebiten.SetWindowTitle(title)
 	ebiten.SetWindowResizable(true)
 	ebiten.SetWindowSize(width, height)
+
+	// M4.6 B5: with a close hook, the window waits for it (Update).
+	ebiten.SetWindowClosingHandled(r.onClose != nil)
 
 	return ebiten.RunGame(r)
 }

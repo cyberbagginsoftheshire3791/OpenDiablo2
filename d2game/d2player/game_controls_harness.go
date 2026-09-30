@@ -122,10 +122,17 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"journal_notice": g.journalNoticeText(),
 
 		// Death screen v0.
-		"death_open":        g.dead(),
-		"death_lines":       g.deathLinesReport(),
-		"help_open":         g.HelpOverlay.IsOpen(),
-		"escape_menu_open":  g.escapeMenu.IsOpen(),
+		"death_open":       g.dead(),
+		"death_lines":      g.deathLinesReport(),
+		"help_open":        g.HelpOverlay.IsOpen(),
+		"escape_menu_open": g.escapeMenu.IsOpen(),
+
+		// M4.6 B5: the escape menu as drawn -- its entries, the one the keys
+		// are on, the line that says why a save is refused -- and the save's
+		// notice on the HUD. Both are this process's presentation (below).
+		"escape_menu": g.escapeMenu.HarnessReport(),
+		"save_notice": g.saveNoticeText(),
+
 		"world_held_by":     g.worldHeldByReport(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
 		"hand_icons":        g.handIconsReport(),
@@ -418,6 +425,12 @@ func (g *GameControls) handIconsReport() map[string]interface{} {
 // they were made, for click-repeat timing -- so a game resumed in another
 // process, or by "load last save", reads 0 where the saved one read its count.
 //
+// And two since M4.6 B5 (29 Sep 2026): escape_menu, the menu as drawn -- a
+// resumed game's has never been opened, and its entries' words are the ones
+// the last opening chose -- and save_notice, the save's line on the HUD, which
+// the game that saved shows and the game that resumed does not ("Game saved."
+// in one, "" in the other). Presentation of this process, like journal_notice.
+//
 // And two more since the B4a review fixes (29 Sep 2026, BUG-63), found when
 // act 1 of TestSaveResume first took a talent and owed neglect a fraction:
 // talent_cells, the talent panel's cells, which exist only once the panel has
@@ -435,11 +448,12 @@ func (g *GameControls) HarnessDigest() (world, process map[string]interface{}) {
 	process = map[string]interface{}{
 		"torch_verbs": world["torch_verbs"], "clock": world["clock"],
 		"talent_cells": withoutKeys(world["talent_cells"], rect...), "journal_notice": world["journal_notice"],
+		"escape_menu": world["escape_menu"], "save_notice": world["save_notice"],
 	}
 
 	for _, key := range []string{
 		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button",
-		"talent_cells", "journal_notice",
+		"talent_cells", "journal_notice", "escape_menu", "save_notice",
 	} {
 		delete(world, key)
 	}

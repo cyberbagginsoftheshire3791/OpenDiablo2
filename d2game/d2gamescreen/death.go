@@ -13,13 +13,16 @@ import (
 // Death screen v0 (23 Sep 2026). The game screen's half: noticing the death,
 // putting his files back, and the two ways out.
 //
-// "LAST SAVE" IS THE MOMENT HE LAST ENTERED THE WORLD. His .od2 is written
-// only on leaving alive (OnUnload's shouldSaveOnUnload, the 12 Sep ruling),
-// so after a death it already holds that moment. His kit-and-progress file is
-// written far more often -- on every equip, level and fight's end -- so on the
-// frame he dies it is put back to the bytes it held when he entered. Doing it
-// AT DEATH rather than on the way out means every way out agrees, including
-// the window's close button, which skips OnUnload entirely.
+// "LAST SAVE" IS HIS LAST WORLD SAVE, OR, BEFORE HIS FIRST, THE MOMENT HE
+// ENTERED THE WORLD. His .od2 is written only on leaving alive (OnUnload's
+// shouldSaveOnUnload, the 12 Sep ruling) and by a save, so after a death it
+// already holds that moment or a later one the world file's hero overrides.
+// His kit-and-progress file is written far more often -- on every equip,
+// level and fight's end -- so on the frame he dies it is put back to the
+// bytes it held at his last save (SaveWorld re-takes the copy: M4.6 B3) or
+// when he entered. Doing it AT DEATH rather than on the way out means every
+// way out agrees: the death screen's two, and the window's close, which since
+// M4.6 B5 runs OnUnload too and saves nothing of a dead man (DEAD).
 
 // heroSnapshot is his kit-and-progress file as it was when he entered.
 type heroSnapshot struct {
