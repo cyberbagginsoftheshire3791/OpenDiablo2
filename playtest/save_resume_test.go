@@ -2525,7 +2525,7 @@ func saveVerbActs(t *testing.T) {
 var worldBlocks = []string{
 	"version", "build", "saved_at",
 	"map", "seed", "rng", "hero", "sidecar",
-	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit",
+	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit", "seek",
 	"corpses", "rising", "combat", "bodies", "entities", "scene",
 }
 

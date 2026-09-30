@@ -165,6 +165,7 @@
       {
         "watcher": "0a-wolf",
         "target": "player",
+        "side": "hostile",
         "sees": true,
         "noticed": true,
         "distance": 6.25,
@@ -194,6 +195,24 @@
       }
     ],
     "solves": 3
+  },
+  "seek": {
+    "rows": [
+      {
+        "watcher": "0a-wolf",
+        "target": "player",
+        "reason": "living",
+        "until_look_minutes": 0.625,
+        "candidates": 1
+      }
+    ],
+    "stand_ins": [
+      "7f-villager"
+    ],
+    "slots": 1,
+    "looks": 40,
+    "retargets": 0,
+    "rays": 40
   },
   "corpses": {
     "bodies": [

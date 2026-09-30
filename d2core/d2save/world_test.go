@@ -91,11 +91,14 @@ func b3Fixture() *World {
 		},
 		Spawner: Spawner{Arrival: 2},
 		Notice: d2world.NoticeSnapshot{Checks: 55, Notices: 1, Watches: []d2world.WatchSnapshot{
-			{Watcher: wolf, Target: "player", Sees: true, Noticed: true, Distance: 6.25, Reach: 9, Checks: 55, Notices: 1},
+			{Watcher: wolf, Target: "player", Side: "hostile", Sees: true, Noticed: true, Distance: 6.25, Reach: 9, Checks: 55, Notices: 1},
 		}},
 		Pursuit: d2world.PursuitSnapshot{Solves: 3, Chases: []d2world.ChaseSnapshot{
 			{Hunter: wolf, Quarry: "player", SolvedAtX: 108, SolvedAtY: 122, SolvedDistance: 6.25, SinceSolve: 0.5, Reachable: true, Solves: 3},
 		}},
+		// The raid's R2: the wolf's row, and a stand-in a script named.
+		Seek: d2world.SeekSnapshot{Slots: 1, Looks: 40, Retargets: 0, Rays: 40, StandIns: []string{villager},
+			Rows: []d2world.SeekRowSnapshot{{Watcher: wolf, Target: "player", Reason: "living", UntilLook: 0.625, Candidates: 1}}},
 		Corpses: d2world.CorpsesSnapshot{
 			Bodies:  []d2world.CorpseSnapshot{{ID: "dead:1", Row: "men", Class: d2world.CorpseHuman, State: d2world.CorpseFresh, X: 99.5, Y: 100.5, Was: "a carter"}},
 			RisenAs: map[string]string{}, Walker: map[string]string{}, Last: map[string]string{},

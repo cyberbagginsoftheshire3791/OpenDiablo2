@@ -70,6 +70,11 @@ import (
 // his save, never read with a field at zero, never overwritten, never lost.
 // Josh plays between bursts, so this is his to know (the raid brief, section
 // 4; the R1 build note).
+//
+// AMENDED BY THE RAID'S R2 (29 Sep 2026), NO BUMP: notice.watches[].side (a
+// watch is hostile or living) and a new top-level block, seek (who the
+// night's hunters choose among the living). A version-2 file from before R2
+// lacks both, and is refused FILE and set aside, as the rule above says.
 const Version = 2
 
 // ErrWorldVersion is what a file of any version but Version is refused with.
@@ -197,7 +202,7 @@ const (
 var Blocks = []string{
 	"version", "build", "saved_at",
 	"map", "seed", "rng", "hero", "sidecar",
-	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit",
+	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit", "seek",
 	"corpses", "rising", "combat", "bodies", "entities", "scene",
 }
 
@@ -233,7 +238,9 @@ type World struct {
 	// over whatever the sidecar file holds.
 	Sidecar json.RawMessage `json:"sidecar"`
 
-	// The world systems, each its B2 snapshot.
+	// The world systems, each its B2 snapshot. Seek is the raid's R2 (who
+	// the night's hunters choose among the living), an amendment of version
+	// 2's shape with no bump (the milestone's one bump is R1's; see Version).
 	Clock   d2world.ClockSnapshot   `json:"clock"`
 	Light   d2world.LightSnapshot   `json:"light"`
 	Squads  d2world.SquadsSnapshot  `json:"squads"`
@@ -241,6 +248,7 @@ type World struct {
 	Spawner Spawner                 `json:"spawner"`
 	Notice  d2world.NoticeSnapshot  `json:"notice"`
 	Pursuit d2world.PursuitSnapshot `json:"pursuit"`
+	Seek    d2world.SeekSnapshot    `json:"seek"`
 	Corpses d2world.CorpsesSnapshot `json:"corpses"`
 	Rising  d2world.RisingSnapshot  `json:"rising"`
 	Combat  d2world.CombatSnapshot  `json:"combat"`

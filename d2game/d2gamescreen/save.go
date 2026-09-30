@@ -367,7 +367,8 @@ func (v *Game) saveRefusal() *SaveRefusal {
 	case v.kit == nil || v.kitPath == "":
 		return refuse(SaveRefusedNotReady, "he has no kit file to save beside him")
 	case v.worldClock == nil || v.light == nil || v.squads == nil || v.spawns == nil || v.spawner == nil ||
-		v.notice == nil || v.pursuit == nil || v.corpses == nil || v.rising == nil || v.combat == nil:
+		v.notice == nil || v.pursuit == nil || v.corpses == nil || v.rising == nil || v.combat == nil ||
+		v.seek == nil:
 		return refuse(SaveRefusedNotReady, "the world's systems are not all built")
 	}
 
@@ -551,6 +552,7 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 		Spawner:  d2save.Spawner{Arrival: v.spawner.Snapshot().Arrival},
 		Notice:   notice,
 		Pursuit:  pursuit,
+		Seek:     v.seek.Snapshot(),
 		Corpses:  v.corpses.Snapshot(),
 		Rising:   v.rising.Snapshot(),
 		Combat:   combat,
@@ -643,6 +645,11 @@ func (v *Game) validateSnapshots(w *d2save.World, r d2world.Resolver) error {
 
 	if err := v.pursuit.CheckSnapshot(w.Pursuit, r); err != nil {
 		return refused("pursuit", err)
+	}
+
+	// The raid's R2: Seek's rows and stand-ins, which resolve nothing.
+	if err := v.seek.CheckSnapshot(w.Seek); err != nil {
+		return refused("seek", err)
 	}
 
 	// BUG-73: the load's cross-check of the combat block's clock fights

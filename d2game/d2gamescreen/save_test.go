@@ -284,6 +284,7 @@ var b3GameClasses = map[string]string{
 	"notice":       "S:notice",
 	"spawns":       "S:spawns",
 	"combat":       "S:combat",
+	"seek":         "S:seek",
 
 	"wasFighting":         "T: true only from a fight's first frame to the frame its end is applied (fightUnsettled refuses)",
 	"activityBeforeFight": "T: read only at a fight's end, written at its start; stale between fights by design",

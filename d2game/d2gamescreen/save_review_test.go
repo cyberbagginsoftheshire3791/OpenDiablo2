@@ -82,6 +82,10 @@ func b3SavableGame(t *testing.T) (*Game, string) {
 	v.combat.SetCorpses(v.corpses)
 	v.rising = d2world.NewRising(v.corpses, v.spawns.Band, v.worldClock.Stage,
 		d2rand.Derive(b3SavableSeed, d2rand.StreamRising), d2world.DefaultRisingDials())
+	// The raid's R2: every game has Seek, as CreateGame builds it.
+	v.seek = d2world.NewSeek(v.notice, v.spawns, v.combat, d2world.DefaultSeekDials())
+	v.seek.SetQuarries(v.seekQuarries)
+	v.seek.SetResolver(worldResolver{v})
 	v.lastStage = v.worldClock.Stage()
 
 	t.Cleanup(v.releaseWorld)
