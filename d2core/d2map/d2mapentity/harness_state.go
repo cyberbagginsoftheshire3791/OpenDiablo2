@@ -5,7 +5,8 @@ package d2mapentity
 // show them and the state digest can hash them. Compiled in every build;
 // nothing here depends on the harness itself. Values must stay JSON-encodable
 // and free of presentation noise (no animation frame counters, no wall time):
-// whatever appears here is asserted identical across seeded launches.
+// whatever appears here is asserted identical across seeded launches. (The one
+// frame counter is a held action's, which is world state: harnessHeldAt.)
 
 // harnessMotion adds where the entity is walking (M4.6 B1): the point it is
 // stepping toward now and the waypoints still ahead of it, in world tiles.
@@ -145,5 +146,45 @@ func (v *NPC) HarnessState() map[string]interface{} {
 
 	state["corpse"] = v.corpse
 
+	v.harnessHeldAt(state)
+
 	return state
+}
+
+// harnessHeldAt adds how far a held action has played (M4.6 BUG-87), while
+// one is held: held_frame and held_elapsed, what the world save carries as
+// action_at. THE ONE ANIMATION FRAME COUNTER HERE, and deliberately: a held
+// action's frame is not presentation -- it decides the frame the action ends
+// on, and so when a monster is free to act again or lies as a corpse -- and
+// the save carries it, so a resume that restarted the action is visible here
+// at once, not only a second later when two games' corpses differ. It is read
+// from the animation itself, not from MotionSnapshot, so a save that wrote
+// another frame than the entity is on is seen too. It is identical across
+// seeded launches: the harness steps a fixed tick. An entity holding no
+// action reports neither key.
+func putHeldAt(state map[string]interface{}, frame int, elapsed float64) {
+	state["held_frame"] = frame
+	state["held_elapsed"] = elapsed
+}
+
+func (c *Creature) harnessHeldAt(state map[string]interface{}) {
+	if !c.held || c.animation == nil {
+		return
+	}
+
+	frame, elapsed := c.animation.Progress()
+	putHeldAt(state, frame, elapsed)
+}
+
+func (v *NPC) harnessHeldAt(state map[string]interface{}) {
+	if !v.held {
+		return
+	}
+
+	frame, elapsed := 0, 0.0
+	if v.composite != nil {
+		frame, elapsed, _ = v.composite.Progress()
+	}
+
+	putHeldAt(state, frame, elapsed)
 }

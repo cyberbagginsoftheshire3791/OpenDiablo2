@@ -171,8 +171,15 @@ type LoadReport struct {
 	// Notes are what the load did or found that is not a refusal and that a
 	// player could ask about (the B4b review fixes): a villager the file
 	// lacks taken off the map (BUG-79), an entity whose name this build gives
-	// otherwise than the save did (BUG-80). Each is in the log too.
+	// otherwise than the save did (BUG-80), a held action the art no longer
+	// fits, ended (BUG-92). Each is in the log too.
 	Notes []string `json:"notes,omitempty"`
+
+	// EndedActions are the entities whose held action the load ended rather
+	// than resumed at its saved point, because this build's art no longer
+	// fits it (the BUG-87 review's B2, BUG-92): each differs from the saved
+	// moment BY DESIGN, and a script compares the rest (load_ended.go).
+	EndedActions []EndedAction `json:"ended_actions,omitempty"`
 
 	// Ignored: the file was refused earlier in this process and could not be
 	// set aside, so no load reads it again until it changes (the B4a review,
@@ -202,6 +209,10 @@ func LastLoad() LoadReport {
 
 	if r.Notes != nil {
 		r.Notes = append([]string{}, r.Notes...)
+	}
+
+	if r.EndedActions != nil {
+		r.EndedActions = append([]EndedAction{}, r.EndedActions...)
 	}
 
 	return r
@@ -588,7 +599,7 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 type rebuiltEntity interface {
 	d2interface.MapEntity
 	MotionSnapshot() d2mapentity.Motion
-	RestoreMotion(d2mapentity.Motion) error
+	ResumeMotion(d2mapentity.Motion) (d2mapentity.Motion, *d2mapentity.HeldActionEnded, error)
 }
 
 // rebuildEntities is the load's step 3 (M4.6 B4b), in the load order's
@@ -645,7 +656,8 @@ func (v *Game) rebuildEntities(w *d2save.World) *LoadRefusal {
 // A villager the map builds and the file lacks was taken off the map before
 // the save (B3-6), and is taken off again here, noted in the load report and
 // the log, and dropped from the screen's natives (BUG-79). A villager or an
-// entity saved while it held an action is refused (BUG-76). A villager the file has and
+// entity saved while it held an action resumes it at its saved frame
+// (BUG-87; the B4b review fixes had refused the file, BUG-76). A villager the file has and
 // the map does not build, or two the map built on one key, or one of another
 // kind or monstat than saved, is a world this build cannot resume: NATIVES.
 func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
@@ -715,10 +727,6 @@ func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
 			return refuseLoad(LoadRefusedNatives, "%q (born %v,%v) was saved as monstat %q and the map builds another", k.nameKey, k.x, k.y, se.Monstat)
 		}
 
-		if why := heldInFile(se); why != "" {
-			return refuseLoad(LoadRefusedNatives, "%q (born %v,%v) %s", k.nameKey, k.x, k.y, why)
-		}
-
 		pairs = append(pairs, pair{live: live, saved: se})
 	}
 
@@ -748,9 +756,12 @@ func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
 	}
 
 	for _, p := range pairs {
-		if err := restoreMotionExactly(p.live, p.saved.Motion); err != nil {
+		ended, err := restoreMotionExactly(p.live, p.saved.Motion)
+		if err != nil {
 			return refuseLoad(LoadRefusedNatives, "%s, %q: %v", p.saved.ID, p.saved.NameKey, err)
 		}
+
+		v.noteEndedAction(p.saved.ID, fmt.Sprintf("%q", p.saved.NameKey), ended)
 	}
 
 	return nil
@@ -763,10 +774,6 @@ func (v *Game) rekeyNatives(w *d2save.World) *LoadRefusal {
 // monster this build does not have leaves nothing waiting.
 func (v *Game) rebuildEntity(se d2save.Entity) *LoadRefusal {
 	engine := v.gameClient.MapEngine
-
-	if why := heldInFile(se); why != "" {
-		return refuseLoad(LoadRefusedEntity, "%s (%s) %s", se.ID, se.Kind, why)
-	}
 
 	build, r := v.entityBuilder(se)
 	if r != nil {
@@ -790,9 +797,12 @@ func (v *Game) rebuildEntity(se d2save.Entity) *LoadRefusal {
 		return refuseLoad(LoadRefusedEntity, "%s (%s) was rebuilt as %q: the constructor spent the saved id instead of wearing it", se.ID, se.Kind, got)
 	}
 
-	if err := restoreMotionExactly(e, se.Motion); err != nil {
+	ended, err := restoreMotionExactly(e, se.Motion)
+	if err != nil {
 		return refuseLoad(LoadRefusedEntity, "%s (%s): %v", se.ID, se.Kind, err)
 	}
+
+	v.noteEndedAction(se.ID, se.Kind+" "+se.Monstat+se.Creature, ended)
 
 	// ITS NAME IS A LABEL, NOT ITS KEY (the B4b review fixes, BUG-80;
 	// decision B4b-5 overturned). The entity was matched on its kind and its
@@ -887,36 +897,37 @@ func kindOf(e d2interface.MapEntity) string {
 	return ""
 }
 
-// heldInFile is why a saved entity's motion cannot be resumed exactly because
-// it holds an action, or "" (the B4b review fixes, BUG-76). The file carries
-// the held mode and not its frame, so the action would play again from its
-// first frame: a death saved half-played fell again after the load. The save
-// refuses that moment (Game.heldAction), so no file this build writes holds
-// one; a file that does is refused rather than resumed inexactly.
-func heldInFile(se d2save.Entity) string {
-	if se.Motion.Action == "" {
-		return ""
-	}
-
-	return fmt.Sprintf("was saved while its %s played: the file carries no animation's frame, so it would play again "+
-		"from its first, and a save refuses that moment", se.Motion.Action)
-}
-
 // restoreMotionExactly puts a walk and pose back and reads it back: a Motion
-// no entity could have had is refused by RestoreMotion before anything
+// no entity could have had is refused by ResumeMotion before anything
 // changes, and one that comes back other than it went in -- a mode the
-// sheets or the composite cannot hold, a facing the entity will not take --
-// is a monster that would not take the saved step next.
-func restoreMotionExactly(e rebuiltEntity, mo d2mapentity.Motion) error {
-	if err := e.RestoreMotion(mo); err != nil {
-		return err
+// sheets or the composite cannot hold, a facing the entity will not take, a
+// held action not at its saved frame and time (BUG-87) -- is a monster that
+// would not take the saved step next.
+//
+// A held action this build's art no longer fits is ENDED, as it would have
+// ended, not refused (the BUG-87 review's B2, BUG-92): ResumeMotion says
+// which and why, the caller puts it in the load report (noteEndedAction), and
+// the read-back is held to the motion the entity then has. With none ended it
+// is held to the file's. (The motions are printed as the file writes them,
+// so a refusal shows the frame and time that differed.)
+func restoreMotionExactly(e rebuiltEntity, mo d2mapentity.Motion) (*d2mapentity.HeldActionEnded, error) {
+	want, ended, err := e.ResumeMotion(mo)
+	if err != nil {
+		return nil, err
 	}
 
-	if got := e.MotionSnapshot(); !sameMotion(got, mo) {
-		return fmt.Errorf("its motion was restored as %+v and saved as %+v", got, mo)
+	if ended == nil {
+		want = mo
 	}
 
-	return nil
+	if got := e.MotionSnapshot(); !sameMotion(got, want) {
+		gotJSON, _ := json.Marshal(got)
+		wantJSON, _ := json.Marshal(want)
+
+		return nil, fmt.Errorf("its motion was restored as %s and saved as %s", gotJSON, wantJSON)
+	}
+
+	return ended, nil
 }
 
 // sameMotion compares two motions through their JSON, the form the file keeps.

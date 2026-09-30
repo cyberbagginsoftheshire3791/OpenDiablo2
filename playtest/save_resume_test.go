@@ -109,12 +109,15 @@ import (
 //	8  RULE 4 (B4b): he is walked, saved mid-stride, and loaded; he stands
 //	   where he was saved, and every system, entity and part is the saved
 //	   moment's but his walk (sameWorldExcept, hisWalk).
-//	6i A SAVE IN THE DEATH WINDOW (the B4b review fixes, BUG-75 and BUG-76;
+//	6i A SAVE IN THE DEATH WINDOW (the B4b review fixes, BUG-75, and BUG-87;
 //	   the review's real-game probe, run after act 8): T resumed with B4b's
 //	   quick-resolving dials, the pack's fight quick-resolved; each member it
-//	   slew lies where his fall was recorded; the save is refused while any
-//	   still plays his death, then made the moment the last lies, and that
-//	   moment resumes exactly and runs on the same.
+//	   slew lies where his fall was recorded; the save is made at once, on
+//	   the first try, while the slain still play their deaths, each saved at
+//	   its frame; and that moment resumes exactly -- the deaths at their
+//	   frames -- runs on the same through the deaths' ends, and each slain
+//	   lies where the saved game's lies. (BUG-76 had refused the save until
+//	   the last lay; BUG-87 carries the deaths instead.)
 //
 // THE COMPARISON (BUG-58 fixed, 29 Sep 2026): the digest's resume_digest is
 // every part a resumed game must reproduce -- not sim (the harness's clock)
@@ -201,6 +204,12 @@ type evening struct {
 	// squadModel is the deployed squad's model as the file at T names it
 	// (B4b): an NPC the load must rebuild wearing that id.
 	squadModel string
+
+	// keptFrom is the directory a kept evening was taken from ("" for one
+	// this run filled), and harness the harness version that kept it
+	// (harness.json; "" for an evening kept before the stamp): the BUG-87
+	// review's C1, BUG-93 (eveningHarness).
+	keptFrom, harness string
 }
 
 type dialWrite struct {
@@ -1128,10 +1137,16 @@ func keepEvening(t *testing.T, s *session, ev evening) {
 	states, _ := json.MarshalIndent(map[string]worldSnap{"t": ev.sT, "u": ev.sU}, "", " ")
 	dials, _ := json.MarshalIndent(ev.savedDial, "", " ")
 
+	// THE HARNESS THAT KEPT IT (the BUG-87 review's C1, BUG-93): S_T and S_U
+	// are that harness's digests, comparable only with the same harness's.
+	stamp, _ := json.MarshalIndent(map[string]string{
+		"harness_version": str(s.call("strigoi_ping", map[string]any{}), "harness_version"),
+	}, "", " ")
+
 	for name, data := range map[string][]byte{
 		"hero.od2": ev.od2Left, "hero.od2.strigoi.json": ev.sidecarLeft, "hero.od2.world.json": ev.fileT,
 		"hero-at-t.od2": ev.od2T, "hero-at-t.od2.strigoi.json": ev.sidecarT, "states.json": states,
-		"dials.json": dials,
+		"dials.json": dials, "harness.json": stamp,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
 			t.Logf("keeping the evening: %v", err)
@@ -1173,6 +1188,20 @@ func keptEvening(t *testing.T, from string) evening {
 	ev.sT, ev.sU = states["t"], states["u"]
 	ev.squadModel = deployedModel(t, worldFile(t, "the kept evening", ev.fileT))
 
+	ev.keptFrom = from
+
+	if data, err := os.ReadFile(filepath.Join(from, "harness.json")); err == nil {
+		var stamp struct {
+			Version string `json:"harness_version"`
+		}
+
+		if err := json.Unmarshal(data, &stamp); err != nil {
+			t.Fatalf("the kept evening's harness.json: %v", err)
+		}
+
+		ev.harness = stamp.Version
+	}
+
 	home, err := testHome(t)
 	if err != nil {
 		t.Fatal(err)
@@ -1196,6 +1225,38 @@ func keptEvening(t *testing.T, from string) evening {
 	return ev
 }
 
+// eveningHarness refuses a KEPT evening another harness kept (the BUG-87
+// review's C1, BUG-93), before anything is compared with it. Its S_T and S_U
+// are digests, and a digest's shape is the harness's: BUG-88 put the clock
+// strip's hours back in the world part and 0.14.4 added held_frame and
+// held_elapsed, so every evening kept before them compared red with a sound
+// load -- and a control run on one went red for that reason, not its own.
+// An evening kept before the stamp (no harness.json) is refused as well. It
+// is a refusal of the INPUT, worded so no one reads it as the control's red.
+func eveningHarness(t *testing.T, s *session, ev evening) {
+	t.Helper()
+
+	if ev.keptFrom == "" {
+		return
+	}
+
+	now := str(s.call("strigoi_ping", map[string]any{}), "harness_version")
+	if ev.harness == now {
+		t.Logf("the kept evening at %s was kept by harness %s, this game's", ev.keptFrom, now)
+		return
+	}
+
+	kept := ev.harness
+	if kept == "" {
+		kept = "a harness before the stamp (no harness.json; 0.14.3 or earlier)"
+	}
+
+	t.Fatalf("THE KEPT EVENING IS STALE -- NOT A RED OF THIS TEST: %s was kept by %s, and this game is harness %s. "+
+		"Its S_T and S_U are the other harness's digests, so nothing compared with them means anything. "+
+		"Keep a new one: run TestSaveResume green (it keeps its evening at <run dir>/pt/TestSaveResume/evening) "+
+		"and point STRIGOI_SAVE_RESUME_FROM there.", ev.keptFrom, kept, now)
+}
+
 // eveningActs4to6 relaunches and resumes (acts 4-6), then takes the in-process
 // path (6b) and the refusals (6c-6e).
 func eveningActs4to6(t *testing.T, ev evening) {
@@ -1203,6 +1264,7 @@ func eveningActs4to6(t *testing.T, ev evening) {
 
 	s := start(t)
 	s.call("strigoi_pause", map[string]any{})
+	eveningHarness(t, s, ev)
 
 	// --- 4: relaunch, load, S_R0 = S_T --------------------------------------
 	// No seed: the shipped game has none to give, and the load resumes the
@@ -1593,20 +1655,24 @@ func huntedActs6h8(t *testing.T, s *session, ev evening) {
 
 // deathWindowAct6i is THE REVIEW'S REAL-GAME B1 PROBE AS AN ACT (the B4b
 // review fixes, BUG-75 and BUG-76; the probe was TestZZRevMidDeath, on
-// evening-2). The review resumed T with the fight after it quick-resolved,
-// stepped to the frame the quick resolve fired and saved there, while the
-// slain still played their deaths: sixty frames later two opportunists lay
-// dead in the saved game and were still falling in the resumed one. And a
-// member quick-resolved while he walked in walked on through his death, his
-// corpse coming to rest away from where the resolver recorded his fall.
+// evening-2), made a save mid-death by BUG-87. The review resumed T with the
+// fight after it quick-resolved, stepped to the frame the quick resolve fired
+// and saved there, while the slain still played their deaths: sixty frames
+// later two opportunists lay dead in the saved game and were still falling in
+// the resumed one. And a member quick-resolved while he walked in walked on
+// through his death, his corpse coming to rest away from where the resolver
+// recorded his fall. The B4b review fixes stopped the walk (BUG-75) and
+// refused the save until the last lay (BUG-76); BUG-87 saves the deaths at
+// their frames instead.
 //
 // Here, on the same T (the evening's file beside his act-3 files, as act 4
 // loads it) with B4b's dials (quickResolvedDials): the quick resolve fires;
-// every member it slew lies where his fall was recorded -- at once, and still
-// when the save is made (BUG-75); the save is refused while any of them is
-// still playing his death, and names it (BUG-76); it is made the moment the
-// last lies, with none of them holding an action; and that moment T' resumes
-// exactly, and sixty frames on is the same world (S_R0 = S_T', S_R = S_U').
+// every member it slew lies where his fall was recorded (BUG-75); the save is
+// made at once, on the first try, with the slain still playing their deaths
+// -- each in the file at its frame; and that moment T' resumes exactly (S_R0
+// = S_T', the deaths at their frames), is the same world 20 frames on (S_R =
+// S_M', the deaths still playing) and 120 frames on (S_R = S_U', every slain
+// a corpse), and each resumed corpse lies where the saved game's lies.
 func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 	t.Helper()
 
@@ -1659,56 +1725,54 @@ func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 
 	lieWhereTheyFell(t, s, "act 6i (the first look after the quick resolve)", slain)
 
-	var refusals []string
-
-	saved := -1
-
-	for i := 0; i < 240 && saved < 0; i++ {
-		if e := s.callErr("strigoi_save_game", map[string]any{}); e == "" {
-			saved = i
-		} else {
-			refusals = append(refusals, e)
-			s.call("strigoi_step", map[string]any{"frames": 1})
-		}
+	// BUG-87: the save is made at once, with the slain still falling.
+	if e := s.callErr("strigoi_save_game", map[string]any{}); e != "" {
+		t.Fatalf("RED act 6i: the save in the death window is made on the first try (BUG-87): refused %q", e)
 	}
-
-	if saved < 0 {
-		t.Fatalf("act 6i: the save is made once the slain lie: refused %d times, last %q", len(refusals), refusals[len(refusals)-1])
-	}
-
-	dying := 0
-	for _, r := range refusals {
-		if strings.Contains(r, "FIGHTING") && strings.Contains(r, "is still playing its death") {
-			dying++
-		}
-	}
-
-	if dying == 0 {
-		t.Fatalf("act 6i: a save while the slain still fall is refused, naming the death: %v", refusals)
-	}
-
-	kinds := map[string]int{}
-	for _, r := range refusals {
-		kinds[regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f-]{27}`).ReplaceAllString(r, "<id>")]++
-	}
-
-	t.Logf("act 6i: the refusals, by reason: %v", kinds)
 
 	sT := snapWorld(t, s)
+
+	dying := map[string]string{}
 
 	for id := range slain {
 		var e map[string]any
 		_ = json.Unmarshal(sT.Entities[id], &e)
 
-		if st := sub(e, "state"); str(st, "held") != "" || !flag(t, st, "corpse") {
-			t.Fatalf("act 6i: at T' the slain %s lies dead, holding no action: %v", id, st)
+		if st := sub(e, "state"); str(st, "held") != "" {
+			if _, ok := st["held_frame"]; !ok {
+				t.Fatalf("act 6i: at T' the slain %s holds %s and reports no frame: %v", id, str(st, "held"), st)
+			}
+
+			dying[id] = fmt.Sprintf("%s at frame %v + %v s", str(st, "held"), st["held_frame"], st["held_elapsed"])
 		}
+	}
+
+	if len(dying) == 0 {
+		t.Fatalf("act 6i: at T' at least one slain is still playing his death, so the save is made mid-death (%d slain, none holding an action)", len(slain))
 	}
 
 	lieWhereTheyFell(t, s, "act 6i (at T')", slain)
 
-	s.call("strigoi_step", map[string]any{"frames": 60})
+	s.call("strigoi_step", map[string]any{"frames": 20})
+	sM := snapWorld(t, s)
+
+	s.call("strigoi_step", map[string]any{"frames": 100})
 	sU := snapWorld(t, s)
+
+	corpses := map[string][2]float64{}
+
+	for id := range slain {
+		var e map[string]any
+		_ = json.Unmarshal(sU.Entities[id], &e)
+
+		if st := sub(e, "state"); str(st, "held") != "" || !flag(t, st, "corpse") {
+			t.Fatalf("act 6i: 120 frames after T' the slain %s lies dead, holding no action: %v", id, st)
+		}
+
+		corpses[id] = [2]float64{num(e, "x"), num(e, "y")}
+	}
+
+	lieWhereTheyFell(t, s, "act 6i (T'+120, the saved game)", slain)
 
 	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
 	awaitMenu(t, s)
@@ -1722,14 +1786,17 @@ func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 		setField(s, d.System, d.Field, d.Value)
 	}
 
-	sameWorld(t, "act 6i (S_R0 = S_T', a save the moment the slain lie)", sT, snapWorld(t, s))
+	sameWorld(t, "act 6i (S_R0 = S_T', saved mid-death: each death at its frame)", sT, snapWorld(t, s))
 
-	s.call("strigoi_step", map[string]any{"frames": 60})
-	sameWorld(t, "act 6i (S_R = S_U', sixty frames on)", sU, snapWorld(t, s))
-	lieWhereTheyFell(t, s, "act 6i (resumed)", slain)
+	s.call("strigoi_step", map[string]any{"frames": 20})
+	sameWorld(t, "act 6i (S_R = S_M', twenty frames on, the deaths still playing)", sM, snapWorld(t, s))
 
-	t.Logf("act 6i PASS: the quick resolve after %d frames slew %d; the save was refused %d times (%d on a death still playing) "+
-		"and made %d frames later; each lies where he fell; S_R0 = S_T' and S_R = S_U'", frames, len(slain), len(refusals), dying, saved)
+	s.call("strigoi_step", map[string]any{"frames": 100})
+	sameWorld(t, "act 6i (S_R = S_U', 120 frames on, every slain a corpse)", sU, snapWorld(t, s))
+	lieWhereTheyFell(t, s, "act 6i (resumed: where the saved game's lie)", corpses)
+
+	t.Logf("act 6i PASS: the quick resolve after %d frames slew %d; the save was made at once, on the first try, with %d still falling (%v); "+
+		"S_R0 = S_T', S_R = S_M' twenty frames on and S_R = S_U' 120 frames on; each lies where he fell, in both games", frames, len(slain), len(dying), dying)
 }
 
 // lieWhereTheyFell requires each slain entity to stand exactly where his fall

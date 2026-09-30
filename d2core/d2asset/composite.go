@@ -156,7 +156,17 @@ func (c *Composite) SetAnimSpeed(speed int) {
 	}
 }
 
-// SetDirection sets the direction of the composite and its layers
+// SetDirection sets the direction of the composite and its layers.
+//
+// A TURN KEEPS EVERY LAYER'S FRAME (M4.6 BUG-90, fixed by the BUG-87 review
+// fixes with BUG-89's rule: a turn turns the art, it does not restart it). A
+// DCC or PNG layer's own SetDirection puts its frame back to 0, so an NPC
+// that turned during a swing drew its layers from their first frame while
+// its mode's frame -- which decides when the swing ends -- ran on; a load,
+// which sets each layer to the mode's frame (SetProgress), then drew another
+// frame than the saved game did. Each layer's frame and the time into it are
+// put back after the turn, so the layers stay in step with the mode through
+// it. (A DC6 layer already kept its frame.)
 func (c *Composite) SetDirection(direction int) {
 	if c.mode == nil {
 		return
@@ -174,14 +184,33 @@ func (c *Composite) SetDirection(direction int) {
 			layer := c.mode.layers[idx]
 
 			if layer != nil {
+				frame, elapsed := layer.Progress()
+
 				if err := layer.SetDirection(c.direction); err != nil {
 					fmt.Printf("failed to set direction of layer: %d, err: %v\n", idx, err)
 				}
+
+				keepProgress(layer, frame, elapsed)
 			}
 		}(layerIdx)
 	}
 
 	wg.Wait()
+}
+
+// progressSetter is this package's animations' unchecked restore
+// (Animation.setProgress), which every layer a composite loads has: DCC, DC6
+// and PNG animations embed Animation.
+type progressSetter interface {
+	setProgress(frame int, elapsed float64)
+}
+
+// keepProgress puts a layer back at a frame and time it held, when it is one
+// of this package's animations and its current facing has the frame.
+func keepProgress(layer d2interface.Animation, frame int, elapsed float64) {
+	if ps, ok := layer.(progressSetter); ok && frame >= 0 && frame < layer.GetFrameCount() {
+		ps.setProgress(frame, elapsed)
+	}
 }
 
 // GetDirection returns the current direction the composite is facing
@@ -228,6 +257,87 @@ func (c *Composite) SetCurrentFrame(frame int) {
 			}
 		}
 	}
+}
+
+// Progress is how far the current mode has played: the frame it is on, the
+// time already spent on that frame (the sub-frame progress Advance carries),
+// and how many times it has played through. It is what decides the mode's
+// next frame and when it has played through -- an NPC's held action ends on
+// the first Advance that makes played 1 (M4.6 BUG-87: a held action is saved
+// at its frame). (0, 0, 0) with no mode.
+//
+// The layers keep their own frame and time: they are what is DRAWN, not what
+// decides anything. Since the BUG-87 review fixes (BUG-90) a turn keeps them
+// (SetDirection), so they stay in step with the mode's frame; before, a turn
+// put every DCC and PNG layer back to its first frame while the mode's frame
+// ran on.
+func (c *Composite) Progress() (frame int, elapsed float64, played int) {
+	if c.mode == nil {
+		return 0, 0, 0
+	}
+
+	return c.mode.frameIndex, c.mode.lastFrameTime, c.mode.playedCount
+}
+
+// FrameLength is how long one frame of the current mode lasts, in seconds
+// (its animation speed); 0 with no mode.
+func (c *Composite) FrameLength() float64 {
+	if c.mode == nil {
+		return 0
+	}
+
+	return c.mode.animationSpeed
+}
+
+// SetProgress puts the current mode at frame, with elapsed seconds already
+// spent on it, ON ITS FIRST PLAY (played 0): Progress's restore, for a held
+// action, which is always on its first play -- it ends the Advance its play
+// count reaches 1 (M4.6 BUG-87). Each layer is put at the same point of its
+// own sheet (the frame modulo its own count), which is where a layer that has
+// advanced in step with the mode since it began stands. It refuses a frame
+// the mode does not have, or no mode, changing nothing.
+//
+// AND A TIME NO PLAY COULD HAVE (the BUG-87 review's B1, BUG-91): below
+// ElapsedFloor, at or past the mode's frame length, or not a number. Advance
+// keeps the mode's time in [0, FrameLength) -- a hair below zero at most. A
+// file holding -1.0 s made the first Advance take whole frames OFF the mode's
+// frame, and Render indexed Priority[dir][-8]: the game panicked (the review's
+// playtest, and 1e17 s or more did the same through the frame's int
+// overflow). The layers are then set unchecked: this has checked the mode's
+// time, and a layer's frame length (the mode's speed times its frames, over
+// its frames) can be an ulp shorter than the mode's.
+func (c *Composite) SetProgress(frame int, elapsed float64) error {
+	if c.mode == nil {
+		return errors.New("composite: no mode to set the progress of")
+	}
+
+	if frame < 0 || frame >= c.mode.frameCount {
+		return fmt.Errorf("composite: frame %d of a mode of %d", frame, c.mode.frameCount)
+	}
+
+	if length := c.mode.animationSpeed; elapsed < ElapsedFloor || !(elapsed < length) {
+		return fmt.Errorf("composite: %v s into a frame of %v s is no point of a play", elapsed, length)
+	}
+
+	c.mode.frameIndex = frame
+	c.mode.lastFrameTime = elapsed
+	c.mode.playedCount = 0
+
+	for _, layer := range c.mode.layers {
+		if layer == nil {
+			continue
+		}
+
+		n := layer.GetFrameCount()
+		if n <= 0 {
+			continue
+		}
+
+		layer.ResetPlayedCount()
+		keepProgress(layer, frame%n, elapsed)
+	}
+
+	return nil
 }
 
 func (c *Composite) resetPlayedCount() {

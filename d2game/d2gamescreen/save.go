@@ -45,9 +45,10 @@ import (
 //   - a fight is running or has not settled (FIGHTING, rule 2): the combat
 //     model's own refusal (Combat.Snapshot), the screen's fight-only state --
 //     a strike waiting on a walk, a tactical walk still out, the fight edge
-//     not yet taken back -- and his last swing still playing, or a
-//     monster's or villager's held action (a swing, a blow taken, a death:
-//     the B4b review fixes, BUG-76; heldAction);
+//     not yet taken back -- and his last swing still playing. (A monster's or
+//     villager's held action -- a swing, a blow taken, a death -- is NOT
+//     refused since BUG-87: the file carries it at its frame, and the load
+//     resumes it there. The B4b review fixes had refused it, BUG-76.)
 //   - he is talking (TALKING);
 //   - his journal is open (JOURNAL);
 //   - he is choosing his loadout (LOADOUT).
@@ -391,8 +392,6 @@ func (v *Game) fightUnsettled() string {
 		unsettled = v.combatUnsettled()
 	}
 
-	held := v.heldAction()
-
 	switch {
 	case v.combat != nil && v.combat.Fighting():
 		return "a fight is running"
@@ -401,10 +400,12 @@ func (v *Game) fightUnsettled() string {
 	case v.localPlayer != nil && v.localPlayer.IsCasting():
 		// A swing's animation outlives the blow by a frame or two; the
 		// digest compares casting and the animation mode, and a load stands
-		// him still (rule 4). Nothing else in Strigoi's game casts.
+		// him still (rule 4). Nothing else in Strigoi's game casts. KEPT by
+		// BUG-87, which dropped the refusal for a monster's or villager's
+		// held action (the file carries theirs at its frame): his is not in
+		// the file -- rule 4 stands him still -- and it plays only in or
+		// just after his own fight, which is refused already.
 		return "his last swing is still playing"
-	case held != "":
-		return held
 	case v.wasFighting:
 		return "the fight's end has not been applied yet"
 	case v.pendingStrike != "":
@@ -413,47 +414,6 @@ func (v *Game) fightUnsettled() string {
 		return "a tactical walk is still out"
 	case v.journalFight != "":
 		return "the journal is still reading a fight"
-	}
-
-	return ""
-}
-
-// heldAction is why an entity's animation is not settled as far as a save is
-// concerned, or "": a monster or villager holding an action -- a swing, a
-// blow taken, a death -- that has not yet played through (the B4b review
-// fixes, BUG-76). The file carries the held mode and not its frame
-// (d2mapentity.Motion), so a load would play it again from its first frame:
-// the B4b review saved in the second after a quick resolve, and two slain
-// opportunists that lay dead sixty frames later in the saved game were still
-// falling in the resumed one (its B1). Refused, as his own swing is; every
-// action is over within its animation's length, a second or so, and the
-// entities are asked in id order so the reason names the same one each time.
-func (v *Game) heldAction() string {
-	if v.gameClient == nil || v.gameClient.MapEngine == nil {
-		return ""
-	}
-
-	all := v.gameClient.MapEngine.Entities()
-
-	ids := make([]string, 0, len(all))
-	for id := range all {
-		ids = append(ids, id)
-	}
-
-	sort.Strings(ids)
-
-	for _, id := range ids {
-		e, ok := all[id].(interface {
-			d2interface.MapEntity
-			MotionSnapshot() d2mapentity.Motion
-		})
-		if !ok {
-			continue
-		}
-
-		if action := e.MotionSnapshot().Action; action != "" {
-			return fmt.Sprintf("%s (%s) is still playing its %s: a save carries no animation's frame", e.Label(), id, action)
-		}
 	}
 
 	return ""

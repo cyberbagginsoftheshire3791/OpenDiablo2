@@ -592,7 +592,16 @@ this doc fails until it agrees.
   ONLY=b4a` skips act 7, and `STRIGOI_SAVE_RESUME_FROM=<dir>` takes acts 1-3
   from an evening a green run kept at `pt\TestSaveResume\evening` (the files he
   left with, the world file of T, S_T and S_U) and runs acts 4-6g in about
-  fifteen seconds.
+  fifteen seconds. **Since the BUG-87 review fixes (29 Sep 2026, BUG-93) a
+  kept evening carries `harness.json`** -- the harness version that kept it,
+  from `strigoi_ping` -- and a run given one (`TestSaveResume`,
+  `TestSaveResumeNegatives`) refuses an evening another harness kept, or one
+  kept before the stamp, BEFORE it compares anything (`eveningHarness`: "THE
+  KEPT EVENING IS STALE -- NOT A RED OF THIS TEST"). S_T and S_U are digests,
+  and a digest's shape is the harness's: every evening kept before 0.14.4
+  compares red with a sound load (below, 0.14.4), so a control run on one
+  went red for that reason and not its own. Keep a new one with a green
+  `TestSaveResume`.
   **The B4a review fixes (29 Sep 2026)** changed and added, in the same test:
   act 1 now makes every field the load restores ON HIM differ from what a
   fresh game gives him, and says so in its precondition (`heroNotFresh`): the
@@ -659,7 +668,14 @@ this doc fails until it agrees.
   lies exactly where the corpses block recorded his fall (`lieWhereTheyFell`);
   the save is refused `FIGHTING` while any of them still plays his death, and
   names it; it is made the moment the last lies, none holding an action; and
-  that moment resumes exactly and sixty frames on is the same world. Act 8
+  that moment resumes exactly and sixty frames on is the same world.
+  **Since BUG-87 (branch `save-held`, 29 Sep 2026; harness 0.14.4) act 6i
+  saves MID-DEATH:** the save is made at once, on the first try, with at
+  least one slain still playing his death (his entity reports `held` and,
+  since 0.14.4, `held_frame` and `held_elapsed`); that moment resumes with
+  each death at its frame (S_R0 = S_T'), is the same world twenty frames on
+  (the deaths still playing) and 120 frames on (every slain a corpse), and
+  each resumed corpse lies where the saved game's lies. Act 8
   exempts his `velocity` with the rest of his walk. `sameWorldExcept` fails
   on a hash with nothing to explain it (BUG-81), and its own control,
   **`TestSameWorldExceptFailsAnUnexplainedHash`**, needs no game. And a new
@@ -739,19 +755,23 @@ this doc fails until it agrees.
   **`TestSaveResumeWithAFightHeIsNotIn`**: seed 1462, stepped an hour at a
   time to true dark (fed and watered), his fights on the policy (his chaser is
   a `zombie1`, which no quick resolve finishes, and a human turn freezes the
-  clock), and the round slowed to three world minutes (`round_minutes` 3;
-  below); a `zombie1` ten tiles off on a clear line watches him, and a
+  clock), and -- since BUG-87 (branch `save-held`) -- the SHIPPED round
+  (`scShippedPace` requires `round_minutes` 1; the merge had slowed it to
+  3); a `zombie1` ten tiles off on a clear line watches him, and a
   `fallen1` watches a `fallen1` fifteen tiles off the other way. T is the
   first frames of the chase with the CLOCK FIGHT LIVE (`c:1`, its quarry
   hurt, the combat-clock stream drawn from), none of it his, and the clock
   fight's two bodies watching and chasing only each other (checked at T and
   after every step: a monster in both fights is the R1 review's A1, kept out
-  of). He stands still; **the save is retried a frame at a time while a
-  blow's action plays** (`scSaveSettled`: B4b's held-action refusal,
-  BUG-76; any other refusal is red, Q5 (a); T's condition held at every
-  retry; the retries logged -- 23 on the merge's run) and moves nothing; the
-  file is hunted (a watch and a chase on him) and holds the fight in
-  `combat.clock.live`, `rng.combat_clock` = `combat.clock.rng`. Twelve
+  of). He stands still; **the save is made on the first try** (`scSaveAtT`:
+  asked once, and any refusal red -- BUG-87 saves a blow's action at its
+  frame; the merge's `scSaveSettled` retried a frame at a time under BUG-76's
+  refusal, 23 times. The retry count it returned, always 0, and the scripts'
+  check of it, green by design, are gone: the BUG-87 review's C2) and moves
+  nothing; the file is hunted (a watch and a chase on
+  him), holds the fight in `combat.clock.live`, `rng.combat_clock` =
+  `combat.clock.rng`, and holds at least one action still playing, at its
+  frame (`scHeldInFile`). Twelve
   `step_world(10)` (and on, to 24, until the clock fight has ended): the
   clock fight ends and his chaser arrives and his fight is played; S_U. A
   relaunch with no seed: S_R0 = S_T, the clock block whole and the fight's
@@ -761,21 +781,49 @@ this doc fails until it agrees.
   `strigoi_save_game`'s `omit` takes only top-level blocks) -- refused
   `FILE`. **`TestSaveResumeAFightHeIsNotIn`**, the scout's first and quick
   one: two clock fights (`zombie1` on `fallen1`, c:1 and c:2) in the first
-  dawn with the round at four minutes, a second of play first; a world
-  minute at a time until both quarries are hurt, the save (retried, 23 on
-  the merge's run), S_T, three rounds, S_U; relaunch: S_R0 = S_T and S_R =
+  dawn at the shipped round (the merge had it at four minutes), a second of
+  play first; a world minute at a time until both quarries are hurt, the
+  save (on the first try, an action held in the file; the merge's retried
+  23 times), S_T, three rounds, S_U; relaunch: S_R0 = S_T and S_R =
   S_U; in process the same. Its three file controls, **each refused**:
   `combat.clock` omitted (`FILE`), a clock fight's quarry an id no entity has
   (`BLOCK`), the two fights' quarries swapped (`BLOCK`, BUG-73's
-  `d2world.CheckClockWatches` at the load's step 4). **Why the round is
-  slowed (BUG-87):** at the shipped one world minute a round's swing and
+  `d2world.CheckClockWatches` at the load's step 4). **Why the merge slowed
+  the round (BUG-87):** at the shipped one world minute a round's swing and
   flinch (38 frames) outlast the round (24 frames at night, 15 at dawn), so
-  from a clock fight's first blow to its last death no frame takes a save,
-  and T -- a live fight, its quarry hurt -- could never be saved. Source
-  mutation, run by hand: the combat-clock stream not restored -- red. The
-  runs and the controls are in `strigoi-harness-runs\wt-merge\`
-  (`wt-merge-scout\` for the scout's). Its first run on the scout's branch
-  found BUG-85, and its second BUG-86.
+  from a clock fight's first blow to its last death no frame took a save
+  under BUG-76's refusal, and T -- a live fight, its quarry hurt -- could
+  never be saved. BUG-87's fix (a held action carried at its frame) removed
+  both steers. Source mutation, run by hand: the combat-clock stream not
+  restored -- red. The runs and the controls are in
+  `strigoi-harness-runs\wt-merge\` (`wt-merge-scout\` for the scout's), and
+  BUG-87's in `wt-held\`. Its first run on the scout's branch found BUG-85,
+  and its second BUG-86. **`TestSaveResumeMidAction`** (BUG-87's own, in the
+  same file): at the shipped round, a `zombie1` on a `fallen1` fifteen tiles
+  off; the frames stepped one at a time until a fighter holds A1 past its
+  first frame, then GH, then DT (past its third) -- each time the save is
+  made on the first try, the file holds the action at the frame and time
+  the entity reports (`held_frame`, `held_elapsed`), and "load last save"
+  by the menu, in the same process, resumes it there: the entity's own
+  report first, then S_R0 = S_T, and the same world seven and sixty frames
+  on (the death ending on the same frame, the corpse where the saved game's
+  lies). The real composite needs the MPQs, so this is where an inherited
+  monster's held action is carried; the unit tests carry a creature's sheet
+  (`d2mapentity`) and a hand-built composite (`d2asset`).
+  **`TestSaveResumeAHeldActionOutOfReach`** (the BUG-87 review fixes, 29 Sep
+  2026; BUG-91, BUG-92; the review's probe `TestZZRevNegativeElapsedNPC`
+  made an act): as M1, a fighter holding A1 past its first frame, saved; then
+  T's files put back with the swing's point edited and loaded by the menu,
+  in process. N2, -1.0 s into its frame (the probe's file, which crashed the
+  game drawing a negative frame): refused `FILE` by the file's own check, he
+  at dawn, and the game draws on (5 frames, 2 s of drawing). N3, 1e18 s: a
+  finite time the file cannot judge, refused `ENTITY` at the restore
+  (`Composite.SetProgress`), the game drawing on. N4, frame 99 of A1's 16 --
+  the art no longer fits it: RESUMED, the swing ended as it would have ended
+  (the fighter in Neutral, where the file puts it), the load report naming
+  it (`ended_actions`, and a note "an animation could not be resumed
+  exactly"), and S_R0 = S_T but for that fighter (`sameWorldExcept`); 60
+  frames on.
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -869,7 +917,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.14.3)
+## The tools (37; harness 0.14.4)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -895,10 +943,10 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | Tool | What |
 |---|---|
 | `strigoi_ping` | Liveness, commit, harness version, mode, tick, uptime |
-| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game; since 0.14.0 (29 Sep, M4.6 B4a) `load`, what the last game's world-save load did (`world_path`, `found`, `resumed`, `saved_at`, `refused` and `reason`, `set_aside`, `fell_back`, and `steps`, the load order as it ran -- since 0.14.2, M4.6 B4b, a hunted night's include `natives`, `entities` and `bodies`), and `dials`, the script's dials a load re-applies; since the B4a review fixes (29 Sep) the load report also says `preload` (what became of the copy of his sidecar step 1 keeps: `restored` after a refusal, `recovered`/`discarded`/`kept` for one a crash left) and `ignored` (a file refused earlier in the run that could not be set aside, not read again until it changes); since 0.14.3 (the B4b review fixes, 29 Sep) `notes` -- what the load did or found that is not a refusal: a villager the file lacks taken off the map (BUG-79), an entity this build names otherwise than the save did, resumed under the new name (BUG-80) |
+| `strigoi_get_game_info` | Screen hint, loading, hero, seed, tick, entity count, registered systems; since 0.12.5 (28 Sep) the authored-map setting -- `map_asked` (what the next game is built from), `map_built`, `map_error` -- and `playtest` / `playtest_save_dir` while a World Editor playtest is the game; since 0.14.0 (29 Sep, M4.6 B4a) `load`, what the last game's world-save load did (`world_path`, `found`, `resumed`, `saved_at`, `refused` and `reason`, `set_aside`, `fell_back`, and `steps`, the load order as it ran -- since 0.14.2, M4.6 B4b, a hunted night's include `natives`, `entities` and `bodies`), and `dials`, the script's dials a load re-applies; since the B4a review fixes (29 Sep) the load report also says `preload` (what became of the copy of his sidecar step 1 keeps: `restored` after a refusal, `recovered`/`discarded`/`kept` for one a crash left) and `ignored` (a file refused earlier in the run that could not be set aside, not read again until it changes); since 0.14.3 (the B4b review fixes, 29 Sep) `notes` -- what the load did or found that is not a refusal: a villager the file lacks taken off the map (BUG-79), an entity this build names otherwise than the save did, resumed under the new name (BUG-80); since 0.14.4 with the BUG-87 review fixes, `ended_actions` -- each entity whose held action the load ENDED rather than resumed at its saved point because this build's art no longer fits it (`id`, `who`, `action`, `why`; BUG-92), with a note "an animation could not be resumed exactly": it differs from the saved moment by design |
 | `strigoi_navigate` | main_menu · character_select · select_hero · credits |
 | `strigoi_start_game` | Load a save or create a hero (`seed` pins map, world RNG, entity IDs; `hero_art` draws the hero from a PNG hero manifest, `"composite"` returns to D2's class art -- reports `hero_asked`/`hero_used`/`hero_error`; `map` builds the world from an authored Tiled map, `"generated"` returns to Act 1 — reports `map_asked`/`map_built`/`map_error`); returns after the first game frame. **Since 0.14.0 (M4.6 B4a) a `save_path` with a world file beside it RESUMES it** (the game goes through `App.ToCreateGame`, as every way in does): the file's seed and uuid stream, its moment restored before the first frame, `load` in the result saying what the load did (`resumed`, or `refused` with its code and `set_aside`; a refusal falls back to dawn). A `seed` other than the one the world file was saved on is `BAD_ARGUMENT` and starts nothing -- **for a file the load's step 1 would take** (since the B4a review fixes, 29 Sep: `d2gamescreen.PeekLoad`); a file step 1 refuses anyway (another hero's, a torn save, one this build cannot read; a hunted night until 0.14.2 -- M4.6 B4b resumes one) holds the script to no seed, and the game begins at dawn on the seed asked for. No `seed` resumes the file's |
-| `strigoi_save_game` | **Save the game (M4.6 B3, harness 0.13.0): `Game.SaveWorld`.** Writes the world file `N.od2.world.json`, then the `.od2`, then the kit sidecar -- one moment in all three, the sidecar the same bytes the world file embeds -- keeping each previous generation as `.bak`, then re-takes the death screen's "as he entered" copy. Refused, touching no file, with `FIGHTING` (a fight running or not yet settled), `DEAD`, `TALKING`, `JOURNAL`, `LOADOUT`, `NETWORK` (rule 9) or `NOT_READY` (no hero in the world yet). `to` writes ONLY the world file, at that path (his `.od2`, sidecar, `.bak`s and the death copy untouched); `omit:[block...]` leaves top-level blocks out and needs `to` (`BAD_ARGUMENT` otherwise, and for a name that is not a block). Returns `save_path`, `world_path`, `sidecar_path`, `written`, `kept` (the `.bak`s), `set_aside` (a file this build could not read, moved aside -- rule 7), `omitted`, `blocks`, `bytes`. Until 0.13.0 it wrote the `.od2` alone and refused nothing. **`to` is fenced (0.13.1, the B3 review's B5):** it is made absolute and must lie under `%APPDATA%` (the game's own folder -- under the playtest launcher, the test's private home) or the temporary folder, and never inside a source tree of this game (a folder whose `go.mod` is this module: the World Editor's guard, `harnessSourceTree`); and it may not be one of HIS files -- anything in his save folder named after his save (`N.od2`, `N.od2.bak`, the sidecar, the world file and its `.bak`), with or without `omit` (`Game.SaveWorld`, `ErrBadSaveArgument`). Each is `BAD_ARGUMENT` and writes nothing. Before, a relative `to` resolved in the game's working directory, which the launcher sets to the repository, and a file there was set aside as `.unread` and replaced. `world_path` echoes the absolute path. A block the load's own checks would refuse -- each system's `Validate`/`CheckSnapshot` run on what the save took -- fails the save `INTERNAL` naming the block, touching no file |
+| `strigoi_save_game` | **Save the game (M4.6 B3, harness 0.13.0): `Game.SaveWorld`.** Writes the world file `N.od2.world.json`, then the `.od2`, then the kit sidecar -- one moment in all three, the sidecar the same bytes the world file embeds -- keeping each previous generation as `.bak`, then re-takes the death screen's "as he entered" copy. Refused, touching no file, with `FIGHTING` (a fight running or not yet settled; not, since 0.14.4 -- BUG-87 -- a monster's or villager's action still playing, which is saved at its frame), `DEAD`, `TALKING`, `JOURNAL`, `LOADOUT`, `NETWORK` (rule 9) or `NOT_READY` (no hero in the world yet). `to` writes ONLY the world file, at that path (his `.od2`, sidecar, `.bak`s and the death copy untouched); `omit:[block...]` leaves top-level blocks out and needs `to` (`BAD_ARGUMENT` otherwise, and for a name that is not a block). Returns `save_path`, `world_path`, `sidecar_path`, `written`, `kept` (the `.bak`s), `set_aside` (a file this build could not read, moved aside -- rule 7), `omitted`, `blocks`, `bytes`. Until 0.13.0 it wrote the `.od2` alone and refused nothing. **`to` is fenced (0.13.1, the B3 review's B5):** it is made absolute and must lie under `%APPDATA%` (the game's own folder -- under the playtest launcher, the test's private home) or the temporary folder, and never inside a source tree of this game (a folder whose `go.mod` is this module: the World Editor's guard, `harnessSourceTree`); and it may not be one of HIS files -- anything in his save folder named after his save (`N.od2`, `N.od2.bak`, the sidecar, the world file and its `.bak`), with or without `omit` (`Game.SaveWorld`, `ErrBadSaveArgument`). Each is `BAD_ARGUMENT` and writes nothing. Before, a relative `to` resolved in the game's working directory, which the launcher sets to the repository, and a file there was set aside as `.unread` and replaced. `world_path` echoes the absolute path. A block the load's own checks would refuse -- each system's `Validate`/`CheckSnapshot` run on what the save took -- fails the save `INTERNAL` naming the block, touching no file |
 | `strigoi_quit` | Manifest + exit (confirm: true) |
 
 ### Time and determinism (M3.3)
@@ -1517,6 +1565,26 @@ all three; the digest now compares them. **Measured: in a scripted run every
 velocity reads 0** -- the harness observes a paused game, and a paused frame
 steps with no elapsed time -- so the velocity field shows a live game's walk,
 not a script's.
+**Since 0.14.4 (M4.6 BUG-87, 29 Sep 2026)** an NPC or creature holding an
+action also reports `held_frame` and `held_elapsed`: the frame of the held
+mode (an NPC's composite mode; a creature's sheet) and the time already spent
+on it, which the world save carries as `action_at` and the load puts back.
+Neither key is present when nothing is held. It is the one animation frame
+counter in an entity's state, and it is world state: it decides the frame the
+action ends on -- when a monster is free again, or lies as a corpse -- so the
+digest compares it, and a resume that restarted an action is seen at once.
+**0.14.4 makes every evening kept before it incomparable** (the BUG-87
+review, its C1; BUG-93): BUG-88 put `clock_strip_hours_to_dusk` back in the
+digest's world part (counted from the minute's start, so its value moved:
+18.06625... kept, 18.0666... now), and `held_frame`/`held_elapsed` are new, so
+an old evening's S_T never equals a sound load's S_R0. A kept evening now
+carries the harness version that kept it (`harness.json`), and a run given
+another version's refuses it before comparing anything (`eveningHarness`).
+**With the BUG-87 review fixes (the same number: the branch had not merged)**
+the load report says `ended_actions` (BUG-92: a held action this build's art
+no longer fits is ended as it would have ended, not refused), and a held
+action at a point no play can have is refused (BUG-91). And since BUG-94 the
+dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
 
 ## Input — two layers
 

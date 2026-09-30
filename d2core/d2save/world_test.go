@@ -42,7 +42,7 @@ func b3Stream(name string, draws uint64) d2rand.StreamState {
 }
 
 // b3Fixture is a world file with every block holding something: a hero with a
-// lit torch, a pack of two (one on the map, one gone), a watch and a chase, a
+// lit torch, a pack of two (one on the map, mid-bite, one gone), a watch and a chase, a
 // villager, a body, a corpse, a fight's counters, and every stream moved.
 func b3Fixture() *World {
 	wolf, villager := "0a-wolf", "7f-villager"
@@ -108,7 +108,9 @@ func b3Fixture() *World {
 		Entities: []Entity{
 			{ID: wolf, Kind: KindCreature, Creature: "wolf", NameKey: "Wolf", X: wx, Y: wy, Motion: d2mapentity.Motion{
 				Pos: wolfPos, Target: [2]float64{533, 612.5}, Velocity: [2]float64{0.5, -0.1},
-				Path: [][2]float64{{535, 612.5}, {540, 612.5}}, Speed: 6, Dir: 3, Mode: "walk",
+				Path: [][2]float64{{535, 612.5}, {540, 612.5}}, Speed: 6, Dir: 3, Mode: "attack",
+				// Mid-bite as it walks in: a held action at its frame (BUG-87).
+				Action: "attack", ActionAt: &d2mapentity.ActionProgress{Frame: 4, Elapsed: 0.0125},
 			}},
 			{ID: villager, Kind: KindNPC, Native: true, Monstat: "warriv", NameKey: "Warriv", Born: &[2]float64{vx, vy}, X: vx, Y: vy,
 				Motion: d2mapentity.Motion{Pos: vilPos, Target: vilPos, Path: [][2]float64{}, Speed: 3, Mode: "NU"}},
@@ -409,6 +411,15 @@ func TestCheckRefusesWhatNoLoadCouldRestore(t *testing.T) {
 		}},
 		"an entity off its motion":  {ReasonEntityPlace, func(w *World) { w.Entities[0].X += 1 }},
 		"an infinite path":          {ReasonEntityFinite, func(w *World) { w.Entities[0].Motion.Path[1][0] = math.Inf(1) }},
+		"a NaN time into an action": {ReasonEntityFinite, func(w *World) { w.Entities[0].Motion.ActionAt.Elapsed = math.NaN() }},
+		// The BUG-87 review's B1 (BUG-91): points no play can have, whatever
+		// the art -- the review's -1.0 s crashed the game through an NPC's
+		// composite. (The ceiling, one frame's length, is the art's: the
+		// load's restore refuses a time past it.)
+		"a second before an action's frame": {ReasonEntityFinite, func(w *World) { w.Entities[0].Motion.ActionAt.Elapsed = -1.0 }},
+		"a hair below the floor":            {ReasonEntityFinite, func(w *World) { w.Entities[0].Motion.ActionAt.Elapsed = -2e-9 }},
+		"an action at a negative frame":     {ReasonEntityFinite, func(w *World) { w.Entities[0].Motion.ActionAt.Frame = -1 }},
+
 		"a body with no entity":     {ReasonBodyOrphan, func(w *World) { w.Bodies[0].ID = "0z-nobody" }},
 		"a body over its max":       {ReasonBodyHealth, func(w *World) { w.Bodies[0].Health = 182 }},
 		"a body with no max":        {ReasonBodyHealth, func(w *World) { w.Bodies[0].MaxHealth = 0 }},
@@ -510,6 +521,10 @@ func TestAFieldTheFileLacksIsRefused(t *testing.T) {
 	for _, path := range []string{
 		"spawner.arrival", "hero.facing", "hero.stamina", "clock.elapsed", "rng.world.draws",
 		"light.sources[0].burn", "entities[0].motion.dir", "combat.last_round.encounter", "scene.watch_clock_set",
+		// A held action's own fields (the BUG-87 review, its C4): frame 0 and
+		// time 0 are a real point of a play, so a file without them must not
+		// read as the action's first frame.
+		"entities[0].motion.action_at.frame", "entities[0].motion.action_at.elapsed",
 	} {
 		cut := b3Cut(t, data, path)
 
