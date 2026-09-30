@@ -40,6 +40,7 @@ type Animation interface {
 	ResetPlayedCount()
 	Progress() (frame int, elapsed float64)
 	SetProgress(frame int, elapsed float64) error
+	FrameLength() float64
 	SetEffect(effect d2enum.DrawEffect)
 	SetShadow(shadow bool)
 }

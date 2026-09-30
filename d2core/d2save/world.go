@@ -881,6 +881,18 @@ func (w *World) checkEntities() error {
 			return refuse(ReasonEntityFinite, "%v", err)
 		}
 
+		// And a held action's point is one a play can have (the BUG-87
+		// review's B1, BUG-91: an NPC's swing at -1.0 s crashed the game): no
+		// negative frame, no time below the floor. Its ceiling -- one frame's
+		// length -- is the art's, which this package does not know; the
+		// load's restore holds it (d2mapentity's ResumeMotion, d2asset's
+		// SetProgress), and refuses ENTITY or NATIVES.
+		if at := e.Motion.ActionAt; at != nil {
+			if err := at.Check(); err != nil {
+				return refuse(ReasonEntityFinite, "%s: its held %q %v", what, e.Motion.Action, err)
+			}
+		}
+
 		if err := samePlace(what, e.X, e.Y, e.Motion.Pos); err != nil {
 			return refuse(ReasonEntityPlace, "%v", err)
 		}

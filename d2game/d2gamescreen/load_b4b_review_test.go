@@ -188,10 +188,22 @@ func TestASwingAndABlowSavedHalfPlayedResumeAtTheirFrame(t *testing.T) {
 // fixes refused such a file, BUG-76): a monster's death, a monster's bite and
 // the villager's blow, each written into the file at a frame part-way through
 // its sheet, are resumed there -- each entity's motion is the file's, read
-// back equal. And a held action the file carries no frame for, or at a frame
-// its sheet does not have, is refused where its motion is restored -- ENTITY
-// for a monster, NATIVES for a villager -- nothing left waiting in the seam
-// (and, as every refusal does, the whole game torn down: step 8).
+// back equal.
+//
+// A held action at a frame its sheet does not have, saved longer into a
+// frame than one of its sheet lasts, or drawn on another sheet than this
+// build's (a sheet added since), is one the ART no longer fits (the BUG-87
+// review's B2, BUG-92): the night is resumed, the action ENDED as it would
+// have ended -- a death to its corpse where the file puts it, a blow back to
+// idle -- and the load report says which and why (ended_actions, and a note)
+// -- where BUG-87 refused the whole night ENTITY or NATIVES. A CORRUPT one --
+// no frame, a second before its frame (the review's B1, BUG-91: an NPC's
+// crashed the game), a time past the whole play of its sheet -- is still
+// refused where its motion is restored, ENTITY for a monster, NATIVES for a
+// villager, nothing left waiting in the seam (and, as every refusal does, the
+// whole game torn down: step 8). In the game the file's own check refuses a
+// time below the floor first (World.Check, FILE); this test hands the load a
+// World directly, so the restore's refusal is the one seen.
 func TestAFileHoldingAnActionResumesItAtItsFrame(t *testing.T) {
 	saved, save := b4bGame(t)
 	b4bHunt(t, saved)
@@ -238,6 +250,60 @@ func TestAFileHoldingAnActionResumesItAtItsFrame(t *testing.T) {
 		require.Equal(t, b87Entity(t, w, id).Motion, got, "%s: resumed at its frame", c.name)
 	}
 
+	// B2 (BUG-92): the art no longer fits -- ended as it would have ended,
+	// and said so; never refused.
+	for _, c := range []struct {
+		name   string
+		native bool
+		action string
+		mode   string // the mode the file says it was drawn in
+		at     d2mapentity.ActionProgress
+		why    string
+		ends   string // the mode it is in once ended
+	}{
+		{"a monster's death at a frame its sheet lacks (a sheet with fewer frames)", false, "death", "death",
+			d2mapentity.ActionProgress{Frame: 99}, "saved at frame 99, and its art has 12", "dead"},
+		{"a monster's death longer into a frame than one lasts (a sheet with more frames)", false, "death", "death",
+			d2mapentity.ActionProgress{Frame: 2, Elapsed: 0.5}, "a frame of its art lasts", "dead"},
+		{"a monster's bite drawn on idle, a bite sheet added since", false, "attack", "idle",
+			d2mapentity.ActionProgress{Frame: 1, Elapsed: 0.01}, `saved drawn as "idle", and this build draws it as "attack"`, "idle"},
+		{"a villager's blow at a frame its sheet lacks", true, "hit", "hit",
+			d2mapentity.ActionProgress{Frame: 99}, "saved at frame 99, and its art has", "idle"},
+	} {
+		at := c.at
+		w, id := edit(c.native, c.action, &at)
+
+		for i := range w.Entities {
+			if w.Entities[i].ID == id {
+				w.Entities[i].Motion.Mode = c.mode
+			}
+		}
+
+		setLastLoad(LoadReport{})
+
+		v, _ := b4bGame(t)
+		require.NoError(t, b4Load(t, v, w), "%s: resumed, not refused", c.name)
+
+		saved := b87Entity(t, w, id).Motion
+		got := v.gameClient.MapEngine.Entities()[id].(*d2mapentity.Creature).MotionSnapshot()
+		require.Empty(t, got.Action, "%s: the action ended", c.name)
+		require.Nil(t, got.ActionAt, c.name)
+		require.Equal(t, c.ends, got.Mode, "%s: in the state its end reaches", c.name)
+		require.Equal(t, c.action == "death", got.Corpse, "%s: a death ends a corpse", c.name)
+		require.Equal(t, saved.Pos, got.Pos, "%s: where the file puts it", c.name)
+
+		rep := LastLoad()
+		require.Equal(t, []EndedAction{{ID: id, Who: rep.EndedActions[0].Who, Action: c.action, Why: rep.EndedActions[0].Why}},
+			rep.EndedActions, "%s: the report names it", c.name)
+		require.Contains(t, rep.EndedActions[0].Why, c.why, c.name)
+		require.Len(t, rep.Notes, 1, "%s: %v", c.name, rep.Notes)
+		require.Contains(t, rep.Notes[0], id, c.name)
+		require.Contains(t, rep.Notes[0], "an animation could not be resumed exactly", c.name)
+		require.Contains(t, rep.Notes[0], c.why, c.name)
+		t.Logf("%s: resumed, %s -> %s; noted %q", c.name, c.action, got.Mode, rep.Notes[0])
+	}
+
+	// Corrupt: refused, as before, and B1's times too.
 	for _, c := range []struct {
 		name   string
 		native bool
@@ -246,9 +312,12 @@ func TestAFileHoldingAnActionResumesItAtItsFrame(t *testing.T) {
 		why    string
 	}{
 		{"a monster's death with no frame", false, nil, LoadRefusedEntity, "carries no frame"},
-		{"a monster's death at a frame its sheet lacks", false, &d2mapentity.ActionProgress{Frame: 99}, LoadRefusedEntity, "no such frame"},
 		{"a villager's blow with no frame", true, nil, LoadRefusedNatives, "carries no frame"},
-		{"a villager's blow at a frame its sheet lacks", true, &d2mapentity.ActionProgress{Frame: 99}, LoadRefusedNatives, "no such frame"},
+		{"a monster's death a second before its frame", false, &d2mapentity.ActionProgress{Frame: 3, Elapsed: -1.0}, LoadRefusedEntity, "not a point of a play"},
+		{"a villager's blow a second before its frame", true, &d2mapentity.ActionProgress{Frame: 3, Elapsed: -1.0}, LoadRefusedNatives, "not a point of a play"},
+		{"a monster's death 1e18 s into its frame", false, &d2mapentity.ActionProgress{Frame: 3, Elapsed: 1e18}, LoadRefusedEntity, "a frame of its sheet lasts"},
+		{"a monster's death 1e300 s into its frame", false, &d2mapentity.ActionProgress{Frame: 3, Elapsed: 1e300}, LoadRefusedEntity, "a frame of its sheet lasts"},
+		{"a villager's blow 1e18 s into its frame", true, &d2mapentity.ActionProgress{Frame: 3, Elapsed: 1e18}, LoadRefusedNatives, "a frame of its sheet lasts"},
 	} {
 		action := "death"
 		if c.native {

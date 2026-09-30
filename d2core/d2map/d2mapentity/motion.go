@@ -6,6 +6,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 )
 
 // Motion is a map entity's walk and pose as the world save carries it (M4.6
@@ -102,7 +103,10 @@ type Motion struct {
 //
 // Elapsed is kept as the animation holds it, bit for bit (a JSON float64
 // round-trips exactly), and may be a hair below zero: Advance subtracts whole
-// frames from a sum of frame times.
+// frames from a sum of frame times. It is always in [d2asset.ElapsedFloor,
+// the frame's length) in a running game; a file holding another time is
+// refused, or, when the art has changed since the save, the action ended as it
+// would have ended (ResumeMotion).
 type ActionProgress struct {
 	Frame   int     `json:"frame"`
 	Elapsed float64 `json:"elapsed"`
@@ -136,8 +140,26 @@ func (mo Motion) check() error {
 		return fmt.Errorf("d2mapentity: motion: the held %q carries no frame", mo.Action)
 	case mo.Action == "" && mo.ActionAt != nil:
 		return fmt.Errorf("d2mapentity: motion: a frame (%+v) and no held action", *mo.ActionAt)
-	case mo.ActionAt != nil && (mo.ActionAt.Frame < 0 || math.IsNaN(mo.ActionAt.Elapsed) || math.IsInf(mo.ActionAt.Elapsed, 0)):
-		return fmt.Errorf("d2mapentity: motion: the held %q at %+v is not a point of a play", mo.Action, *mo.ActionAt)
+	case mo.ActionAt != nil:
+		if err := mo.ActionAt.Check(); err != nil {
+			return fmt.Errorf("d2mapentity: motion: the held %q %w", mo.Action, err)
+		}
+	}
+
+	return nil
+}
+
+// Check refuses a point no play of ANY art could have (the BUG-87 review's
+// B1, BUG-91): a negative frame, a time that is not a number, or a time below
+// d2asset.ElapsedFloor, the floor no play goes under -- a file holding an
+// NPC's swing at -1.0 s made its composite draw a negative frame, and the
+// game panicked. A corrupt file, refused wherever it is read: here (the
+// restore) and by d2save's World.Check (the file). The CEILING -- one frame's
+// length, and the whole play -- is the art's, which only the restore knows
+// (heldActionMisfit; d2asset's SetProgress).
+func (at ActionProgress) Check() error {
+	if at.Frame < 0 || math.IsNaN(at.Elapsed) || math.IsInf(at.Elapsed, 0) || at.Elapsed < d2asset.ElapsedFloor {
+		return fmt.Errorf("at %+v is not a point of a play", at)
 	}
 
 	return nil
@@ -196,35 +218,75 @@ func (c *Creature) MotionSnapshot() Motion {
 }
 
 // RestoreMotion puts the creature's walk and pose back, a held action at its
-// saved frame. It refuses, and changes nothing, when the Motion is not one a
-// creature could have had -- a held action at a frame its sheet does not have
-// among them.
+// saved frame: the strict restore, the unit tests'. It refuses, and changes
+// nothing, when the Motion is not one a creature could have had with this
+// art -- a held action at a frame its sheet does not have, or at a time no
+// frame of it lasts, among them. A load resumes with ResumeMotion.
 func (c *Creature) RestoreMotion(mo Motion) error {
+	_, _, err := c.restoreMotion(mo, false)
+
+	return err
+}
+
+// ResumeMotion is the load's restore (Game.rebuildEntity, Game.rekeyNatives),
+// which takes this build's art as it finds it (the BUG-87 review's B2,
+// BUG-92): a held action the art no longer fits (heldActionMisfit) is ENDED,
+// as it would have ended -- a bite or a blow back to idle (walking on next
+// frame if it still walks), a death to the Dead pose, a corpse where the file
+// puts it -- rather than refused, and ended says which and why (nil when the
+// action resumed at its saved point). A corrupt one is still refused,
+// changing nothing. It returns the Motion the creature then has: mo, unless
+// an action was ended.
+func (c *Creature) ResumeMotion(mo Motion) (restored Motion, ended *HeldActionEnded, err error) {
+	return c.restoreMotion(mo, true)
+}
+
+func (c *Creature) restoreMotion(mo Motion, fit bool) (Motion, *HeldActionEnded, error) {
 	if err := mo.check(); err != nil {
-		return err
+		return mo, nil, err
 	}
 
 	mode, ok := creatureModeNamed(mo.Mode)
 	if !ok {
-		return fmt.Errorf("d2mapentity: motion: %q is not a creature mode", mo.Mode)
+		return mo, nil, fmt.Errorf("d2mapentity: motion: %q is not a creature mode", mo.Mode)
 	}
 
 	action := creatureMode("")
 
+	var ended *HeldActionEnded
+
 	if mo.Action != "" {
 		if action, ok = creatureModeNamed(mo.Action); !ok {
-			return fmt.Errorf("d2mapentity: motion: %q is not a creature mode", mo.Action)
+			return mo, nil, fmt.Errorf("d2mapentity: motion: %q is not a creature mode", mo.Action)
 		}
 
 		// The sheet the action plays on (idle's when it has none of its
-		// own, as setMode will land) must have the saved frame.
-		sheet := c.animations[action]
+		// own, as setMode will land) must have the saved frame, and a
+		// frame of it must last longer than the time already spent on it.
+		lands, sheet := action, c.animations[action]
 		if sheet == nil {
-			sheet = c.animations[creatureIdle]
+			lands, sheet = creatureIdle, c.animations[creatureIdle]
 		}
 
-		if sheet == nil || mo.ActionAt.Frame >= sheet.GetFrameCount() {
-			return fmt.Errorf("d2mapentity: motion: the held %q at frame %d: its sheet has no such frame", mo.Action, mo.ActionAt.Frame)
+		if sheet == nil {
+			return mo, nil, fmt.Errorf("d2mapentity: motion: the held %q has no sheet to play on", mo.Action)
+		}
+
+		// A LOAD ENDS AN ACTION THE ART NO LONGER FITS (B2, BUG-92): put on
+		// its first frame, where any sheet has one, and ended below.
+		if fit {
+			if why := heldActionMisfit(mo, string(lands), sheet.GetFrameCount(), sheet.FrameLength()); why != "" {
+				ended = &HeldActionEnded{Action: mo.Action, Why: why}
+				mo.Mode, mo.ActionAt = string(lands), &ActionProgress{}
+			}
+		}
+
+		if mo.ActionAt.Frame >= sheet.GetFrameCount() {
+			return mo, nil, fmt.Errorf("d2mapentity: motion: the held %q at frame %d: its sheet has no such frame", mo.Action, mo.ActionAt.Frame)
+		}
+
+		if length := sheet.FrameLength(); !(mo.ActionAt.Elapsed < length) {
+			return mo, nil, fmt.Errorf("d2mapentity: motion: the held %q at %v s into a frame: a frame of its sheet lasts %v s", mo.Action, mo.ActionAt.Elapsed, length)
 		}
 	}
 
@@ -241,7 +303,7 @@ func (c *Creature) RestoreMotion(mo Motion) error {
 	}
 
 	if err := c.setMode(wanted); err != nil {
-		return err
+		return mo, nil, err
 	}
 
 	if action != "" {
@@ -251,13 +313,82 @@ func (c *Creature) RestoreMotion(mo Motion) error {
 		// go on after, so the action ends on the frame the saved one would
 		// have.
 		if err := c.animation.SetProgress(mo.ActionAt.Frame, mo.ActionAt.Elapsed); err != nil {
-			return err
+			return mo, nil, err
 		}
 
 		c.held, c.heldMode = true, action
 	}
 
-	return nil
+	if ended != nil {
+		// ENDED AS IT WOULD HAVE ENDED: the Advance's own end of an action
+		// (finishAction), with no callback to call -- the restore hands
+		// none, as the game starts every action with none.
+		c.finishAction()
+
+		return c.MotionSnapshot(), ended, nil
+	}
+
+	return mo, nil, nil
+}
+
+// HeldActionEnded is a held action a load could not resume at its saved
+// point, because this build's art no longer fits it, and ended instead (the
+// BUG-87 review's B2, BUG-92; Josh's default, his to overturn): the action,
+// and why (heldActionMisfit). The load puts it in its report (the load's
+// notes and ended_actions), so a script can tell an entity that differs from
+// the saved moment BY DESIGN from one that diverged.
+type HeldActionEnded struct {
+	Action string `json:"action"`
+	Why    string `json:"why"`
+}
+
+// String is the load note's text.
+func (e HeldActionEnded) String() string {
+	return fmt.Sprintf("an animation could not be resumed exactly: its held %q was ended, as it would have ended, because %s (the art changed since the save)",
+		e.Action, e.Why)
+}
+
+// heldActionMisfit is why this build's art cannot resume a held action at its
+// saved point, or "" when it can -- or when the point is CORRUPT, which is
+// the restore's to refuse (the BUG-87 review's B1 and B2, BUG-91 and
+// BUG-92). lands is the mode the action is drawn in now (a creature's sheet
+// falls back to idle's when the action has none), frames and length the
+// frame count and one frame's length of the art it plays on.
+//
+// THE LINE, since a file cannot say which art it was saved with:
+//   - CORRUPT, refused (no art could have written it): a negative frame, a
+//     time that is not a number or is below d2asset.ElapsedFloor
+//     (Motion.check, and World.Check at the file), an action no mode is
+//     named (creatureModeNamed, monsterModeNamed), and a time at or past the
+//     WHOLE play of the art -- frames x length, one second for every
+//     creature sheet (a PNG sheet plays in its default second whatever its
+//     frame count), so no re-export brings a saved time up to it. That is
+//     B1's -1.0 s, 1e17 s and 1e18 s; SetProgress refuses them too.
+//   - THE ART CHANGED, ended and noted: the action is drawn in another mode
+//     than the one saved (a sheet added for an action that had fallen back
+//     to idle, or one taken away), at a frame the art does not have (a sheet
+//     re-exported with fewer frames), or at a time at or past one frame of
+//     the art but short of its whole play (a sheet re-exported with MORE
+//     frames has shorter ones, and a saved time can outlast them).
+func heldActionMisfit(mo Motion, lands string, frames int, length float64) string {
+	if mo.Action == "" || mo.ActionAt == nil || frames <= 0 || !(length > 0) {
+		return ""
+	}
+
+	at := *mo.ActionAt
+
+	switch {
+	case at.Frame < 0 || at.Elapsed < d2asset.ElapsedFloor || !(at.Elapsed < float64(frames)*length):
+		return "" // corrupt: the restore refuses it
+	case mo.Mode != lands:
+		return fmt.Sprintf("it was saved drawn as %q, and this build draws it as %q", mo.Mode, lands)
+	case at.Frame >= frames:
+		return fmt.Sprintf("it was saved at frame %d, and its art has %d", at.Frame, frames)
+	case !(at.Elapsed < length):
+		return fmt.Sprintf("it was saved %v s into a frame, and a frame of its art lasts %v s", at.Elapsed, length)
+	}
+
+	return ""
 }
 
 func creatureModeNamed(name string) (creatureMode, bool) {
@@ -293,15 +424,35 @@ func (v *NPC) MotionSnapshot() Motion {
 }
 
 // RestoreMotion puts the NPC's walk and pose back, a held action at its saved
-// frame. A Motion no NPC could have had is refused before anything changes; a
-// composite that cannot load the saved mode, or whose mode has no such frame
-// as the held action's, is reported after the walk is set (the mode's frame
-// count is known only once it is loaded, and it loaded that mode once, so
-// that is a missing or changed file, not a bad save). An NPC with no
-// composite (a test's) takes the walk and has no animation to pose.
+// frame: the strict restore, the unit tests'. A Motion no NPC could have had
+// is refused before anything changes; a composite that cannot load the saved
+// mode, or whose mode has no such frame as the held action's, or no frame
+// lasting the time spent on it, is reported after the walk is set (the mode's
+// frame count and speed are known only once it is loaded). An NPC with no
+// composite (a test's) takes the walk and has no animation to pose. A load
+// resumes with ResumeMotion.
 func (v *NPC) RestoreMotion(mo Motion) error {
+	_, _, err := v.restoreMotion(mo, false)
+
+	return err
+}
+
+// ResumeMotion is the load's restore (Game.rebuildEntity, Game.rekeyNatives;
+// the BUG-87 review's B2, BUG-92): a held action the composite's mode no
+// longer fits (heldActionMisfit: its frames, its frame length) is ENDED, as
+// it would have ended -- a swing or a blow back to Neutral, a death to Dead,
+// a corpse where the file puts it -- and ended says which and why; a corrupt
+// one is still refused. It returns the Motion the NPC then has. (An NPC's
+// frames and speed are the animdata's, not a sheet an art pass re-exports,
+// so this is the rarer case; a mode the composite cannot load at all is still
+// refused.)
+func (v *NPC) ResumeMotion(mo Motion) (restored Motion, ended *HeldActionEnded, err error) {
+	return v.restoreMotion(mo, true)
+}
+
+func (v *NPC) restoreMotion(mo Motion, fit bool) (Motion, *HeldActionEnded, error) {
 	if err := mo.check(); err != nil {
-		return err
+		return mo, nil, err
 	}
 
 	var mode, action d2enum.MonsterAnimationMode
@@ -310,19 +461,21 @@ func (v *NPC) RestoreMotion(mo Motion) error {
 
 	if v.composite != nil {
 		if mode, ok = monsterModeNamed(mo.Mode); !ok {
-			return fmt.Errorf("d2mapentity: motion: %q is not a monster mode", mo.Mode)
+			return mo, nil, fmt.Errorf("d2mapentity: motion: %q is not a monster mode", mo.Mode)
 		}
 	}
 
 	if mo.Action != "" {
 		if action, ok = monsterModeNamed(mo.Action); !ok {
-			return fmt.Errorf("d2mapentity: motion: %q is not a monster mode", mo.Action)
+			return mo, nil, fmt.Errorf("d2mapentity: motion: %q is not a monster mode", mo.Action)
 		}
 	}
 
 	v.mapEntity.setMotion(mo)
 	v.held, v.onHeldFinished = false, nil
 	v.corpse = mo.Corpse
+
+	var ended *HeldActionEnded
 
 	if v.composite != nil {
 		wanted := mode
@@ -331,18 +484,30 @@ func (v *NPC) RestoreMotion(mo Motion) error {
 		}
 
 		if err := v.composite.SetMode(wanted, v.composite.GetWeaponClass()); err != nil {
-			return err
+			return mo, nil, err
 		}
 
 		v.composite.SetDirection(mo.Dir)
 
 		// A held action AT ITS SAVED FRAME, NOT ITS FIRST (BUG-87), set after
-		// the facing (a turn puts the layers back to their first frame), on
-		// its first play: SetMode short-circuits on the mode the composite is
-		// already in, so its play count is set here, not trusted.
+		// the facing, on its first play: SetMode short-circuits on the mode
+		// the composite is already in, so its play count is set here, not
+		// trusted. A load's is fitted to the mode's art first -- its frames
+		// and its frame length -- and one the art no longer fits is put on
+		// its first frame and ended below (B2, BUG-92). Not to its mode: a
+		// composite lands on the mode asked or fails, so a saved mode other
+		// than the action's is a corrupt file, which the load's read-back
+		// refuses.
 		if mo.Action != "" {
+			if fit {
+				if why := heldActionMisfit(mo, mo.Mode, v.composite.GetFrameCount(), v.composite.FrameLength()); why != "" {
+					ended = &HeldActionEnded{Action: mo.Action, Why: why}
+					mo.ActionAt = &ActionProgress{}
+				}
+			}
+
 			if err := v.composite.SetProgress(mo.ActionAt.Frame, mo.ActionAt.Elapsed); err != nil {
-				return err
+				return mo, nil, err
 			}
 		}
 	}
@@ -351,7 +516,15 @@ func (v *NPC) RestoreMotion(mo Motion) error {
 		v.held, v.heldMode = true, action
 	}
 
-	return nil
+	if ended != nil {
+		// ENDED AS IT WOULD HAVE ENDED: the Advance's own end of a held
+		// action (finishHeldAction), with no callback to call.
+		v.finishHeldAction()
+
+		return v.MotionSnapshot(), ended, nil
+	}
+
+	return mo, nil, nil
 }
 
 // monsterModeNamed is MonsterAnimationMode.String read backwards. "GH" is

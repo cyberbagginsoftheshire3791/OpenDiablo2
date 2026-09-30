@@ -2,6 +2,7 @@ package d2asset
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"log"
@@ -401,20 +402,54 @@ func (a *Animation) Progress() (frame int, elapsed float64) {
 	return a.frameIndex, a.lastFrameTime
 }
 
+// ElapsedFloor is the least time into a frame a running animation can hold
+// (the BUG-87 review's B1, BUG-91): Advance subtracts whole frames from a sum
+// of frame times, so the remainder can be a hair below zero -- a few ulps of
+// the frame length, never near a nanosecond. Anything below it is no point of
+// a play, and Progress's restores refuse it.
+const ElapsedFloor = -1e-9
+
+// FrameLength is how long one frame lasts, in seconds: the play length shared
+// out over the frames, as Advance computes it.
+func (a *Animation) FrameLength() float64 {
+	return a.playLength / float64(a.GetFrameCount())
+}
+
 // SetProgress puts the animation at frame, with elapsed seconds already spent
 // on it: Progress's restore (M4.6 BUG-87). It refuses a frame the current
 // direction does not have, changing nothing. The play count is its own
 // (ResetPlayedCount), and so is the direction -- SetDirection puts the frame
 // back to 0, so a caller sets the direction first.
+//
+// AND IT REFUSES A TIME NO PLAY COULD HAVE (the BUG-87 review's B1, BUG-91):
+// below ElapsedFloor, at or past one frame's length, or not a number. Advance
+// keeps the time into a frame in [0, FrameLength) -- a hair below zero at
+// most -- and a restored time outside it is a file no running game wrote:
+// a huge one made the first Advance loop once per frame it spans (3e7 s cost
+// 170 ms, 1e300 never ended), and a composite's negative one drew a negative
+// frame and crashed the game.
 func (a *Animation) SetProgress(frame int, elapsed float64) error {
 	if frame < 0 || frame >= a.GetFrameCount() {
 		return errors.New("invalid frame index")
 	}
 
-	a.frameIndex = frame
-	a.lastFrameTime = elapsed
+	if length := a.FrameLength(); elapsed < ElapsedFloor || !(elapsed < length) {
+		return fmt.Errorf("%v s into a frame of %v s is no point of a play", elapsed, length)
+	}
+
+	a.setProgress(frame, elapsed)
 
 	return nil
+}
+
+// setProgress is SetProgress without its checks, for this package's callers
+// that have made their own: a composite's layers, set at the mode's frame
+// (Composite.SetProgress checks the MODE's time, and a layer's frame length,
+// playLength/frames, can be an ulp shorter than the mode's), and a turn that
+// keeps the frame (Composite.SetDirection).
+func (a *Animation) setProgress(frame int, elapsed float64) {
+	a.frameIndex = frame
+	a.lastFrameTime = elapsed
 }
 
 // SetEffect sets the draw effect for the animation

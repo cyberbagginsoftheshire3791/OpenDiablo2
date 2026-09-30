@@ -74,7 +74,7 @@ func TestDayForOutsideTheSliceIsNotOk(t *testing.T) {
 	}
 }
 
-// TestHoursToDusk pins Clock.HoursToDusk's "always in [0,24)" arithmetic at the
+// TestHoursToDusk pins Clock.HoursToDusk's "always in (0,24]" arithmetic at the
 // three points the audit named. The rate is DayRate (4.0) from dawn through
 // dusk and is sampled once per Advance, so 255 sim seconds is exactly 1020 world
 // minutes -- 02:45 to 19:45 -- and the clock lands on the boundary without the
@@ -95,8 +95,11 @@ func TestHoursToDusk(t *testing.T) {
 		t.Fatalf("stepped to minute-of-day %.4f, want 1185 (19:45)", got)
 	}
 
-	if got := c.HoursToDusk(); math.Abs(got) > 0.01 {
-		t.Fatalf("at 19:45 HoursToDusk = %.4f, want 0", got)
+	// A day away (the BUG-87 review's C6, BUG-94): the dusk minute reads
+	// 24.0 h, as the HUD read it in play before BUG-88's floor; the floor
+	// made it 0 ("Sunset in 0.0h") for the whole minute.
+	if got := c.HoursToDusk(); math.Abs(got-24) > 0.01 {
+		t.Fatalf("at 19:45 HoursToDusk = %.4f, want 24", got)
 	}
 
 	// One world minute past dusk: time to the NEXT dusk wraps to ~23.98h and is

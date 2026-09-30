@@ -204,6 +204,12 @@ type evening struct {
 	// squadModel is the deployed squad's model as the file at T names it
 	// (B4b): an NPC the load must rebuild wearing that id.
 	squadModel string
+
+	// keptFrom is the directory a kept evening was taken from ("" for one
+	// this run filled), and harness the harness version that kept it
+	// (harness.json; "" for an evening kept before the stamp): the BUG-87
+	// review's C1, BUG-93 (eveningHarness).
+	keptFrom, harness string
 }
 
 type dialWrite struct {
@@ -1131,10 +1137,16 @@ func keepEvening(t *testing.T, s *session, ev evening) {
 	states, _ := json.MarshalIndent(map[string]worldSnap{"t": ev.sT, "u": ev.sU}, "", " ")
 	dials, _ := json.MarshalIndent(ev.savedDial, "", " ")
 
+	// THE HARNESS THAT KEPT IT (the BUG-87 review's C1, BUG-93): S_T and S_U
+	// are that harness's digests, comparable only with the same harness's.
+	stamp, _ := json.MarshalIndent(map[string]string{
+		"harness_version": str(s.call("strigoi_ping", map[string]any{}), "harness_version"),
+	}, "", " ")
+
 	for name, data := range map[string][]byte{
 		"hero.od2": ev.od2Left, "hero.od2.strigoi.json": ev.sidecarLeft, "hero.od2.world.json": ev.fileT,
 		"hero-at-t.od2": ev.od2T, "hero-at-t.od2.strigoi.json": ev.sidecarT, "states.json": states,
-		"dials.json": dials,
+		"dials.json": dials, "harness.json": stamp,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
 			t.Logf("keeping the evening: %v", err)
@@ -1176,6 +1188,20 @@ func keptEvening(t *testing.T, from string) evening {
 	ev.sT, ev.sU = states["t"], states["u"]
 	ev.squadModel = deployedModel(t, worldFile(t, "the kept evening", ev.fileT))
 
+	ev.keptFrom = from
+
+	if data, err := os.ReadFile(filepath.Join(from, "harness.json")); err == nil {
+		var stamp struct {
+			Version string `json:"harness_version"`
+		}
+
+		if err := json.Unmarshal(data, &stamp); err != nil {
+			t.Fatalf("the kept evening's harness.json: %v", err)
+		}
+
+		ev.harness = stamp.Version
+	}
+
 	home, err := testHome(t)
 	if err != nil {
 		t.Fatal(err)
@@ -1199,6 +1225,38 @@ func keptEvening(t *testing.T, from string) evening {
 	return ev
 }
 
+// eveningHarness refuses a KEPT evening another harness kept (the BUG-87
+// review's C1, BUG-93), before anything is compared with it. Its S_T and S_U
+// are digests, and a digest's shape is the harness's: BUG-88 put the clock
+// strip's hours back in the world part and 0.14.4 added held_frame and
+// held_elapsed, so every evening kept before them compared red with a sound
+// load -- and a control run on one went red for that reason, not its own.
+// An evening kept before the stamp (no harness.json) is refused as well. It
+// is a refusal of the INPUT, worded so no one reads it as the control's red.
+func eveningHarness(t *testing.T, s *session, ev evening) {
+	t.Helper()
+
+	if ev.keptFrom == "" {
+		return
+	}
+
+	now := str(s.call("strigoi_ping", map[string]any{}), "harness_version")
+	if ev.harness == now {
+		t.Logf("the kept evening at %s was kept by harness %s, this game's", ev.keptFrom, now)
+		return
+	}
+
+	kept := ev.harness
+	if kept == "" {
+		kept = "a harness before the stamp (no harness.json; 0.14.3 or earlier)"
+	}
+
+	t.Fatalf("THE KEPT EVENING IS STALE -- NOT A RED OF THIS TEST: %s was kept by %s, and this game is harness %s. "+
+		"Its S_T and S_U are the other harness's digests, so nothing compared with them means anything. "+
+		"Keep a new one: run TestSaveResume green (it keeps its evening at <run dir>/pt/TestSaveResume/evening) "+
+		"and point STRIGOI_SAVE_RESUME_FROM there.", ev.keptFrom, kept, now)
+}
+
 // eveningActs4to6 relaunches and resumes (acts 4-6), then takes the in-process
 // path (6b) and the refusals (6c-6e).
 func eveningActs4to6(t *testing.T, ev evening) {
@@ -1206,6 +1264,7 @@ func eveningActs4to6(t *testing.T, ev evening) {
 
 	s := start(t)
 	s.call("strigoi_pause", map[string]any{})
+	eveningHarness(t, s, ev)
 
 	// --- 4: relaunch, load, S_R0 = S_T --------------------------------------
 	// No seed: the shipped game has none to give, and the load resumes the

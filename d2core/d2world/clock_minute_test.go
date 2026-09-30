@@ -1,6 +1,9 @@
 package d2world
 
 import (
+	"fmt"
+	"math"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -33,4 +36,60 @@ func TestHoursToDuskCountsFromTheMinutesStart(t *testing.T) {
 	c.Advance(1.0 / 60)
 	c.Advance(1e-6)
 	require.InDelta(t, start-1.0/60, c.HoursToDusk(), 1e-12, "the next minute (%.4f)", c.MinuteOfDay())
+}
+
+// THE BUG-87 REVIEW'S C6 (BUG-94): WHAT BUG-88'S FLOOR DID TO THE READOUT'S
+// TEXT, over a whole day, sampled as the HUD samples it -- on the first frame
+// of each new world minute (int(MinuteOfDay) changed), at the 1/60 s tick. The
+// old reading counted from that frame's exact moment, a fraction of a minute
+// in; the new one from the minute's start. The number moves by under a
+// sixtieth of an hour; the TEXT ("%.1f") moves by exactly one tenth on the
+// minutes where the two round apart, and on no other -- and the dusk minute,
+// 19:45, reads "24.0" in both (BUG-94: the floor made it "0.0").
+func TestTheReadoutsTextOverADay(t *testing.T) {
+	c := NewClock(DefaultClockDials())
+	defer c.Close()
+
+	old := func(minuteOfDay float64) float64 {
+		d := math.Mod(c.dials.DuskStart-minuteOfDay, minutesPerDay)
+		if d < 0 {
+			d += minutesPerDay
+		}
+
+		return d / minutesPerHour
+	}
+
+	last, minutes, moved := int(c.MinuteOfDay()), 0, 0
+
+	for minutes < minutesPerDay {
+		c.Advance(1.0 / 60)
+
+		m := c.MinuteOfDay()
+		if int(m) == last {
+			continue
+		}
+
+		last = int(m)
+		minutes++
+
+		now := c.HoursToDusk()
+		require.True(t, now > 0 && now <= 24, "%.4f: %v in (0, 24]", m, now)
+
+		was, is := fmt.Sprintf("%.1f", old(m)), fmt.Sprintf("%.1f", now)
+		if int(m) == int(c.dials.DuskStart) {
+			require.Equal(t, "24.0", is, "the dusk minute reads a day away (%.4f)", m)
+			require.Equal(t, was, is, "as it read before the floor (%.4f)", m)
+		}
+
+		if was != is {
+			moved++
+
+			a, _ := strconv.ParseFloat(was, 64)
+			b, _ := strconv.ParseFloat(is, 64)
+			require.InDelta(t, 0.1, math.Abs(a-b), 1e-9, "%.4f: %q to %q is one tenth", m, was, is)
+		}
+	}
+
+	require.Positive(t, moved)
+	t.Logf("over a day's %d minutes, the readout's text moved by one tenth on %d (x.x5 h rounds up from the minute's start); 19:45 reads \"24.0\"", minutes, moved)
 }

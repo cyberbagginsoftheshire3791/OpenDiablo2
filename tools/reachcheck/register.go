@@ -551,7 +551,7 @@ var Register = []Entry{
 	{sym(pkgWorld, "Clock.MinuteOfDay"), BucketWire, VerdictLive,
 		"The HUD refreshes the strip when int(MinuteOfDay) changes -- once a world minute, not every frame -- and Clock.HoursToDusk derives from it. Wire since M4.4a.", ""},
 	{sym(pkgWorld, "Clock.HoursToDusk"), BucketWire, VerdictLive,
-		"The strip's time-to-sunset readout: world hours to the clock's DuskStart (19:45), from the start of the current world minute since M4.6 BUG-88 (so a game resumed mid-minute reads the saved game's value). Built for M4.4a; the HUD is its only caller.", ""},
+		"The strip's time-to-sunset readout: world hours to the clock's DuskStart (19:45), from the start of the current world minute since M4.6 BUG-88 (so a game resumed mid-minute reads the saved game's value), and a day away -- 24.0 h -- in the dusk minute itself since the BUG-87 review fixes (BUG-94). Built for M4.4a; the HUD is its only caller.", ""},
 	{sym(pkgWorld, "Clock.Today"), BucketWire, VerdictLive,
 		"Looks up today's generated day-table row for the strip's feast/fast name and moon-phase text. Built for M4.4a; the HUD is its only caller.", ""},
 
@@ -807,12 +807,12 @@ var Register = []Entry{
 		"Whether a set id is still waiting. The load's step 3 refuses the file when anything is (Game.rebuildEntities). Deferred to M4.6 B4b and measured dead until M4.6 B4b (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgEntity, "Creature.MotionSnapshot"), BucketWire, VerdictLive,
 		"The load reads back every creature it re-keys or rebuilds and refuses one whose motion comes back other than saved (restoreMotionExactly, M4.6 B4b; B4a compared each villager with the file's native, Game.checkNatives); SaveWorld writes it into the entity list. Deferred to M4.6 B5 and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgEntity, "Creature.RestoreMotion"), BucketWire, VerdictLive,
-		"Puts a rebuilt creature -- a pack member, the risen -- back mid-stride, and a villager creature too (Game.rebuildEntity, Game.rekeyNatives), before Spawns.Validate checks each member stands where he was saved. Deferred to M4.6 B4b and measured dead until M4.6 B4b (29 Sep 2026); recorded before the row was edited.", ""},
+	{sym(pkgEntity, "Creature.ResumeMotion"), BucketWire, VerdictLive,
+		"Puts a rebuilt creature -- a pack member, the risen -- back mid-stride, and a villager creature too (Game.rebuildEntity, Game.rekeyNatives), before Spawns.Validate checks each member stands where he was saved. Was Creature.RestoreMotion's row (deferred to M4.6 B4b and measured dead until then, 29 Sep 2026); the BUG-87 review fixes (BUG-92) gave the load its own verb, which ends a held action the art no longer fits instead of refusing the night, and left RestoreMotion the unit tests' strict restore (not registered: no game caller, by design).", ""},
 	{sym(pkgEntity, "NPC.MotionSnapshot"), BucketWire, VerdictLive,
 		"The load reads back every NPC it re-keys or rebuilds and refuses one whose motion comes back other than saved (restoreMotionExactly, M4.6 B4b; B4a compared each villager with the file's native, Game.checkNatives); SaveWorld writes it into the entity list. Deferred to M4.6 B5 and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgEntity, "NPC.RestoreMotion"), BucketWire, VerdictLive,
-		"Puts a rebuilt inherited monster or deployed squad model back mid-stride, and a villager in the walk and pose he was saved in (Game.rebuildEntity, Game.rekeyNatives). Deferred to M4.6 B4b and measured dead until M4.6 B4b (29 Sep 2026); recorded before the row was edited.", ""},
+	{sym(pkgEntity, "NPC.ResumeMotion"), BucketWire, VerdictLive,
+		"Puts a rebuilt inherited monster or deployed squad model back mid-stride, and a villager in the walk and pose he was saved in (Game.rebuildEntity, Game.rekeyNatives). Was NPC.RestoreMotion's row (deferred to M4.6 B4b and measured dead until then, 29 Sep 2026); renamed with Creature.ResumeMotion's by the BUG-87 review fixes (BUG-92).", ""},
 	// M4.6 B4b -- THE LOAD'S ENTITY HALF: A HUNTED NIGHT RESUMES (29 Sep
 	// 2026). Step 3 of the load order, in CreateGame before the blocks are
 	// validated: the villagers re-keyed in place, every other entity rebuilt
@@ -826,7 +826,7 @@ var Register = []Entry{
 	{sym(pkgScreen, "Game.rekeyNatives"), BucketWire, VerdictLive,
 		"Step 3's villagers: matched by (name_key, born), re-keyed in place, their motion restored; one the file lacks taken off the map (B3-6).", ""},
 	{sym(pkgScreen, "Game.rebuildEntity"), BucketWire, VerdictLive,
-		"Step 3's other entities, one by one: SetNextEntityID, NewNPC or NewCreature by kind, the id checked, RestoreMotion, AddEntity.", ""},
+		"Step 3's other entities, one by one: SetNextEntityID, NewNPC or NewCreature by kind, the id checked, ResumeMotion (RestoreMotion until the BUG-87 review fixes), AddEntity.", ""},
 	{sym(pkgScreen, "Game.restoreBodies"), BucketWire, VerdictLive,
 		"The load puts every monster's health back from the file -- a wounded survivor at his wounds, the slain at 0 -- instead of the full health BodyOf would adopt (Game.resumeLoad).", ""},
 	{sym(pkgScreen, "Game.checkBodies"), BucketWire, VerdictLive,
@@ -844,9 +844,18 @@ var Register = []Entry{
 	// the two refusals above (heldInFile at the load, Game.heldAction at the
 	// save, BUG-76) are gone with their rows.
 	{sym(pkgAsset, "Composite.SetProgress"), BucketWire, VerdictLive,
-		"The load puts a rebuilt or re-keyed NPC's held action -- a swing, a blow taken, a death -- back at its saved frame and time into it (NPC.RestoreMotion, from Game.rebuildEntity and Game.rekeyNatives). If it went dark a monster saved half-way through its death would fall again from the first frame and lie later than the saved one (BUG-76's case, which the save no longer refuses).", ""},
+		"The load puts a rebuilt or re-keyed NPC's held action -- a swing, a blow taken, a death -- back at its saved frame and time into it (NPC.ResumeMotion, from Game.rebuildEntity and Game.rekeyNatives). If it went dark a monster saved half-way through its death would fall again from the first frame and lie later than the saved one (BUG-76's case, which the save no longer refuses). Since the BUG-87 review fixes (BUG-91) it refuses a time no play could have -- below the floor, or at or past one frame -- which crashed the game.", ""},
 	{sym(pkgAsset, "Animation.SetProgress"), BucketWire, VerdictLive,
-		"The same for a creature's held action, on its sheet (Creature.RestoreMotion), and for each layer of an NPC's composite (Composite.SetProgress).", ""},
+		"The same for a creature's held action, on its sheet (Creature.ResumeMotion), with the same refusal of a time no play could have (BUG-91); and a creature's turn puts its sheet back at the frame it held (Creature.rotate, BUG-89).", ""},
+	// THE BUG-87 REVIEW FIXES (29 Sep 2026): a held action's point checked
+	// against every art (BUG-91), and one this build's art no longer fits
+	// ended, not refused (BUG-92).
+	{sym(pkgEntity, "ActionProgress.Check"), BucketWire, VerdictLive,
+		"Refuses a held action's point no play of any art could have -- a negative frame, a time below d2asset.ElapsedFloor -- in the world file (d2save's World.Check, which the load's step 1 and the save run) and at the restore (Motion.check). If it went dark a file holding an NPC's swing at -1.0 s would be taken, and the resumed game panic drawing a negative frame (BUG-91).", ""},
+	{sym(pkgEntity, "heldActionMisfit"), BucketWire, VerdictLive,
+		"The line between an art change and a corrupt file for a held action (Creature.ResumeMotion, NPC.ResumeMotion, at the load): another mode, a frame the art lacks, or a time past one frame and short of the whole play is an art change, and the action is ended. If it went dark a save made mid-swing would refuse the whole night after any art pass that re-exported the sheet (BUG-92).", ""},
+	{sym(pkgScreen, "Game.noteEndedAction"), BucketWire, VerdictLive,
+		"Puts a held action the load ended in the load report -- ended_actions and a note, \"an animation could not be resumed exactly\" -- and the log (Game.rebuildEntity, Game.rekeyNatives). If it went dark an entity would differ from the saved moment with nothing to say why (BUG-92).", ""},
 	{sym(pkgScreen, "gameSpawner.Snapshot"), BucketDefer, VerdictHarnessOnly,
 		"The arrival count, which sets where the next pack comes from. Game.SaveWorld calls it.", "M4.6 B5"},
 	{sym(pkgScreen, "gameSpawner.Restore"), BucketWire, VerdictLive,

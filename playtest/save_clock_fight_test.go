@@ -27,7 +27,7 @@ package playtest
 //     time. BUG-87's fix carries a held action in the file at its frame and
 //     drops that refusal, so both steers are gone: the round is the shipped
 //     one (scShippedRoundMinutes, required of the combat provider), the save
-//     at T is asked once and must be made (scSaveAtT: 0 retries), and T's
+//     at T is asked once and must be made (scSaveAtT: no retry), and T's
 //     file must hold at least one action still playing -- a swing, a blow
 //     taken or a death, saved at its frame and resumed there.
 //
@@ -37,6 +37,11 @@ package playtest
 //	TestSaveResumeAFightHeIsNotIn      the quick one: two clock fights in
 //	                                   the first dawn, three rounds on, and
 //	                                   the file-edit controls
+//	TestSaveResumeMidAction            BUG-87's own: an NPC saved mid-swing,
+//	                                   mid-flinch and mid-death, resumed there
+//	TestSaveResumeAHeldActionOutOfReach the BUG-87 review's B1 and B2: a
+//	                                   held action the load cannot resume --
+//	                                   corrupt, refused; the art changed, ended
 //
 // The source-mutation controls, the conflicts of the merge and every run's
 // log are in strigoi-harness-runs\wt-merge-scout\ (conflicts.md,
@@ -51,6 +56,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -116,7 +122,7 @@ const (
 //	    review's A1, fixed on its own; this script keeps out of it). He
 //	    stands still; the round is the shipped one; the save is never
 //	    refused as a fight (Q5 (a)), nor while a blow's action plays
-//	    (BUG-87): it is made on the first try (scSaveAtT, 0 retries) and
+//	    (BUG-87): it is made on the first try (scSaveAtT, no retry) and
 //	    moves nothing; S_T; the file is hunted (a watch and a chase on him,
 //	    the entities the map does not build), holds the clock fight in
 //	    combat.clock.live, rng.combat_clock = combat.clock.rng, and holds at
@@ -205,7 +211,7 @@ func TestSaveResumeWithAFightHeIsNotIn(t *testing.T) {
 	// --- V1: the save at T ------------------------------------------------------
 	// Asked once, and made (BUG-87): a blow's action still playing is saved
 	// at its frame, so nothing refuses it and nothing is retried.
-	out, retries := scSaveAtT(t, s, "V1", func() string {
+	out := scSaveAtT(t, s, "V1", func() string {
 		if flag(t, combatState(s), "fighting") {
 			return "his own fight began"
 		}
@@ -290,15 +296,11 @@ func TestSaveResumeWithAFightHeIsNotIn(t *testing.T) {
 			hisWatchers, hisChases, playerID, listAt(t, file, "notice.watches"), listAt(t, file, "pursuit.chases"))
 	}
 
-	if retries != 0 {
-		t.Fatalf("RED V1: the save at T took %d retries, want 0 (BUG-87)", retries)
-	}
-
 	heldT := scHeldInFile(t, "V1", w)
 	t.Logf("V1: T's file holds %d action(s) still playing, each at its frame: %v", len(heldT), heldT)
 
-	t.Logf("V1 PASS: saved at %s (%s) after %d frames and %d retr(ies), with %s chasing him (%d watch(es) and %d chase(s) on him in the file) and the clock fight %s live on %s (round %v, quarry %v of %v); clock next_id %v, combat-clock %+v; the digest unmoved",
-		str(clockState(s), "time_of_day"), str(clockState(s), "stage"), frames, retries, chaserID, hisWatchers, hisChases, fightT, quarryID,
+	t.Logf("V1 PASS: saved at %s (%s) after %d frames, on the first try, with %s chasing him (%d watch(es) and %d chase(s) on him in the file) and the clock fight %s live on %s (round %v, quarry %v of %v); clock next_id %v, combat-clock %+v; the digest unmoved",
+		str(clockState(s), "time_of_day"), str(clockState(s), "stage"), frames, chaserID, hisWatchers, hisChases, fightT, quarryID,
 		f["round"], f["quarry_health"], f["quarry_max_health"], clockAtT["next_id"], w.RNG.CombatClock)
 
 	// --- V2: two hours, and past the clock fight's end; S_U; quit --------------
@@ -403,13 +405,17 @@ func TestSaveResumeWithAFightHeIsNotIn(t *testing.T) {
 // scSaveAtT is the save at T. Since BUG-87 no action a monster or villager
 // is still playing refuses it -- a swing, a blow taken or a death is written
 // at its frame and resumed there -- so at the shipped round it is made on the
-// FIRST try, and any refusal is RED. (The merge's scSaveSettled retried a
-// frame at a time while one was held, and needed 23 retries in each script
-// with the round slowed.) stillT is T's own condition, asked first ("" while
-// it holds). The save must move nothing: the whole digest before and after is
-// one value (saveUnmoved's rule). It returns the save's result and the
-// retries it needed, which are 0.
-func scSaveAtT(t *testing.T, s *session, act string, stillT func() string) (map[string]any, int) {
+// FIRST try, and any refusal is RED, here: it is asked once and never
+// retried. (The merge's scSaveSettled retried a frame at a time while one was
+// held, and needed 23 retries in each script with the round slowed.) stillT
+// is T's own condition, asked first ("" while it holds). The save must move
+// nothing: the whole digest before and after is one value (saveUnmoved's
+// rule). It returns the save's result.
+//
+// (It returned a retry count too, which the scripts required to be 0; it was
+// 0 by construction, so that check could not go red -- the BUG-87 review, its
+// C2. The teeth are the Fatalf on a refusal, below.)
+func scSaveAtT(t *testing.T, s *session, act string, stillT func() string) map[string]any {
 	t.Helper()
 
 	if why := stillT(); why != "" {
@@ -420,7 +426,7 @@ func scSaveAtT(t *testing.T, s *session, act string, stillT func() string) (map[
 
 	out, e := scCall(s, "strigoi_save_game", map[string]any{})
 	if e != "" {
-		t.Fatalf("RED %s: the save at T was refused -- at the shipped round it is made on the first try, with 0 retries (BUG-87): %s", act, e)
+		t.Fatalf("RED %s: the save at T was refused -- at the shipped round it is made on the first try, and never retried (BUG-87): %s", act, e)
 	}
 
 	d1, parts1 := digest(s)
@@ -436,9 +442,9 @@ func scSaveAtT(t *testing.T, s *session, act string, stillT func() string) (map[
 		t.Fatalf("%s: saving moved the world: the digest parts %v changed", act, moved)
 	}
 
-	t.Logf("%s: the save was made on the first try (0 retries)", act)
+	t.Logf("%s: the save was made on the first try (no retry)", act)
 
-	return out, 0
+	return out
 }
 
 // scHeldInFile is every action the file holds still playing, "id action at
@@ -683,7 +689,7 @@ func scFightIn(ck map[string]any, quarry string) map[string]any {
 //	    from it (c:1, c:2) -- and run a world minute at a time until both
 //	    quarries are hurt: both live, both quarries hurt and alive, and
 //	    neither his.
-//	    The save, made on the first try (scSaveAtT, 0 retries; BUG-87),
+//	    The save, made on the first try (scSaveAtT, no retry; BUG-87),
 //	    moves nothing; S_T; the file holds both in combat.clock.live,
 //	    rng.combat_clock is combat.clock.rng, the combat-clock stream has
 //	    been drawn from, and at least one action is still playing, saved at
@@ -773,7 +779,7 @@ func TestSaveResumeAFightHeIsNotIn(t *testing.T) {
 
 	// The save, asked once and made (BUG-87): both fights live and neither
 	// his, their blows' actions saved at their frames.
-	out, retries := scSaveAtT(t, s, "V1", func() string {
+	out := scSaveAtT(t, s, "V1", func() string {
 		for _, q := range []string{aID, a2ID} {
 			f := afhFightFor(s, q)
 			if f == nil {
@@ -833,15 +839,11 @@ func TestSaveResumeAFightHeIsNotIn(t *testing.T) {
 		t.Fatalf("V1: rng.combat_clock %+v, combat.clock.rng %+v", w.RNG.CombatClock, w.Combat.Clock.RNG)
 	}
 
-	if retries != 0 {
-		t.Fatalf("RED V1: the save at T took %d retries, want 0 (BUG-87)", retries)
-	}
-
 	heldT := scHeldInFile(t, "V1", w)
 	t.Logf("V1: T's file holds %d action(s) still playing, each at its frame: %v", len(heldT), heldT)
 
-	t.Logf("V1 PASS: saved at %s after %d retr(ies) with %d live clock fights (%s), clock next_id %v, combat-clock %+v; the digest unmoved",
-		str(clockState(s), "time_of_day"), retries, len(live), cut(fmt.Sprint(live)), clockAtT["next_id"], w.RNG.CombatClock)
+	t.Logf("V1 PASS: saved at %s on the first try with %d live clock fights (%s), clock next_id %v, combat-clock %+v; the digest unmoved",
+		str(clockState(s), "time_of_day"), len(live), cut(fmt.Sprint(live)), clockAtT["next_id"], w.RNG.CombatClock)
 
 	// --- V2: three rounds on; S_U; quit ------------------------------------
 	for i := 0; i < 3; i++ {
@@ -1324,4 +1326,202 @@ func scEntityByID(t *testing.T, s *session, id string) map[string]any {
 	}
 
 	return nil
+}
+
+// TestSaveResumeAHeldActionOutOfReach is the BUG-87 review's B1 and B2 in the
+// game (the review fixes, 29 Sep 2026; BUG-91, BUG-92): a held action the
+// load cannot resume at its saved point. The reviewer's probe
+// (TestZZRevNegativeElapsedNPC) is its act N2: a file whose NPC holds a swing
+// a second BEFORE its frame -- a time no running game writes -- was taken by
+// every check, and the resumed game panicked drawing a negative frame
+// (composite.go:70, index out of range [-8]). Now:
+//
+//	N1  As TestSaveResumeMidAction's M1: seed 1462, the shipped dials, a
+//	    zombie1 on a fallen1; the frames stepped until a fighter holds A1
+//	    past its first frame; the save made; his files at T kept.
+//	N2  The swing edited to -1.0 s into its frame (the probe's file): REFUSED,
+//	    not crashed -- by the file's own check (World.Check, FILE: a point no
+//	    play of any art can have). He begins at dawn, and the game draws on
+//	    (5 frames stepped, 2 s of drawing) and answers.
+//	N3  The swing at 1e18 s: a finite time the file cannot judge (it knows no
+//	    art), so the load's restore refuses it (the composite's SetProgress:
+//	    at or past one frame; 1e17 s and more wrapped the frame negative and
+//	    crashed the game too): ENTITY, fallen back to dawn; it draws on.
+//	N4  The swing at frame 99 -- A1 has 16: the ART no longer fits it (a
+//	    sheet with fewer frames), so the night is RESUMED, the swing ended as
+//	    it would have ended (the fighter in Neutral, where the file puts it),
+//	    and the load report names it (ended_actions, and a note "an animation
+//	    could not be resumed exactly"). The rest of the world is the saved
+//	    moment -- S_R0 = S_T but for that entity's pose (sameWorldExcept) --
+//	    and it plays on 60 frames.
+func TestSaveResumeAHeldActionOutOfReach(t *testing.T) {
+	s := start(t)
+	s.call("strigoi_pause", map[string]any{})
+
+	game := s.call("strigoi_start_game", map[string]any{
+		"hero_name": "Outofreach", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
+	})
+	save := str(game, "save_path")
+
+	for _, d := range villageFightDials {
+		setField(s, d.System, d.Field, d.Value)
+	}
+
+	scShippedPace(t, s, "N1")
+	afhFrames(s, 70)
+
+	p := s.call("strigoi_get_player", map[string]any{})
+	px, py := num(p, "x"), num(p, "y")
+
+	quarry, monster := spawnNPC(t, s, "fallen1", px+15, py), spawnNPC(t, s, "zombie1", px+16, py)
+	ids := []string{entityID(t, s, quarry), entityID(t, s, monster)}
+	s.call("strigoi_watch", map[string]any{"watcher": monster, "target": quarry})
+
+	// --- N1: a swing held past its first frame, saved -----------------------
+	who := ""
+
+	for f := 0; f < 3000 && who == ""; f++ {
+		for _, id := range ids {
+			if e := scEntityByID(t, s, id); e != nil {
+				if es := sub(e, "state"); str(es, "held") == "A1" && num(es, "held_frame") >= 1 {
+					who = id
+				}
+			}
+		}
+
+		if who == "" {
+			afhFrames(s, 1)
+		}
+	}
+
+	if who == "" {
+		t.Fatalf("N1: no fighter held A1 past its first frame in 3000 frames: clock %s", cut(afhClockJSON(t, s)))
+	}
+
+	out, e := scCall(s, "strigoi_save_game", map[string]any{})
+	if e != "" {
+		t.Fatalf("N1: the save with %s mid-swing is made (BUG-87): refused %q", cut8(who), e)
+	}
+
+	sT := snapWorld(t, s)
+	atT := evening{save: save, od2Left: mustRead(t, save), sidecarLeft: mustRead(t, save+".strigoi.json")}
+	fileT := mustRead(t, str(out, "world_path"))
+
+	stT := sub(scEntityByID(t, s, who), "state")
+	t.Logf("N1: saved with %s holding A1 at frame %v + %v s", cut8(who), stT["held_frame"], stT["held_elapsed"])
+
+	// The file at T with the swing's point edited.
+	withSwingAt := func(frame, elapsed string) []byte {
+		file := decodeNumbers(t, fileT)
+		edited := false
+
+		for _, raw := range asList(file["entities"]) {
+			if ent, _ := raw.(map[string]any); str(ent, "id") == who {
+				at := sub(sub(ent, "motion"), "action_at")
+				at["frame"], at["elapsed"] = json.Number(frame), json.Number(elapsed)
+				edited = true
+			}
+		}
+
+		if !edited {
+			t.Fatalf("N1: the file does not hold %s", who)
+		}
+
+		data, err := json.MarshalIndent(file, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return append(data, '\n')
+	}
+
+	// load puts his files at T back, the world file edited, and loads them by
+	// the menu, in this process; it returns the load report.
+	load := func(act string, world []byte) map[string]any {
+		if flag(t, s.call("strigoi_get_game_info", map[string]any{}), "in_game") {
+			s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+			awaitMenu(t, s)
+		}
+
+		actThree(t, atT, world)
+
+		g := s.call("strigoi_start_game", map[string]any{"save_path": save, "wait_seconds": 90})
+		rep := sub(g, "load")
+		t.Logf("%s: load %v", act, rep)
+
+		return rep
+	}
+
+	// drawsOn is the game alive after a load: five frames stepped, two
+	// seconds of real drawing (the probe's panic was in Composite.Render),
+	// and the harness answering.
+	drawsOn := func(act string) {
+		afhFrames(s, 5)
+		time.Sleep(2 * time.Second)
+
+		if !flag(t, s.call("strigoi_get_game_info", map[string]any{}), "in_game") {
+			t.Fatalf("%s: the game is not in a game after the load", act)
+		}
+	}
+
+	// --- N2 and N3: corrupt, refused, and the game draws on (B1) ------------
+	for _, c := range []struct {
+		act, elapsed, code, why string
+	}{
+		{"N2 (-1.0 s, the probe's file)", "-1.0", "FILE", "not a point of a play"},
+		{"N3 (1e18 s)", "1e18", "ENTITY", "s into a frame of"},
+	} {
+		rep := load(c.act, withSwingAt("1", c.elapsed))
+
+		if flag(t, rep, "resumed") || str(rep, "refused") != c.code || !strings.Contains(str(rep, "reason"), c.why) {
+			t.Fatalf("RED %s: a swing %s s into its frame is refused %s (%q): %v", c.act, c.elapsed, c.code, c.why, rep)
+		}
+
+		drawsOn(c.act)
+		t.Logf("%s PASS: refused %s (%s), he began at dawn, and the game drew on", c.act, c.code, cut(str(rep, "reason")))
+	}
+
+	// --- N4: the art no longer fits -- resumed, the swing ended (B2) --------
+	rep := load("N4 (frame 99)", withSwingAt("99", "0"))
+	if !flag(t, rep, "resumed") {
+		t.Fatalf("RED N4: a swing at a frame its art lacks is resumed, not refused (BUG-92): %v", rep)
+	}
+
+	for _, d := range villageFightDials {
+		setField(s, d.System, d.Field, d.Value)
+	}
+
+	ended := asList(rep["ended_actions"])
+	if len(ended) != 1 {
+		t.Fatalf("RED N4: the load report names the one action it ended: %v", rep)
+	}
+
+	if e, _ := ended[0].(map[string]any); str(e, "id") != who || str(e, "action") != "A1" || !strings.Contains(str(e, "why"), "frame 99") {
+		t.Fatalf("RED N4: ended_actions names %s's A1 at frame 99: %v", who, ended)
+	}
+
+	noted := false
+	for _, n := range asList(rep["notes"]) {
+		if note, _ := n.(string); strings.Contains(note, who) && strings.Contains(note, "an animation could not be resumed exactly") {
+			noted = true
+		}
+	}
+
+	if !noted {
+		t.Fatalf("RED N4: the load's notes say an animation could not be resumed exactly: %v", rep["notes"])
+	}
+
+	st := sub(scEntityByID(t, s, who), "state")
+	if str(st, "held") != "" || str(st, "animation_mode") != "NU" || flag(t, st, "corpse") {
+		t.Fatalf("RED N4: %s resumed with its swing ended, in Neutral: %v", cut8(who), st)
+	}
+
+	sameWorldExcept(t, "N4 (S_R0 = S_T but for the fighter whose swing was ended)", sT, snapWorld(t, s),
+		func(where string) bool { return strings.HasPrefix(where, "entity "+who+".") })
+
+	afhFrames(s, 60)
+	drawsOn("N4")
+
+	t.Logf("N4 PASS: resumed; %s's A1 at frame 99 ended as it would have ended (%s, held %q); the report: %v; the rest the saved moment; 60 frames on",
+		cut8(who), str(st, "animation_mode"), str(st, "held"), ended[0])
 }
