@@ -876,8 +876,11 @@ this doc fails until it agrees.
   first light in the fight leaves the autosave PENDING on `FIGHTING`, still
   pending a second of frames later and tried on each; the blows made crits,
   the fight ends and the autosave is taken on the first frame that saves
-  (measured: 60 frames after the fight ended, the dog's death still playing
-  -- B4b's held-action refusal, BUG-87's shape), "The dawn's save is made.";
+  (measured on B5 alone: 60 frames after the fight ended, the dog's death
+  still playing -- B4b's held-action refusal, BUG-87's shape; since the
+  save-held x B5 merge, which drops that refusal, 64 frames, refused on his
+  own last swing: `strigoi-harness-runs\wt-merge2\pt-1-c-list.txt`), "The
+  dawn's save is made.";
   a relaunch resumes the moment it was taken. **`TestTheCloseHook`**: at 20:00
   of the first day `strigoi_quit{graceful}` -- the window's close -- saves and
   unloads (`close.saved`, `close.unloaded`), and a relaunch resumes that
@@ -1701,6 +1704,15 @@ the load report says `ended_actions` (BUG-92: a held action this build's art
 no longer fits is ended as it would have ended, not refused), and a held
 action at a point no play can have is refused (BUG-91). And since BUG-94 the
 dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
+**0.15.2 (the save-held x B5 merge, 29 Sep 2026)** is the two branches'
+surfaces together -- 0.14.4's above and B5's 0.15.0 and 0.15.1 (the `save`
+provider and its dial, `strigoi_quit{graceful}` and `close`, the load
+report's `dropped` and `from_bak`, `game_info`'s `saves_dir`) -- and nothing
+new. Each branch had bumped from 0.14.3 on its own, so neither number named
+the merged harness; the bump makes `eveningHarness` refuse an evening kept by
+either branch alone. The merge kept a new evening,
+`strigoi-harness-runs\wt-merge2\evening-1` (`docs/m4.6-world-save-notes.md`,
+"Merge: save-held + B5").
 
 ## Input — two layers
 
