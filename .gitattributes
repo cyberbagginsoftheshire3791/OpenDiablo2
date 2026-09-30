@@ -9,6 +9,11 @@ go.sum text eol=lf
 *.yaml text eol=lf
 *.json text eol=lf
 *.py text eol=lf
+# The world editor's map files are compared byte for byte (d2mapedit's
+# round-trip tests; BUG-106): a CRLF checkout on the Windows CI runner
+# made every one fail at byte 1. Keep them LF everywhere.
+*.tmj text eol=lf
+*.tsj text eol=lf
 
 # Binary assets stay untouched
 *.png binary
