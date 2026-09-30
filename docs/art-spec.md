@@ -218,6 +218,15 @@ rule:
 * a lying sheet (death, dead) takes its idle sheet's offsets, or the body jumps
   when it falls.
 
+For a calibrated 3D export, the projected ground root is stronger evidence
+than the lowest-alpha heuristic: a boot occupies an area of the ground and
+its front toe projects below that area's centre. The rebuilt Janissary pins
+his measured root to (64,96) in a 128px cell, offsets (-64,+32), for every
+motion. His anchor test keeps those exact values and allows up to 8px for
+the finite boot footprint; other assets retain their 4px heuristic. Source
+projection evidence is retained with the hero, and wrong-offset controls
+must still fail.
+
 `tools/spritestitch` writes both from the frames it stitches (pass
 `-anchor-from <the idle sheet's .png.json>` for death and dead). `TestGroundSheetsStandOnTheirFootPoint`
 (`d2core/d2asset`, runs in the gate and on CI) measures every standing sheet in

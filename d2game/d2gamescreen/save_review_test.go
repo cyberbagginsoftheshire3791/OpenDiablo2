@@ -538,6 +538,10 @@ var b3PlayerClasses = map[string]string{
 	"isRunToggled":      "S:hero.run",
 	"isRunning":         "D: set with the run toggle (the HUD's run button, SetIsRunning); a load sets it from hero.run",
 	"isCasting":         "T: his swing still playing refuses the save (FIGHTING)",
+	"castMode":          "D: requested skill pose; StandAt clears it on reconstruction (rule 4)",
+	"actionHeld":        "D: visual reaction only; StandAt normalizes the living hero to idle (rule 4)",
+	"actionMode":        "D: visual reaction only; StandAt clears it on reconstruction (rule 4)",
+	"corpse":            "D: visual terminal death; dead heroes cannot save and StandAt reconstructs a living pose",
 	"onFinishedCasting": "W: a cast's callback; nil in Strigoi's game",
 	"Act":               "O: never changed by Strigoi's game",
 

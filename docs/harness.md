@@ -84,7 +84,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 49 playtest scripts.** That count, the harness version below and the
+**The 50 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -397,6 +397,12 @@ this doc fails until it agrees.
   generated Act 1 world is built instead, no authored tile is in the renderer's
   cache, and the census now DOES list tile files -- so the village's zero was a
   measurement.
+* `janissary_art_test.go` — the refined default hero (29 Sep 2026): actual
+  walking/running in all eight bearings, native captures with measured ground
+  points and hashes from the running executable's asset mirror; real F-key
+  attack held as A1, shield-blocked and unblocked blows, death and terminal
+  dead. The untouched-engine negative control reached those combat events
+  while displaying idle/TN throughout, exposing the missing visual wiring.
 * `hero_art_test.go` — the thirty-sixth, M5.3 (23 Sep 2026): the hero drawn
   from Strigoi's own PNG sheets (`data/strigoi/hero/placeholder/hero.json`, a
   PLACEHOLDER from `tools/heroplaceholder` until the real Janissary) instead of

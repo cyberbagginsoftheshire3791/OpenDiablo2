@@ -1,4 +1,6 @@
 {
+  "name": "Janissary",
+  "height": 72,
   "animations": {
     "idle": "idle.png",
     "walk": "walk.png",
@@ -18,7 +20,5 @@
     "block": 10,
     "death": 8,
     "dead": 1
-  },
-  "height": 100,
-  "name": "Janissary"
+  }
 }

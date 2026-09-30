@@ -31,6 +31,10 @@ the cell's height.
 Play with a hero: `OpenDiablo2.exe -hero data/strigoi/hero/placeholder/hero.json`.
 
 **`placeholder/` is NOT the real art** — it remains as the path's test fixture.
-`janissary/` is the editable project's live art path. Its first checkpoint has
-an eight-direction idle; missing motions currently fall back to that sheet as
-described above while the remaining animations are finished.
+`janissary/` is the editable project's live art path. The Q3-derived game v1
+provides all eight motions in eight directions, with measured height 72 and
+one fixed ground anchor: 128px cells, offsets (-64,+32). Its saved Blender
+camera projects the centre of the ground footprint to (64,96); the foremost
+grounded toe can lie below that point. The hero's provenance records the
+source and exported file hashes. Combat swings retain their casting locks;
+hit/block/death use visual reactions, and a completed death remains dead.

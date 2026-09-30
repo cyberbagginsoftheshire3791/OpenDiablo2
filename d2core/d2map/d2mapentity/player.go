@@ -29,6 +29,10 @@ type Player struct {
 	isRunToggled      bool
 	isRunning         bool
 	isCasting         bool
+	castMode          d2enum.PlayerAnimationMode
+	actionHeld        bool // visual only: does not lock input or affect combat timing
+	actionMode        d2enum.PlayerAnimationMode
+	corpse            bool
 	onFinishedCasting func()
 	Act               int
 }
@@ -89,13 +93,31 @@ const (
 // Advance is called once per frame and processes a
 // single game tick.
 func (p *Player) Advance(tickTime float64) {
-	p.Step(tickTime)
+	// Neglect and combat share the same death pose. Do this before movement,
+	// and never restart an in-progress fall on the next frame at zero health.
+	if p.Stats != nil && p.Stats.IsDead() && !p.corpse &&
+		!(p.actionHeld && p.actionMode == d2enum.PlayerAnimationModeDeath) {
+		_ = p.StartAction(d2enum.PlayerAnimationModeDeath)
+	}
+	if p.actionHeld && p.composite.GetPlayedCount() >= 1 {
+		p.actionHeld = false
+		p.corpse = p.actionMode == d2enum.PlayerAnimationModeDeath
+		if p.isCasting && !p.corpse {
+			// A queued cast may use the same sheet/mode as the reaction.
+			// Restart it explicitly, or SetMode's no-op would consume the
+			// reaction's played count and lose the pending skill callback.
+			_ = p.SetAnimationMode(d2enum.PlayerAnimationModeNeutral)
+		}
+	}
+	if !p.corpse && !(p.actionHeld && p.actionMode == d2enum.PlayerAnimationModeDeath) {
+		p.Step(tickTime)
+	}
 
 	if err := p.SetAnimationMode(p.GetAnimationMode()); err != nil {
 		fmt.Printf("failed to set animationMode to: %d, err: %v\n", p.GetAnimationMode(), err)
 	}
 
-	if p.IsCasting() {
+	if p.IsCasting() && !p.actionHeld && !p.corpse {
 		if p.composite.GetPlayedCount() >= 1 {
 			p.isCasting = false
 		}
@@ -162,6 +184,15 @@ func (p *Player) Render(target d2interface.Surface) {
 
 // GetAnimationMode returns the current animation mode based on what the player is doing and where they are.
 func (p *Player) GetAnimationMode() d2enum.PlayerAnimationMode {
+	if p.corpse {
+		return d2enum.PlayerAnimationModeDead
+	}
+	if p.actionHeld {
+		return p.actionMode
+	}
+	if p.IsCasting() {
+		return p.castMode
+	}
 	if p.IsRunning() && !p.atTarget() {
 		return d2enum.PlayerAnimationModeRun
 	}
@@ -176,10 +207,6 @@ func (p *Player) GetAnimationMode() d2enum.PlayerAnimationMode {
 
 	if !p.atTarget() {
 		return d2enum.PlayerAnimationModeWalk
-	}
-
-	if p.IsCasting() {
-		return d2enum.PlayerAnimationModeCast
 	}
 
 	return d2enum.PlayerAnimationModeNeutral
@@ -231,6 +258,10 @@ func (p *Player) Facing() int {
 // hero.facing. The server put him on the whole sub-tile the point lies in
 // (SetNextStartPosition); this is the exact point.
 func (p *Player) StandAt(x, y float64, facing int) {
+	// Load rule 4 reconstructs a standing hero, including his visual state.
+	p.actionHeld, p.corpse, p.isCasting = false, false, false
+	p.actionMode, p.castMode = d2enum.PlayerAnimationModeNeutral, d2enum.PlayerAnimationModeNeutral
+	p.onFinishedCasting = nil
 	p.path, p.done = nil, nil
 	p.Position = d2vector.NewPosition(x, y)
 	p.Target = d2vector.NewPosition(x, y)
@@ -257,17 +288,51 @@ func (p *Player) IsCasting() bool {
 // NB: onFinishedCasting is called when the casting animation is >50% complete
 func (p *Player) StartCasting(animMode d2enum.PlayerAnimationMode, onFinishedCasting func()) {
 	// passive skills, auras, etc.
-	if animMode == d2enum.PlayerAnimationModeNone {
+	if animMode == d2enum.PlayerAnimationModeNone || p.corpse ||
+		(p.actionHeld && p.actionMode == d2enum.PlayerAnimationModeDeath) {
 		return
 	}
 
 	p.isCasting = true
+	p.castMode = animMode
 	p.onFinishedCasting = onFinishedCasting
+	if p.actionHeld {
+		return
+	}
+	if p.composite.GetAnimationMode() == animMode.String() {
+		_ = p.SetAnimationMode(d2enum.PlayerAnimationModeNeutral)
+	}
 
 	if err := p.SetAnimationMode(animMode); err != nil {
 		fmtStr := "failed to set animationMode of player: %s to: %d, err: %v\n"
 		fmt.Printf(fmtStr, p.ID(), animMode, err)
 	}
+}
+
+// StartAction plays a combat reaction without the skill-casting input/save
+// locks. Nonfatal reactions preserve a pending skill callback; death cancels
+// it, stops his route, and becomes a held corpse when the fall completes.
+func (p *Player) StartAction(mode d2enum.PlayerAnimationMode) error {
+	if p.corpse || (p.actionHeld && p.actionMode == d2enum.PlayerAnimationModeDeath) {
+		return nil
+	}
+	if mode == d2enum.PlayerAnimationModeDeath {
+		p.halt()
+		p.isCasting = false
+		p.onFinishedCasting = nil
+	}
+	// SetMode short-circuits a repeated mode. Cycle through neutral so two
+	// consecutive blows each play their own complete reaction.
+	if p.composite.GetAnimationMode() == mode.String() {
+		if err := p.SetAnimationMode(d2enum.PlayerAnimationModeNeutral); err != nil {
+			return err
+		}
+	}
+	if err := p.SetAnimationMode(mode); err != nil {
+		return err
+	}
+	p.actionHeld, p.actionMode = true, mode
+	return nil
 }
 
 // Selectable returns true if the player is in town.

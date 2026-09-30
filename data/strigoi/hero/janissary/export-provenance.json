@@ -1,0 +1,219 @@
+{
+  "signature": "b8caca158f50f0416e85f6094347c17cf976960e2f1f37fa1aaef653343abc5a",
+  "inputs": {
+    "source": "6d09436302a3072453e32cc46df999dc28feac1fc36dcc0eea0a2e19ac78a769",
+    "config": "78844762908f7b37560154df0c016bead5a1d4537447ae3539100b6aa9b8e146",
+    "exporter": "82dbffa7046819f8a61c6189534f886c7a96554afabf25c170043c7c023c664c"
+  },
+  "finish_script": "484fc80df8f5a601deefdc3eb073b8ff4180a7122da1b17c5d076a9fd27f6b60",
+  "outputs": {
+    "idle": {
+      "png": "76e4d30ad48f4a5d323e0af2cb2253b26906f079d51e438bd64c73aca0bf2102",
+      "manifest": "21db7687bee6929385cc335c4dd4f3793eeeddc49878d094b021b4ad1c7ff663"
+    },
+    "walk": {
+      "png": "f521a61efb5b30295be418aaedddb6050cb8abd1766702c12de10673c4365e02",
+      "manifest": "21db7687bee6929385cc335c4dd4f3793eeeddc49878d094b021b4ad1c7ff663"
+    },
+    "run": {
+      "png": "95f118d3edd8b052dc904d7108112e7a8a9f08f011eaf1d9325c0832970cf55c",
+      "manifest": "21db7687bee6929385cc335c4dd4f3793eeeddc49878d094b021b4ad1c7ff663"
+    },
+    "attack": {
+      "png": "c65f636991a5a9317022446a6c803af8d58168fbc9891621aa0c416d432e0c59",
+      "manifest": "21db7687bee6929385cc335c4dd4f3793eeeddc49878d094b021b4ad1c7ff663"
+    },
+    "hit": {
+      "png": "411550f3e67dd9b2dad7eb5a3b3416a3242c60cb6319b085b639af3ade029a7c",
+      "manifest": "8b931eb607998585cb7b0146412ac1eca389f1a336fbefe218b1cc84e68dc898"
+    },
+    "block": {
+      "png": "2e0af57fd98c98567d7c031a2e7052e43322c0e023807c8317a5d22ba6cc53e2",
+      "manifest": "f66a48d20815e23d1de1e6454f8dc009d11961c71de5282bfeefc5bbb2c7daa4"
+    },
+    "death": {
+      "png": "7c1e8e936db7a88d274d217cc198c79301b827e5aa70d929bd07d4e7250b522c",
+      "manifest": "1d6305222c6dc3d9644d16159787669924d9fa5f702367d55341ee1c7f278280"
+    },
+    "dead": {
+      "png": "4bd3a822095ef94bd7c7374b178832241aae2462b28da2de0723163937ce3a73",
+      "manifest": "94d4e855e5c26325739205090c4ab7e38bf75b5422b4aec0483fccdac642bca1"
+    }
+  },
+  "hero_manifest": "c0d4c2186becb9965c0456a197576fea52d77edb97df90165f689bdc4f6daa96",
+  "height": 72,
+  "offset_x": -64,
+  "offset_y": 32,
+  "directions": [
+    {
+      "name": "SW",
+      "yaw": 0,
+      "forward_pixels": [
+        -15.084945678710938,
+        7.542470932006836
+      ]
+    },
+    {
+      "name": "NW",
+      "yaw": -90,
+      "forward_pixels": [
+        -15.084945678710938,
+        -7.542472839355469
+      ]
+    },
+    {
+      "name": "NE",
+      "yaw": 180,
+      "forward_pixels": [
+        15.084945678710938,
+        -7.542469024658203
+      ]
+    },
+    {
+      "name": "SE",
+      "yaw": 90,
+      "forward_pixels": [
+        15.084945678710938,
+        7.542472839355469
+      ]
+    },
+    {
+      "name": "S",
+      "yaw": 45,
+      "forward_pixels": [
+        0.0,
+        10.666666030883789
+      ]
+    },
+    {
+      "name": "W",
+      "yaw": -45,
+      "forward_pixels": [
+        -21.333332061767578,
+        -1.9073486328125e-06
+      ]
+    },
+    {
+      "name": "N",
+      "yaw": -135,
+      "forward_pixels": [
+        0.0,
+        -10.666667938232422
+      ]
+    },
+    {
+      "name": "E",
+      "yaw": 135,
+      "forward_pixels": [
+        21.333328247070312,
+        0.0
+      ]
+    }
+  ],
+  "frames": {
+    "idle": [
+      1.0,
+      5.0,
+      9.0,
+      13.0,
+      17.0,
+      21.0,
+      25.0,
+      29.0
+    ],
+    "walk": [
+      1.0,
+      4.0,
+      7.0,
+      10.0,
+      13.0,
+      16.0,
+      19.0,
+      22.0
+    ],
+    "run": [
+      1.0,
+      3.0,
+      5.0,
+      7.0,
+      9.0,
+      11.0,
+      13.0,
+      15.0
+    ],
+    "attack": [
+      1.0,
+      3.4285714285714284,
+      5.857142857142857,
+      8.285714285714285,
+      10.714285714285714,
+      13.142857142857142,
+      15.571428571428571,
+      18.0
+    ],
+    "hit": [
+      1.0,
+      3.25,
+      5.5,
+      7.75,
+      10.0
+    ],
+    "block": [
+      1.0,
+      3.2,
+      5.4,
+      7.6,
+      9.8,
+      12.0
+    ],
+    "death": [
+      1.0,
+      3.3333333333333335,
+      5.666666666666667,
+      8.0,
+      10.333333333333334,
+      12.666666666666666,
+      15.0,
+      17.333333333333332,
+      19.666666666666668,
+      22.0
+    ],
+    "dead": [
+      22.0
+    ]
+  },
+  "terminal_death_frame_reused": [
+    {
+      "direction": 0,
+      "repeated_render_max_colour_delta": 2
+    },
+    {
+      "direction": 1,
+      "repeated_render_max_colour_delta": 0
+    },
+    {
+      "direction": 2,
+      "repeated_render_max_colour_delta": 0
+    },
+    {
+      "direction": 3,
+      "repeated_render_max_colour_delta": 0
+    },
+    {
+      "direction": 4,
+      "repeated_render_max_colour_delta": 0
+    },
+    {
+      "direction": 5,
+      "repeated_render_max_colour_delta": 0
+    },
+    {
+      "direction": 6,
+      "repeated_render_max_colour_delta": 0
+    },
+    {
+      "direction": 7,
+      "repeated_render_max_colour_delta": 0
+    }
+  ]
+}

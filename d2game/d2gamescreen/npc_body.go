@@ -201,26 +201,26 @@ func (v *Game) BodyOf(id string) d2world.Body {
 // DD; the monster's held-mode path (NPC.StartAction) is what makes any of them
 // survive the tick after they were set.
 //
-// THE PLAYER'S SIDE RENDERS WRONG AND IT IS COSMETIC, NOT A DEFERRAL WORTH
-// PRETENDING AWAY: Player.Advance re-applies GetAnimationMode() every tick and
-// that returns Cast while IsCasting(), so a StartCasting(Attack1) shows the SC
-// animation from the second tick onward. The fix is one field on Player
-// (castMode, returned from GetAnimationMode) and it belongs in its own commit
-// with a screenshot; the milestone's DoD says nothing about the player's
-// sprite, and inventing a second animation path here to dodge it would be
-// worse than the flaw.
+// Player reactions use a visual held action too. They do not masquerade as
+// skill casts: casting also controls input and save refusal.
 func (v *Game) Animate(id string, act d2world.CombatAct) {
 	if id == "" {
 		return
 	}
 
 	if v.localPlayer != nil && v.localPlayer.ID() == id {
-		if act == d2world.ActSwing {
+		switch act {
+		case d2world.ActSwing:
+			// Retain the existing swing input/save lock; castMode now keeps
+			// the requested A1 pose instead of overwriting it with SC/TN.
 			v.localPlayer.StartCasting(d2enum.PlayerAnimationModeAttack1, nil)
+		case d2world.ActHit:
+			_ = v.localPlayer.StartAction(d2enum.PlayerAnimationModeGetHit)
+		case d2world.ActBlock:
+			_ = v.localPlayer.StartAction(d2enum.PlayerAnimationModeBlock)
+		case d2world.ActDie:
+			_ = v.localPlayer.StartAction(d2enum.PlayerAnimationModeDeath)
 		}
-
-		// Nothing for a blow taken and nothing for death: the player's death
-		// screen, and what a dead player looks like, are M4.6's.
 		return
 	}
 
@@ -248,7 +248,7 @@ func (v *Game) Animate(id string, act d2world.CombatAct) {
 	switch act {
 	case d2world.ActSwing:
 		_ = animator.StartAction(d2enum.MonsterAnimationModeAttack1, nil)
-	case d2world.ActHit:
+	case d2world.ActHit, d2world.ActBlock:
 		_ = animator.StartAction(d2enum.MonsterAnimationModeGetHit, nil)
 	case d2world.ActDie:
 		_ = animator.StartAction(d2enum.MonsterAnimationModeDeath, nil)

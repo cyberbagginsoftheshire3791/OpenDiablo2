@@ -494,6 +494,8 @@ var Register = []Entry{
 		"The monstats record an NPC was built from. Reached from Game.BodyOf's on-demand adoption path, so it inherits that row's verdict exactly, as its own comment has said since step 3.", ""},
 	{sym(pkgEntity, "NPC.StartAction"), BucketWire, VerdictLive,
 		"Plays one animation and HOLDS it, then returns the monster to Neutral -- or, for a death, to a Dead that is held for the rest of the run. Called from Game.Animate on every swing, every blow taken and every death. Before it, nothing could make a monster's sprite survive the next tick.", ""},
+	{sym(pkgEntity, "Player.StartAction"), BucketWire, VerdictLive,
+		"Game.Animate plays the Janissary's hit, shield block and death through this visual held-action path. Player.Advance also reaches it when neglect kills him. Death stops his route and finishes in a held corpse; ordinary reactions do not change casting/input/save locks. Swings retain the existing StartCasting path with its requested mode preserved.", ""},
 	{sym(pkgEntity, "NPC.SetAnimationMode"), BucketWire, VerdictLive,
 		"The first exported way to tell a monster to play a mode. Its only caller is NPC.StartAction, which is the honest reading: the row stays because the symbol stays, and it is wire because a real build now reaches it. tools/animcensus measured on 31 Aug that A1, GH, DT and DD all exist for the three codes the spawn tables use.", ""},
 	{sym(pkgEntity, "MapEntityFactory.NewCreature"), BucketWire, VerdictLive,
