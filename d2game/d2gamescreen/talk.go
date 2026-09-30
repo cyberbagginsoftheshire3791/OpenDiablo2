@@ -240,7 +240,12 @@ func (v *Game) applyTalk(e d2dialogue.Effects) {
 	// T5: what he is handed, or mended, for the work.
 	v.barter(e.Give, e.Mend)
 
-	// T6: hours inside the palisade -- no pack arrives, nothing new sees him.
+	// T6: hours inside the palisade -- no pack arrives anchored on him,
+	// nothing new sees HIM. The raid's R2 narrowed the shelter to him: T6
+	// hid every quarry from every watch, which was the same thing while he
+	// was the only quarry there was; now the night goes on seeing the
+	// village while he sleeps (Notice.SetHidden hides the player bound by
+	// Notice.SetPlayer, bound here as well as every frame).
 	if e.Shelter {
 		if v.spawns != nil {
 			v.spawns.SetSheltered(true)
@@ -248,6 +253,10 @@ func (v *Game) applyTalk(e d2dialogue.Effects) {
 		}
 
 		if v.notice != nil {
+			if v.localPlayer != nil {
+				v.notice.SetPlayer(v.localPlayer.ID())
+			}
+
 			v.notice.SetHidden(true)
 			defer v.notice.SetHidden(false)
 		}

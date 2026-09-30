@@ -184,6 +184,19 @@ func (p *Pursuit) Chasing(hunterID string) bool {
 	return ok
 }
 
+// ChasingWhom is the quarry a hunter's chase is on, and whether it has one
+// (the raid's R2). The caller that turns awareness into pursuit asks it every
+// tick: a watch Seek moved onto a nearer villager must move the chase too, or
+// the wolf would keep walking at the man it no longer wants.
+func (p *Pursuit) ChasingWhom(hunterID string) (string, bool) {
+	c, ok := p.chases[hunterID]
+	if !ok || c.quarry == nil {
+		return "", ok
+	}
+
+	return c.quarry.QuarryID(), true
+}
+
 // Count is how many chases are live.
 func (p *Pursuit) Count() int { return len(p.chases) }
 

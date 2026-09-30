@@ -391,6 +391,14 @@ func CreateGame(
 	game.combat.SetResolver(worldResolver{game})
 	game.combat.SetProtected(game.protectedQuarry)
 
+	// The raid's R2: who the night's hunters choose among the living. Built
+	// after combat, whose fights, bodies and protection it reads (a fighter
+	// keeps its target; the dead by their body and the four speakers are no
+	// quarry), and before the load's step 4, which validates its block.
+	game.seek = d2world.NewSeek(game.notice, game.spawns, game.combat, d2world.DefaultSeekDials())
+	game.seek.SetQuarries(game.seekQuarries)
+	game.seek.SetResolver(worldResolver{game})
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -471,6 +479,10 @@ func (v *Game) releaseWorld() {
 
 	if v.combat != nil {
 		v.combat.Close()
+	}
+
+	if v.seek != nil {
+		v.seek.Close()
 	}
 }
 
@@ -616,6 +628,10 @@ type Game struct {
 	notice       *d2world.Notice
 	spawns       *d2world.Spawns
 	combat       *d2world.Combat
+
+	// seek is who the night's hunters choose among the living (the raid's
+	// R2): the nearest quarry a beast or a man can see, not always him.
+	seek *d2world.Seek
 
 	// wasFighting and activityBeforeFight are how "fighting is labour" is
 	// applied and then taken back. S1 §5's Food row signs the DRAIN --
@@ -1088,12 +1104,26 @@ func (v *Game) advanceWorld(elapsed float64) {
 			v.spawns.SetTarget(prey{entity: v.localPlayer})
 		}
 
+		// The raid's R2: bind him the way Combat.SetPlayer binds him, so his
+		// sleep (Notice.SetHidden) hides him alone and not the village.
+		if v.notice != nil && v.localPlayer != nil {
+			v.notice.SetPlayer(v.localPlayer.ID())
+		}
+
 		v.spawns.Advance(worldMinutes)
 	}
 
 	// After the tables, which own the deep-night bands the rising reads.
 	if v.rising != nil {
 		v.rising.Advance()
+	}
+
+	// The raid's R2: after the notice model (stepped by the tables) and the
+	// rising, so a watcher that noticed this tick and a body that stood this
+	// tick are chosen for; before the chases, so a new target is walked this
+	// tick (the brief's section 1.2).
+	if v.seek != nil {
+		v.seek.Advance(worldMinutes)
 	}
 
 	v.startChasesForTheAware()
@@ -1400,6 +1430,14 @@ func (v *Game) commandWish(args []string) error {
 // a Hunter, and the game screen's chaser adapter deliberately satisfies both,
 // because the thing that notices you is the thing that then comes for you.
 // Anything that can watch but not walk is skipped rather than forced.
+//
+// THE RAID'S R2 CHANGED TWO THINGS HERE. It reads the HOSTILE side only
+// (Notice.AwarePairs): a villager on watch who sees a wolf is aware of it and
+// does not run at it -- the village's own side never starts a chase or a
+// fight. And a chase on ANOTHER quarry than the watch's target is started
+// again on the target: Seek moved the watch onto a nearer villager, and the
+// wolf must walk at her, not at the man it no longer wants (N5 in the brief:
+// before R2 an existing chase was left alone whatever its watch named).
 func (v *Game) startChasesForTheAware() {
 	if v.notice == nil || v.pursuit == nil {
 		return
@@ -1411,10 +1449,13 @@ func (v *Game) startChasesForTheAware() {
 			continue
 		}
 
-		// Already chasing: leave it alone. Chase() replaces, so restarting
-		// here every tick would reset the re-path clock and reproduce M4.3a's
-		// 218-solves bug from the other direction.
-		if v.pursuit.Chasing(hunter.HunterID()) {
+		// Already chasing its watch's target: leave it alone. Chase()
+		// replaces, so restarting here every tick would reset the re-path
+		// clock and reproduce M4.3a's 218-solves bug from the other
+		// direction. A chase on anyone else is started again, once: the next
+		// tick finds it chasing the target.
+		if whom, chasing := v.pursuit.ChasingWhom(hunter.HunterID()); chasing &&
+			(pair.Target == nil || whom == pair.Target.QuarryID()) {
 			continue
 		}
 
@@ -2040,16 +2081,7 @@ func (v *Game) Pursue(hunter, quarry interface{}) bool {
 // than a coincidence. That distinction is the whole reason M4.3b ask 6 asked
 // for the notice block in the first place.
 func (v *Game) Watch(watcher, target interface{}) bool {
-	w, wok := watcher.(pathWalker)
-	q, qok := target.(pathWalker)
-
-	if v.notice == nil || !wok || !qok {
-		return false
-	}
-
-	v.notice.Watch(chaser{entity: w}, prey{entity: q})
-
-	return true
+	return v.WatchAs(watcher, target, string(d2world.SideHostile))
 }
 
 // Unwatch stops one watcher. It takes the entity's id rather than a handle,
@@ -2060,6 +2092,59 @@ func (v *Game) Unwatch(watcherID string) bool {
 	}
 
 	return v.notice.Unwatch(watcherID)
+}
+
+// WatchAs is Watch on a named side (the raid's R2): "hostile", as Watch is,
+// or "living" -- a villager on watch, noticed and reported like any watch and
+// never a chase or a fight. For the harness (strigoi_watch side:living) until
+// the watch posts make living watches (R6).
+func (v *Game) WatchAs(watcher, target interface{}, side string) bool {
+	w, wok := watcher.(pathWalker)
+	q, qok := target.(pathWalker)
+
+	if v.notice == nil || !wok || !qok {
+		return false
+	}
+
+	return v.notice.WatchAs(chaser{entity: w}, prey{entity: q}, d2world.WatchSide(side))
+}
+
+// seekQuarries is the living a hostile may choose among (the raid's R2, P2
+// (c); Seek.SetQuarries): him; every deployed squad model; and the map's
+// villagers -- the natives drawn by a speaker's stand-in, the four speakers on
+// the village map. Under the raid's S0-1 (a) those four are protected, and so
+// no quarry until their death art lands: Seek reads the same protectedQuarry
+// combat does, so they are here and never chosen. R3b's members join here.
+// The order does not matter: Seek sorts every candidate.
+func (v *Game) seekQuarries() []d2world.Quarry {
+	var out []d2world.Quarry
+
+	if p := v.thePlayer(); p != nil {
+		out = append(out, prey{entity: p})
+	}
+
+	r := worldResolver{v}
+
+	if v.squads != nil {
+		for _, m := range v.squads.ModelEntities() {
+			if w, ok := r.walker(m.Entity); ok {
+				out = append(out, prey{entity: w})
+			}
+		}
+	}
+
+	for _, e := range v.natives {
+		if e == nil || !v.speakerNPC(e.ID()) {
+			continue
+		}
+
+		// Still on the map: a native taken off it is no one's quarry.
+		if w, ok := r.walker(e.ID()); ok {
+			out = append(out, prey{entity: w})
+		}
+	}
+
+	return out
 }
 
 // playerBody adapts the local player's hero stats to d2world.Body, so the

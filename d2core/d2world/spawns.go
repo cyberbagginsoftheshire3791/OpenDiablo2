@@ -35,7 +35,12 @@ import (
 //
 // Not safe for concurrent use; it lives on the game goroutine.
 type Spawns struct {
-	// sheltered holds arrivals and noticing while he sleeps inside (T6).
+	// sheltered holds the arrivals anchored on him while he sleeps inside
+	// (T6). The raid's R2 narrowed the sleep to him: nothing new noticing
+	// HIM is Notice.SetHidden's half, and the village stays in the night's
+	// sight. Every arrival the tables make is anchored on him (the raid's Q9,
+	// default (c): no second anchor at the village -- ruling 2's "no new
+	// trigger"), so "no arrival anchored on him" is still "no arrival".
 	sheltered bool
 
 	dials  SpawnDials
@@ -542,9 +547,11 @@ func (s *Spawns) Weight(row SpawnRow) float64 {
 // the notice model, so a group spawned this tick is evaluated this tick rather
 // than standing blind until the next one.
 // SetSheltered says the minutes that follow pass with him inside the
-// palisade (T6, the shelter rung): no pack arrives. Nothing new noticing him
-// is the notice model's half (Notice.SetHidden); packs already out there stay
-// where they are, and forget him on their own clock.
+// palisade (T6, the shelter rung): no pack arrives anchored on him -- and
+// under the raid's Q9 (c) every arrival is. Nothing new noticing him is the
+// notice model's half (Notice.SetHidden, which since the raid's R2 hides him
+// alone); packs already out there stay where they are, forget him on their
+// own clock, and go on seeing the village (Seek may turn them onto it).
 func (s *Spawns) SetSheltered(sheltered bool) { s.sheltered = sheltered }
 
 func (s *Spawns) Advance(worldMinutes float64) {
@@ -614,7 +621,10 @@ func (s *Spawns) clearAtDaybreak() {
 	}
 }
 
-// aware reports whether any member of a group has noticed the player.
+// aware reports whether any member of a group has noticed its target: the
+// player -- or, since the raid's R2, whoever among the living Seek turned it
+// onto. Daylight sends home a pack that is coming for no one, not one that
+// is coming for a villager.
 func (s *Spawns) aware(groupID string) bool {
 	g, ok := s.groups[groupID]
 	if !ok || s.notice == nil {
@@ -724,6 +734,22 @@ func (s *Spawns) deadRow(name string) bool {
 	r, ok := s.rowNamed(name)
 
 	return ok && r.Dead
+}
+
+// memberRow is the row a watcher is a member of, whether that row is the
+// dead's, and whether the tables know him at all (the raid's R2: Seek serves
+// beasts and men, and the dead keep the watch the tables gave them until
+// their draw lands, R5). A watcher a script placed belongs to no group.
+func (s *Spawns) memberRow(id string) (row string, dead, known bool) {
+	for _, g := range s.groups {
+		for _, m := range g.members {
+			if m != nil && m.WatcherID() == id {
+				return g.row, s.deadRow(g.row), true
+			}
+		}
+	}
+
+	return "", false, false
 }
 
 // check consults every row once, in declaration order.
@@ -1324,6 +1350,9 @@ func (s *Spawns) HarnessState() map[string]interface{} {
 		out["notice_re_evaluate_minutes"] = d.ReEvaluateMinutes
 		out["notice_memory_minutes"] = d.MemoryMinutes
 		out["notice_aware"] = s.notice.Aware()
+		// The raid's R2: the village's own watchers that see something --
+		// never a chase or a fight, so never in notice_aware.
+		out["notice_aware_living"] = s.notice.AwareOf(SideLiving)
 
 		// EVERY watcher, not only the grouped ones. The per-group blocks above
 		// are the view the tables produce; this is the view ask 6 actually

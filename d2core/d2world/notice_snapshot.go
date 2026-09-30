@@ -13,7 +13,11 @@ import (
 //
 // NOT SAVED, and why:
 //   - hidden is TRANSIENT. It is true only inside a sleep (talk.go sets it and
-//     defers it back), and Snapshot refuses to run while it is set.
+//     defers it back), and Snapshot refuses to run while it is set. Since the
+//     raid's R2 it hides him alone (player, below), and it is still one flag:
+//     the brief's "a list of quarry refs" has one member, him, and is refused
+//     while set, so the file never carries it (no shape change).
+//   - player is WIRING: his id, bound every frame by the game screen.
 //   - the dials, the radius above all, are DERIVED. The Quiet Step talent
 //     takes its bonus off Dials().Radius when the game is built, so a saved
 //     radius restored over it would take the bonus twice (the plan's trap 7).
@@ -34,6 +38,12 @@ type NoticeSnapshot struct {
 type WatchSnapshot struct {
 	Watcher string `json:"watcher"`
 	Target  string `json:"target"`
+
+	// Side is the raid's R2: "hostile" or "living" (WatchSide). An amendment
+	// of version 2's shape, no bump (the milestone's rule). Required: a watch
+	// with no side, or one the model does not know, is refused -- read as
+	// either, it would make a wolf a villager or a villager a wolf.
+	Side string `json:"side"`
 
 	Sees    bool `json:"sees"`
 	Noticed bool `json:"noticed"`
@@ -80,6 +90,7 @@ func (n *Notice) Snapshot(r Resolver) (NoticeSnapshot, error) {
 		ws := WatchSnapshot{
 			Watcher:       id,
 			Target:        b2bQuarryRef(w.target, playerID),
+			Side:          string(w.side),
 			Sees:          w.sees,
 			Noticed:       w.noticed,
 			Distance:      w.distance,
@@ -182,6 +193,11 @@ func (n *Notice) b2bBuild(snap NoticeSnapshot, r Resolver) (map[string]*watch, e
 			return nil, err
 		}
 
+		if !validSide(WatchSide(ws.Side)) {
+			return nil, fmt.Errorf("d2world: notice: watcher %s: side %q is neither %q nor %q",
+				ws.Watcher, ws.Side, SideHostile, SideLiving)
+		}
+
 		watcher, err := b2bResolveWatcher(r, ws.Watcher)
 		if err != nil {
 			return nil, fmt.Errorf("notice: %w", err)
@@ -195,6 +211,7 @@ func (n *Notice) b2bBuild(snap NoticeSnapshot, r Resolver) (map[string]*watch, e
 		watches[ws.Watcher] = &watch{
 			watcher:       watcher,
 			target:        target,
+			side:          WatchSide(ws.Side),
 			noticed:       ws.Noticed,
 			sees:          ws.Sees,
 			distance:      ws.Distance,

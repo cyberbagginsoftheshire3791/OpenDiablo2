@@ -113,6 +113,7 @@ var harnessDialFields = map[string][]string{
 	},
 	"pursuit": {"arrive_within", "repath_tiles"},
 	"rising":  {"edge_floor", "hasty_weight", "p", "pressure"},
+	"seek":    {"retarget_minutes", "stagger_slots"}, // the raid's R2: D-S1 and the stagger
 	"spawns":  {"chance", "check_minutes", "max_groups", "notice_lit_level", "notice_radius", "rout_at"},
 	// M4.7 step 4's and J1's radii: where the rite and the watching village
 	// reach, and how far from the headman's post a watch is still kept. The
@@ -146,6 +147,9 @@ var harnessNotDials = map[string][]string{
 	"progress": {"grant_xp"},
 	// a verb: a chase released.
 	"pursuit": {"release"},
+	// the raid's R2: the stand-in collection's two verbs -- state the file's
+	// seek block carries (stand_ins), restored by the load, never re-applied.
+	"seek": {"stand_in", "stand_in_remove"},
 	// state: a group's morale, the open bodies (the file's spawns block); a
 	// verb: a group despawned.
 	"spawns": {"despawn", "morale", "open_bodies"},

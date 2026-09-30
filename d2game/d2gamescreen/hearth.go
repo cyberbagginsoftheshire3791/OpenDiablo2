@@ -178,8 +178,16 @@ func (v *Game) speakerEntity(speaker string) d2interface.MapEntity {
 // A speaker is an NPC drawn by a speaker's stand-in, as speakerEntity finds
 // one. This departs, for as long as it lasts, from ruling 1's "Full entities"
 // and "any living quarry" and from ruling 4's freedom to terrorise the
-// village; the brief's S0-1 names it for Josh.
-func (v *Game) protectedQuarry(id string) bool {
+// village; the brief's S0-1 names it for Josh. Since the raid's R2 Seek reads
+// it too (through Combat): a speaker is never chosen as a quarry, so a hostile
+// with only a speaker in view keeps its target.
+func (v *Game) protectedQuarry(id string) bool { return v.speakerNPC(id) }
+
+// speakerNPC reports an NPC on the map drawn by one of the speakers'
+// stand-ins: one of the map's villagers, as the raid's R2 counts them
+// (seekQuarries). protectedQuarry is this rule today (S0-1 (a) protects every
+// speaker); when their death art lands it lifts and this one stays.
+func (v *Game) speakerNPC(id string) bool {
 	if v.dialogue == nil || v.gameClient == nil || v.gameClient.MapEngine == nil {
 		return false
 	}

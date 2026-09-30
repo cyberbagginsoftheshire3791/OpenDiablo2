@@ -287,6 +287,40 @@ deferral written only in a commit message is a deferral that has been lost.
   `TestASaveThatTookASwappedClockBlockWritesNothing` (control
   `bug73-no-save-call`: red). The load's own instrument is
   `TestAClockFightsSwappedQuarryIsRefused` (control `bug73-no-load-call`: red).
+- **The raid's R2 (29 Sep 2026), notice sides, Seek and his hiding.** Fourteen
+  rows, measured by the R2 build's reach gate (430 entries; the logs are
+  `strigoi-harness-runs\wt-r2\build\reach-gate-*.txt`). Its first run on
+  the written tree agreed on all fourteen and **disagreed on two rows R2 had
+  emptied**, a finding recorded before either row was changed (the rows keep
+  what they said before in a comment): `Pursuit.Chasing` (wire / live) WENT
+  DEAD -- R2 moved its one game caller, `Game.startChasesForTheAware`, to
+  `Pursuit.ChasingWhom`, which keeps its guard -- and `Game.Watch` (observe /
+  harness-only) went dead -- `strigoi_watch` now calls `Game.WatchAs` for
+  both sides. Both are now `delete` / `dead`: seams nobody takes, left to
+  their unit tests (`pursuit_test.go`, `resolver_test.go`,
+  `load_b4b_test.go`) and removed with them. Eleven wire and live -- `NewSeek`, `Seek.Advance`,
+  `Seek.SetQuarries`, `Seek.SetResolver` (CreateGame and `Game.advanceWorld`),
+  `Seek.Restore`, `Seek.Validate` (the load's steps 5 and 4),
+  `Notice.SetPlayer` (`Game.advanceWorld`, and `Game.applyTalk` before a
+  sleep), `Notice.Retarget` (Seek's look), `Notice.WatchAs` (through
+  `Notice.Watch`, the tables' and the rising's watches), `Notice.AwarePairsOf`
+  (through `Notice.AwarePairs`), `Pursuit.ChasingWhom`
+  (`Game.startChasesForTheAware`) -- and three deferred, harness-only:
+  `Seek.Snapshot` and `Seek.CheckSnapshot` (the save verb's, **M4.6 B5**, as
+  every Snapshot and CheckSnapshot row is; B5, built in parallel, must move
+  these two with the others when it wires the save), and `Game.WatchAs`
+  (strigoi_watch side:living, **the raid's R6**, when the watch posts make
+  living watches). `Notice.SetHidden` keeps its row; its Why now says it hides
+  him alone. What the gate cannot express: `Seek.SetQuarries` accepts nil
+  (then nothing but each watch's own target and the stand-ins is living), so
+  a CreateGame that dropped it stays live on the register -- the instrument is
+  `TestTheNearestLiving` act 4's control (the speakers are the map's living
+  only through it). `Notice.SetPlayer` is called twice; dropping the
+  `advanceWorld` line leaves the `applyTalk` one, which is the one his sleep
+  needs, so the instrument is `TestHisSleepHidesOnlyHim` (control
+  `global-hidden`: red) only for the pair of them. The game's rules
+  (`Game.seekQuarries`, `Game.speakerNPC`) are unexported and reached through
+  the Seek and Combat seams.
 
 The rule for this section: **if the gate cannot express it, write it here on
 the day you defer it, and name the milestone that picks it up.**
