@@ -289,6 +289,7 @@ var b3GameClasses = map[string]string{
 
 	"worldClock":   "S:clock",
 	"light":        "S:light",
+	"fog":          "W: fog of war F1 (game_fog.go): display only, and NOT saved until F3 -- a load starts black (docs/fog.md)",
 	"squads":       "S:squads",
 	"meters":       "S:squads",
 	"metersBodied": "D: s:1 is bound to his body on the first frame that has one",

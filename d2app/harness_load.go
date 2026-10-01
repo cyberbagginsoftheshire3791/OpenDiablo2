@@ -105,6 +105,8 @@ func harnessResume(saved *d2save.UUIDStream) []string {
 // nolint:gochecknoglobals // a fixed table
 var harnessDialFields = map[string][]string{
 	"clock": {"frozen", "moon"},
+	// fog of war F1: how far he sees by day, and how remembered ground looks.
+	"fog": {"day_sight", "memory_level", "memory_saturation"},
 	"combat": {
 		"adjacent_tiles", "advantage_shift", "auto_end_turn", "crit_band", "crit_factor",
 		"disengage_tiles", "enemy_move_tiles", "engage_tiles", "forced_band", "graze_band",
@@ -136,6 +138,11 @@ var harnessNotDials = map[string][]string{
 	"combat": {"commit", "disengage", "round"},
 	// the editor's view, not a game's.
 	"editor": {"zoom"},
+	// fog of war F1: whether this game draws fog is the game's view (like
+	// ui.zoom; a load is a new game at -fog's value); explore, forget and
+	// reveal_all are verbs on the explored grid, which F1 does not save; the
+	// probe is a question.
+	"fog": {"enabled", "explore", "forget", "reveal_all", "probe"},
 	// state: the light model's sources (the file's light block).
 	"light": {"carried_burn", "carried_lit", "carried_source", "place_source", "remove_source"},
 	// state: the meters (the file's squads block) and his body's health and
@@ -153,6 +160,10 @@ var harnessNotDials = map[string][]string{
 	// state: a group's morale, the open bodies (the file's spawns block); a
 	// verb: a group despawned.
 	"spawns": {"despawn", "morale", "open_bodies"},
+	// the game's view, not the world, and no load re-applies it: it carries
+	// over because a new game starts at the zoom last set (d2player.GameZoom;
+	// 1 Oct 2026, the game zoom).
+	"ui": {"zoom"},
 	// state: his standing (the sidecar's village block).
 	"village": {"rep"},
 }

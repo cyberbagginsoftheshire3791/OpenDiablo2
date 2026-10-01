@@ -109,7 +109,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 52 playtest scripts.** That count, the harness version below and the
+**The 53 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -919,7 +919,7 @@ this doc fails until it agrees.
   while it was being written." / "The save before it is restored. The
   cut-off save is kept, set aside -- not deleted."). Controls and logs in
   `strigoi-harness-runs\wt-b5-fix\`.
-* `combat_status_test.go` — the fifty-second, THE COMBAT STATUS (30 Sep
+* `combat_status_test.go` — the fifty-third (merged after fog F1's), THE COMBAT STATUS (30 Sep
   2026; Josh: "you can't save while in combat"). **`TestTheCombatStatus`**,
   seed 1462, `b5Dials` (no pack, the dead stay down), stepped to the day.
   Act 0: out of combat (`save.in_combat` false, `combat_reason` "",
@@ -945,6 +945,26 @@ this doc fails until it agrees.
   negative controls (no chase trigger, no grace, clock fights counted, the
   marker never drawn, the autosave ignoring combat, the reaction not a
   trigger) and every log are in `strigoi-harness-runs\wt-combat\`.
+* `fog_test.go` — the fifty-second, fog of war F1 (1 Oct 2026; docs/fog.md),
+  launched with `-fog -zoom 0.5`, unaided (nothing spawned, watched or
+  pursued). Act 1, noon: the `fog` provider sees his disc (100+ tiles, none
+  remembered yet, day sight 12), a tile 6 off with a clear line is visible;
+  then, the explored set forgotten and the dial narrowed to 5 for the look, a
+  tile 6.5..9 off and BELOW him on screen (where only undrawn tiles could
+  cover it) is exact (0,0,0) while the ground around him is not (the
+  black-floor control). Act 4, on that frame: `enabled=false` draws the same
+  point (the instrument can tell fog from ground), `true` blacks it again. Act
+  1b: zoom 0.5 -> 1.0 moves no count and recomputes nothing. Act 2: a walk of
+  13.5 tiles -- the start tile is explored and not visible, something was
+  remembered, frames were skipped; with the dial at 5, a remembered tile on
+  screen is grey (not black, saturation under 0.35). Act 3: a villager more
+  than 12.5 tiles off has `shown` false on `strigoi_get_entity`; walked to,
+  true. Act 5 (on act 1's frame): the house to his right has every footprint
+  tile visible (`probe.structure`) and its art is drawn (not black) -- a
+  house seen at all is seen whole. A second function, `TestZoomInToTwo` (the zoom-in, the same day), with
+  fog off: `ui.zoom` takes 2.0 and refuses 2.1, `view_scale` reads 2, and his
+  feet stay where they were on screen at 1.0 (within 3 px: the camera stays on
+  him).
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -1038,7 +1058,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.16.0)
+## The tools (37; harness 0.16.1)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1134,7 +1154,7 @@ commit its provider registers — `meters` did at M4.2, `spawns` at M4.3b,
 `combat` at M4.5 step 1.
 
 Registered today — **`clock`**, **`light`**, **`meters`**, **`pursuit`**,
-**`spawns`**, **`combat`** and **`ui`**, all while a game screen is live -- and
+**`spawns`**, **`combat`**, **`fog`** and **`ui`**, all while a game screen is live -- and
 the systems the game screen owns and registers once the hero binds, among
 them **`journal`** (J1, 24 Sep 2026; read-only: what is written, the tasks,
 the pages, the events raised, unread counts, `open`) and **`scene`** (M4.6 B1,
@@ -1163,7 +1183,7 @@ must not move the digest by being recorded. One
 settable field, a DIAL a load re-applies: `autosave` (bool, default true) --
 false keeps the dawn from saving by itself, for a script whose subject is a
 save of its own that it must load after a dawn (`TestSaveResume`).
-**Since 0.16.0 (the combat status, 30 Sep 2026)** it also reports
+**Since 0.16.0 on its branch, 0.16.1 on master (the combat status, 30 Sep 2026; merged 1 Oct with fog F1's own 0.16.0)** it also reports
 `in_combat` (he is in combat, so a save is refused `COMBAT` and the HUD marks
 it), `combat_reason` (`fight`: his fight is live; `chased`: a hostile is
 chasing him; `swing`: his own swing is playing; `reaction`: his hit or block
@@ -1657,8 +1677,16 @@ shown). `hover_label` is what the hover shows under the cursor, from the same
 naming function the combat log uses (`GameControls.nameFor`). The `village`
 provider gained `sound_env` (the sound environment the game set from the map
 he stands on) and `music` (the file of the song that environment started,
-`""` when none) the same day.
-Read-only. It registers in
+`""` when none) the same day. Since 0.15.3 (1 Oct 2026, the game zoom) `ui`
+reports `view_scale`, the scale the map is drawn at (1.0 unless `-zoom`, the
+wheel or `zoom` moved it; in the digest's process part), and has ONE settable
+field, **`zoom`**: a number in 0.4..2.0 (refused outside it; 0.4..1.0 until
+0.15.4, the zoom-in, 1 Oct 2026), set as the game's
+mouse wheel sets it, about the middle of the screen -- the harness has no wheel
+verb -- and, as the wheel does, sets the zoom the next game starts at (a load
+is a new game, so it keeps the zoom). It is the view, not the world: not a dial,
+never in the world file (docs/camera.md).
+Otherwise read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
 register when the game screen is constructed and close on unload.
 
@@ -1676,6 +1704,32 @@ also `main_menu_error`: the line the menu was opened with, `""` for none -- why
 the last thing that sent the game back to the menu failed (a game that could not
 start, a map the World Editor refused), so a script can tell the harness's
 refusal from any other way back.
+
+**`fog`** (fog of war F1, 1 Oct 2026; harness 0.16.0; docs/fog.md) -- every
+game screen registers it, fog on or off (`d2gamescreen/game_fog.go`):
+`enabled` (fog is drawn by this game now), `wanted` (`-fog`, or the last
+`enabled` written), `off_reason` (`""`, `off`, `classic`, `network`, `no_map`),
+`drawn` (the map renderer holds the fog), `w`/`h`, `explored` and `visible`
+(tile counts), `rows` (for a map of at most 64 x 64: one string a row, `0`
+unexplored, `1` explored, `2` visible), `eyes[]` (`id` `s:1`, `x`, `y`,
+`sight`, `terms{base}`), the dials `day_sight` (12), `memory_level` (0.45) and
+`memory_saturation` (0.25), the cost counters `recomputes`, `skipped` (an
+update that found his tile unchanged) and `cells_read`, `saved` (false: F3), and
+`probe` once one is asked -- `{x, y, state, clear_from{s:1}, screen,
+structure}`, the tile's state, whether the line from his eye is clear, where
+its centre is on screen now, and the footprint `[x0, y0, x1, y1]` (Max
+exclusive) of the structure standing on it, if one does (a structure is seen
+whole once any of it is seen). Settable: the three dials (`day_sight` 0..64, the two looks
+0..1) are DIALS; `enabled` (true / false; refused under `-classic`) is the
+game's view, like `ui.zoom`; `explore` (`{x, y, r}`: every tile whose centre is
+within r marked explored), `forget` (the explored set cleared; the next update
+re-sees what he sees) and `reveal_all` are verbs; `probe` (`{x, y}`) is a
+question. It is in the digest's PROCESS part (F1 does not save fog, so a
+resumed game does not reproduce it), less `skipped` (a count of frames, which
+differ from launch to launch) and the probe's `screen` (presentation). `strigoi_get_entity` / `get_player` report
+`shown` (presentation, never in the digest): false only with fog drawn and the
+entity on a tile he does not see now (`MapRenderer.Shows`, the test the render
+passes use).
 
 **`editor`** (World Editor review, 28 Sep 2026) -- while the World Editor is the
 screen (`d2gamescreen/editor_harness.go`; registered at the end of

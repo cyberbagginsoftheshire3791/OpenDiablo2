@@ -1,7 +1,5 @@
 package d2player
 
-import "math"
-
 // M4.4c-1 selection: the player selects a squad by clicking one of its model
 // sprites, or cycles with the cycle key; the selected squad's bar gets an
 // outline and its sheet opens (ruled ask 6). Selection CANNOT reuse the hover
@@ -27,16 +25,8 @@ func (g *GameControls) squadAtScreen(mx, my int) string {
 			continue
 		}
 
-		sxf, syf := g.mapRenderer.WorldToScreenF(ent.GetPositionF())
-		ex, ey := int(math.Floor(sxf)), int(math.Floor(syf))
-
-		w, h := ent.GetSize()
-		halfW, halfH := w>>1, h>>1
-
-		l, r := ex-halfW-hoverLabelOuterPad, ex+halfW+hoverLabelOuterPad
-		t, b := ey-halfH-hoverLabelOuterPad, ey+halfH-hoverLabelOuterPad
-
-		if l <= mx && r >= mx && t <= my && b >= my {
+		// The model's sprite as drawn, at the view's scale (view_scale.go).
+		if spriteUnder(g.mapRenderer, ent, mx, my) {
 			return sm.Squad
 		}
 	}

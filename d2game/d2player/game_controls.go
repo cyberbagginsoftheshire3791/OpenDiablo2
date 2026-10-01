@@ -373,6 +373,10 @@ type GameControls struct {
 	// §2.2, §3.4). In live play it advances exactly as wall time does.
 	clock float64
 
+	// wheelAcc is the wheel's scroll not yet a whole notch: a touchpad
+	// reports fractions (view_scale.go, wheelNotches).
+	wheelAcc float64
+
 	*d2util.Logger
 }
 

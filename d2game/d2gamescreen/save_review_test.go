@@ -620,6 +620,7 @@ var b3ControlsClasses = map[string]string{
 	"combatHolder":           "W: the game screen (the combat marker's status, 30 Sep 2026)",
 	"squads":                 "W: the squads owner, saved as the squads block",
 	"clock":                  "D: the controls' own seconds for click repeat; only differences are read, and it restarts with the stamps",
+	"wheelAcc":               "D: a fraction of a wheel notch not yet turned; every process starts it at 0",
 	"Logger":                 "W: the log",
 }
 

@@ -47,6 +47,10 @@ type MapEngine struct {
 	authoredImages map[AuthoredKey]*image.RGBA
 	authoredStart  *[2]float64
 	authoredInside []image.Rectangle
+	// structures are an authored map's structure footprints, in whole tiles
+	// (Max exclusive): fog of war shows a structure whole once any of it is
+	// seen (SetStructures, tile_sight.go).
+	structures     []image.Rectangle
 	authoredRegion *authoredRegion
 
 	// Which authored bits line of sight obeys. Set explicitly in
@@ -154,6 +158,7 @@ func (m *MapEngine) resetState(width, height int) {
 	m.authoredImages = nil
 	m.authoredStart = nil
 	m.authoredInside = nil
+	m.structures = nil
 	m.authoredRegion = nil
 }
 
