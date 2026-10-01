@@ -88,6 +88,20 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
   last save" or a death's reload starts black. F3 adds the `fog` block and the
   world file's version 3.
 - **No raised sight (F4).** Talents, gear, height and towers.
+- **Known small gaps from the F1 review (1 Oct).**
+  - *A hovered hidden creature flashes highlighted for one frame* when it comes
+    into view: `Render` is what clears `highlight` (creature, animated entity,
+    object), a hidden entity is not rendered, and the hover (BUG-107) still
+    reaches hidden entities. F2's hover gate closes it. Animation does not
+    freeze while hidden: it advances in `Advance`, not `Render`.
+  - *With fog off the DRAW is master's, the harness output is not quite:* the
+    `fog` provider is always registered, so the digest carries a `fog` system
+    and `strigoi_get_entity` always reports `shown`. Accepted (plan §3.12).
+  - *The explored grid is reset only when the map's SIZE changes.* Harmless
+    while every load is a new Game; F3 must key it on the map itself.
+  - *No unit test yet* for a harness write being followed by a fog update, or
+    for fog running after the map moves him (both need a live player and a
+    full frame advance); the playtest covers the outcome, not the order.
 - **Not on by default (F5).** It flips with the zoom's default, so the
   screenshot-based checks are re-baselined once.
 
