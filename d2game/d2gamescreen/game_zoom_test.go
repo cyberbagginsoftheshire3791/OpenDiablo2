@@ -8,7 +8,7 @@ import (
 
 // TestTheZoomFlagIsTheNewGamesScale: -zoom's value (SetGameZoom, as d2app
 // calls it) is the scale a new game's map renderer starts at, clamped to the
-// game's 0.4..1.0; at 1.0 the renderer is left as it was made.
+// game's 0.4..2.0; at 1.0 the renderer is left as it was made.
 //
 // Negative controls (1 Oct 2026, the review's M8 and M6): make applyGameZoom
 // skip every zoom but 1.0 and this fails, "-zoom 0.5: a new game draws at 1"
@@ -19,7 +19,7 @@ func TestTheZoomFlagIsTheNewGamesScale(t *testing.T) {
 	was := GameZoom()
 	t.Cleanup(func() { SetGameZoom(was) })
 
-	for _, c := range []struct{ flag, want float64 }{{0.5, 0.5}, {0.4, 0.4}, {0.1, 0.4}, {3, 1}, {1, 1}} {
+	for _, c := range []struct{ flag, want float64 }{{0.5, 0.5}, {0.4, 0.4}, {0.1, 0.4}, {1.5, 1.5}, {2, 2}, {3, 2}, {1, 1}} {
 		SetGameZoom(c.flag)
 
 		v := &Game{mapRenderer: d2maprenderer.NewViewOnlyMapRenderer(0, 0)}

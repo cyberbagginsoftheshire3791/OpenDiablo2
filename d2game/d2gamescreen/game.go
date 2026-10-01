@@ -401,6 +401,13 @@ func CreateGame(
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
 
+	// Fog of war (F1, -fog; off by default). With -fog the renderer holds it
+	// from the first frame (black until he has seen something); with fog off
+	// it draws as it did before fog.
+	game.fog = newGameFog(mapTileSight{game}, processGameFog)
+	game.fogAdvance() // with -fog the renderer holds the (empty, all-black) fog from the first frame
+	d2harness.Register(fogProvider{game})
+
 	// The game zoom (-zoom; 1.0 does nothing). The light is per tile, in world
 	// tiles (d2world.Light.Level), so a zoomed-out view shows no more of the
 	// dark than the torch lights: its radius is drawn at the view's scale with
@@ -460,6 +467,7 @@ func (v *Game) releaseWorld() {
 	d2harness.Unregister(v.rising)
 	d2harness.Unregister(sceneProvider{v}) // M4.6 B1
 	d2harness.Unregister(saveProvider{v})  // M4.6 B5
+	d2harness.Unregister(fogProvider{v})   // fog of war F1
 
 	// The world's systems die with it too (M4.1).
 	if v.worldClock != nil {
@@ -640,6 +648,7 @@ type Game struct {
 	// exist yet.
 	worldClock   *d2world.Clock
 	light        *d2world.Light
+	fog          *gameFog // fog of war F1 (game_fog.go); always made, drawn only with -fog
 	squads       *d2world.Squads
 	meters       *d2world.Meters
 	metersBodied bool
@@ -934,6 +943,10 @@ func (v *Game) Advance(elapsed float64) error {
 	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
 		v.gameClient.MapEngine.Advance(elapsed)
 	}
+
+	// Fog of war (F1): after the map has moved him, every frame -- a held turn
+	// stops the world clock, not his Move (plan §2.4). Nothing when fog is off.
+	v.fogAdvance()
 
 	// The decision timer counts only frames on which the world stopped FOR THE
 	// COMBAT REASON: Wait() tests awaiting itself, so a frame paused under the

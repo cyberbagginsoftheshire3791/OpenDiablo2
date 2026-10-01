@@ -102,7 +102,7 @@ func NewViewport(x, y, width, height int) *Viewport {
 
 // Scale returns the viewport's zoom: screen pixels per orthogonal pixel. 1.0 is
 // unzoomed, and is what the shipped game runs at by default (-zoom and the
-// game's mouse wheel move it, between 0.4 and 1.0; docs/camera.md).
+// game's mouse wheel move it, between 0.4 and 2.0; docs/camera.md).
 func (v *Viewport) Scale() float64 {
 	return v.scaleOrDefault()
 }

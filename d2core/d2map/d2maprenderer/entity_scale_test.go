@@ -95,9 +95,13 @@ func drawInkEntity(scale float64, e d2interface.MapEntity) (*paintSurface, *MapR
 // (380,215)-(410,265)" -- 35 pixels above where he stands
 // (nc3-unscaled-offsets.txt). Drop the linear filter (the review's B2) and it
 // fails: "at scale 0.5 the sprite was drawn with filter 0; a shrunk sprite is
-// sampled linearly" (nc16-no-linear-filter.txt).
+// sampled linearly" (nc16-no-linear-filter.txt). Since the zoom-in (1 Oct
+// 2026) a MAGNIFIED sprite is sampled nearest, crisp like the tiles: push
+// linear at every scale (the zoom's first rule) and this fails at 1.1, 1.5
+// and 2 -- "at scale 2 the sprite was drawn with filter 2, want 1"
+// (strigoi-harness-runs\wt-fog\nc\nc1-linear-when-magnified.txt).
 func TestRenderEntityScalesTheSprite(t *testing.T) {
-	for _, scale := range []float64{0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.25, 2} {
+	for _, scale := range []float64{0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.25, 1.1, 1.5, 2} {
 		e := &inkEntity{art: blockArt(entW, entH), feetX: entFeetX, feetY: entFeetY}
 		target, mr := drawInkEntity(scale, e)
 
@@ -116,9 +120,19 @@ func TestRenderEntityScalesTheSprite(t *testing.T) {
 			t.Errorf("at scale %v renderEntity left %d state(s) pushed on the target", scale, target.GetDepth())
 		}
 
-		if target.lastFilter != d2enum.FilterLinear {
-			t.Errorf("at scale %v the sprite was drawn with filter %v; a shrunk sprite is sampled linearly",
-				scale, target.lastFilter)
+		wantFilter := d2enum.FilterLinear
+		if scale > 1 {
+			wantFilter = d2enum.FilterNearest
+		}
+
+		if target.lastFilter != wantFilter {
+			if scale < 1 {
+				t.Errorf("at scale %v the sprite was drawn with filter %v; a shrunk sprite is sampled linearly",
+					scale, target.lastFilter)
+			} else {
+				t.Errorf("at scale %v the sprite was drawn with filter %v, want %v; a magnified sprite is "+
+					"sampled nearest, crisp like the tiles", scale, target.lastFilter, wantFilter)
+			}
 		}
 	}
 }

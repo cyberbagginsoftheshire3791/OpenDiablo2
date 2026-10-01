@@ -21,6 +21,9 @@ import (
 // renderEntity draws one entity at the target's current translation, which the
 // render pass has already set to the entity's tile through the viewport.
 //
+// WITH FOG (a FogSampler set) an entity on a tile he does not see now is not
+// drawn at all (fog.go). Without fog nothing below changes.
+//
 // AT SCALE 1.0 THIS IS e.Render(target) AND NOTHING ELSE -- the call the passes
 // made before there was a zoom, call for call: no wrapper, no PushScale, no Pop.
 // TestRenderEntityAtScale1IsTheUnscaledDraw pins it.
@@ -43,17 +46,43 @@ import (
 // shadow's linear) keeps it. Tiles stay nearest (drawTileArt): their seams
 // are measured against a nearest draw, and a linear one is a real-render
 // check still owed (docs/camera.md).
+//
+// A MAGNIFIED SPRITE IS SAMPLED NEAREST (the zoom-in, 1 Oct 2026: Josh raised
+// the limit to 2.0, "being able to focus down on things is a helpful thing to
+// those of us who need eyes"). Linear magnification blurs every art pixel into
+// its neighbours while the tiles under it stay crisp; nearest draws each art
+// pixel as a crisp block, matching the ground. FilterNearest is pushed (not
+// left to the surface's default) so a filter pushed further up the stack
+// cannot leak into the zoomed-in draw.
 func (mr *MapRenderer) renderEntity(target d2interface.Surface, e d2interface.MapEntity) {
+	// Fog of war (F1): nothing is drawn standing on ground he does not see
+	// now -- no creatures or people in remembered ground (ruling 2). Without
+	// fog this returns before reading anything.
+	if !mr.entityShown(e) {
+		return
+	}
+
 	s := mr.viewport.Scale()
 	if s == defaultScale {
 		e.Render(target)
 		return
 	}
 
-	target.PushFilter(d2enum.FilterLinear)
+	target.PushFilter(entityFilter(s))
 	target.PushScale(s, s)
 	e.Render(newViewScaledSurface(target, s))
 	target.PopN(2)
+}
+
+// entityFilter is the filter an entity is sampled with at a view scale s other
+// than 1.0: linear when it is shrunk (s < 1, mipmapped), nearest when it is
+// magnified (s > 1, crisp art pixels like the tiles').
+func entityFilter(s float64) d2enum.Filter {
+	if s < defaultScale {
+		return d2enum.FilterLinear
+	}
+
+	return d2enum.FilterNearest
 }
 
 // NewViewOnlyMapRenderer is a MapRenderer with an 800x600 viewport and a camera
