@@ -20,11 +20,15 @@ import (
 // every function here is the arithmetic its caller had before the zoom.
 
 // Game zoom range and wheel step. 1.0 is the shipped view and stays the
-// default; 0.4 is the furthest out the wheel, -zoom and the harness go. [DIAL]
+// default; 0.4 is the furthest out the wheel, -zoom and the harness go, and
+// 2.0 the furthest in (Josh, 1 Oct 2026, 10:36: "Raise the limit a bit, being
+// able to focus down on things is a helpful thing to those of us who need
+// eyes." -- it was 1.0). [DIAL]
 const (
-	gameZoomMin  = 0.4
-	gameZoomMax  = 1.0
-	gameZoomStep = 0.1
+	gameZoomMin     = 0.4
+	gameZoomMax     = 2.0
+	gameZoomDefault = 1.0 // the shipped view: no -zoom, no renderer yet, NaN
+	gameZoomStep    = 0.1
 
 	// gameZoomStepsPerUnit is 1/gameZoomStep, the grid nextGameZoom rounds
 	// to. Rounding as round(z*10)/10 rather than round(z/0.1)*0.1 gives the
@@ -37,7 +41,7 @@ const (
 // catches, is the unzoomed view.
 func ClampGameZoom(z float64) float64 {
 	if math.IsNaN(z) {
-		return gameZoomMax
+		return gameZoomDefault
 	}
 
 	return math.Max(gameZoomMin, math.Min(gameZoomMax, z))
@@ -86,7 +90,7 @@ func headAnchor(ex, ey, xOff, yOff, h int, scale float64) (x, y int) {
 // viewScale is the scale the map is drawn at, 1.0 before the renderer exists.
 func (g *GameControls) viewScale() float64 {
 	if g.mapRenderer == nil {
-		return gameZoomMax
+		return gameZoomDefault
 	}
 
 	return g.mapRenderer.Scale()
@@ -99,7 +103,7 @@ func (g *GameControls) viewScale() float64 {
 // It is this process's, never the world's: no save carries it.
 //
 // nolint:gochecknoglobals // one value per process, set from the command line and the wheel
-var processGameZoom = gameZoomMax
+var processGameZoom = gameZoomDefault
 
 // SetGameZoom sets the zoom new games start at, clamped to the game's range.
 func SetGameZoom(z float64) { processGameZoom = ClampGameZoom(z) }

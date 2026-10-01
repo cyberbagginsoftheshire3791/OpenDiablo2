@@ -266,7 +266,7 @@ func (a *App) parseArguments() {
 	editorFlag := &editorFlagValue{}
 	flag.Var(editorFlag, "editor", "open the World Editor on a map instead of the main menu (default "+defaultMap+"): -editor, -editor <path> or -editor=<path>")
 	zoom := flag.Float64("zoom", 1.0, "the game's view scale, "+
-		"0.4 (zoomed out: everything drawn at 0.4 size, the world's distances unchanged) to 1.0 (the shipped view); "+
+		"0.4 (zoomed out: everything drawn at 0.4 size, the world's distances unchanged) through 1.0 (the shipped view) to 2.0 (zoomed in); "+
 		"the mouse wheel steps it by 0.1 in a game")
 	serverPort := flag.String("server-port", "6669", "the port a local game's server listens on for other players (0 = any free port, which is how the playtest harness runs several games at once)")
 

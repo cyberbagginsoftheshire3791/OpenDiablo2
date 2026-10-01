@@ -1008,7 +1008,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.15.3)
+## The tools (37; harness 0.15.4)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1614,7 +1614,8 @@ he stands on) and `music` (the file of the song that environment started,
 `""` when none) the same day. Since 0.15.3 (1 Oct 2026, the game zoom) `ui`
 reports `view_scale`, the scale the map is drawn at (1.0 unless `-zoom`, the
 wheel or `zoom` moved it; in the digest's process part), and has ONE settable
-field, **`zoom`**: a number in 0.4..1.0 (refused outside it), set as the game's
+field, **`zoom`**: a number in 0.4..2.0 (refused outside it; 0.4..1.0 until
+0.15.4, the zoom-in, 1 Oct 2026), set as the game's
 mouse wheel sets it, about the middle of the screen -- the harness has no wheel
 verb -- and, as the wheel does, sets the zoom the next game starts at (a load
 is a new game, so it keeps the zoom). It is the view, not the world: not a dial,

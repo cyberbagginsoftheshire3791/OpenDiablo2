@@ -12,14 +12,27 @@ arithmetic it did (pinned by `TestRenderEntityAtScale1IsTheUnscaledDraw`,
 `TestDrawTileArtAtScale1IsTheUnscaledDraw`, `TestSpriteHitRectAt1IsTheHoverLoopsRect`,
 `TestHeadAnchorAt1IsTheOldArithmetic`, and `TestScaleOneIsTheUnzoomedTransformExactly`).
 
+## Zooming in (1 Oct 2026)
+
+The range was 0.4..1.0; it is **0.4..2.0** since Josh's word of 1 Oct, 10:36:
+"Raise the limit a bit, being able to focus down on things is a helpful thing
+to those of us who need eyes." Above 1.0 the art is magnified, so entities are
+sampled **nearest** (`entityFilter`), each art pixel a crisp block like the
+tiles' (which are always nearest); below 1.0 they stay linear, mipmapped
+(`TestRenderEntityScalesTheSprite`, 0.25..2). The cull covers every tile on
+screen up to 16 (`TestCullRangeCoversEveryTileOnScreenAtEveryScale`), the
+authored strips' extra rows grow with the scale (`authoredCullRows`, pinned to
+2.0 by `TestAuthoredCullRowsFollowTheScale`), and the camera stays on the hero
+at every scale (`SetScale` moves no camera).
+
 ## Controls
 
 | Control | Effect |
 |---|---|
-| `-zoom <float>` | the scale every game starts at, clamped to 0.4..1.0 (default 1.0). A load is a new game and starts at it too. |
-| mouse wheel (in a game) | one notch is 0.1, toward the player zooms out, away zooms in, clamped to 0.4..1.0. About the middle of the screen: the camera stays on the hero. A touchpad's fractional scrolls are summed and step once per whole unit (ten scrolls of 0.1 are one notch). Not while the death screen, a talk, the journal, the escape menu, the help overlay, the loadout choice or the skill-select menu is up, nor over the kit or the talent panel -- wherever a click is refused. |
+| `-zoom <float>` | the scale every game starts at, clamped to 0.4..2.0 (default 1.0). A load is a new game and starts at it too. |
+| mouse wheel (in a game) | one notch is 0.1, toward the player zooms out, away zooms in, clamped to 0.4..2.0. About the middle of the screen: the camera stays on the hero. A touchpad's fractional scrolls are summed and step once per whole unit (ten scrolls of 0.1 are one notch). Not while the death screen, a talk, the journal, the escape menu, the help overlay, the loadout choice or the skill-select menu is up, nor over the kit or the talent panel -- wherever a click is refused. |
 | the zoom a new game starts at | `-zoom`'s value until the wheel or the harness moves the view; then the view the player chose, so a death's load, "load last save" and a new game keep his zoom. Process-wide (`d2player.GameZoom`), never in the world file. |
-| harness `ui.zoom` | settable: a number in 0.4..1.0 (refused, not clamped, outside it), set as the wheel sets it -- including the zoom the next game starts at. Classified not-a-dial in `harnessNotDials`: a load does not re-apply it; it carries over because the next game starts at it. |
+| harness `ui.zoom` | settable: a number in 0.4..2.0 (refused, not clamped, outside it), set as the wheel sets it -- including the zoom the next game starts at. Classified not-a-dial in `harnessNotDials`: a load does not re-apply it; it carries over because the next game starts at it. |
 | harness `ui.view_scale` | read-only: the scale the map is drawn at. In the state digest's process part (a resumed game starts at its own `-zoom`). |
 
 The wheel was bound to nothing in the game before this. `SelectPreviousSkill`
@@ -77,7 +90,7 @@ ground, and the extra ground is as dark as the light model says it is.
 The renderer's cull probes are screen pixels through `ScreenToWorld`, so the
 tile range widens by 1/scale as the view zooms out
 (`TestCullRangeCoversEveryTileOnScreenAtEveryScale`, scales 0.0625..16, which
-bracket 0.4..1.0). Entities are culled with their tiles (the render passes draw
+bracket 0.4..2.0). Entities are culled with their tiles (the render passes draw
 the entities standing on the tiles in range), and the authored strips' extra
 rows are `authoredCullRows`, which is 0 at every scale below about 0.59
 (`TestAuthoredCullRowsFollowTheScale`).

@@ -92,16 +92,21 @@ func TestHeadAnchorHangsOverTheScaledHead(t *testing.T) {
 	}
 }
 
-// TestTheWheelStepsBetween04And1: six notches out from 1.0 reach 0.4 and stop
+// TestTheWheelStepsBetween04And2: six notches out from 1.0 reach 0.4 and stop
 // there, and every notch out and back lands EXACTLY on the decimal it names
 // (0.8, not 0.7999999999999999 -- a harness script compares view_scale with
-// ==), ending on 1.0, the shipped view; a roll with no y does nothing.
+// ==), on through 1.0, the shipped view, to 2.0, the furthest in (the zoom-in,
+// 1 Oct 2026), and stops there; a roll with no y does nothing.
+//
+// Negative control (1 Oct 2026, the zoom-in): put gameZoomMax back at 1.0 and
+// this fails: "notch 7 back: 1, want 1.1"
+// (strigoi-harness-runs\wt-fog\nc\nc2-max-back-at-1.txt).
 //
 // Negative control (1 Oct 2026): drop nextGameZoom's rounding to the step and
 // this fails: "notch 3 out: 0.7000000000000001, want 0.7"
 // (nc9-no-step-rounding.txt). The first rounding written, round(z/0.1)*0.1,
 // fails it too, the same way: 7*0.1 is 0.7000000000000001 (nc9b-round-times-step.txt).
-func TestTheWheelStepsBetween04And1(t *testing.T) {
+func TestTheWheelStepsBetween04And2(t *testing.T) {
 	keepGameZoom(t)
 
 	v := &fakeZoom{scale: 1}
@@ -119,7 +124,7 @@ func TestTheWheelStepsBetween04And1(t *testing.T) {
 		}
 	}
 
-	back := []float64{0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.0, 1.0}
+	back := []float64{0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.0, 2.0}
 	for i, w := range back {
 		zoomByWheel(v, &acc, 1)
 
@@ -128,12 +133,16 @@ func TestTheWheelStepsBetween04And1(t *testing.T) {
 		}
 	}
 
-	if zoomByWheel(v, &acc, 0) || v.sets != 16 {
-		t.Fatalf("a roll with no y zoomed (sets %d, want 16)", v.sets)
+	if zoomByWheel(v, &acc, 0) || v.sets != 26 {
+		t.Fatalf("a roll with no y zoomed (sets %d, want 26)", v.sets)
 	}
 
-	if got := nextGameZoom(1, 3); got != 1 {
-		t.Fatalf("a notch in from 1.0 went to %v; the game does not zoom in past its shipped view", got)
+	if got := nextGameZoom(1, 3); got != 1.1 {
+		t.Fatalf("a notch in from 1.0 went to %v, want 1.1", got)
+	}
+
+	if got := nextGameZoom(2, 3); got != 2 {
+		t.Fatalf("a notch in from 2.0 went to %v; the game does not zoom in past 2.0", got)
 	}
 }
 
@@ -173,8 +182,8 @@ func TestATouchpadScrollIsOneNotchPerWholeUnit(t *testing.T) {
 		t.Fatalf("a mouse notch of 1.0 zoomed to %v, want 0.8", v.scale)
 	}
 
-	if !zoomByWheel(v, &acc, 3) || v.scale != 1.0 {
-		t.Fatalf("three units back zoomed to %v, want 1.0", v.scale)
+	if !zoomByWheel(v, &acc, 2) || v.scale != 1.0 {
+		t.Fatalf("two units back zoomed to %v, want 1.0", v.scale)
 	}
 
 	acc = 0
@@ -288,9 +297,14 @@ type fakeKit struct {
 
 func (k fakeKit) ChoosingLoadout() bool { return k.choosing }
 
-// TestClampGameZoom: the flag's value is held to 0.4..1.0; NaN is 1.0.
+// TestClampGameZoom: the flag's value is held to 0.4..2.0; NaN is 1.0, the
+// shipped view (not the top of the range).
+//
+// Negative control (1 Oct 2026, the zoom-in): return gameZoomMax for NaN (the
+// rule before there was a default apart from the max) and this fails:
+// "ClampGameZoom(NaN) = 2, want 1" (strigoi-harness-runs\wt-fog\nc\nc3-nan-is-max.txt).
 func TestClampGameZoom(t *testing.T) {
-	for _, c := range [][2]float64{{1, 1}, {0.5, 0.5}, {0.1, 0.4}, {-3, 0.4}, {2, 1}, {math.Inf(1), 1}, {math.NaN(), 1}} {
+	for _, c := range [][2]float64{{1, 1}, {0.5, 0.5}, {0.1, 0.4}, {-3, 0.4}, {1.5, 1.5}, {2, 2}, {3, 2}, {math.Inf(1), 2}, {math.NaN(), 1}} {
 		if got := ClampGameZoom(c[0]); got != c[1] {
 			t.Errorf("ClampGameZoom(%v) = %v, want %v", c[0], got, c[1])
 		}
@@ -312,14 +326,18 @@ func TestTheHarnessZoomField(t *testing.T) {
 		t.Fatalf("zoom 1 (an int): err %v, scale %v", err, v.scale)
 	}
 
-	for _, bad := range []interface{}{0.3, 1.5, math.NaN(), "0.5", nil} {
+	if err := setZoomField(v, 2.0); err != nil || v.scale != 2 {
+		t.Fatalf("zoom 2.0 (the furthest in): err %v, scale %v", err, v.scale)
+	}
+
+	for _, bad := range []interface{}{0.3, 2.1, math.NaN(), "0.5", nil} {
 		if err := setZoomField(v, bad); err == nil {
 			t.Errorf("zoom %v was taken", bad)
 		}
 	}
 
-	if v.sets != 2 {
-		t.Fatalf("refused writes set the scale: %d sets, want 2", v.sets)
+	if v.sets != 3 {
+		t.Fatalf("refused writes set the scale: %d sets, want 3", v.sets)
 	}
 
 	if err := setZoomField(nil, 0.5); err == nil {
