@@ -13,11 +13,13 @@ import (
 // last save / quit" (the 9 Sep order's step, M19). Before it, a hero at 0
 // health kept walking the map.
 //
-// WHAT "LAST SAVE" MEANS is the 12 Sep ruling's, made concrete: his .od2 is
-// written only when he leaves the world alive, and his kit-and-progress file
-// is rolled back, at the moment of death, to what it held when he entered.
-// So a death costs everything since he last left the road -- the experience,
-// the talents, the wear -- and both files agree on the moment he returns to.
+// WHAT "LAST SAVE" MEANS is the 12 Sep ruling's, made concrete -- and, since
+// the world save (M4.6), it is his last save: the menu's, the window's close,
+// the dawn's. His kit-and-progress file is rolled back, at the moment of
+// death, to what it held at that save (or when he entered, before his first),
+// and "load last save" resumes the world file. So a death costs everything
+// since his last save -- the experience, the talents, the wear, the night --
+// and the files agree on the moment he returns to.
 //
 // The game screen owns the death and the files; this draws, and routes Enter
 // and Escape.

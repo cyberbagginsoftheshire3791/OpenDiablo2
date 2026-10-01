@@ -101,6 +101,9 @@ const (
 	// pkgApp joined at the polish burst (27 Sep 2026): the one place a game
 	// is started, and what it does when the game screen cannot be built.
 	pkgApp = "d2app"
+	// pkgRender joined at M4.6 B5 (29 Sep 2026): the window's close handed to
+	// the App's close hook.
+	pkgRender = "d2core/d2render/ebiten"
 	// pkgPalette joined at the editor burst (27 Sep 2026): the model behind the
 	// map editor's asset palette. Every row of it was a DEFERRAL then, and not
 	// even a measured one (PalettePending, deleted 28 Sep 2026), because the
@@ -426,10 +429,10 @@ var Register = []Entry{
 		"The raid's R2: the load's step 5 restores the seek block after the notice and pursuit blocks (Game.resumeLoad).", ""},
 	{sym(pkgWorld, "Seek.Validate"), BucketWire, VerdictLive,
 		"The raid's R2: the load's step 4 checks the seek block (Game.checkLoad).", ""},
-	{sym(pkgWorld, "Seek.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"The raid's R2: Game.SaveWorld takes the seek block (worldFile). The save verb is harness-only until B5, as every Snapshot row is.", "M4.6 B5"},
-	{sym(pkgWorld, "Seek.CheckSnapshot"), BucketDefer, VerdictHarnessOnly,
-		"The raid's R2: Game.SaveWorld holds the seek block it took to the load's own checks (validateSnapshots). Harness-only until B5, as the other CheckSnapshot rows are.", "M4.6 B5"},
+	{sym(pkgWorld, "Seek.Snapshot"), BucketWire, VerdictLive,
+		"The raid's R2: Game.SaveWorld takes the seek block (worldFile), and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 on its branch; re-bucketed at the raid-r2 x master merge (1 Oct 2026, the R2 review's C5).", ""},
+	{sym(pkgWorld, "Seek.CheckSnapshot"), BucketWire, VerdictLive,
+		"The raid's R2: Game.SaveWorld holds the seek block it took to the load's own checks (validateSnapshots), and since M4.6 B5 the game saves (Game.SaveWorldAs). Deferred to M4.6 B5 on its branch; re-bucketed at the raid-r2 x master merge (1 Oct 2026, the R2 review's C5).", ""},
 	{sym(pkgWorld, "Notice.SetPlayer"), BucketWire, VerdictLive,
 		"The raid's R2: Game.advanceWorld (and Game.applyTalk, before a sleep) binds his id, so his sleep (Notice.SetHidden) hides him alone and the night goes on seeing the village. If this goes dark SetHidden hides every quarry again (T6's first rule), and TestHisSleepHidesOnlyHim is the instrument.", ""},
 	{sym(pkgWorld, "Notice.Retarget"), BucketWire, VerdictLive,
@@ -531,6 +534,8 @@ var Register = []Entry{
 		"The monstats record an NPC was built from. Reached from Game.BodyOf's on-demand adoption path, so it inherits that row's verdict exactly, as its own comment has said since step 3.", ""},
 	{sym(pkgEntity, "NPC.StartAction"), BucketWire, VerdictLive,
 		"Plays one animation and HOLDS it, then returns the monster to Neutral -- or, for a death, to a Dead that is held for the rest of the run. Called from Game.Animate on every swing, every blow taken and every death. Before it, nothing could make a monster's sprite survive the next tick.", ""},
+	{sym(pkgEntity, "Player.StartAction"), BucketWire, VerdictLive,
+		"Game.Animate plays the Janissary's hit, shield block and death through this visual held-action path. Player.Advance also reaches it when neglect kills him. Death stops his route and finishes in a held corpse; ordinary reactions do not change casting/input/save locks. Swings retain the existing StartCasting path with its requested mode preserved.", ""},
 	{sym(pkgEntity, "NPC.SetAnimationMode"), BucketWire, VerdictLive,
 		"The first exported way to tell a monster to play a mode. Its only caller is NPC.StartAction, which is the honest reading: the row stays because the symbol stays, and it is wire because a real build now reaches it. tools/animcensus measured on 31 Aug that A1, GH, DT and DD all exist for the three codes the spawn tables use.", ""},
 	{sym(pkgEntity, "MapEntityFactory.NewCreature"), BucketWire, VerdictLive,
@@ -588,7 +593,7 @@ var Register = []Entry{
 	{sym(pkgWorld, "Clock.MinuteOfDay"), BucketWire, VerdictLive,
 		"The HUD refreshes the strip when int(MinuteOfDay) changes -- once a world minute, not every frame -- and Clock.HoursToDusk derives from it. Wire since M4.4a.", ""},
 	{sym(pkgWorld, "Clock.HoursToDusk"), BucketWire, VerdictLive,
-		"The strip's time-to-sunset readout: world hours to the clock's DuskStart (19:45). Built for M4.4a; the HUD is its only caller.", ""},
+		"The strip's time-to-sunset readout: world hours to the clock's DuskStart (19:45), from the start of the current world minute since M4.6 BUG-88 (so a game resumed mid-minute reads the saved game's value), and a day away -- 24.0 h -- in the dusk minute itself since the BUG-87 review fixes (BUG-94). Built for M4.4a; the HUD is its only caller.", ""},
 	{sym(pkgWorld, "Clock.Today"), BucketWire, VerdictLive,
 		"Looks up today's generated day-table row for the strip's feast/fast name and moon-phase text. Built for M4.4a; the HUD is its only caller.", ""},
 
@@ -746,21 +751,23 @@ var Register = []Entry{
 	// close hook, the dawn autosave (rule 10) -- are B5's. A save the player
 	// cannot make is the hollow class this register is for, so these rows
 	// stay deferred until B5 wires them and moves them to wire. The Restore
-	// and Validate rows are untouched: nothing loads yet.
-	{sym(pkgWorld, "Clock.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"The world minutes since the epoch, the clock's whole state. Game.SaveWorld calls it.", "M4.6 B5"},
+	// and Validate rows are untouched: nothing loads yet. M4.6 B5 (29 Sep
+	// 2026) wired them: the menu, the close hook and the dawn autosave save,
+	// and every "M4.6 B5" row moved to wire with what it said before recorded.
+	{sym(pkgWorld, "Clock.Snapshot"), BucketWire, VerdictLive,
+		"The world minutes since the epoch, the clock's whole state. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Clock.Restore"), BucketWire, VerdictLive,
 		"The world save's load puts the clock at the saved minute in CreateGame right after NewClock, before anything built after it samples it (trap 1; d2gamescreen.Game.restoreClock). If it went dark a resumed game would open at the dawn epoch. Deferred to M4.6 B4a and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Clock.Validate"), BucketWire, VerdictLive,
 		"The load checks the clock block before restoring it (Game.restoreClock), and SaveWorld before writing it. Deferred to M4.6 B4a and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgWorld, "Light.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"Every light source (no radius: a dial, D2) and the next id. Game.SaveWorld calls it.", "M4.6 B5"},
+	{sym(pkgWorld, "Light.Snapshot"), BucketWire, VerdictLive,
+		"Every light source (no radius: a dial, D2) and the next id. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Light.Restore"), BucketWire, VerdictLive,
 		"The load puts every source back whole -- his carried torch with its id, lit or doused, and its minutes -- and zeroes the kit torch's minutes instead of re-lighting through L (D1; Game.resumeLoad). Deferred to M4.6 B4a and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Light.Validate"), BucketWire, VerdictLive,
 		"The load's step 4 checks the light block before restoring any block (D4; Game.checkLoad), and SaveWorld before writing it. Deferred to M4.6 B4a and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgWorld, "Squads.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"Every squad with its members and meters, s:1's member written as the player. Game.SaveWorld calls it.", "M4.6 B5"},
+	{sym(pkgWorld, "Squads.Snapshot"), BucketWire, VerdictLive,
+		"Every squad with its members and meters, s:1's member written as the player. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Squads.Restore"), BucketWire, VerdictLive,
 		"The load restores s:1 in place and every deployed squad with its models (Game.resumeLoad), each model rebuilt first with its saved id through the next-id seam and held to the map (Game.checkSquadModels; D3, M4.6 B4b). Until B4b a file holding a deployed squad model was refused before this was reached (huntedNight, D3). Deferred to M4.6 B4b and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Squads.Validate"), BucketWire, VerdictLive,
@@ -775,14 +782,14 @@ var Register = []Entry{
 		"The load's step 4 checks the corpses block against the empty registry (Game.checkLoad). Deferred to M4.6 B4a and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Corpses.CheckSnapshot"), BucketWire, VerdictLive,
 		"Validate calls it, so the load is its game caller; SaveWorld runs it on the corpses it saves. Deferred to M4.6 B4a and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgWorld, "Rising.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"The accrued soul pressure (not the dial's constant, D2), the band and stage last seen, the counters and the stream. Game.SaveWorld calls it.", "M4.6 B5"},
+	{sym(pkgWorld, "Rising.Snapshot"), BucketWire, VerdictLive,
+		"The accrued soul pressure (not the dial's constant, D2), the band and stage last seen, the counters and the stream. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Rising.Restore"), BucketWire, VerdictLive,
 		"The load puts the rising back after the corpses, its stream checked against the game seed (Game.resumeLoad). Deferred to M4.6 B4a and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Rising.Validate"), BucketWire, VerdictLive,
 		"The load's step 4 checks the rising block against the FILE's corpses (Game.checkLoad), and SaveWorld before writing it. Deferred to M4.6 B4a and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgWorld, "Combat.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"The model between fights: counters, records and the stream. Refuses during a fight (ErrCombatFighting) and while experience or paced minutes wait to be taken. Game.SaveWorld calls it, and its refusal is the save's FIGHTING.", "M4.6 B5"},
+	{sym(pkgWorld, "Combat.Snapshot"), BucketWire, VerdictLive,
+		"The model between fights: counters, records and the stream. Refuses during a fight (ErrCombatFighting) and while experience or paced minutes wait to be taken. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs), and its refusal is the save's FIGHTING. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Combat.Restore"), BucketWire, VerdictLive,
 		"The load puts the combat model back between fights -- counters, records, stream -- and derives the ROUND line's key from its last round (Game.resumeLoad). Deferred to M4.6 B4a and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Combat.Validate"), BucketWire, VerdictLive,
@@ -791,8 +798,8 @@ var Register = []Entry{
 	// The saved stream's one shape (the B2 review: B2a's and B2b's private
 	// copies made one, in d2rand) and its check. Dead with the snapshots that
 	// write and read it.
-	{sym("d2common/d2rand", "StateOf"), BucketDefer, VerdictHarnessOnly,
-		"A counted stream's {seed, draws} for the world file. Every Snapshot with a stream calls it.", "M4.6 B5"},
+	{sym("d2common/d2rand", "StateOf"), BucketWire, VerdictLive,
+		"A counted stream's {seed, draws} for the world file. Every Snapshot with a stream calls it, so the game's saves (M4.6 B5: the menu, the close hook, the dawn autosave) do. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	// StreamState.Check and SeedFor are harness-only since B3: d2save's
 	// World.Check refuses a file whose streams are not the seed's before
 	// SaveWorld writes it (strict at save). Their game caller is the load's
@@ -814,16 +821,16 @@ var Register = []Entry{
 	// class this register was built for. (The first draft of these rows sat in
 	// a file of their own, appended at init; they are here because the
 	// register lives in one place -- see RegisterMarkdown.)
-	{sym(pkgWorld, "Spawns.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"The spawn tables' state for the world file, members by entity id with the dead marked gone. Game.SaveWorld calls it.", "M4.6 B5"},
+	{sym(pkgWorld, "Spawns.Snapshot"), BucketWire, VerdictLive,
+		"The spawn tables' state for the world file, members by entity id with the dead marked gone. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Spawns.Restore"), BucketWire, VerdictLive,
 		"The load restores the tables whole -- every group with its members resolved to the entities step 3 rebuilt, the counters, stream, the minutes to the next check and the open bodies from the file (trap 5) -- through the game's Resolver (Game.resumeLoad). B4a restored a table holding no group; B4b the hunted night's packs. Deferred to M4.6 B4b and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgWorld, "Notice.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"Every watch, watcher by entity id and the player as the word player. Game.SaveWorld calls it.", "M4.6 B5"},
+	{sym(pkgWorld, "Notice.Snapshot"), BucketWire, VerdictLive,
+		"Every watch, watcher by entity id and the player as the word player. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Notice.Restore"), BucketWire, VerdictLive,
 		"The load restores every watch -- watcher and target resolved to the rebuilt entities or the player -- and the totals (Game.resumeLoad). B4a restored a model holding no watch; B4b the hunted night's. Deferred to M4.6 B4b and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgWorld, "Pursuit.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"Every chase, hunter by entity id and the player as the word player. Game.SaveWorld calls it.", "M4.6 B5"},
+	{sym(pkgWorld, "Pursuit.Snapshot"), BucketWire, VerdictLive,
+		"Every chase, hunter by entity id and the player as the word player. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Pursuit.Restore"), BucketWire, VerdictLive,
 		"The load restores every chase -- hunter and quarry resolved to the rebuilt entities or the player, the route in the hunter's own restored motion -- and the solve count (Game.resumeLoad). B4a restored a pursuit holding no chase; B4b the hunted night's. Deferred to M4.6 B4b and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Spawns.Validate"), BucketWire, VerdictLive,
@@ -832,24 +839,24 @@ var Register = []Entry{
 		"The load's step 4 checks the notice block through the game's Resolver (Game.checkLoad). Deferred to M4.6 B4b and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgWorld, "Pursuit.Validate"), BucketWire, VerdictLive,
 		"The load's step 4 checks the pursuit block through the game's Resolver (Game.checkLoad). Deferred to M4.6 B4b and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgWorld, "Spawns.CheckSnapshot"), BucketDefer, VerdictHarnessOnly,
-		"Validate's checks without its refusal of tables in use (the B3 review, B2): Game.SaveWorld runs it through its own Resolver. Validate does NOT call it -- both call the same b2bBuild -- so a load is never its caller: moved to wire by M4.6 B4a on that belief and measured harness-only by its reach gate (29 Sep 2026), so back to defer, for the save's game caller. Deferred to M4.6 B4b before that.", "M4.6 B5"},
-	{sym(pkgWorld, "Notice.CheckSnapshot"), BucketDefer, VerdictHarnessOnly,
-		"Validate's checks without its refusal of a model in use (the B3 review, B2): Game.SaveWorld runs it through its own Resolver. Validate does NOT call it -- both call the same b2bBuild -- so a load is never its caller: moved to wire by M4.6 B4a on that belief and measured harness-only by its reach gate (29 Sep 2026), so back to defer, for the save's game caller. Deferred to M4.6 B4b before that.", "M4.6 B5"},
-	{sym(pkgWorld, "Pursuit.CheckSnapshot"), BucketDefer, VerdictHarnessOnly,
-		"Validate's checks without its refusal of a pursuit in use (the B3 review, B2): Game.SaveWorld runs it through its own Resolver. Validate does NOT call it -- both call the same b2bBuild -- so a load is never its caller: moved to wire by M4.6 B4a on that belief and measured harness-only by its reach gate (29 Sep 2026), so back to defer, for the save's game caller. Deferred to M4.6 B4b before that.", "M4.6 B5"},
+	{sym(pkgWorld, "Spawns.CheckSnapshot"), BucketWire, VerdictLive,
+		"Validate's checks without its refusal of tables in use (the B3 review, B2): Game.SaveWorld runs it through its own Resolver, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Validate does NOT call it -- both call the same b2bBuild -- so a load is never its caller: moved to wire by M4.6 B4a on that belief and measured harness-only by its reach gate (29 Sep 2026), so back to defer, for the save's game caller. Deferred to M4.6 B4b before that. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
+	{sym(pkgWorld, "Notice.CheckSnapshot"), BucketWire, VerdictLive,
+		"Validate's checks without its refusal of a model in use (the B3 review, B2): Game.SaveWorld runs it through its own Resolver, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Validate does NOT call it -- both call the same b2bBuild -- so a load is never its caller: moved to wire by M4.6 B4a on that belief and measured harness-only by its reach gate (29 Sep 2026), so back to defer, for the save's game caller. Deferred to M4.6 B4b before that. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
+	{sym(pkgWorld, "Pursuit.CheckSnapshot"), BucketWire, VerdictLive,
+		"Validate's checks without its refusal of a pursuit in use (the B3 review, B2): Game.SaveWorld runs it through its own Resolver, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Validate does NOT call it -- both call the same b2bBuild -- so a load is never its caller: moved to wire by M4.6 B4a on that belief and measured harness-only by its reach gate (29 Sep 2026), so back to defer, for the save's game caller. Deferred to M4.6 B4b before that. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgMapEngine, "MapEngine.SetNextEntityID"), BucketWire, VerdictLive,
 		"The next-id seam through the engine: the next entity construction takes a saved id (NewNPC and NewCreature wear it, the rest spend it); an id already on the map is refused. The load's step 3 rebuilds every saved entity through it (Game.rebuildEntity). If it went dark every monster, risen man and deployed model would come back under a fresh id and every record naming him would name nobody. Deferred to M4.6 B4b and measured dead until M4.6 B4b (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgEntity, "MapEntityFactory.PendingEntityID"), BucketWire, VerdictLive,
 		"Whether a set id is still waiting. The load's step 3 refuses the file when anything is (Game.rebuildEntities). Deferred to M4.6 B4b and measured dead until M4.6 B4b (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgEntity, "Creature.MotionSnapshot"), BucketWire, VerdictLive,
 		"The load reads back every creature it re-keys or rebuilds and refuses one whose motion comes back other than saved (restoreMotionExactly, M4.6 B4b; B4a compared each villager with the file's native, Game.checkNatives); SaveWorld writes it into the entity list. Deferred to M4.6 B5 and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgEntity, "Creature.RestoreMotion"), BucketWire, VerdictLive,
-		"Puts a rebuilt creature -- a pack member, the risen -- back mid-stride, and a villager creature too (Game.rebuildEntity, Game.rekeyNatives), before Spawns.Validate checks each member stands where he was saved. Deferred to M4.6 B4b and measured dead until M4.6 B4b (29 Sep 2026); recorded before the row was edited.", ""},
+	{sym(pkgEntity, "Creature.ResumeMotion"), BucketWire, VerdictLive,
+		"Puts a rebuilt creature -- a pack member, the risen -- back mid-stride, and a villager creature too (Game.rebuildEntity, Game.rekeyNatives), before Spawns.Validate checks each member stands where he was saved. Was Creature.RestoreMotion's row (deferred to M4.6 B4b and measured dead until then, 29 Sep 2026); the BUG-87 review fixes (BUG-92) gave the load its own verb, which ends a held action the art no longer fits instead of refusing the night, and left RestoreMotion the unit tests' strict restore (not registered: no game caller, by design).", ""},
 	{sym(pkgEntity, "NPC.MotionSnapshot"), BucketWire, VerdictLive,
 		"The load reads back every NPC it re-keys or rebuilds and refuses one whose motion comes back other than saved (restoreMotionExactly, M4.6 B4b; B4a compared each villager with the file's native, Game.checkNatives); SaveWorld writes it into the entity list. Deferred to M4.6 B5 and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgEntity, "NPC.RestoreMotion"), BucketWire, VerdictLive,
-		"Puts a rebuilt inherited monster or deployed squad model back mid-stride, and a villager in the walk and pose he was saved in (Game.rebuildEntity, Game.rekeyNatives). Deferred to M4.6 B4b and measured dead until M4.6 B4b (29 Sep 2026); recorded before the row was edited.", ""},
+	{sym(pkgEntity, "NPC.ResumeMotion"), BucketWire, VerdictLive,
+		"Puts a rebuilt inherited monster or deployed squad model back mid-stride, and a villager in the walk and pose he was saved in (Game.rebuildEntity, Game.rekeyNatives). Was NPC.RestoreMotion's row (deferred to M4.6 B4b and measured dead until then, 29 Sep 2026); renamed with Creature.ResumeMotion's by the BUG-87 review fixes (BUG-92).", ""},
 	// M4.6 B4b -- THE LOAD'S ENTITY HALF: A HUNTED NIGHT RESUMES (29 Sep
 	// 2026). Step 3 of the load order, in CreateGame before the blocks are
 	// validated: the villagers re-keyed in place, every other entity rebuilt
@@ -863,7 +870,7 @@ var Register = []Entry{
 	{sym(pkgScreen, "Game.rekeyNatives"), BucketWire, VerdictLive,
 		"Step 3's villagers: matched by (name_key, born), re-keyed in place, their motion restored; one the file lacks taken off the map (B3-6).", ""},
 	{sym(pkgScreen, "Game.rebuildEntity"), BucketWire, VerdictLive,
-		"Step 3's other entities, one by one: SetNextEntityID, NewNPC or NewCreature by kind, the id checked, RestoreMotion, AddEntity.", ""},
+		"Step 3's other entities, one by one: SetNextEntityID, NewNPC or NewCreature by kind, the id checked, ResumeMotion (RestoreMotion until the BUG-87 review fixes), AddEntity.", ""},
 	{sym(pkgScreen, "Game.restoreBodies"), BucketWire, VerdictLive,
 		"The load puts every monster's health back from the file -- a wounded survivor at his wounds, the slain at 0 -- instead of the full health BodyOf would adopt (Game.resumeLoad).", ""},
 	{sym(pkgScreen, "Game.checkBodies"), BucketWire, VerdictLive,
@@ -875,36 +882,105 @@ var Register = []Entry{
 	// that is not a refusal.
 	{sym(pkgEntity, "mapEntity.halt"), BucketWire, VerdictLive,
 		"A monster's death ends its walk where it begins, without turning it (Creature.StartAction, NPC.StartAction, from Game.Animate as the resolver lays a monster dead). If it went dark a monster slain on its way in would walk on through its death, and its corpse come to rest away from where Combat.fallCorpse recorded the fall (BUG-75).", ""},
-	{sym(pkgScreen, "heldInFile"), BucketWire, VerdictLive,
-		"The load refuses an entity saved while it held an action -- ENTITY for a monster, NATIVES for a villager -- which it could only play again from its first frame (BUG-76). Game.rebuildEntity and Game.rekeyNatives call it.", ""},
 	{sym(pkgScreen, "Game.loadNote"), BucketWire, VerdictLive,
 		"What the load did that is not a refusal, in the load report and the log: a villager the file lacks taken off the map (BUG-79), an entity whose name this build gives otherwise (BUG-80). Game.rekeyNatives and Game.rebuildEntity call it.", ""},
-	{sym(pkgScreen, "Game.heldAction"), BucketDefer, VerdictHarnessOnly,
-		"The save's refusal while a monster or villager holds an action -- a swing, a blow taken, a death -- whose frame the file cannot carry (BUG-76). Game.SaveWorld reaches it through fightUnsettled.", "M4.6 B5"},
-	{sym(pkgScreen, "gameSpawner.Snapshot"), BucketDefer, VerdictHarnessOnly,
-		"The arrival count, which sets where the next pack comes from. Game.SaveWorld calls it.", "M4.6 B5"},
+	// M4.6 BUG-87 (29 Sep 2026): a held action is saved at its frame, and
+	// the two refusals above (heldInFile at the load, Game.heldAction at the
+	// save, BUG-76) are gone with their rows.
+	{sym(pkgAsset, "Composite.SetProgress"), BucketWire, VerdictLive,
+		"The load puts a rebuilt or re-keyed NPC's held action -- a swing, a blow taken, a death -- back at its saved frame and time into it (NPC.ResumeMotion, from Game.rebuildEntity and Game.rekeyNatives). If it went dark a monster saved half-way through its death would fall again from the first frame and lie later than the saved one (BUG-76's case, which the save no longer refuses). Since the BUG-87 review fixes (BUG-91) it refuses a time no play could have -- below the floor, or at or past one frame -- which crashed the game.", ""},
+	{sym(pkgAsset, "Animation.SetProgress"), BucketWire, VerdictLive,
+		"The same for a creature's held action, on its sheet (Creature.ResumeMotion), with the same refusal of a time no play could have (BUG-91); and a creature's turn puts its sheet back at the frame it held (Creature.rotate, BUG-89).", ""},
+	// THE BUG-87 REVIEW FIXES (29 Sep 2026): a held action's point checked
+	// against every art (BUG-91), and one this build's art no longer fits
+	// ended, not refused (BUG-92).
+	{sym(pkgEntity, "ActionProgress.Check"), BucketWire, VerdictLive,
+		"Refuses a held action's point no play of any art could have -- a negative frame, a time below d2asset.ElapsedFloor -- in the world file (d2save's World.Check, which the load's step 1 and the save run) and at the restore (Motion.check). If it went dark a file holding an NPC's swing at -1.0 s would be taken, and the resumed game panic drawing a negative frame (BUG-91).", ""},
+	{sym(pkgEntity, "heldActionMisfit"), BucketWire, VerdictLive,
+		"The line between an art change and a corrupt file for a held action (Creature.ResumeMotion, NPC.ResumeMotion, at the load): another mode, a frame the art lacks, or a time past one frame and short of the whole play is an art change, and the action is ended. If it went dark a save made mid-swing would refuse the whole night after any art pass that re-exported the sheet (BUG-92).", ""},
+	{sym(pkgScreen, "Game.noteEndedAction"), BucketWire, VerdictLive,
+		"Puts a held action the load ended in the load report -- ended_actions and a note, \"an animation could not be resumed exactly\" -- and the log (Game.rebuildEntity, Game.rekeyNatives). If it went dark an entity would differ from the saved moment with nothing to say why (BUG-92).", ""},
+	{sym(pkgScreen, "gameSpawner.Snapshot"), BucketWire, VerdictLive,
+		"The arrival count, which sets where the next pack comes from. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgScreen, "gameSpawner.Restore"), BucketWire, VerdictLive,
 		"The load puts the arrival count back after the spawns (Game.resumeLoad). Deferred to M4.6 B4b and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 
-	// M4.6 B3 -- THE FILE AND THE SAVE VERB (28 Sep 2026). Game.SaveWorld is
-	// harness-only until B5 gives it the game's callers (the menu, the close
-	// hook, the dawn autosave); what the save needs that the game ALREADY
-	// calls is wire -- the .od2's .bak generation, the sidecar's one
-	// document, the bestiary id a creature is saved by.
-	{sym(pkgScreen, "Game.SaveWorld"), BucketDefer, VerdictHarnessOnly,
-		"THE save verb: the world file, then the .od2, then the sidecar, then the death screen's copy re-taken; refused (touching no file) while fighting, talking, reading, choosing, dead or networked. The harness's strigoi_save_game calls it today; the escape menu, the close hook and the dawn autosave are B5's.", "M4.6 B5"},
-	{sym(pkgSave, "Encode"), BucketDefer, VerdictHarnessOnly,
-		"Writes the world file's bytes, every block in order (omit is the negative controls'). Game.SaveWorld calls it.", "M4.6 B5"},
-	{sym(pkgSave, "WriteWorld"), BucketDefer, VerdictHarnessOnly,
-		"The world file's write: the previous version-1 file kept as .bak, a file this build cannot read set aside unread (rule 7), then tmp + rename. Game.SaveWorld calls it.", "M4.6 B5"},
+	// M4.6 B3 -- THE FILE AND THE SAVE VERB (28 Sep 2026). Game.SaveWorld was
+	// harness-only until B5 gave it the game's callers (the menu, the close
+	// hook, the dawn autosave: M4.6 B5, 29 Sep 2026, below); what the save
+	// needs that the game ALREADY called is wire -- the .od2's .bak
+	// generation, the sidecar's one document, the bestiary id a creature is
+	// saved by.
+	{sym(pkgScreen, "Game.SaveWorld"), BucketWire, VerdictLive,
+		"THE save verb: the world file, then the .od2, then the sidecar, then the death screen's copy re-taken; refused (touching no file) while fighting, talking, reading, choosing, dead or networked. M4.6 B5 gave it the game's callers, each through Game.SaveWorldAs: the escape menu's SAVE GAME and SAVE AND EXIT GAME (Game.SaveFromMenu), the window's close (Game.CloseGame) and the dawn autosave (Game.advanceAutosave); the harness's strigoi_save_game too. If it went dark the player could not save at all. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
+	// M4.6 B5 -- THE SAVE REACHES THE PLAYER (29 Sep 2026). The game's own
+	// callers of the save, and what it tells him. Each is a wire row: if one
+	// went dark the save would be back to the harness's alone -- the hollow
+	// class, for the one feature Josh ruled must "stop at that point then
+	// resume at that point".
+	{sym(pkgScreen, "Game.SaveWorldAs"), BucketWire, VerdictLive,
+		"SaveWorld for one of its callers: records the last save for the save provider and takes a waiting dawn autosave (cover). The menu, the close hook and the dawn autosave call it.", ""},
+	{sym(pkgScreen, "Game.SaveFromMenu"), BucketWire, VerdictLive,
+		"The escape menu's SAVE GAME and SAVE AND EXIT GAME (d2player.MenuSaver, set by CreateGame): the save, \"Game saved.\", or the refusal in words. If it went dark the menu's save would do nothing.", ""},
+	{sym(pkgScreen, "Game.SaveRefusedNow"), BucketWire, VerdictLive,
+		"What the escape menu asks as it opens: why a save is refused now, in words, so it says so and offers EXIT WITHOUT SAVING (rule 2).", ""},
+	{sym(pkgPlayer, "EscapeMenu.SetSaver"), BucketWire, VerdictLive,
+		"Hands the escape menu the game's save (CreateGame). If it went dark SAVE GAME would save nothing and SAVE AND EXIT would leave unsaved.", ""},
+	{sym(pkgPlayer, "EscapeMenu.saveGame"), BucketWire, VerdictLive,
+		"SAVE GAME's entry: saved, the menu closes; refused, the menu says why.", ""},
+	{sym(pkgPlayer, "EscapeMenu.saveAndExit"), BucketWire, VerdictLive,
+		"The menu's exit entry: SAVE AND EXIT GAME saves, then leaves; EXIT WITHOUT SAVING leaves (rule 2). Before B5 SAVE AND EXIT wrote only the .od2 and sidecar.", ""},
+	{sym(pkgPlayer, "GameControls.SaveNotice"), BucketWire, VerdictLive,
+		"The save's and the load's line on the HUD: \"Game saved.\", the dawn's, a load set aside (rule 7).", ""},
+	{sym(pkgScreen, "Game.CloseGame"), BucketWire, VerdictLive,
+		"The close hook's game half (rule 3): SAVE AND EXIT's save, then the unload, under a limit so the close never hangs. App.closeTheGame calls it from the window's close.", ""},
+	{sym(pkgApp, "App.closeTheGame"), BucketWire, VerdictLive,
+		"The close hook: the game in play saved and unloaded, and no frame after it. The window's close (App.onWindowClose) and the harness's graceful quit call it.", ""},
+	{sym(pkgApp, "App.onWindowClose"), BucketWire, VerdictLive,
+		"The window's close button and Alt-F4, handed to the App by the renderer (SetCloseHandler in App.Run). If it went dark closing the window would lose everything since he last left through the menu, as before B5.", ""},
+	{sym(pkgRender, "Renderer.SetCloseHandler"), BucketWire, VerdictLive,
+		"Holds the window's close for the App's hook (ebiten.SetWindowClosingHandled) and ends the loop after it. App.Run calls it.", ""},
+	{sym(pkgScreen, "Game.armDawnAutosave"), BucketWire, VerdictLive,
+		"Rule 10: the dawn he lives to see arms the autosave, on the frame the night is paid (earnExperience). If it went dark no dawn would save.", ""},
+	{sym(pkgScreen, "Game.advanceAutosave"), BucketWire, VerdictLive,
+		"The dawn autosave, at the end of every frame: taken, or pending through every refused frame and dropped when night falls (Game.Advance).", ""},
+	{sym(pkgScreen, "Game.noticeTheLoad"), BucketWire, VerdictLive,
+		"Rule 7's telling: a load refused and set aside, or resumed with a villager gone, said on the HUD at the start of play (bindGameControls).", ""},
+	// THE M4.6 B5 REVIEW FIXES (29 Sep 2026): what keeps a close from leaving
+	// unsaved over a journal, a talk or the moment after a fight (A1), a
+	// failed save from tearing the last one (A2), a torn save from waking him
+	// at dawn (A2), a close from giving up inside a file (B1), and a file the
+	// load refused from being written over (B2). Each is a wire row: if one
+	// went dark its defect would be back, and the playtests' own saves --
+	// strigoi_save_game -- would never show it.
+	{sym(pkgScreen, "Game.settleForClose"), BucketWire, VerdictLive,
+		"The close's settle (A1, BUG-97): frames run while the save is refused FIGHTING with no fight of his, then the close saves. Game.closeNow calls it. If it went dark a close in the second after a fight would leave unsaved again.", ""},
+	{sym(pkgPlayer, "EscapeMenu.Dismiss"), BucketWire, VerdictLive,
+		"Puts the escape menu away for the close's settle (the world is paused under the menu, so a fight's end could not settle behind it). Game.settleForClose calls it.", ""},
+	{sym(pkgScreen, "Game.putBackWorld"), BucketWire, VerdictLive,
+		"A save that fails after its world file landed puts it back (A2, BUG-98), so the three files are the last save's and \"Your last save stands\" is true. SaveWorld's steps 2 and 3 call it.", ""},
+	{sym(pkgSave, "RestoreWorld"), BucketWire, VerdictLive,
+		"The world file put back from the .bak WriteWorld kept, or removed when there was none (A2). Game.putBackWorld calls it.", ""},
+	{sym(pkgScreen, "resumeTheBak"), BucketWire, VerdictLive,
+		"A TORN world file whose .bak is his sidecar's moment: the torn file set aside, the .bak resumed in its place (A2). PrepareLoad calls it. If it went dark a save cut off between its files would wake him at dawn, his last save only in the .bak.", ""},
+	{sym(pkgSave, "SetAsideTorn"), BucketWire, VerdictLive,
+		"A torn world file set aside as .torn.unread, a name that says what is wrong with it (C5, BUG-104). setAsideFor calls it for every TORN refusal.", ""},
+	{sym(pkgScreen, "setAsideRefusedWorld"), BucketWire, VerdictLive,
+		"A save's step 0 (B2, BUG-100): a world file the load refused and could not set aside is set aside before the save writes, never kept as the .bak; still held, the save is not made. SaveWorld calls it.", ""},
+	{sym(pkgItems, "CutWrites"), BucketWire, VerdictLive,
+		"The close's limit (B1, BUG-99): no write begins after it, and the one in flight is let finish, so the close gives up between files. waitForClose calls it through cutWrites.", ""},
+	{sym(pkgSave, "Encode"), BucketWire, VerdictLive,
+		"Writes the world file's bytes, every block in order (omit is the negative controls'). Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
+	{sym(pkgSave, "WriteWorld"), BucketWire, VerdictLive,
+		"The world file's write: the previous version-1 file kept as .bak, a file this build cannot read set aside unread (rule 7), then tmp + rename. Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgSave, "Decode"), BucketWire, VerdictLive,
 		"The load reads the world file with it before the game opens (d2gamescreen.PrepareLoad), refusing any version but 1 and any file no load could restore; SaveWorld reads back what it is about to write. Deferred to M4.6 B4a and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgSave, "World.Check"), BucketWire, VerdictLive,
 		"Decode calls it, so the load is its game caller. Deferred to M4.6 B4a and measured harness-only until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
-	{sym(pkgEntity, "Creature.CreatureID"), BucketDefer, VerdictHarnessOnly,
-		"The bestiary entry a creature is saved by (entities[].creature). Game.SaveWorld reads it; the load rebuilds from it.", "M4.6 B5"},
-	{sym(pkgEntity, "Player.Facing"), BucketDefer, VerdictHarnessOnly,
-		"The direction his body faces, saved as hero.facing (the B3 review, B6: the digest compares it and B3 dropped it). Game.SaveWorld reads it; the load sets it back.", "M4.6 B5"},
+	{sym(pkgEntity, "Creature.CreatureID"), BucketWire, VerdictLive,
+		"The bestiary entry a creature is saved by (entities[].creature). Game.SaveWorld reads it (since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave); the load rebuilds from it. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
+	{sym(pkgEntity, "Player.Facing"), BucketWire, VerdictLive,
+		"The direction his body faces, saved as hero.facing (the B3 review, B6: the digest compares it and B3 dropped it). Game.SaveWorld reads it (since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave); the load sets it back. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgSave, "World.CheckHeroFile"), BucketWire, VerdictLive,
 		"The load's step 1 refuses a world file beside another hero's .od2 and sets it aside (PrepareLoad). Deferred to M4.6 B4a and measured dead until M4.6 B4a (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgSave, "World.SameMoment"), BucketWire, VerdictLive,
@@ -963,7 +1039,7 @@ var Register = []Entry{
 	{sym(pkgHero, "DeleteHero"), BucketWire, VerdictLive,
 		"The hero screen's Delete: every file of his -- world file, .bak and .tmp generations, files set aside -- his .od2 last (the B3 review, A1). If it went dark the next hero made would inherit a deleted hero's world file.", ""},
 	{sym(pkgItems, "RenameRetrying"), BucketWire, VerdictLive,
-		"The Windows lesson as one function: a rename refused while a file is held is retried for half a second. WriteFileAtomic (every save) and the world file's setting aside go through it (the B3 review's C item).", ""},
+		"The Windows lesson as one function: a rename refused while a file is held is retried -- half a second of short waits, then longer ones, two seconds in all since the M4.6 B5 review (B1), which also made a rename still refused the write's failure, never an in-place write. WriteFileAtomic (every save) and the world file's setting aside go through it (the B3 review's C item).", ""},
 	{sym(pkgEntity, "Creature.SetCreatureID"), BucketWire, VerdictLive,
 		"The game spawner (and the terminal's spawnmon) records the bestiary entry beside every NewCreature, so every creature the game places can be saved and rebuilt. If it went dark, every creature would refuse the save.", ""},
 	{sym(pkgItems, "KeepGeneration"), BucketWire, VerdictLive,
@@ -1396,6 +1472,33 @@ var Register = []Entry{
 	{sym(pkgPalette, "Catalog.MapNote"), BucketDefer, VerdictDead,
 		"The open map's 'note' property verbatim -- the loader reads it and throws it away, so this is the only place it survives. The editor shows the STATUS the note produces, through Entry.Why, rather than the note itself.",
 		"World Editor v1: a note editor, since the note is also where the editor's own group data lives."},
+
+	// FOG OF WAR F1 (1 Oct 2026, fog-f1; docs/fog.md). Live behind -fog: the
+	// game screen always builds the fog and updates it every frame after
+	// MapEngine.Advance (Game.fogAdvance), and gives the renderer the sampler
+	// when -fog is on. The verbs and the probe's readers are the harness's.
+	{sym(pkgMapEngine, "MapEngine.TileSightClear"), BucketWire, VerdictLive,
+		"Fog's line of sight, tile-stepped, sharing sightBlocked with checkLos: Game.fogAdvance -> Fog.Update -> recompute -> sees asks it through mapTileSight every recompute.", ""},
+	{sym(pkgWorld, "NewFog"), BucketWire, VerdictLive,
+		"CreateGame builds every game's fog (newGameFog), on or off.", ""},
+	{sym(pkgWorld, "DefaultFogDials"), BucketWire, VerdictLive,
+		"The shipped dials (day sight 12, Josh's Q1), read by newGameFog.", ""},
+	{sym(pkgWorld, "Fog.Update"), BucketWire, VerdictLive,
+		"Game.fogAdvance calls it every frame after MapEngine.Advance when fog is on; it recomputes only when his tile changes.", ""},
+	{sym(pkgWorld, "Fog.FogAt"), BucketWire, VerdictLive,
+		"The renderer's FogSampler question, asked per tile per pass by tileDrawn/pushTileView and per entity by Shows.", ""},
+	{sym(pkgWorld, "Fog.MemoryLook"), BucketWire, VerdictLive,
+		"How remembered ground is drawn: pushTileView asks it for every explored, unseen tile.", ""},
+	{sym(pkgMapRenderer, "MapRenderer.SetFogSampler"), BucketWire, VerdictLive,
+		"Game.fogAdvance hands the renderer the fog (and fogDetach takes it back): the one switch between the fogged and the unfogged draw.", ""},
+	{sym(pkgMapRenderer, "MapRenderer.Shows"), BucketWire, VerdictLive,
+		"renderEntity's fog gate (entityShown): no one is drawn on ground he does not see now. get_entity's shown reads the same.", ""},
+	{sym(pkgScreen, "SetGameFog"), BucketWire, VerdictLive,
+		"d2app sets it from -fog before any game exists.", ""},
+	{sym(pkgMapEngine, "MapEngine.SetStructures"), BucketWire, VerdictLive,
+		"LayAuthoredMap hands the engine the authored map's structure footprints (pulled into F1, 1 Oct 2026), so fog shows a house whole once any of it is seen.", ""},
+	{sym(pkgMapEngine, "MapEngine.Structures"), BucketWire, VerdictLive,
+		"Fog reads the footprints when it sizes itself to the map (Fog.resize through mapTileSight, every new game with fog on).", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in

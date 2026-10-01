@@ -177,6 +177,10 @@ func (v *Game) earnExperience() {
 
 			// T4: a watch he promised the village, kept.
 			v.dawnWatch()
+
+			// M4.6 B5, rule 10: every dawn he lives to see saves the game,
+			// at the end of this frame (Advance: advanceAutosave).
+			v.armDawnAutosave(day)
 		}
 
 		v.lastStage = stage

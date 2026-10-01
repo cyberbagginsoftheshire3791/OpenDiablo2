@@ -186,11 +186,36 @@ func (c *Creature) setMode(mode creatureMode) error {
 	return c.animation.SetDirection(c.direction)
 }
 
+// rotate is the creature's directioner, which mapEntity.setTarget calls at
+// every waypoint of every route, whether the facing changes or not.
+//
+// A TURN TURNS THE SHEET; IT DOES NOT RESTART IT (M4.6 BUG-89, fixed by the
+// BUG-87 review fixes -- Josh's default (a)). The sheet's SetDirection puts
+// its frame back to 0, so a creature biting or flinching while it walked
+// started the action again at every waypoint: a feral dog's bite held 61
+// ticks at 1/60 s standing and 121 when it turned 20 ticks in. Now a waypoint
+// on the same facing is no turn at all (the guard NPC.rotate has always had),
+// and a real turn keeps the frame and the time into it, as an NPC's composite
+// mode does (and, since BUG-90, its layers). An action ends when its sheet
+// has played through once, turned or not. Nothing the fight resolves reads
+// it: blows are the combat model's (Game.Animate passes no callback), and a
+// death does not turn (halt) -- only how long a swing or a flinch is drawn.
 func (c *Creature) rotate(direction int) {
-	c.direction = direction
-	if c.animation != nil {
-		_ = c.animation.SetDirection(direction)
+	if direction == c.direction {
+		return
 	}
+
+	c.direction = direction
+	if c.animation == nil {
+		return
+	}
+
+	frame, elapsed := c.animation.Progress()
+	_ = c.animation.SetDirection(direction)
+
+	// Every facing of a sheet has the same frames, and elapsed is the time
+	// Advance left, so this is a restore of the sheet's own point.
+	_ = c.animation.SetProgress(frame, elapsed)
 }
 
 func creatureModeForMonsterMode(mode d2enum.MonsterAnimationMode) creatureMode {
@@ -289,6 +314,7 @@ func (c *Creature) HarnessState() map[string]interface{} {
 		state["held"] = ""
 	}
 
+	c.harnessHeldAt(state)
 	c.harnessMotion(state)
 
 	return state

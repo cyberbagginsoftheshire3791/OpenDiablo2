@@ -55,6 +55,7 @@ func TestSaveResumeNegatives(t *testing.T) {
 
 	s := start(t)
 	s.call("strigoi_pause", map[string]any{})
+	eveningHarness(t, s, ev) // a stale evening is refused, not compared (BUG-93)
 
 	type variant struct {
 		name   string

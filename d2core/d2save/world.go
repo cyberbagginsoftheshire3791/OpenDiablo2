@@ -71,9 +71,26 @@ import (
 // Josh plays between bursts, so this is his to know (the raid brief, section
 // 4; the R1 build note).
 //
+// VERSION 2, AMENDED ONCE (M4.6 BUG-87, 29 Sep 2026): an entity's motion
+// gained action_at -- a held action's frame and the time into it -- so a
+// swing, a blow taken or a death saved half-played resumes at its frame. The
+// same rule, taken by M4.6 before saving is a player's (B5): no bump. A
+// version-2 file from before it that holds an action cannot exist -- the save
+// refused while one was held (BUG-76) -- and one that did would be refused at
+// the load's step 3 (ENTITY, NATIVES: RestoreMotion refuses a held action
+// that carries no frame). One that holds none is the same file either side
+// of the amendment: action_at is written only with an action.
+//
+// SAVING IS A PLAYER'S SINCE THE SAVE-HELD x B5 MERGE (29 Sep 2026): the
+// escape menu, the window's close and the dawn write world files in his own
+// folder now, so an amendment from here on is refused FILE in every save he
+// has made -- set aside, never read with a field at zero and never lost, but
+// his to know before it ships. The golden file and its shape hash stood
+// through the merge (B5 changed no shape).
+//
 // VERSION 3 (the raid's R2, 29 Sep 2026, and its review fixes, 1 Oct 2026).
-// The rule above is OVERTURNED by Josh's ruling of 30 Sep: every shape change
-// bumps Version -- saving is a player's since B5, so a file of his is in play.
+// Josh's ruling of 30 Sep: every shape change bumps Version from here on --
+// saving is a player's since B5, so a file of his is in play.
 // Version 3 adds notice.watches[].side (a watch is hostile or living), a new
 // top-level block, seek (who the night's hunters choose among the living:
 // its rows with their dwell, its stand-ins, phases and four totals), and
@@ -877,8 +894,25 @@ func (w *World) checkEntities() error {
 			nums = append(nums, e.Born[0], e.Born[1])
 		}
 
+		// A held action's time into its frame (BUG-87).
+		if e.Motion.ActionAt != nil {
+			nums = append(nums, e.Motion.ActionAt.Elapsed)
+		}
+
 		if err := finite(what, nums...); err != nil {
 			return refuse(ReasonEntityFinite, "%v", err)
+		}
+
+		// And a held action's point is one a play can have (the BUG-87
+		// review's B1, BUG-91: an NPC's swing at -1.0 s crashed the game): no
+		// negative frame, no time below the floor. Its ceiling -- one frame's
+		// length -- is the art's, which this package does not know; the
+		// load's restore holds it (d2mapentity's ResumeMotion, d2asset's
+		// SetProgress), and refuses ENTITY or NATIVES.
+		if at := e.Motion.ActionAt; at != nil {
+			if err := at.Check(); err != nil {
+				return refuse(ReasonEntityFinite, "%s: its held %q %v", what, e.Motion.Action, err)
+			}
 		}
 
 		if err := samePlace(what, e.X, e.Y, e.Motion.Pos); err != nil {

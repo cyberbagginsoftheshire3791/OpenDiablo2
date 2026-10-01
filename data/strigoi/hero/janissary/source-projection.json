@@ -1,0 +1,266 @@
+{
+  "protected_inputs": {
+    "source\\heroes\\janissary-rebuild-q3.blend": "a6f5d9f9f19afb97975cc7e81c20549db22fc95f443b26c2f7533fb47358a6cb",
+    "source\\heroes\\janissary-rebuild-v9.blend": "c32d679b0f5478f375d85748914cccd4a68996cd615756ad63c49cf5a9363b20",
+    "source\\heroes\\janissary-rebuild-v10.blend": "941b66eaff58e4fc63c636ee2d3166c10b3b9fd0694176ef4d8c53c2601f5e37"
+  },
+  "source": "source/heroes/janissary-game-v1.blend",
+  "bindings": [
+    {
+      "object": "Mail - Game Baked Continuous Weave",
+      "vertices": 9626,
+      "neutral_error": 2.6656007498500226E-07,
+      "minimum_skin_determinant": 0.9285836219787598
+    },
+    {
+      "object": "Harness - Back Baldric",
+      "vertices": 165,
+      "neutral_error": 1.4901161193847656E-07,
+      "minimum_skin_determinant": 0.9382267594337463
+    },
+    {
+      "object": "Harness - Bow Grip Keeper",
+      "vertices": 125,
+      "neutral_error": 1.4901161193847656E-07,
+      "minimum_skin_determinant": 0.9999998211860657
+    },
+    {
+      "object": "Harness - Bow Shoulder Support",
+      "vertices": 125,
+      "neutral_error": 2.497889789080651E-07,
+      "minimum_skin_determinant": 0.92866450548172
+    },
+    {
+      "object": "Harness - Front Baldric",
+      "vertices": 205,
+      "neutral_error": 2.388837865275353E-07,
+      "minimum_skin_determinant": 0.9290511012077332
+    },
+    {
+      "object": "Harness - Quiver Upper Keeper",
+      "vertices": 125,
+      "neutral_error": 1.6858739404357614E-07,
+      "minimum_skin_determinant": 0.9437717795372009
+    },
+    {
+      "object": "Harness - Shoulder Turn",
+      "vertices": 585,
+      "neutral_error": 2.602375924076584E-07,
+      "minimum_skin_determinant": 0.9486606121063232
+    },
+    {
+      "object": "Harness - Waist Return",
+      "vertices": 125,
+      "neutral_error": 7.450580596923828E-09,
+      "minimum_skin_determinant": 0.9999998211860657
+    },
+    {
+      "object": "Mail - Neck Binding",
+      "vertices": 5040,
+      "neutral_error": 0.0,
+      "minimum_skin_determinant": 1.0
+    },
+    {
+      "object": "Mail - Sleeve L Binding",
+      "vertices": 1680,
+      "neutral_error": 2.5463115409962923E-07,
+      "minimum_skin_determinant": 1.0
+    },
+    {
+      "object": "Mail - Sleeve R Binding",
+      "vertices": 1680,
+      "neutral_error": 2.6656007498500226E-07,
+      "minimum_skin_determinant": 1.0
+    },
+    {
+      "object": "Dolama - Back Right Hem",
+      "vertices": 4930,
+      "neutral_error": 1.4901161193847656E-08,
+      "minimum_skin_determinant": 0.9999999403953552
+    },
+    {
+      "object": "Dolama - Back Left Hem",
+      "vertices": 4930,
+      "neutral_error": 1.4901161193847656E-08,
+      "minimum_skin_determinant": 0.9999999403953552
+    },
+    {
+      "object": "Dolama - Front Underlap Hem",
+      "vertices": 4930,
+      "neutral_error": 1.4901161193847656E-08,
+      "minimum_skin_determinant": 0.9999999403953552
+    },
+    {
+      "object": "Dolama - Front Underlap Turned Edge",
+      "vertices": 970,
+      "neutral_error": 5.960646373703944E-08,
+      "minimum_skin_determinant": 0.9999998211860657
+    },
+    {
+      "object": "Dolama - Front Overlap Hem",
+      "vertices": 4930,
+      "neutral_error": 1.4901161193847656E-08,
+      "minimum_skin_determinant": 0.9999999403953552
+    },
+    {
+      "object": "Dolama - Front Overlap Turned Edge",
+      "vertices": 970,
+      "neutral_error": 1.4930236657970956E-08,
+      "minimum_skin_determinant": 0.9999998211860657
+    },
+    {
+      "object": "Boots - Outside Shaft Seam L",
+      "vertices": 610,
+      "neutral_error": 1.4901161193847656E-08,
+      "minimum_skin_determinant": 0.9999999403953552
+    },
+    {
+      "object": "Boots - Outside Shaft Seam R",
+      "vertices": 610,
+      "neutral_error": 1.4901161193847656E-08,
+      "minimum_skin_determinant": 0.9999999403953552
+    },
+    {
+      "object": "Boots - Fitted Vamp Seam L",
+      "vertices": 9600,
+      "neutral_error": 0.0,
+      "minimum_skin_determinant": 1.0
+    },
+    {
+      "object": "Boots - Fitted Vamp Seam R",
+      "vertices": 9600,
+      "neutral_error": 0.0,
+      "minimum_skin_determinant": 1.0
+    }
+  ],
+  "locomotion_ground_corrections": {
+    "JANISSARY_REBUILD_WALK": {
+      "max_lift": 0.035208236426115036,
+      "frames": 25,
+      "airborne_phases_retained": true
+    },
+    "JANISSARY_REBUILD_RUN": {
+      "max_lift": 0.03837141767144203,
+      "frames": 17,
+      "airborne_phases_retained": true
+    }
+  },
+  "source_sha256": "6d09436302a3072453e32cc46df999dc28feac1fc36dcc0eea0a2e19ac78a769",
+  "actions": {
+    "JANISSARY_GAME_ATTACK": [
+      1.0,
+      18.0
+    ],
+    "JANISSARY_GAME_BLOCK": [
+      1.0,
+      12.0
+    ],
+    "JANISSARY_GAME_DEATH": [
+      1.0,
+      22.0
+    ],
+    "JANISSARY_GAME_HIT": [
+      1.0,
+      10.0
+    ],
+    "JANISSARY_REBUILD_IDLE": [
+      1.0,
+      33.0
+    ],
+    "JANISSARY_REBUILD_RUN": [
+      1.0,
+      17.0
+    ],
+    "JANISSARY_REBUILD_WALK": [
+      1.0,
+      25.0
+    ]
+  },
+  "rig": "Janissary Rebuild Rig",
+  "direction_root": "Janissary Game Root",
+  "camera": "Janissary Game Camera",
+  "ortho_scale": 3.0,
+  "root_pixel": [
+    64,
+    96
+  ],
+  "packed_images": [
+    "Game Q3 Mail EMIT",
+    "Game Q3 Mail NORMAL"
+  ],
+  "protected_unchanged": true,
+  "neutral_sole_projection": {
+    "0": {
+      "world_min_z": -4.019572230617996E-09,
+      "pixel_bounds": [
+        51.0156364440918,
+        91.2976188659668,
+        71.63327026367188,
+        102.40224266052246
+      ]
+    },
+    "-90": {
+      "world_min_z": -4.019572230617996E-09,
+      "pixel_bounds": [
+        51.0156364440918,
+        88.63290023803711,
+        71.63327026367188,
+        99.74695777893066
+      ]
+    },
+    "180": {
+      "world_min_z": -4.019572230617996E-09,
+      "pixel_bounds": [
+        56.36669921875,
+        88.63290023803711,
+        76.98432922363281,
+        99.74696159362793
+      ]
+    },
+    "90": {
+      "world_min_z": -4.019572230617996E-09,
+      "pixel_bounds": [
+        56.36669921875,
+        91.2976188659668,
+        76.98432922363281,
+        102.40224266052246
+      ]
+    },
+    "45": {
+      "world_min_z": -4.019572230617996E-09,
+      "pixel_bounds": [
+        53.45421600341797,
+        93.65902709960938,
+        74.5457534790039,
+        100.4630355834961
+      ]
+    },
+    "-45": {
+      "world_min_z": -4.019572230617996E-09,
+      "pixel_bounds": [
+        54.879085540771484,
+        89.83273696899414,
+        66.93102264404297,
+        101.22012901306152
+      ]
+    },
+    "-135": {
+      "world_min_z": -4.019572230617996E-09,
+      "pixel_bounds": [
+        53.45421600341797,
+        90.56843185424805,
+        74.5457534790039,
+        97.37640380859375
+      ]
+    },
+    "135": {
+      "world_min_z": -4.019572230617996E-09,
+      "pixel_bounds": [
+        61.06894302368164,
+        89.83273696899414,
+        73.12088012695312,
+        101.22012901306152
+      ]
+    }
+  }
+}

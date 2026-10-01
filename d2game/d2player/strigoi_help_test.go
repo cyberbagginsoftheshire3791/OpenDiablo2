@@ -32,7 +32,9 @@ func TestStrigoiHelpNamesTheKeys(t *testing.T) {
 
 	// The right button is the torch, as L is (Josh, 25 Sep 2026); the help
 	// said only L until the tables burst's review (27 Sep 2026).
-	for _, verb := range []string{"strike", "torch", "right button lights or douses", "kit", "talents", "talk", "Esc", "Q opens your journal"} {
+	// M4.6 B5: the menu's save, and the dawn's.
+	for _, verb := range []string{"strike", "torch", "right button lights or douses", "kit", "talents", "talk", "Esc", "Q opens your journal",
+		"SAVE GAME", "Every dawn"} {
 		if !strings.Contains(all, verb) {
 			t.Errorf("the help never mentions %q", verb)
 		}

@@ -99,6 +99,11 @@ type App struct {
 	// has fully gone (death screen v0's "load last save"; see ReloadGame).
 	reloadPath   string
 	reloadFrames int
+
+	// closed is the close hook having run (M4.6 B5, close.go): the game in
+	// play was saved and unloaded, and no frame runs after it -- the window
+	// is closing, or the harness's graceful quit is about to end the process.
+	closed bool
 }
 
 // Options is used to store all of the app options that can be set with arguments
@@ -260,6 +265,11 @@ func (a *App) parseArguments() {
 	authoredMap := flag.String("map", "", "the authored Tiled map played on (default "+defaultMap+"; diablo = Diablo II's generated Act 1)")
 	editorFlag := &editorFlagValue{}
 	flag.Var(editorFlag, "editor", "open the World Editor on a map instead of the main menu (default "+defaultMap+"): -editor, -editor <path> or -editor=<path>")
+	zoom := flag.Float64("zoom", 1.0, "the game's view scale, "+
+		"0.4 (zoomed out: everything drawn at 0.4 size, the world's distances unchanged) through 1.0 (the shipped view) to 2.0 (zoomed in); "+
+		"the mouse wheel steps it by 0.1 in a game")
+	fog := flag.Bool("fog", false, "fog of war (F1, by day): ground he has not seen is black, ground he saw and does not see now is greyed "+
+		"and shows no one; off by default, and always off under -classic, in a network game and in the World Editor (docs/fog.md)")
 	serverPort := flag.String("server-port", "6669", "the port a local game's server listens on for other players (0 = any free port, which is how the playtest harness runs several games at once)")
 
 	flag.Usage = func() {
@@ -287,6 +297,8 @@ func (a *App) parseArguments() {
 	a.Options.classic = *classic
 
 	d2server.SetPort(*serverPort)
+	d2gamescreen.SetGameZoom(*zoom)
+	d2gamescreen.SetGameFog(*fog)
 
 	d2mapgen.SetAuthoredMap(launch.Map)
 	d2mapentity.SetHeroArt(launch.Hero)
@@ -400,6 +412,13 @@ func (a *App) Run() (err error) {
 		a.ToMainMenu()
 	}
 
+	// M4.6 B5, the build plan's rule 3: closing the window -- its close
+	// button, Alt-F4 -- does what the escape menu's SAVE AND EXIT GAME does
+	// (close.go). The renderer calls the hook, then ends the loop.
+	if r, ok := a.renderer.(windowCloseHandled); ok {
+		r.SetCloseHandler(a.onWindowClose)
+	}
+
 	a.harnessStart() // no-op unless built with -tags harness and run with -harness
 
 	if err := a.renderer.Run(a.update, a.advance, 800, 600, windowTitle); err != nil {
@@ -491,6 +510,11 @@ func (a *App) render(target d2interface.Surface) {
 }
 
 func (a *App) advance() error {
+	// M4.6 B5: nothing runs after the close hook (close.go).
+	if a.closed {
+		return nil
+	}
+
 	a.harnessDrainUpdate() // no-op unless built with -tags harness
 
 	// While the harness holds the simulation paused, frames advance with zero
@@ -537,6 +561,11 @@ func (a *App) advanceOnce(elapsedUnscaled, elapsed, elapsedLastScreenAdvance, cu
 }
 
 func (a *App) update(target d2interface.Surface) error {
+	// M4.6 B5: an unloaded game screen is never drawn (close.go).
+	if a.closed {
+		return nil
+	}
+
 	a.render(target)
 
 	if target.GetDepth() > 0 {

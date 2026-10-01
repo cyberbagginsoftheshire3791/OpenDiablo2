@@ -365,7 +365,12 @@
         ],
         "speed": 6,
         "dir": 3,
-        "mode": "walk"
+        "mode": "attack",
+        "action": "attack",
+        "action_at": {
+          "frame": 4,
+          "elapsed": 0.0125
+        }
       }
     },
     {

@@ -12,6 +12,17 @@ and an image generator asked for "an isometric wolf" will hand back a beautiful
 
 ---
 
+> **[1 Oct 2026 — the camera scale.]** The game is moving to a Dawn of War 2-scale
+> camera: the world is drawn at about **0.5** on this 800×600 screen (`-zoom`, the
+> wheel; see `docs/camera.md`), and later at 1.0 on a screen of about twice the
+> resolution. **Author at the native scale, unchanged:** orthographic, 30° elevation,
+> 45° azimuth, light upper-left, **42.7 px per metre** (the Janissary rig: 128 px cell,
+> ortho scale 3); a 160×80 tile is about 2.65 m square. Every structure and prop goes
+> through the same px-per-metre (the old house and hearth rigs measured ~2.1× and must
+> be re-rendered). Judge every sheet at **50% (box filter)** and darkened: silhouette and
+> big colour blocks carry it; detail under ~4 art px and lines under 2 px are lost.
+> Record: the project's `claude/rulings-2026-10-01-camera-scale-and-fog.md`.
+
 ## 0. What the game is — give the generator this context first
 
 Wallachia, June 1462, in the days after the Night Attack at Târgoviște. A
@@ -217,6 +228,15 @@ rule:
   median over the frames);
 * a lying sheet (death, dead) takes its idle sheet's offsets, or the body jumps
   when it falls.
+
+For a calibrated 3D export, the projected ground root is stronger evidence
+than the lowest-alpha heuristic: a boot occupies an area of the ground and
+its front toe projects below that area's centre. The rebuilt Janissary pins
+his measured root to (64,96) in a 128px cell, offsets (-64,+32), for every
+motion. His anchor test keeps those exact values and allows up to 8px for
+the finite boot footprint; other assets retain their 4px heuristic. Source
+projection evidence is retained with the hero, and wrong-offset controls
+must still fail.
 
 `tools/spritestitch` writes both from the frames it stitches (pass
 `-anchor-from <the idle sheet's .png.json>` for death and dead). `TestGroundSheetsStandOnTheirFootPoint`

@@ -49,7 +49,7 @@ func b2bCreatureClass() b2bMotionClass {
 		"mapEntity":  "W: embedded; its fields are labelled as mapEntity's",
 		"name":       "D: the bestiary's name, given by NewCreature at rebuild",
 		"animations": "W: the sheets NewCreature loads",
-		"animation":  "D: the current mode's sheet, set by setMode from mode and action at restore",
+		"animation":  "S:action_at", // while an action is held, its frame and the time into it (BUG-87); the sheet itself is set by setMode from mode and action, and a sheet that is not held restarts at its first frame
 		"mode":       "S:mode",
 		"direction":  "S:dir",
 		"held":       "S:action",
@@ -66,7 +66,7 @@ func b2bNPCClass() b2bMotionClass {
 		"mapEntity":      "W: embedded; its fields are labelled as mapEntity's",
 		"Paths":          "D: a villager's patrol, rebuilt by the map with the villagers (build plan section 1)",
 		"name":           "D: the monstat's name, given by NewNPC at rebuild",
-		"composite":      "D: rebuilt by NewNPC from the monstat; its mode and facing are saved as mode and dir and set back on it (needs MPQs: B4b's playtest carries it)",
+		"composite":      "S:action_at", // rebuilt by NewNPC from the monstat; its mode and facing are saved as mode and dir, and while an action is held its mode's frame and time as action_at (BUG-87), and set back on it (needs MPQs: the playtests carry it; d2asset's TestACompositeResumesAtItsProgress the frame)
 		"action":         "D: a villager's patrol step; only villagers patrol",
 		"path":           "D: a villager's patrol index; only villagers patrol",
 		"repetitions":    "D: a villager's patrol count; only villagers patrol",
@@ -86,7 +86,7 @@ func b2bNPCClass() b2bMotionClass {
 func b2bMotionKeys(t *testing.T) map[string]bool {
 	t.Helper()
 
-	raw, err := json.Marshal(Motion{Action: "x", Corpse: true}) // the omitempty keys written too
+	raw, err := json.Marshal(Motion{Action: "x", ActionAt: &ActionProgress{}, Corpse: true}) // the omitempty keys written too
 	require.NoError(t, err)
 
 	var tree map[string]interface{}

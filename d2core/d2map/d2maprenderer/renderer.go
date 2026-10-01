@@ -67,6 +67,10 @@ type MapRenderer struct {
 	// which is exactly how this renderer behaved before there was light.
 	lightSampler LightSampler
 
+	// fogSampler is what the player has seen (fog of war F1, fog.go). nil is
+	// no fog, which is exactly how this renderer drew before there was fog.
+	fogSampler FogSampler
+
 	*d2util.Logger
 }
 
@@ -226,8 +230,8 @@ func (mr *MapRenderer) ScreenToWorld(x, y int) (worldX, worldY float64) {
 	return mr.viewport.ScreenToWorld(x, y)
 }
 
-// Scale returns the viewport's zoom. 1.0 is unzoomed, which is the only value
-// the shipped game uses.
+// Scale returns the viewport's zoom. 1.0 is unzoomed, which is the shipped
+// game's default; -zoom and the game's wheel take it down to 0.4.
 func (mr *MapRenderer) Scale() float64 {
 	return mr.viewport.Scale()
 }
@@ -270,11 +274,15 @@ func (mr *MapRenderer) WorldToOrtho(x, y float64) (orthoX, orthoY float64) {
 func (mr *MapRenderer) renderPass1(target d2interface.Surface, startX, startY, endX, endY int) {
 	for tileY := startY; tileY < endY; tileY++ {
 		for tileX := startX; tileX < endX; tileX++ {
+			if !mr.tileDrawn(tileX, tileY) {
+				continue
+			}
+
 			tile := mr.mapEngine.TileAt(tileX, tileY)
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
-			mr.pushTileLight(target, tileX, tileY)
+			pushed := mr.pushTileView(target, tileX, tileY)
 			mr.renderTilePass1(tile, target)
-			target.Pop()
+			popTileView(target, pushed)
 			mr.viewport.PopTranslation()
 		}
 	}
@@ -284,8 +292,12 @@ func (mr *MapRenderer) renderPass1(target d2interface.Surface, startX, startY, e
 func (mr *MapRenderer) renderPass2(target d2interface.Surface, startX, startY, endX, endY int) {
 	for tileY := startY; tileY < endY; tileY++ {
 		for tileX := startX; tileX < endX; tileX++ {
+			if !mr.tileDrawn(tileX, tileY) {
+				continue
+			}
+
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
-			mr.pushTileLight(target, tileX, tileY)
+			pushed := mr.pushTileView(target, tileX, tileY)
 
 			tileEnt := mr.getEntitiesBelowWalls(tileX, tileY)
 
@@ -298,13 +310,13 @@ func (mr *MapRenderer) renderPass2(target d2interface.Surface, startX, startY, e
 						}
 
 						target.PushTranslation(mr.viewport.GetTranslationScreen())
-						mapEntity.Render(target)
+						mr.renderEntity(target, mapEntity)
 						target.Pop()
 					}
 				}
 			}
 
-			target.Pop()
+			popTileView(target, pushed)
 			mr.viewport.PopTranslation()
 		}
 	}
@@ -338,9 +350,13 @@ func (mr *MapRenderer) getEntitiesBelowWalls(tileX, tileY int) []d2interface.Map
 func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, endX, endY int) {
 	for tileY := startY; tileY < endY; tileY++ {
 		for tileX := startX; tileX < endX; tileX++ {
+			if !mr.tileDrawn(tileX, tileY) {
+				continue
+			}
+
 			tile := mr.mapEngine.TileAt(tileX, tileY)
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
-			mr.pushTileLight(target, tileX, tileY)
+			pushed := mr.pushTileView(target, tileX, tileY)
 			mr.renderTilePass2(tile, target)
 
 			entities := mr.getEntitiesAboveWalls(tileX, tileY)
@@ -354,13 +370,13 @@ func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, e
 						}
 
 						target.PushTranslation(mr.viewport.GetTranslationScreen())
-						entity.Render(target)
+						mr.renderEntity(target, entity)
 						target.Pop()
 					}
 				}
 			}
 
-			target.Pop()
+			popTileView(target, pushed)
 			mr.viewport.PopTranslation()
 		}
 	}
@@ -394,11 +410,15 @@ func (mr *MapRenderer) getEntitiesAboveWalls(tileX, tileY int) []d2interface.Map
 func (mr *MapRenderer) renderPass4(target d2interface.Surface, startX, startY, endX, endY int) {
 	for tileY := startY; tileY < endY; tileY++ {
 		for tileX := startX; tileX < endX; tileX++ {
+			if !mr.tileDrawn(tileX, tileY) {
+				continue
+			}
+
 			tile := mr.mapEngine.TileAt(tileX, tileY)
 			mr.viewport.PushTranslationWorld(float64(tileX), float64(tileY))
-			mr.pushTileLight(target, tileX, tileY)
+			pushed := mr.pushTileView(target, tileX, tileY)
 			mr.renderTilePass3(tile, target)
-			target.Pop()
+			popTileView(target, pushed)
 			mr.viewport.PopTranslation()
 		}
 	}
@@ -608,6 +628,8 @@ func (mr *MapRenderer) renderEntityDebug(target d2interface.Surface) {
 		entScreenX := int(math.Floor(entScreenXf))
 		entScreenY := int(math.Floor(entScreenYf))
 		entityWidth, entityHeight := e.GetSize()
+		// The debug box is the sprite as drawn, at the view's scale.
+		entityWidth, entityHeight = mr.ScaleLength(entityWidth), mr.ScaleLength(entityHeight)
 		halfWidth, halfHeight := entityWidth/two, entityHeight/two
 		l, r := entScreenX-halfWidth, entScreenX+halfWidth
 		t, b := entScreenY-halfHeight, entScreenY+halfHeight

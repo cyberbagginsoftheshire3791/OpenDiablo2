@@ -28,9 +28,11 @@ import (
 //     because it carries a measured Windows lesson: the rename can be refused
 //     while anything else holds the target open -- a polling reader, an
 //     antivirus scan, the search indexer, Explorer's preview -- so it retries
-//     for half a second and then writes in place, because a save that is not
-//     atomic beats a save that is not made (sidecar.go:120-128). <path>.tmp is
-//     the file in flight, which is the convention already in the tree.
+//     the rename (two seconds, the waits growing). Since the M4.6 B5 review
+//     (B1, BUG-99) it never writes in place: a rename still refused is the
+//     save's failure, and the file on disk is the last one saved, whole.
+//     <path>.tmp is the file in flight, which is the convention already in
+//     the tree.
 //   - It refuses to write into the player's save namespace. See ErrPlayerSaves.
 
 // ErrPlayerSaves means the path is inside the directory the game keeps heroes

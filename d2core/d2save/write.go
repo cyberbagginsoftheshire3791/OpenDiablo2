@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 )
@@ -38,6 +39,15 @@ func UnreadPath(path, version string) string {
 }
 
 var wholeNumber = regexp.MustCompile(`^-?[0-9]+$`)
+
+// TornPath is where a world file the load refused TORN is set aside:
+// N.od2.world.json.torn.unread (the M4.6 B5 review, C5; BUG-104). A torn
+// file is of this build's version -- the version is not what is wrong with
+// it -- so the name says what is: a save cut off between its files. Before,
+// it went to .v2.unread, a name that reads "another version".
+func TornPath(path string) string {
+	return path + ".torn.unread"
+}
 
 // Written says what WriteWorld did.
 type Written struct {
@@ -110,6 +120,62 @@ func WriteWorld(path string, data []byte) (Written, error) {
 	return out, nil
 }
 
+// RestoreWorld undoes a WriteWorld that went through (the M4.6 B5 review, A2;
+// BUG-98): the save wrote the world file and a later file of the same save --
+// his .od2, his sidecar -- could not be written, so the three files would be
+// two moments and the next load would refuse the world file TORN. It puts
+// back what w replaced:
+//
+//   - a previous save kept as w.Bak: its bytes go back at w.Path, through
+//     WriteFileAtomic, and the .bak keeps them too;
+//   - no previous save (none there, or one this build could not read, which
+//     WriteWorld set aside and which STAYS aside -- rule 7): the new file is
+//     removed, and the next load finds no world file, as before the save.
+//
+// It checks nothing about the bytes it puts back: they are the file that was
+// there, which WriteWorld read as a current save before keeping it.
+func RestoreWorld(w Written) error {
+	if w.Path == "" {
+		return errors.New("d2save: no world file to put back")
+	}
+
+	if w.Bak == "" {
+		if err := removeRetrying(w.Path); err != nil {
+			return fmt.Errorf("d2save: removing the world file this save wrote: %w", err)
+		}
+
+		return nil
+	}
+
+	old, err := os.ReadFile(w.Bak) // nolint:gosec // the hero's own save
+	if err != nil {
+		return fmt.Errorf("d2save: reading the previous save to put it back: %w", err)
+	}
+
+	if err := d2items.WriteFileAtomic(w.Path, old); err != nil {
+		return fmt.Errorf("d2save: putting the previous save back: %w", err)
+	}
+
+	return nil
+}
+
+// removeRetrying removes a file, retrying for half a second while Windows
+// refuses it (a reader or a scanner holding it: WriteFileAtomic's lesson).
+// A file already gone is not an error.
+func removeRetrying(path string) error {
+	var err error
+
+	for i := 0; i < 20; i++ {
+		if err = os.Remove(path); err == nil || errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	return err
+}
+
 // readable reports whether a file of this Version is one this build reads: the
 // only kind WriteWorld keeps as the .bak.
 func readable(data []byte) bool {
@@ -123,7 +189,8 @@ func readable(data []byte) bool {
 // why, it is set aside, and you begin at dawn"), and says where it went. The
 // name carries the version the file holds, as WriteWorld's setting aside does
 // -- N.od2.world.json.v<Version>.unread for a file of this build's version
-// the load refused (another hero's, a torn save, a changed map), and the
+// the load refused (another hero's, a changed map; a torn save goes to
+// TornPath since the B5 review, SetAsideTorn), and the
 // version it holds for any other: .v<Version+1>.unread for a newer build's,
 // .v<Version-1>.unread for an older one's after a bump (rule 7: no
 // migration) -- under
@@ -146,12 +213,29 @@ func SetAside(path string) (string, error) {
 	return setAside(path, VersionOf(data))
 }
 
+// SetAsideTorn is SetAside for a file the load refused TORN: it goes to
+// TornPath (or TornPath + ".1", ".2", ... if that is taken), named for what is
+// wrong with it (the M4.6 B5 review, C5). A file that is not there is an
+// error before the move, as SetAside's is.
+func SetAsideTorn(path string) (string, error) {
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("d2save: the world file to set aside: %w", err)
+	}
+
+	return setAsideAt(path, TornPath(path))
+}
+
 // setAside moves the file at path to UnreadPath, or to the first of
 // UnreadPath + ".1", ".2", ... that nothing holds. The move is retried while
 // Windows refuses it (d2items.RenameRetrying): a file being set aside is
 // exactly the kind a reader or a scanner has open (the B3 review's C item).
 func setAside(path, version string) (string, error) {
-	base := UnreadPath(path, version)
+	return setAsideAt(path, UnreadPath(path, version))
+}
+
+// setAsideAt moves the file at path to base, or to the first of base + ".1",
+// ".2", ... that nothing holds.
+func setAsideAt(path, base string) (string, error) {
 	aside := base
 
 	for n := 1; ; n++ {

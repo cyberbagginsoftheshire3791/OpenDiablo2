@@ -175,6 +175,10 @@ type HUD struct {
 	journal       *journalOverlay
 	journalWidget *d2ui.CustomWidget
 
+	// M4.6 B5: the save's and the load's notices (save_notice.go).
+	saveNotice       *saveNoticeOverlay
+	saveNoticeWidget *d2ui.CustomWidget
+
 	// Death screen v0: over everything.
 	death       *deathOverlay
 	deathWidget *d2ui.CustomWidget
@@ -257,6 +261,7 @@ func NewHUD(
 		death:             newDeathOverlay(ui),
 		talk:              newTalkOverlay(ui),
 		journal:           newJournalOverlay(ui),
+		saveNotice:        newSaveNoticeOverlay(ui),
 	}
 
 	hud.Logger = d2util.NewLogger()
@@ -407,6 +412,12 @@ func (h *HUD) loadCustomWidgets() {
 	h.journalWidget.SetPosition(0, 0)
 	h.journalWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
 	h.panelGroup.AddWidget(h.journalWidget)
+
+	// M4.6 B5: the save's notice, over the panels and under the death screen.
+	h.saveNoticeWidget = h.uiManager.NewCustomWidget(h.renderSaveNotice, screenWidth, screenHeight)
+	h.saveNoticeWidget.SetPosition(0, 0)
+	h.saveNoticeWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.saveNoticeWidget)
 
 	// Death screen v0, added last so it draws over every other panel.
 	h.deathWidget = h.uiManager.NewCustomWidget(h.renderDeath, screenWidth, screenHeight)
@@ -835,15 +846,8 @@ func (h *HUD) hoveredEntityWhere(mx, my int, keep func(d2interface.MapEntity) bo
 			continue
 		}
 
-		entScreenXf, entScreenYf := h.mapRenderer.WorldToScreenF(entity.GetPositionF())
-		entScreenX := int(math.Floor(entScreenXf))
-		entScreenY := int(math.Floor(entScreenYf))
-		entityWidth, entityHeight := entity.GetSize()
-		halfWidth, halfHeight := entityWidth>>1, entityHeight>>1
-		l, r := entScreenX-halfWidth-hoverLabelOuterPad, entScreenX+halfWidth+hoverLabelOuterPad
-		t, b := entScreenY-halfHeight-hoverLabelOuterPad, entScreenY+halfHeight-hoverLabelOuterPad
-
-		if l <= mx && r >= mx && t <= my && b >= my {
+		// The sprite as drawn, at the view's scale (view_scale.go).
+		if spriteUnder(h.mapRenderer, entity, mx, my) {
 			return entity
 		}
 	}
@@ -874,7 +878,8 @@ func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
 	// one of the dead is named for what he was, then for what he is.
 	h.nameLabel.SetText(h.nameFor(entity))
 
-	xLabel, yLabel := entScreenX-xOff, entScreenY-yOff-entityHeight-hoverLabelOuterPad
+	// Above the head as drawn, at the view's scale (view_scale.go).
+	xLabel, yLabel := headAnchor(entScreenX, entScreenY, xOff, yOff, entityHeight, h.mapRenderer.Scale())
 	h.nameLabel.SetPosition(xLabel, yLabel)
 
 	h.nameLabel.Render(target)
@@ -950,6 +955,10 @@ func (h *HUD) refreshClockStrip() {
 	h.lastStripMinute = minute
 
 	year, month, day := h.clock.Date()
+
+	// Counted from the START of this minute (Clock.HoursToDusk; M4.6
+	// BUG-88), so a game resumed part-way through the minute it was saved in
+	// reads what the saved game read.
 	h.stripHoursToDusk = h.clock.HoursToDusk()
 	h.stripDate = fmt.Sprintf("%s %d %s %d", h.clock.Weekday(), day, strigoiMonthName(month), year)
 

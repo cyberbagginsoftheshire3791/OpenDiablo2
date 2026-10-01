@@ -134,12 +134,13 @@ type Profiles interface {
 // CombatAct is one thing the resolver asks a sprite to show.
 type CombatAct int
 
-// The three acts a v0 fight has. Death is DT then a held DD; there is no
+// Visual acts requested after resolution. Death is DT then a held DD; there is no
 // corpse state beyond that, because what a dead beast BECOMES is M4.7's.
 const (
 	ActSwing CombatAct = iota
 	ActHit
 	ActDie
+	ActBlock
 )
 
 // Animator is how the resolver reaches sprites, and it exists for the same
@@ -878,7 +879,11 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 	case a.targetHasBody && a.targetHealthAfter <= 0:
 		c.reachedZero(targetID)
 	case a.targetHasBody:
-		c.animate(targetID, ActHit)
+		if blocked {
+			c.animate(targetID, ActBlock)
+		} else {
+			c.animate(targetID, ActHit)
+		}
 
 		// T3: Fire and Iron -- while his torch burns, a hit that lands
 		// shakes a beast's pack. Never the dead: mundane() is the fence.

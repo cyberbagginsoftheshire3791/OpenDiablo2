@@ -220,15 +220,35 @@ func (c *Clock) Stage() Stage {
 }
 
 // HoursToDusk returns world hours until the next DuskStart (19:45), always in
-// [0, 24). This is the HUD's "time to sunset" (S1 §3.4): it counts down to the
+// (0, 24]. This is the HUD's "time to sunset" (S1 §3.4): it counts down to the
 // clock's own dusk transition — the moment the night rate and spawn stage
 // change — not to true astronomical sunset (19:49–19:50 this slice; ruled
 // 11 Sep, the gap being below the one-decimal-hour display precision). It is
 // 17.0 at the dawn epoch (02:45) and wraps to the following day's dusk
 // overnight, so the readout is never negative.
+//
+// IT COUNTS FROM THE START OF THE CURRENT WORLD MINUTE (M4.6 BUG-88, 29 Sep
+// 2026), the minute the HUD refreshes the strip on (int(MinuteOfDay)). It
+// used to count from the exact moment it was read, and the HUD reads it on
+// the frame the strip refreshes -- the first frame of a new minute, or a
+// resumed game's first frame, part-way through the minute it was saved in --
+// so a saved and a resumed game held two samples of one minute, and they
+// could round to two tenths of an hour: 16.85 h saved ("Sunset in 16.9h"),
+// 16.84 h resumed ("16.8h"), measured by the BUG-87 burst. Read from the
+// minute's start, one minute is one value. The readout is a tenth of an hour;
+// the floor moves the number by less than a sixtieth -- and the TEXT by one
+// tenth on the minutes whose old sample, a frame into the minute, rounded
+// down where the minute's start rounds up (x.x5 h: about 120 of the day's
+// 1,440; 00:00 reads "19.8h" where it read "19.7h"). Kept: the minute's start
+// is the more correct reading (the BUG-87 review's C6, BUG-94).
+//
+// THE DUSK MINUTE READS A DAY AWAY, 24.0 h, as the HUD read it in play before
+// the floor (BUG-94): its first frame was a hair past 19:45, a hair under 24
+// hours from the next dusk. Counted from 19:45 exactly the minute read 0 --
+// "Sunset in 0.0h" for the whole of 19:45 -- so a count of 0 is a day.
 func (c *Clock) HoursToDusk() float64 {
-	d := math.Mod(c.dials.DuskStart-c.MinuteOfDay(), minutesPerDay)
-	if d < 0 {
+	d := math.Mod(c.dials.DuskStart-math.Floor(c.MinuteOfDay()), minutesPerDay)
+	if d <= 0 {
 		d += minutesPerDay
 	}
 

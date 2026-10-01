@@ -301,6 +301,14 @@ func LayAuthoredMap(engine *d2mapengine.MapEngine, m *d2maptiled.Map) {
 
 	engine.SetAuthored(images, math.Floor(m.StartX), math.Floor(m.StartY))
 	engine.SetInside(m.Inside)
+
+	// Fog of war: a structure is shown whole once any of its footprint is seen.
+	footprints := make([]image.Rectangle, len(m.Structures))
+	for i, s := range m.Structures {
+		footprints[i] = s.Footprint
+	}
+
+	engine.SetStructures(footprints)
 	engine.SetAuthoredRegion(m.SoundEnv, m.DisplayName)
 }
 

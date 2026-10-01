@@ -122,10 +122,17 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"journal_notice": g.journalNoticeText(),
 
 		// Death screen v0.
-		"death_open":        g.dead(),
-		"death_lines":       g.deathLinesReport(),
-		"help_open":         g.HelpOverlay.IsOpen(),
-		"escape_menu_open":  g.escapeMenu.IsOpen(),
+		"death_open":       g.dead(),
+		"death_lines":      g.deathLinesReport(),
+		"help_open":        g.HelpOverlay.IsOpen(),
+		"escape_menu_open": g.escapeMenu.IsOpen(),
+
+		// M4.6 B5: the escape menu as drawn -- its entries, the one the keys
+		// are on, the line that says why a save is refused -- and the save's
+		// notice on the HUD. Both are this process's presentation (below).
+		"escape_menu": g.escapeMenu.HarnessReport(),
+		"save_notice": g.saveNoticeText(),
+
 		"world_held_by":     g.worldHeldByReport(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
 		"hand_icons":        g.handIconsReport(),
@@ -134,6 +141,10 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"right_panel_open":  g.isRightPanelOpen(),
 		"free_cam":          g.FreeCam,
 		"clock":             g.clock,
+
+		// The game zoom (1 Oct 2026): the map renderer's scale as drawn, 1.0
+		// unless -zoom, the wheel or the settable "zoom" field moved it.
+		"view_scale": g.viewScale(),
 
 		// The M4.4a clock strip -- exactly what the player reads at the top of
 		// the screen, so a playtest can assert the eyes work. These are the
@@ -403,18 +414,26 @@ func (g *GameControls) handIconsReport() map[string]interface{} {
 //     through the camera -- the same easing moves what is under it, and a
 //     real mouse on the desktop moves the point itself (BUG-15's class).
 //
-// And clock_strip_hours_to_dusk, a CACHE: the clock's time to sunset sampled
-// on whichever frame the strip last refreshed (once a world minute), so a game
-// resumed mid-minute holds another sample of the same minute. The clock itself
-// is the clock provider's, and clock_strip_text -- what the player reads,
-// formatted from it -- stays (M4.6 B4a, measured: 16.4656 saved, 16.46
-// resumed, one strip text).
+// (clock_strip_hours_to_dusk went here too until M4.6 BUG-88: it was sampled
+// on whichever frame the strip last refreshed, so a game resumed mid-minute
+// held another sample of the same minute -- B4a measured 16.4656 saved and
+// 16.46 resumed, one strip text, but the BUG-87 burst found a save whose two
+// samples rounded to two texts, 16.85 h and 16.84 h, "16.9h" and "16.8h".
+// Since BUG-88 the strip samples the start of the minute it shows, so the
+// saved and the resumed game hold one sample, and it is compared again, with
+// clock_strip_text.)
 //
 // Two fields go to the process part: torch_verbs counts this process's torch
 // verbs (d2gamescreen classifies it D, "every process starts it at 0"), and
 // clock is the controls' own frame clock, the sum of every frame's delta since
 // they were made, for click-repeat timing -- so a game resumed in another
 // process, or by "load last save", reads 0 where the saved one read its count.
+//
+// And two since M4.6 B5 (29 Sep 2026): escape_menu, the menu as drawn -- a
+// resumed game's has never been opened, and its entries' words are the ones
+// the last opening chose -- and save_notice, the save's line on the HUD, which
+// the game that saved shows and the game that resumed does not ("Game saved."
+// in one, "" in the other). Presentation of this process, like journal_notice.
 //
 // And two more since the B4a review fixes (29 Sep 2026, BUG-63), found when
 // act 1 of TestSaveResume first took a talent and owed neglect a fraction:
@@ -425,19 +444,30 @@ func (g *GameControls) handIconsReport() map[string]interface{} {
 // my journal: ..."), which a resumed game has not shown. Both are this
 // process's presentation, compared by the determinism proof and not across a
 // resume.
+//
+// And view_scale since the game zoom (1 Oct 2026): the camera's zoom is the
+// player's view, not the world -- a game resumed in another process starts at
+// its own -zoom -- so it is this process's presentation too.
 func (g *GameControls) HarnessDigest() (world, process map[string]interface{}) {
-	world = g.HarnessState()
+	return splitUIDigest(g.HarnessState())
+}
 
+// splitUIDigest is HarnessDigest's split of the ui state into its world and
+// process parts (above), apart from the state it splits so a test can hand it
+// one.
+func splitUIDigest(world map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
 	rect := []string{"x", "y", "w", "h"}
 
-	process = map[string]interface{}{
+	process := map[string]interface{}{
 		"torch_verbs": world["torch_verbs"], "clock": world["clock"],
 		"talent_cells": withoutKeys(world["talent_cells"], rect...), "journal_notice": world["journal_notice"],
+		"escape_menu": world["escape_menu"], "save_notice": world["save_notice"],
+		"view_scale": world["view_scale"],
 	}
 
 	for _, key := range []string{
-		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button", "clock_strip_hours_to_dusk",
-		"talent_cells", "journal_notice",
+		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button",
+		"talent_cells", "journal_notice", "escape_menu", "save_notice", "view_scale",
 	} {
 		delete(world, key)
 	}

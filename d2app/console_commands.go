@@ -128,11 +128,24 @@ func (a *App) setTimeScale(args []string) error {
 	return nil
 }
 
+// quitGame is the console's quit. It is a close like the window's (the M4.6
+// B5 review, C3; BUG-102): the game in play, if any, is saved as SAVE AND EXIT
+// GAME saves it -- left unsaved in his fight, dead, or in a network game --
+// and unloaded (App.closeTheGame), and then the process ends. Before, it
+// ended the process at once and everything since his last save was lost.
 func (a *App) quitGame([]string) error {
+	a.closeTheGame("the console's quit")
 	clearOwnPlaytests()
-	os.Exit(0)
+	exitProcess(0)
+
 	return nil
 }
+
+// exitProcess is os.Exit; a unit test swaps it to see the console's quit
+// close the game first.
+//
+// nolint:gochecknoglobals // a seam for a unit test
+var exitProcess = os.Exit
 
 func (a *App) enterGuiPlayground([]string) error {
 	a.screen.SetNextScreen(d2gamescreen.CreateGuiTestMain(a.renderer, a.guiManager, *a.Options.LogLevel, a.asset))

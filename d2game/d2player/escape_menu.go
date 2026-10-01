@@ -1,6 +1,7 @@
 package d2player
 
 import (
+	"strings"
 	"time"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
@@ -61,6 +62,37 @@ const (
 	singleFrame = time.Millisecond * 16
 )
 
+// saveGameLayoutID is SAVE GAME's (M4.6 B5): like noLayoutID (RETURN TO GAME)
+// and saveLayoutID (SAVE AND EXIT GAME) it names what an entry does, not a
+// layout the menu shows.
+const saveGameLayoutID layoutID = -3
+
+// MenuSaver is the game's save as the escape menu asks for it (M4.6 B5; the
+// build plan's rules 1-3). The game screen is the one saver; the menu knows
+// only these two questions and the words that come back, never a refusal's
+// code, so a refusal the save gains or loses changes nothing here.
+type MenuSaver interface {
+	// SaveRefusedNow is the note under the entries when the game cannot be
+	// saved at this moment -- why, in the player's words, and what leaving
+	// without saving does (the B5 review fixes: that depends on the game --
+	// a network game has no last save to come back to) -- or "" when it can.
+	// The menu asks it as it opens: the world is paused under the menu, so
+	// the answer holds while it is up.
+	SaveRefusedNow() string
+
+	// SaveFromMenu saves the game. exit is SAVE AND EXIT GAME (the menu leaves
+	// for the main menu once it is saved); otherwise SAVE GAME, which keeps
+	// playing and puts the notice up itself.
+	SaveFromMenu(exit bool) MenuSaveResult
+}
+
+// MenuSaveResult is what SaveFromMenu did: saved, or not -- and then Words is
+// the whole note the menu shows: why, and what leaving does.
+type MenuSaveResult struct {
+	Saved bool
+	Words string
+}
+
 // NewEscapeMenu creates a new escape menu
 func NewEscapeMenu(navigator d2interface.Navigator,
 	renderer d2interface.Renderer,
@@ -118,6 +150,14 @@ type EscapeMenu struct {
 
 	onCloseCb func()
 
+	// M4.6 B5: the game's save (SetSaver); the main layout's exit entry and
+	// the line under the entries, which say whether and why a save is refused;
+	// and whether the exit entry reads EXIT WITHOUT SAVING.
+	saver       MenuSaver
+	exitLabel   *d2gui.Label
+	noteLabels  []*d2gui.Label
+	exitRefused bool
+
 	*d2util.Logger
 }
 
@@ -174,12 +214,57 @@ type actionableElement interface {
 	Trigger()
 }
 
+// newMainLayout is the menu Esc opens. M4.6 B5 (the build plan's rule 1): SAVE
+// GAME saves and keeps playing; SAVE AND EXIT GAME saves, then leaves for the
+// main menu -- or, when the save is refused (rule 2: a fight, and the rest),
+// reads EXIT WITHOUT SAVING, and the line under the entries says why.
 func (m *EscapeMenu) newMainLayout() *layout {
 	return m.wrapLayout(func(l *layout) {
 		m.addBigSelectionLabel(l, "OPTIONS", optionsLayoutID)
-		m.addBigSelectionLabel(l, "SAVE AND EXIT GAME", saveLayoutID)
+		m.addBigSelectionLabel(l, MenuSaveGame, saveGameLayoutID)
+		m.exitLabel = m.addBigSelectionLabel(l, MenuSaveAndExit, saveLayoutID)
 		m.addBigSelectionLabel(l, "RETURN TO GAME", noLayoutID)
+
+		for i := 0; i < menuNoteLines; i++ {
+			m.noteLabels = append(m.noteLabels, m.addNoteLabel(l))
+		}
 	})
+}
+
+// menuNoteLines is how many lines the note under the entries has room for;
+// menuNoteColor its ink, a pale gold (Strigoi's font set multiplies it over
+// its near-white ink): measured on a screenshot, Diablo II's brown read too
+// dark over the village at noon.
+const (
+	menuNoteLines = 3
+	menuNoteColor = 0xf0dca0ff
+)
+
+// addNoteLabel is one line under the main menu's entries: empty until a save
+// is refused. Not an entry -- the keys and the pentagrams pass it by. Each
+// line is its own label so the base layout centres each (a label of two
+// lines draws them left-aligned).
+func (m *EscapeMenu) addNoteLabel(l *layout) *d2gui.Label {
+	label, err := l.AddLabelWithColor("", d2gui.FontStyle16Units, d2util.Color(menuNoteColor))
+	if err != nil {
+		m.Error(err.Error())
+		return nil
+	}
+
+	return label
+}
+
+// noteText is the note as the lines show it, joined by newlines.
+func (m *EscapeMenu) noteText() string {
+	lines := make([]string, 0, len(m.noteLabels))
+
+	for _, l := range m.noteLabels {
+		if l != nil && l.GetText() != "" {
+			lines = append(lines, l.GetText())
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func (m *EscapeMenu) newOptionsLayout() *layout {
@@ -295,7 +380,7 @@ func (m *EscapeMenu) addTitle(l *layout, text string) {
 	l.AddSpacerStatic(spacerWidth, labelGutter)
 }
 
-func (m *EscapeMenu) addBigSelectionLabel(l *layout, text string, targetLayout layoutID) {
+func (m *EscapeMenu) addBigSelectionLabel(l *layout, text string, targetLayout layoutID) *d2gui.Label {
 	guiLabel, err := l.AddLabel(text, d2gui.FontStyle42Units)
 	if err != nil {
 		m.Error(err.Error())
@@ -314,6 +399,8 @@ func (m *EscapeMenu) addBigSelectionLabel(l *layout, text string, targetLayout l
 
 	l.AddSpacerStatic(spacerWidth, labelGutter)
 	l.actionableElements = append(l.actionableElements, label)
+
+	return guiLabel
 }
 
 func (m *EscapeMenu) addPreviousMenuLabel(l *layout) {
@@ -414,6 +501,12 @@ func (m *EscapeMenu) SetOnCloseCb(cb func()) {
 	m.onCloseCb = cb
 }
 
+// SetSaver gives the menu the game's save (M4.6 B5). Without one, SAVE AND EXIT
+// GAME leaves as it always did and SAVE GAME saves nothing.
+func (m *EscapeMenu) SetSaver(s MenuSaver) {
+	m.saver = s
+}
+
 func (m *EscapeMenu) close() {
 	m.isOpen = false
 
@@ -423,7 +516,110 @@ func (m *EscapeMenu) close() {
 
 func (m *EscapeMenu) open() {
 	m.isOpen = true
+
+	// Before the layout is set, so the entries are placed around the line
+	// they will show.
+	m.askSave()
 	m.setLayout(mainLayoutID)
+}
+
+// askSave asks the game, as the menu opens, whether it can be saved now, and
+// shows the answer: nothing when it can; when it cannot, why, in plain words,
+// and the exit entry reads EXIT WITHOUT SAVING (the build plan's rule 2).
+func (m *EscapeMenu) askSave() {
+	why := ""
+	if m.saver != nil {
+		why = m.saver.SaveRefusedNow()
+	}
+
+	if why == "" {
+		m.showSave(false, "")
+		return
+	}
+
+	m.showSave(true, why)
+}
+
+// showSave sets the exit entry's words and the line under the entries.
+func (m *EscapeMenu) showSave(refused bool, note string) {
+	m.exitRefused = refused
+
+	exit := MenuSaveAndExit
+	if refused {
+		exit = MenuExitWithoutSave
+	}
+
+	if m.exitLabel != nil {
+		if err := m.exitLabel.SetText(exit); err != nil {
+			m.Errorf("could not set the exit entry's words: %v", err)
+		}
+	}
+
+	lines := strings.SplitN(note, "\n", menuNoteLines)
+
+	for i, l := range m.noteLabels {
+		text := ""
+		if i < len(lines) {
+			text = lines[i]
+		}
+
+		if l == nil {
+			continue
+		}
+
+		if err := l.SetText(text); err != nil {
+			m.Errorf("could not set the save's line: %v", err)
+		}
+	}
+}
+
+// saveGame is SAVE GAME: saved, the menu closes and he plays on (the game puts
+// the notice up); refused, or a save that failed, the menu stays and says why,
+// and its exit entry leaves without saving.
+func (m *EscapeMenu) saveGame() {
+	if m.saver == nil {
+		m.showSave(true, SaveRefusedOtherWords+"\n"+MenuExitWithoutSaved)
+		return
+	}
+
+	if res := m.saver.SaveFromMenu(false); !res.Saved {
+		m.showSave(true, res.Words)
+		return
+	}
+
+	m.close()
+}
+
+// saveAndExit is the exit entry: SAVE AND EXIT GAME saves, then leaves for the
+// main menu (whose unload does not write his .od2 and sidecar again: the save
+// wrote them -- the B5 review, C2); EXIT WITHOUT SAVING leaves at once, and
+// his last save stands (rule 2; in a network game, his hero and gear go with
+// him). A save that fails keeps him here, the entry turned
+// to EXIT WITHOUT SAVING, so leaving unsaved is always his choice, never the
+// menu's.
+func (m *EscapeMenu) saveAndExit() {
+	if m.saver == nil || m.exitRefused {
+		m.navigator.ToMainMenu()
+		return
+	}
+
+	if res := m.saver.SaveFromMenu(true); !res.Saved {
+		m.showSave(true, res.Words)
+		return
+	}
+
+	m.navigator.ToMainMenu()
+}
+
+// Dismiss puts the menu away, whatever it shows, with no sound (the B5
+// review, A1): the window's close runs the frames that let a fight's end
+// settle before it saves, and the world is paused under the menu.
+func (m *EscapeMenu) Dismiss() {
+	if !m.isOpen {
+		return
+	}
+
+	m.close()
 }
 
 func (m *EscapeMenu) playSound() {
@@ -438,8 +634,13 @@ func (m *EscapeMenu) showLayout(id layoutID) {
 		return
 	}
 
+	if id == saveGameLayoutID {
+		m.saveGame()
+		return
+	}
+
 	if id == saveLayoutID {
-		m.navigator.ToMainMenu()
+		m.saveAndExit()
 		return
 	}
 
@@ -626,4 +827,60 @@ func (m *EscapeMenu) OnKeyDown(event d2interface.KeyEvent) bool {
 	}
 
 	return true
+}
+
+// layoutName is the layout up, for the harness: "main", or the other layouts
+// by what they hold.
+func (m *EscapeMenu) layoutName() string {
+	switch m.currentLayout {
+	case mainLayoutID:
+		return "main"
+	case optionsLayoutID:
+		return "options"
+	case soundOptionsLayoutID, videoOptionsLayoutID, automapOptionsLayoutID:
+		return "an options page"
+	case configureControlsLayoutID:
+		return "controls"
+	default:
+		return "none"
+	}
+}
+
+// HarnessReport is the escape menu as it would be drawn (M4.6 B5), for the ui
+// provider: which layout is up, the main menu's entries in order, the one the
+// keys are on, the line under them, and whether the exit entry leaves without
+// saving. It is this process's presentation -- a resumed game's menu has never
+// been opened -- so the ui provider puts it in the digest's process part.
+func (m *EscapeMenu) HarnessReport() map[string]interface{} {
+	report := map[string]interface{}{
+		"open":         m.isOpen,
+		"layout":       m.layoutName(),
+		"entries":      []string{},
+		"selected":     "",
+		"note":         "",
+		"exit_refused": m.exitRefused,
+	}
+
+	report["note"] = m.noteText()
+
+	main, ok := m.layouts[mainLayoutID]
+	if !ok || main == nil {
+		return report
+	}
+
+	entries := make([]string, 0, len(main.actionableElements))
+
+	for _, el := range main.actionableElements {
+		if l, isLabel := el.(*showLayoutLabel); isLabel && l.Label != nil {
+			entries = append(entries, l.GetText())
+		}
+	}
+
+	report["entries"] = entries
+
+	if m.isOpen && m.currentLayout == mainLayoutID && main.currentEl >= 0 && main.currentEl < len(entries) {
+		report["selected"] = entries[main.currentEl]
+	}
+
+	return report
 }

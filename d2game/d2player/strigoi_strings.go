@@ -164,7 +164,7 @@ const (
 	DeathByFight    = "Brought down in a fight."
 	DeathByHunger   = "Hunger took him."
 	DeathByThirst   = "Thirst took him."
-	DeathWhatIsLost = "All since he last left the world is lost."
+	DeathWhatIsLost = "All since his last save is lost."
 	DeathKeys       = "Enter: load last save      Esc: quit to the menu"
 )
 
@@ -236,4 +236,79 @@ const (
 	JournalStateOpen   = "Still to do."
 	JournalStateDone   = "Done."
 	JournalStateFailed = "Failed."
+)
+
+// M4.6 B5, the save reaches the player (29 Sep 2026). The escape menu's
+// entries keep Diablo II's capitals (the menu's own style; Strigoi's font set
+// draws them in Uncial Antiqua); the lines under them, and the notices on the
+// HUD, are sentences. Every refusal is said in plain words, never by its code:
+// the code is the harness's and the log's.
+const (
+	MenuSaveGame         = "SAVE GAME"
+	MenuSaveAndExit      = "SAVE AND EXIT GAME"
+	MenuExitWithoutSave  = "EXIT WITHOUT SAVING"
+	MenuSavedNotice      = "Game saved."
+	MenuSaveFailed       = "The game could not be saved: its files could not be written.\nYour last save stands."
+	MenuExitWithoutSaved = "Leave now and you come back to your last save."
+
+	// The B5 review fixes (29 Sep 2026). A failed save's words are chosen
+	// from what it left written (A2): "Your last save stands" only when it
+	// does. A network game has no last save to come back to (C1). A save the
+	// load refused and could not move is not written over (B2).
+	MenuSaveFailedNotWhole = "The game could not be saved, and your last save\ncould not be put back as it was."
+	MenuLeaveNotWhole      = "Save again before you leave, if you can."
+	MenuSaveFailedHeld     = "The game could not be saved: the save that could not be read\nis still held open, and is not written over."
+	MenuLeaveNetwork       = "Leave now: your hero and his gear go with you. The night does not."
+
+	// The refusals (d2gamescreen's SaveRefused* codes), for the menu and the
+	// close hook's log line.
+	SaveRefusedFightWords   = "You can't save during a fight."
+	SaveRefusedSettleWords  = "You can't save while blows are still landing.\nTry again in a moment."
+	SaveRefusedTalkWords    = "You can't save while you are talking."
+	SaveRefusedJournalWords = "You can't save with your journal open."
+	SaveRefusedLoadoutWords = "You can't save until you have chosen your gear."
+	SaveRefusedDeadWords    = "The dead can't save."
+	SaveRefusedNetworkWords = "A network game can't be saved."
+	SaveRefusedNotYetWords  = "You can't save yet: the game is still starting."
+	SaveRefusedOtherWords   = "You can't save right now."
+
+	// NOT_READY's two reasons that are not a game still starting (the B5
+	// review, C4): a game opened with no hero save, and a hero with no kit
+	// file beside him.
+	SaveRefusedNoSaveWords = "This game has no save file to keep it in."
+	SaveRefusedNoKitWords  = "You can't save until your gear is in place."
+
+	// The dawn autosave (rule 10): quiet notices, one per dawn at most.
+	AutosaveTaken     = "Dawn. The game is saved."
+	AutosaveTakenLate = "The dawn's save is made."
+	AutosaveDropped   = "The dawn's save could not be made today. Your last save stands."
+	AutosaveFailed    = "The dawn's save could not be written. Your last save stands."
+
+	// The B5 review, A2: a dawn's save that failed and could not put the world
+	// file back does not say the last save stands.
+	AutosaveFailedNotWhole = "The dawn's save could not be written, and your last save could not be put back."
+
+	// The load's notices at the start of play (rule 7: a save this build
+	// cannot resume is set aside, never deleted, and he wakes at dawn).
+	LoadRefusedVersionWords = "Your save is from another version of the game."
+	LoadRefusedFileWords    = "Your save could not be read."
+	LoadRefusedNetworkWords = "A network game does not resume your save."
+	LoadRefusedHeroWords    = "The save beside this hero is another hero's."
+	LoadRefusedTornWords    = "Your save was cut off while it was being written."
+	LoadRefusedSidecarWords = "Your save could not be put in place."
+	LoadRefusedMapWords     = "The village has changed since you saved."
+	LoadRefusedNativesWords = "The villagers are not the ones you saved with."
+	LoadRefusedOtherWords   = "Your last save could not be restored."
+	LoadWakeAtDawn          = "You wake at dawn. The save is kept, set aside -- not deleted."
+	LoadWakeAtDawnInPlace   = "You wake at dawn. The save is left where it was, unread."
+	LoadVillagerGone        = "Your save is restored. A villager who was gone when you saved is gone again."
+	LoadVillagersGone       = "Your save is restored. %d villagers who were gone when you saved are gone again."
+
+	// The B5 review fixes. A network game resumes no world save, and a LAN
+	// client joins the host's world at the host's hour, so the notice does not
+	// say he wakes at dawn (C1). A torn save whose .bak was his sidecar's
+	// moment resumes the .bak (A2).
+	LoadNetworkKept        = "Your hero and his gear come with you. The saved night is kept, set aside -- not deleted."
+	LoadNetworkKeptInPlace = "Your hero and his gear come with you. The saved night is left where it was, unread."
+	LoadTornResumedBak     = "The save before it is restored. The cut-off save is kept, set aside -- not deleted."
 )
