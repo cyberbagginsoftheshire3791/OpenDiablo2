@@ -401,6 +401,12 @@ func CreateGame(
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
 
+	// The game zoom (-zoom; 1.0 does nothing). The light is per tile, in world
+	// tiles (d2world.Light.Level), so a zoomed-out view shows no more of the
+	// dark than the torch lights: its radius is drawn at the view's scale with
+	// the tiles it lights.
+	game.applyGameZoom()
+
 	game.Logger = d2util.NewLogger()
 	game.Logger.SetLevel(l)
 	game.Logger.SetPrefix(logPrefix)

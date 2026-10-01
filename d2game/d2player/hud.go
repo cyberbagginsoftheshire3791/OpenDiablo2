@@ -846,15 +846,8 @@ func (h *HUD) hoveredEntityWhere(mx, my int, keep func(d2interface.MapEntity) bo
 			continue
 		}
 
-		entScreenXf, entScreenYf := h.mapRenderer.WorldToScreenF(entity.GetPositionF())
-		entScreenX := int(math.Floor(entScreenXf))
-		entScreenY := int(math.Floor(entScreenYf))
-		entityWidth, entityHeight := entity.GetSize()
-		halfWidth, halfHeight := entityWidth>>1, entityHeight>>1
-		l, r := entScreenX-halfWidth-hoverLabelOuterPad, entScreenX+halfWidth+hoverLabelOuterPad
-		t, b := entScreenY-halfHeight-hoverLabelOuterPad, entScreenY+halfHeight-hoverLabelOuterPad
-
-		if l <= mx && r >= mx && t <= my && b >= my {
+		// The sprite as drawn, at the view's scale (view_scale.go).
+		if spriteUnder(h.mapRenderer, entity, mx, my) {
 			return entity
 		}
 	}
@@ -885,7 +878,8 @@ func (h *HUD) renderForSelectableEntitiesHovered(target d2interface.Surface) {
 	// one of the dead is named for what he was, then for what he is.
 	h.nameLabel.SetText(h.nameFor(entity))
 
-	xLabel, yLabel := entScreenX-xOff, entScreenY-yOff-entityHeight-hoverLabelOuterPad
+	// Above the head as drawn, at the view's scale (view_scale.go).
+	xLabel, yLabel := headAnchor(entScreenX, entScreenY, xOff, yOff, entityHeight, h.mapRenderer.Scale())
 	h.nameLabel.SetPosition(xLabel, yLabel)
 
 	h.nameLabel.Render(target)

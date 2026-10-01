@@ -226,8 +226,8 @@ func (mr *MapRenderer) ScreenToWorld(x, y int) (worldX, worldY float64) {
 	return mr.viewport.ScreenToWorld(x, y)
 }
 
-// Scale returns the viewport's zoom. 1.0 is unzoomed, which is the only value
-// the shipped game uses.
+// Scale returns the viewport's zoom. 1.0 is unzoomed, which is the shipped
+// game's default; -zoom and the game's wheel take it down to 0.4.
 func (mr *MapRenderer) Scale() float64 {
 	return mr.viewport.Scale()
 }
@@ -298,7 +298,7 @@ func (mr *MapRenderer) renderPass2(target d2interface.Surface, startX, startY, e
 						}
 
 						target.PushTranslation(mr.viewport.GetTranslationScreen())
-						mapEntity.Render(target)
+						mr.renderEntity(target, mapEntity)
 						target.Pop()
 					}
 				}
@@ -354,7 +354,7 @@ func (mr *MapRenderer) renderPass3(target d2interface.Surface, startX, startY, e
 						}
 
 						target.PushTranslation(mr.viewport.GetTranslationScreen())
-						entity.Render(target)
+						mr.renderEntity(target, entity)
 						target.Pop()
 					}
 				}
@@ -608,6 +608,8 @@ func (mr *MapRenderer) renderEntityDebug(target d2interface.Surface) {
 		entScreenX := int(math.Floor(entScreenXf))
 		entScreenY := int(math.Floor(entScreenYf))
 		entityWidth, entityHeight := e.GetSize()
+		// The debug box is the sprite as drawn, at the view's scale.
+		entityWidth, entityHeight = mr.ScaleLength(entityWidth), mr.ScaleLength(entityHeight)
 		halfWidth, halfHeight := entityWidth/two, entityHeight/two
 		l, r := entScreenX-halfWidth, entScreenX+halfWidth
 		t, b := entScreenY-halfHeight, entScreenY+halfHeight
