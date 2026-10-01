@@ -624,7 +624,8 @@ func (s *Spawns) clearAtDaybreak() {
 // aware reports whether any member of a group has noticed its target: the
 // player -- or, since the raid's R2, whoever among the living Seek turned it
 // onto. Daylight sends home a pack that is coming for no one, not one that
-// is coming for a villager.
+// is coming for a villager -- and a watch whose target is dead by its body is
+// coming for no one (the R2 review B's B1).
 func (s *Spawns) aware(groupID string) bool {
 	g, ok := s.groups[groupID]
 	if !ok || s.notice == nil {
@@ -632,7 +633,7 @@ func (s *Spawns) aware(groupID string) bool {
 	}
 
 	for _, m := range g.members {
-		if noticed, watching := s.notice.Noticed(m.WatcherID()); watching && noticed {
+		if s.notice.awareOfTheLiving(m.WatcherID()) {
 			return true
 		}
 	}

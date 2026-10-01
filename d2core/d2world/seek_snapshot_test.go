@@ -344,6 +344,15 @@ func TestSeekSnapshotRefusals(t *testing.T) {
 		"a reason Seek does not give":  func(s *SeekSnapshot) { s.Rows[0].Reason = "hungry" },
 		"a look already past":          func(s *SeekSnapshot) { s.Rows[0].UntilLook = -0.1 },
 		"a look at NaN":                func(s *SeekSnapshot) { s.Rows[0].UntilLook = math.NaN() },
+		"a dwell below zero":           func(s *SeekSnapshot) { s.Rows[0].Dwell = -0.5 },
+		"a dwell at NaN":               func(s *SeekSnapshot) { s.Rows[0].Dwell = math.NaN() },
+		"a pending row in a dwell": func(s *SeekSnapshot) {
+			for i := range s.Rows {
+				if s.Rows[i].Reason == SeekPending {
+					s.Rows[i].Dwell = 1
+				}
+			}
+		},
 		"a pending row that counted": func(s *SeekSnapshot) {
 			for i := range s.Rows {
 				if s.Rows[i].Reason == SeekPending {

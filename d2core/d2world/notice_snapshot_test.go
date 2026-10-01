@@ -109,6 +109,7 @@ func b2bNoticeClasses() []b2aClass {
 		{Notice{}, map[string]string{
 			"hidden":  "T: true only inside a sleep (talk.go sets it and defers it back); Snapshot refuses while set",
 			"player":  "W: his entity id, bound every frame by the game screen (the raid's R2: whom hidden hides)",
+			"gone":    "W: the combat model's deadByBody, wired by NewCombat (the R2 review B's B1)",
 			"dials":   "D: the notice dials, the radius above all -- Quiet Step's bonus is applied to them when the game is built (trap 7)",
 			"sight":   "W: the map's line of sight",
 			"illum":   "W: the light model a target is lit by",

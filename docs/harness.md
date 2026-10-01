@@ -1557,7 +1557,10 @@ the last two at 0 are R2's strict nearest), and the stand-in collection's two ve
 until R3b puts the village's members on the map. The world save carries it
 whole as the `seek` block (new in version 3 of the world file). The `pursuit`
 provider reports `rechase_solves` (since 0.16.1): the solves made restarting a
-chase on another quarry -- a retarget's cost -- included in `solves`. Each
+chase on another quarry -- a retarget's cost -- included in `solves`; and the
+dial `rechases_per_frame` (1): the game restarts at most that many chases on
+another quarry between two of Pursuit's steps (`Pursuit.Rechase`; the rest
+follow on the frames after). A script's `strigoi_pursue` is never capped. Each
 `spawns` notice row gained `side`, and the provider `notice_aware_living` (the
 village's watchers that see something; `notice_aware` is the hostile side's).
 

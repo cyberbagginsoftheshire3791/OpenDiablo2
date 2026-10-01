@@ -44,6 +44,14 @@ type Notice struct {
 	// Combat's is (the raid's R2): who SetHidden hides. "" hides everyone.
 	player string
 
+	// gone reports a quarry dead by its body: NewCombat wires its own
+	// deadByBody here (the R2 review B's B1). A watch whose target is gone
+	// is no AWARE pair -- no chase or fight starts on a corpse, and daybreak
+	// sends its pack home -- though the watch, its memory and its counters
+	// stay as they are (a watch is released where a death is handled:
+	// Combat.quarryDead). Nil: nothing is gone.
+	gone func(quarryID string) bool
+
 	dials NoticeDials
 	sight Sight
 	illum Illumination
@@ -296,6 +304,20 @@ func (n *Notice) Noticed(watcherID string) (noticed, watching bool) {
 	return w.noticed, true
 }
 
+// targetGone reports that a watch's target is dead by its body (gone).
+func (n *Notice) targetGone(w *watch) bool {
+	return n.gone != nil && w.target != nil && n.gone(w.target.QuarryID())
+}
+
+// awareOfTheLiving reports that a watcher has noticed its target and the
+// target is not dead by its body: what daybreak's "coming for someone" asks
+// (Spawns.aware; the R2 review B's B1).
+func (n *Notice) awareOfTheLiving(watcherID string) bool {
+	w, ok := n.watches[watcherID]
+
+	return ok && w.noticed && !n.targetGone(w)
+}
+
 // Aware returns the ids of every HOSTILE watcher currently aware of its
 // target, in a stable order: the same set AwarePairs hands out to act on (the
 // two must never disagree). AwareOf is the same for either side.
@@ -307,7 +329,7 @@ func (n *Notice) AwareOf(side WatchSide) []string {
 	out := make([]string, 0, len(n.watches))
 
 	for _, id := range n.watcherIDs() {
-		if w := n.watches[id]; w.noticed && w.side == side {
+		if w := n.watches[id]; w.noticed && w.side == side && !n.targetGone(w) {
 			out = append(out, id)
 		}
 	}
@@ -346,7 +368,7 @@ func (n *Notice) AwarePairsOf(side WatchSide) []AwarePair {
 
 	for _, id := range n.watcherIDs() {
 		w := n.watches[id]
-		if !w.noticed || w.side != side {
+		if !w.noticed || w.side != side || n.targetGone(w) {
 			continue
 		}
 

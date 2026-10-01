@@ -1505,10 +1505,15 @@ func (v *Game) commandWish(args []string) error {
 // again on the target: Seek moved the watch onto a nearer villager, and the
 // wolf must walk at her, not at the man it no longer wants (N5 in the brief:
 // before R2 an existing chase was left alone whatever its watch named). That
-// restart solves its route at once (Pursuit.Chase), so each retarget costs
-// one A* in the frame Seek made it -- counted by Pursuit as rechase_solves
-// and measured, quarries moving, by BenchmarkSeekRechaseMovingQuarries (the
-// R2 review's B2). Seek's stickiness (its B1) is what keeps that rare.
+// restart solves its route at once, so each retarget costs one A* --
+// counted by Pursuit as rechase_solves and measured, quarries moving, by
+// BenchmarkSeekRechaseMovingQuarries (the R2 review's B2). Pursuit.Rechase
+// caps them at RechasesPerFrame (1) a frame and the rest follow on the
+// frames after (the second review's B2: a long step lets every Seek row look
+// in one frame, so a whole pack could retarget in it). Seek's stickiness
+// (the first review's B1) is what keeps them rare. A watch whose target is
+// dead by its body is no aware pair (the second review's B1): no chase is
+// started on a corpse.
 func (v *Game) startChasesForTheAware() {
 	if v.notice == nil || v.pursuit == nil {
 		return
@@ -1535,7 +1540,10 @@ func (v *Game) startChasesForTheAware() {
 			continue
 		}
 
-		v.pursuit.Chase(hunter, pair.Target)
+		// A chase on another quarry is moved under the frame's re-chase
+		// budget (Pursuit.Rechase, the R2 review B's B2): one A* a frame;
+		// the rest follow on the frames after.
+		v.pursuit.Rechase(hunter, pair.Target)
 	}
 }
 

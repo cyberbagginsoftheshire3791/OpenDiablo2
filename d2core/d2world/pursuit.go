@@ -35,6 +35,18 @@ type Pursuit struct {
 	// does not pay itself -- the game restarts the chase on the moved watch
 	// in the same frame, and Chase solves at once. Included in solves.
 	rechases int
+
+	// rechasedThisFrame counts the rechases since the last Advance, against
+	// RechasesPerFrame (the R2 review B's B2). Advance zeroes it before the
+	// frame's chases are started again (Game.advanceWorld steps Pursuit
+	// before startChasesForTheAware), so its value between two frames is
+	// never read: not saved.
+	rechasedThisFrame int
+
+	// rechasesDeferred counts the Rechase calls the budget turned away (each
+	// asked again the next frame). Reported for the benchmark and the tests;
+	// not in the provider, so not saved.
+	rechasesDeferred int
 }
 
 // PursuitDials are the numbers M4.3a ships with. Every one is a [DIAL].
@@ -79,6 +91,15 @@ type PursuitDials struct {
 	// what stops one that has genuinely run out of options from asking
 	// forever.
 	ProgressTiles float64
+
+	// RechasesPerFrame caps the chases Rechase restarts on ANOTHER quarry
+	// between two Advances (the R2 review B's B2): each costs an A* at once (mean
+	// 1.5-3.0 ms on the village, worst 13-42 ms), and a long step -- a
+	// sleep's or a labour's hour -- lets every Seek row look in ONE frame,
+	// so a pack could retarget whole in it. Past the cap a chase keeps its
+	// old quarry for now; the next frame's startChasesForTheAware asks again,
+	// so the rest follow one a frame. A first chase is never capped. 1.
+	RechasesPerFrame int
 }
 
 // DefaultPursuitDials are the signed §4 starting values.
@@ -88,6 +109,7 @@ func DefaultPursuitDials() PursuitDials {
 		ArriveWithin:     1.5,
 		MinRepathMinutes: 2.0,
 		ProgressTiles:    0.5,
+		RechasesPerFrame: 1,
 	}
 }
 
@@ -162,12 +184,37 @@ func (p *Pursuit) Chase(hunter Hunter, quarry Quarry) {
 	}
 
 	if old, ok := p.chases[hunter.HunterID()]; ok && old.quarry != nil && old.quarry.QuarryID() != quarry.QuarryID() {
+		p.rechasedThisFrame++
 		p.rechases++
 	}
 
 	c := &chase{hunter: hunter, quarry: quarry}
 	p.chases[hunter.HunterID()] = c
 	p.solve(c)
+}
+
+// Rechase is Chase under the frame's re-chase budget (RechasesPerFrame; the
+// R2 review B's B2): the game's way to move a chase onto the quarry Seek moved
+// its watch to (Game.startChasesForTheAware). A chase on another quarry is
+// restarted only while the budget since the last Advance lasts; past it the
+// chase keeps its old quarry and Rechase reports false -- the next frame asks
+// again. Anything else (no chase yet, or one on this quarry) is Chase. A
+// script's strigoi_pursue is Chase, never capped.
+func (p *Pursuit) Rechase(hunter Hunter, quarry Quarry) bool {
+	if hunter == nil || quarry == nil {
+		return false
+	}
+
+	if old, ok := p.chases[hunter.HunterID()]; ok && old.quarry != nil && old.quarry.QuarryID() != quarry.QuarryID() &&
+		p.dials.RechasesPerFrame > 0 && p.rechasedThisFrame >= p.dials.RechasesPerFrame {
+		p.rechasesDeferred++
+
+		return false
+	}
+
+	p.Chase(hunter, quarry)
+
+	return true
 }
 
 // Release ends a chase. A provider that reports a collection needs a verb
@@ -215,6 +262,8 @@ func (p *Pursuit) Solves() int { return p.solves }
 
 // Advance steps every live chase by the world minutes that just passed.
 func (p *Pursuit) Advance(worldMinutes float64) {
+	p.rechasedThisFrame = 0
+
 	if worldMinutes <= 0 || len(p.chases) == 0 {
 		return
 	}
@@ -363,6 +412,7 @@ func (p *Pursuit) HarnessState() map[string]interface{} {
 		"repath_tiles":       p.dials.RepathTiles,
 		"arrive_within":      p.dials.ArriveWithin,
 		"min_repath_minutes": p.dials.MinRepathMinutes,
+		"rechases_per_frame": p.dials.RechasesPerFrame,
 	}
 }
 

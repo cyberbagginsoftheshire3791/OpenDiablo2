@@ -185,7 +185,7 @@ func (f *rechaseBenchNight) step() {
 		}
 
 		r0, t0 := f.pursuit.rechases, time.Now()
-		f.pursuit.Chase(h, pair.Target)
+		f.pursuit.Rechase(h, pair.Target)
 
 		if f.pursuit.rechases > r0 {
 			f.rechaseTimes = append(f.rechaseTimes, time.Since(t0))

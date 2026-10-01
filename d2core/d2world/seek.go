@@ -62,10 +62,10 @@ import (
 //
 // SEEK SOLVES NO ROUTE; EACH RETARGET COSTS ONE PURSUIT SOLVE. Seek itself
 // casts rays only (D-S2 = 0). But the game restarts the chase on a moved
-// watch in the same frame (startChasesForTheAware), and Pursuit.Chase solves
-// at once: one A* per retarget, counted by Pursuit (rechase_solves) and
-// measured, quarries moving, by the benchmark beside this file (the review's
-// B2).
+// watch (startChasesForTheAware), and that restart solves an A* at once:
+// counted by Pursuit (rechase_solves), capped by Pursuit.Rechase at
+// RechasesPerFrame a frame (the second review's B2), and measured, quarries
+// moving, by the benchmark beside this file (the first review's B2).
 //
 // THE STAGGER, BUILT FROM THE START (S0's M0.2): each watcher looks every
 // RetargetMinutes on a phase of its own -- the minute cut into StaggerSlots
@@ -74,7 +74,11 @@ import (
 // rows already looking, counted on the absolute frames they fall due (the
 // review's C1: round-robin by creation count bunched two groups made a few
 // frames apart). At 4x the brief's N and M the unstaggered frame is over
-// budget (3.4 ms); the benchmark beside this file measures both.
+// budget (3.4 ms); the benchmark beside this file measures both. THE STAGGER
+// CAPS NIGHT-LENGTH STEPS ONLY: a long step (a sleep's or a labour's ten
+// minutes, a harness step_world) spans every phase, and every row looks once
+// in that one frame -- which is why the re-chase each retarget costs is
+// capped where it is paid, in Pursuit.Rechase.
 //
 // Like every system here it steps on the world clock, never the wall clock,
 // and it iterates in a fixed order: its choices move entities, which are
@@ -170,7 +174,8 @@ type SeekDials struct {
 	// StaggerSlots is how many phases a minute of looks is spread across:
 	// 24, the night frames of one world minute. Each new row takes the
 	// least-loaded phase, so while the minute's frames are 1/24 minute (the
-	// night) at most ceil(N/24) of N watchers look in any night frame.
+	// night) at most ceil(N/24) of N watchers look in any night frame. A
+	// step longer than a phase looks every row due in it: a long step, all.
 	StaggerSlots int
 
 	// SwitchMarginTiles is how much nearer another quarry must be before a

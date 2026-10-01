@@ -110,11 +110,13 @@ func TestPursuitSnapshotEveryFieldIsSeen(t *testing.T) {
 func b2bPursuitClasses() []b2aClass {
 	return []b2aClass{
 		{Pursuit{}, map[string]string{
-			"dials":    "D: the pursuit dials, the game's numbers; a script's writes are test setup (trap 7)",
-			"router":   "W: the map's router",
-			"chases":   "S:pursuit.chases",
-			"solves":   "S:pursuit.solves",
-			"rechases": "S:pursuit.rechase_solves",
+			"dials":             "D: the pursuit dials, the game's numbers; a script's writes are test setup (trap 7)",
+			"router":            "W: the map's router",
+			"chases":            "S:pursuit.chases",
+			"solves":            "S:pursuit.solves",
+			"rechases":          "S:pursuit.rechase_solves",
+			"rechasedThisFrame": "D: zeroed by every Advance before the frame's chases restart (Pursuit steps before startChasesForTheAware), so never read between frames",
+			"rechasesDeferred":  "D: a benchmark's and a test's count of budget refusals, in no provider and no digest; a resumed game counts from 0",
 		}},
 		{chase{}, map[string]string{
 			"hunter":         "S:pursuit.chases[0].hunter",

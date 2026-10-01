@@ -180,3 +180,66 @@ func TestSpawnsDaybreakKeepsAPackThatSeesAVillager(t *testing.T) {
 	require.True(t, run(0), "a pack that sees a villager is not sent home at daybreak")
 	require.False(t, run(500), "the control: the villager out of its sight, and daylight sends it home")
 }
+
+// The second review of R2 (B1, 1 Oct 2026): a pack whose only watch is on a
+// villager who has DIED is coming for no one, and daylight sends it home --
+// a watch on a corpse is no aware pair (Notice.gone, wired by NewCombat to
+// its bodies). Red under the code before: Spawns.aware read the watch's
+// noticed flag, which a death does not clear. The control: the same villager
+// alive, and the pack stays (TestSpawnsDaybreakKeepsAPackThatSeesAVillager's
+// rule).
+func TestSpawnsDaybreakSendsHomeAPackWhoseVillagerDied(t *testing.T) {
+	run := func(alive bool) bool {
+		s, clock, notice, _, target := newTestSpawns(t)
+
+		bodies := &fakeBodies{known: map[string]*fakeBody{"v:1": {health: 60, maxHealth: 60}}}
+		c := NewCombat(clock, notice, nil, &fakeIllumination{}, bodies, nil, nil, nil, nil, 1462, DefaultCombatDials())
+		t.Cleanup(c.Close)
+
+		advanceClockToStage(t, clock, StageNight)
+		s.dials.Chance = 1000
+
+		for i := 0; i < 60 && s.Groups() == 0; i++ {
+			s.Advance(s.dials.CheckMinutes)
+		}
+
+		require.NotZero(t, s.Groups(), "the fixture: a pack")
+		s.dials.Chance = 0
+
+		id := s.groupIDs()[0]
+		g := s.groups[id]
+
+		target.x, target.y = target.x+500, target.y+500
+
+		for i := 0; i < 40; i++ {
+			s.Advance(1.0)
+		}
+
+		mx, my := g.members[0].WatcherAt()
+		require.True(t, notice.Retarget(g.members[0].WatcherID(), &fakeQuarry{id: "v:1", x: mx + 1, y: my}))
+
+		for i := 0; i < 3; i++ {
+			s.Advance(1.0)
+		}
+
+		require.True(t, s.aware(id), "the fixture: the pack sees her")
+
+		if !alive {
+			bodies.known["v:1"].health = 0
+		}
+
+		advanceClockToStage(t, clock, StageDay)
+		s.Advance(0.1)
+
+		for _, have := range s.groupIDs() {
+			if have == id {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	require.False(t, run(false), "she died: the pack is coming for no one, and goes home at daybreak")
+	require.True(t, run(true), "the control: alive, the pack stays")
+}
