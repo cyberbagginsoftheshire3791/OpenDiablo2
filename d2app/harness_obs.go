@@ -83,6 +83,11 @@ type harnessEntityInfo struct {
 	// presentation, so it is filled only by get_entity/get_player and never
 	// by the digest). Use it to aim strigoi_click at an entity.
 	Screen *[2]int `json:"screen,omitempty"`
+
+	// Shown is whether the map draws the entity now: false only with fog of
+	// war on and the entity on ground the player does not see (F1;
+	// MapRenderer.Shows). Presentation, filled only by get_entity/get_player.
+	Shown *bool `json:"shown,omitempty"`
 }
 
 type harnessGetEntitiesIn struct {
@@ -430,6 +435,9 @@ func (a *App) harnessAddObservationTools(srv *mcp.Server) {
 				if mr := game.HarnessMapRenderer(); mr != nil {
 					sx, sy := mr.WorldToScreen(out.X, out.Y)
 					out.Screen = &[2]int{sx, sy}
+
+					shown := mr.Shows(out.X, out.Y)
+					out.Shown = &shown
 				}
 			}
 		})

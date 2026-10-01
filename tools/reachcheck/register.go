@@ -1429,6 +1429,29 @@ var Register = []Entry{
 	{sym(pkgPalette, "Catalog.MapNote"), BucketDefer, VerdictDead,
 		"The open map's 'note' property verbatim -- the loader reads it and throws it away, so this is the only place it survives. The editor shows the STATUS the note produces, through Entry.Why, rather than the note itself.",
 		"World Editor v1: a note editor, since the note is also where the editor's own group data lives."},
+
+	// FOG OF WAR F1 (1 Oct 2026, fog-f1; docs/fog.md). Live behind -fog: the
+	// game screen always builds the fog and updates it every frame after
+	// MapEngine.Advance (Game.fogAdvance), and gives the renderer the sampler
+	// when -fog is on. The verbs and the probe's readers are the harness's.
+	{sym(pkgMapEngine, "MapEngine.TileSightClear"), BucketWire, VerdictLive,
+		"Fog's line of sight, tile-stepped, sharing sightBlocked with checkLos: Game.fogAdvance -> Fog.Update -> recompute -> sees asks it through mapTileSight every recompute.", ""},
+	{sym(pkgWorld, "NewFog"), BucketWire, VerdictLive,
+		"CreateGame builds every game's fog (newGameFog), on or off.", ""},
+	{sym(pkgWorld, "DefaultFogDials"), BucketWire, VerdictLive,
+		"The shipped dials (day sight 12, Josh's Q1), read by newGameFog.", ""},
+	{sym(pkgWorld, "Fog.Update"), BucketWire, VerdictLive,
+		"Game.fogAdvance calls it every frame after MapEngine.Advance when fog is on; it recomputes only when his tile changes.", ""},
+	{sym(pkgWorld, "Fog.FogAt"), BucketWire, VerdictLive,
+		"The renderer's FogSampler question, asked per tile per pass by tileDrawn/pushTileView and per entity by Shows.", ""},
+	{sym(pkgWorld, "Fog.MemoryLook"), BucketWire, VerdictLive,
+		"How remembered ground is drawn: pushTileView asks it for every explored, unseen tile.", ""},
+	{sym(pkgMapRenderer, "MapRenderer.SetFogSampler"), BucketWire, VerdictLive,
+		"Game.fogAdvance hands the renderer the fog (and fogDetach takes it back): the one switch between the fogged and the unfogged draw.", ""},
+	{sym(pkgMapRenderer, "MapRenderer.Shows"), BucketWire, VerdictLive,
+		"renderEntity's fog gate (entityShown): no one is drawn on ground he does not see now. get_entity's shown reads the same.", ""},
+	{sym(pkgScreen, "SetGameFog"), BucketWire, VerdictLive,
+		"d2app sets it from -fog before any game exists.", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in
