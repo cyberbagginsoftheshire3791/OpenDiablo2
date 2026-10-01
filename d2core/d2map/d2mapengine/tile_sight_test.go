@@ -1,6 +1,7 @@
 package d2mapengine
 
 import (
+	"image"
 	"testing"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
@@ -135,5 +136,26 @@ func TestTileSightOffTheMapBlocks(t *testing.T) {
 
 	if clear, _ := m.TileSightClear(1.5, 1.5, -3, 1); clear {
 		t.Fatal("a ray through tiles off the map is clear")
+	}
+}
+
+// TestStructuresAreKeptUntilTheMapIsReset: the footprints an authored map
+// lays are what Structures returns, a copy, and a reset clears them.
+func TestStructuresAreKeptUntilTheMapIsReset(t *testing.T) {
+	m := testEngine(20, 20)
+	in := []image.Rectangle{image.Rect(2, 2, 5, 5), image.Rect(10, 3, 12, 6)}
+
+	m.SetStructures(in)
+	in[0] = image.Rect(0, 0, 1, 1)
+
+	got := m.Structures()
+	if len(got) != 2 || got[0] != image.Rect(2, 2, 5, 5) || got[1] != image.Rect(10, 3, 12, 6) {
+		t.Fatalf("Structures = %v", got)
+	}
+
+	m.resetState(20, 20)
+
+	if len(m.Structures()) != 0 {
+		t.Fatalf("a reset map keeps %v", m.Structures())
 	}
 }

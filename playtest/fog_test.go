@@ -26,6 +26,8 @@ import (
 //     0.35.
 //  3. A villager more than 12 tiles off is not shown (get_entity.shown false);
 //     walk to him and he is.
+//  5. (run on act 1's frame) The house to his right is visible whole and its
+//     art is drawn -- a house seen at all is seen whole.
 //
 // The provider is the primary evidence; the pixels are the second (plan
 // §3.10).
@@ -87,7 +89,13 @@ func TestFogOfWar(t *testing.T) {
 		t.Fatalf("the tile 6 away at (%v,%v) with a clear line is %s", near["x"], near["y"], st)
 	}
 
-	s.frame(t, "fog-1-day-start") // Josh's evidence: black beyond what he has seen
+	day := s.frame(t, "fog-1-day-start-v2") // Josh's evidence: black beyond what he has seen
+
+	// --- act 5: the house to his right is drawn whole -----------------------
+	// (pulled into F1 on 1 Oct 2026: a house's art stands on its front tiles,
+	// which its own footprint hides from an eye behind or beside it; fog shows a
+	// structure whole once any of it is seen.)
+	houseActRightOfHim(t, s, day, px, py)
 
 	// THE BLACK, IN PIXELS. At zoom 0.5 day sight 12 reaches past the
 	// screen's sides and nearly to its corners (plan §1.8: 7.1 tiles to the
@@ -183,7 +191,7 @@ func TestFogOfWar(t *testing.T) {
 			walked, startX, startY, st)
 	}
 
-	s.frame(t, "fog-2-after-walk") // Josh's evidence: the remembered ground behind him
+	s.frame(t, "fog-2-after-walk-v2") // Josh's evidence: the remembered ground behind him
 
 	fog = fogState(s)
 	t.Logf("act 2: %v explored, %v visible, %v recomputes, %v skipped, %v cells read",
@@ -248,6 +256,56 @@ func TestFogOfWar(t *testing.T) {
 	ent = s.call("strigoi_get_entity", map[string]any{"handle": handle})
 	if shown, ok := ent["shown"].(bool); !ok || !shown {
 		t.Fatalf("beside him, the villager %s is not shown (%v)", handle, ent["shown"])
+	}
+}
+
+// houseActRightOfHim finds the structure whose footprint is nearest to the
+// right of him on screen, and asserts every footprint tile is visible and its
+// art is drawn: a box just above the footprint's middle tile is not black.
+func houseActRightOfHim(t *testing.T, s *session, img image.Image, px, py int) {
+	t.Helper()
+
+	psx, _ := playerScreen(t, s)
+
+	var house []int
+
+	for dx := 2; dx <= 8 && house == nil; dx++ {
+		for dy := -4; dy <= 2 && house == nil; dy++ {
+			pr := probeAt(s, px+dx, py+dy)
+			sx, _ := probeScreen(pr)
+
+			if fp, ok := pr["structure"].([]any); ok && len(fp) == 4 && sx > psx+120 {
+				house = make([]int, 4)
+				for i := range fp {
+					v, _ := fp[i].(float64)
+					house[i] = int(v)
+				}
+			}
+		}
+	}
+
+	if house == nil {
+		t.Fatal("act 5: no structure stands to his right")
+	}
+
+	for ty := house[1]; ty < house[3]; ty++ {
+		for tx := house[0]; tx < house[2]; tx++ {
+			if st := str(probeAt(s, tx, ty), "state"); st != "visible" {
+				t.Fatalf("act 5: the house %v to his right has tile (%d,%d) %s; a house seen at all is seen whole",
+					house, tx, ty, st)
+			}
+		}
+	}
+
+	mid := probeAt(s, (house[0]+house[2])/2, (house[1]+house[3])/2)
+	mx, my := probeScreen(mid)
+	lum := meanLum(img, image.Rect(mx-4, my-24, mx+5, my-15))
+	t.Logf("act 5: the house %v to his right: every tile visible; its art above the middle tile (%d,%d) on screen has mean %.1f",
+		house, mx, my-20, lum)
+
+	if lum < 15 {
+		t.Fatalf("act 5: the house %v to his right is not drawn: the art above its middle tile at screen (%d,%d) is black (%.1f)",
+			house, mx, my-20, lum)
 	}
 }
 

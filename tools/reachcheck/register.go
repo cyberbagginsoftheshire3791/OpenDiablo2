@@ -1452,6 +1452,10 @@ var Register = []Entry{
 		"renderEntity's fog gate (entityShown): no one is drawn on ground he does not see now. get_entity's shown reads the same.", ""},
 	{sym(pkgScreen, "SetGameFog"), BucketWire, VerdictLive,
 		"d2app sets it from -fog before any game exists.", ""},
+	{sym(pkgMapEngine, "MapEngine.SetStructures"), BucketWire, VerdictLive,
+		"LayAuthoredMap hands the engine the authored map's structure footprints (pulled into F1, 1 Oct 2026), so fog shows a house whole once any of it is seen.", ""},
+	{sym(pkgMapEngine, "MapEngine.Structures"), BucketWire, VerdictLive,
+		"Fog reads the footprints when it sizes itself to the map (Fog.resize through mapTileSight, every new game with fog on).", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in

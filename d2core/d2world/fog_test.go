@@ -1,6 +1,7 @@
 package d2world
 
 import (
+	"image"
 	"strings"
 	"testing"
 )
@@ -212,5 +213,78 @@ func TestFogOffTheGridIsNothing(t *testing.T) {
 		if e, v := f.FogAt(p[0], p[1]); e || v {
 			t.Errorf("off the grid (%d,%d) is explored %v visible %v", p[0], p[1], e, v)
 		}
+	}
+}
+
+// houseSight is a map with one house on it, footprint (25,9)-(28,12): an eye
+// west of it sees the house's west column (its face) and nothing east of
+// that column -- the house hides its own back, as a real footprint does.
+type houseSight struct{ footprints []image.Rectangle }
+
+func (h houseSight) TileSightClear(fx, fy float64, tx, ty int) (bool, int) {
+	return tx <= 25 || tileOf(fx) > 27, 1
+}
+
+func (h houseSight) Structures() []image.Rectangle { return h.footprints }
+
+// TestAHouseSeenFromBehindIsWhole: a house seen by one column of its footprint
+// is visible whole (so all its art is drawn), and when he walks away it is
+// remembered whole. A house he has never seen any of stays unexplored.
+//
+// Negative control (1 Oct 2026, strigoi-harness-runs\wt-fog\nc\): drop the
+// footprint pass (wholeStructures does nothing) and this fails, "the house's
+// far corner (26,9) is unexplored; a house seen at all is seen whole"
+// (nc16-no-footprint-pass.txt).
+func TestAHouseSeenFromBehindIsWhole(t *testing.T) {
+	house := image.Rect(25, 9, 28, 12)
+	far := image.Rect(40, 40, 43, 43)
+
+	f := newTestFog(houseSight{footprints: []image.Rectangle{house, far}})
+	f.Update(48, 48, []Eye{{ID: "s:1", X: 20.5, Y: 10.5}})
+
+	if st := f.At(25, 10); st != FogVisible {
+		t.Fatalf("the house's face (25,10) is %v", st)
+	}
+
+	for ty := house.Min.Y; ty < house.Max.Y; ty++ {
+		for tx := house.Min.X; tx < house.Max.X; tx++ {
+			if st := f.At(tx, ty); st != FogVisible {
+				t.Fatalf("the house's far corner (%d,%d) is %v; a house seen at all is seen whole", tx, ty, st)
+			}
+		}
+	}
+
+	if st := f.At(26, 13); st != FogUnexplored {
+		t.Fatalf("the ground behind the house (26,13) is %v; only the house is shown whole", st)
+	}
+
+	if st := f.At(41, 41); st != FogUnexplored {
+		t.Fatalf("a house he never saw (41,41) is %v", st)
+	}
+
+	f.Update(48, 48, []Eye{{ID: "s:1", X: 5.5, Y: 40.5}})
+
+	for _, p := range [][2]int{{25, 10}, {27, 11}} {
+		if st := f.At(p[0], p[1]); st != FogExplored {
+			t.Fatalf("walked away, the house's tile (%d,%d) is %v; a house is remembered whole", p[0], p[1], st)
+		}
+	}
+
+	if r, ok := f.StructureAt(27, 11); !ok || r != house {
+		t.Fatalf("StructureAt(27,11) = %v %v, want the house", r, ok)
+	}
+}
+
+// TestExploreRemembersAHouseWhole: the explore verb touching one tile of a
+// house remembers it whole.
+func TestExploreRemembersAHouseWhole(t *testing.T) {
+	house := image.Rect(25, 9, 28, 12)
+
+	f := newTestFog(houseSight{footprints: []image.Rectangle{house}})
+	f.Update(48, 48, []Eye{{ID: "s:1", X: 5.5, Y: 40.5}})
+	f.Explore(25.5, 9.5, 0.1)
+
+	if st := f.At(27, 11); st != FogExplored {
+		t.Fatalf("explore on the house's corner left its far corner %v", st)
 	}
 }

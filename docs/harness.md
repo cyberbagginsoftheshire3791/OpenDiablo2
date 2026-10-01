@@ -929,7 +929,9 @@ this doc fails until it agrees.
   remembered, frames were skipped; with the dial at 5, a remembered tile on
   screen is grey (not black, saturation under 0.35). Act 3: a villager more
   than 12.5 tiles off has `shown` false on `strigoi_get_entity`; walked to,
-  true. A second function, `TestZoomInToTwo` (the zoom-in, the same day), with
+  true. Act 5 (on act 1's frame): the house to his right has every footprint
+  tile visible (`probe.structure`) and its art is drawn (not black) -- a
+  house seen at all is seen whole. A second function, `TestZoomInToTwo` (the zoom-in, the same day), with
   fog off: `ui.zoom` takes 2.0 and refuses 2.1, `view_scale` reads 2, and his
   feet stay where they were on screen at 1.0 (within 3 px: the camera stays on
   him).
@@ -1667,9 +1669,11 @@ unexplored, `1` explored, `2` visible), `eyes[]` (`id` `s:1`, `x`, `y`,
 `sight`, `terms{base}`), the dials `day_sight` (12), `memory_level` (0.45) and
 `memory_saturation` (0.25), the cost counters `recomputes`, `skipped` (an
 update that found his tile unchanged) and `cells_read`, `saved` (false: F3), and
-`probe` once one is asked -- `{x, y, state, clear_from{s:1}, screen}`, the
-tile's state, whether the line from his eye is clear, and where its centre is
-on screen now. Settable: the three dials (`day_sight` 0..64, the two looks
+`probe` once one is asked -- `{x, y, state, clear_from{s:1}, screen,
+structure}`, the tile's state, whether the line from his eye is clear, where
+its centre is on screen now, and the footprint `[x0, y0, x1, y1]` (Max
+exclusive) of the structure standing on it, if one does (a structure is seen
+whole once any of it is seen). Settable: the three dials (`day_sight` 0..64, the two looks
 0..1) are DIALS; `enabled` (true / false; refused under `-classic`) is the
 game's view, like `ui.zoom`; `explore` (`{x, y, r}`: every tile whose centre is
 within r marked explored), `forget` (the explored set cleared; the next update

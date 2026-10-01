@@ -29,6 +29,14 @@ the line passes exactly through a tile corner it is stopped only if both tiles
 beside the corner block (a diagonal wall is opaque; one post beside the
 diagonal is not).
 
+**A structure is seen whole.** A house's art stands on its front tiles, which
+its own footprint hides from an eye behind or beside it, so a structure with
+ANY footprint tile visible is visible whole (its art is drawn whole), and one
+with any tile explored is remembered whole (greyed whole). The footprints are
+the authored map's (`d2mapgen.LayAuthoredMap` -> `MapEngine.SetStructures`);
+the plan had this in F2 and it was pulled into F1 on 1 Oct 2026, so the first
+look shows no house missing.
+
 Fog is in **world tiles**: the camera is not in its rule, so zooming out shows
 more of the map's black and grey, never more of what he sees.
 
@@ -67,9 +75,7 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
   pinned to 1. F2 shrinks sight at night to the dark radius (Josh's Q2: 1.5
   tiles, rising to about 4 under a full moon) plus what is lit, sees lit ground
   at any distance with a clear line (Q3), shows the enemies in his own fight
-  (Q4), makes every squad an eye, shows a house whole when any of it is seen
-  (today a house seen from behind can vanish: its strips stand on its front
-  tiles, which its own footprint hides), and gates the HUD's five leaks (the
+  (Q4), makes every squad an eye, and gates the HUD's five leaks (the
   overhead bars, the hover label, the corpse marks, the tactical diamonds and
   click-to-strike; BUG-107).
 - **Not saved (F3).** The explored grid is not in the world file: a load, "load

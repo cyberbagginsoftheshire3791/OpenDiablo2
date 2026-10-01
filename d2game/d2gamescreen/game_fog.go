@@ -2,6 +2,7 @@ package d2gamescreen
 
 import (
 	"fmt"
+	"image"
 	"math"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
@@ -64,6 +65,15 @@ func (s mapTileSight) TileSightClear(fx, fy float64, tx, ty int) (clear bool, ce
 	}
 
 	return s.v.gameClient.MapEngine.TileSightClear(fx, fy, tx, ty)
+}
+
+// Structures are the map's structure footprints, which fog shows whole.
+func (s mapTileSight) Structures() []image.Rectangle {
+	if s.v.gameClient == nil || s.v.gameClient.MapEngine == nil {
+		return nil
+	}
+
+	return s.v.gameClient.MapEngine.Structures()
 }
 
 // fogOffReason is why this game draws no fog now, "" when it does.
@@ -181,6 +191,10 @@ func (p fogProvider) HarnessState() map[string]interface{} {
 		probe := map[string]interface{}{
 			"x": pr[0], "y": pr[1], "state": f.At(pr[0], pr[1]).String(),
 			"clear_from": f.ClearFrom(pr[0], pr[1]),
+		}
+
+		if r, ok := f.StructureAt(pr[0], pr[1]); ok {
+			probe["structure"] = []int{r.Min.X, r.Min.Y, r.Max.X, r.Max.Y} // the footprint, Max exclusive
 		}
 
 		if v.mapRenderer != nil {

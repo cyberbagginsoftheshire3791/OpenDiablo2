@@ -123,3 +123,54 @@ func TestFogOnTheVillageSeesHisSurroundings(t *testing.T) {
 		t.Fatal("nothing within 11 tiles of the start is hidden: the village's walls block no sight")
 	}
 }
+
+// TestTheVillagesHousesAreSeenWhole: on the real village, from the start, no
+// structure is part-seen -- each is visible whole or not at all -- and at least
+// one is seen. The footprints reach the fog through LayAuthoredMap's
+// SetStructures.
+//
+// Negative control (1 Oct 2026, strigoi-harness-runs\wt-fog\nc\): drop
+// LayAuthoredMap's SetStructures and this fails, "the engine has 0 structure
+// footprints; the village has 7" (nc17-no-structures-laid.txt).
+func TestTheVillagesHousesAreSeenWhole(t *testing.T) {
+	engine, m := villageEngine(t)
+	size := engine.Size()
+
+	if got := len(engine.Structures()); got != len(m.Structures) || got == 0 {
+		t.Fatalf("the engine has %d structure footprints; the village has %d", got, len(m.Structures))
+	}
+
+	f := d2world.NewFog(d2world.DefaultFogDials(), engine)
+	f.Update(size.Width, size.Height, []d2world.Eye{{ID: "s:1", X: m.StartX + 0.5, Y: m.StartY + 0.5}})
+
+	seen := 0
+
+	for _, s := range m.Structures {
+		r := s.Footprint
+		visible, tiles := 0, 0
+
+		for ty := r.Min.Y; ty < r.Max.Y; ty++ {
+			for tx := r.Min.X; tx < r.Max.X; tx++ {
+				tiles++
+
+				if f.At(tx, ty) == d2world.FogVisible {
+					visible++
+				}
+			}
+		}
+
+		t.Logf("structure %v: %d of %d tiles visible", r, visible, tiles)
+
+		if visible > 0 && visible < tiles {
+			t.Errorf("structure %v is part-seen: %d of %d tiles visible", r, visible, tiles)
+		}
+
+		if visible == tiles {
+			seen++
+		}
+	}
+
+	if seen == 0 {
+		t.Fatal("no structure is seen from the start")
+	}
+}

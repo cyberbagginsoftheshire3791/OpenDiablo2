@@ -1,6 +1,7 @@
 package d2world
 
 import (
+	"image"
 	"math"
 	"strings"
 )
@@ -57,6 +58,13 @@ type TileSight interface {
 	TileSightClear(fx, fy float64, tx, ty int) (clear bool, cells int)
 }
 
+// Structured is optionally implemented by a TileSight that knows the map's
+// structure footprints (whole tiles, Max exclusive): *d2mapengine.MapEngine
+// does. Fog reads them when it sizes itself to a map.
+type Structured interface {
+	Structures() []image.Rectangle
+}
+
 // Eye is one point the fog sees from, in world tiles. F1 has one: the player.
 type Eye struct {
 	ID   string
@@ -99,7 +107,11 @@ type Fog struct {
 
 	eyes    []Eye
 	eyeKeys []eyeKey // the eyes' tiles at the last recompute
-	dirty   bool     // a dial, the grid or the explored set changed: recompute
+
+	// structures are the map's footprints, clipped to the grid: a structure
+	// with any tile seen is seen whole, and remembered whole (wholeStructures).
+	structures []image.Rectangle
+	dirty      bool // a dial, the grid or the explored set changed: recompute
 
 	recomputes, skipped, cellsRead int
 }
@@ -134,6 +146,18 @@ func (f *Fog) resize(w, h int) {
 	f.epoch = 1
 	f.exploredCount, f.visibleCount = 0, 0
 	f.dirty = true
+
+	f.structures = f.structures[:0]
+
+	if s, ok := f.sight.(Structured); ok {
+		grid := image.Rect(0, 0, w, h)
+
+		for _, r := range s.Structures() {
+			if r = r.Intersect(grid); !r.Empty() {
+				f.structures = append(f.structures, r)
+			}
+		}
+	}
 }
 
 // Update recomputes what the eyes see on a w x h map when something that
@@ -223,6 +247,53 @@ func (f *Fog) recompute() {
 			f.see(ex, ey)
 		}
 	}
+
+	f.wholeStructures()
+}
+
+// wholeStructures is the plan's whole-structure reveal (§2.3; pulled into F1
+// on 1 Oct 2026 so Josh's first look shows no house missing): a structure with
+// ANY footprint tile visible is visible whole, and one with any tile explored
+// is explored whole. A house's art stands on its front tiles (d2mapgen's
+// strips), which its own footprint hides from an eye behind or beside it --
+// without this the house seen from behind is not drawn at all, and one seen
+// from the side is drawn in slices.
+func (f *Fog) wholeStructures() {
+	for _, r := range f.structures {
+		anyVisible, anyExplored := false, false
+
+		for ty := r.Min.Y; ty < r.Max.Y; ty++ {
+			for tx := r.Min.X; tx < r.Max.X; tx++ {
+				anyVisible = anyVisible || f.isVisible(tx, ty)
+				anyExplored = anyExplored || f.isExplored(tx, ty)
+			}
+		}
+
+		for ty := r.Min.Y; ty < r.Max.Y; ty++ {
+			for tx := r.Min.X; tx < r.Max.X; tx++ {
+				switch {
+				case anyVisible && !f.isVisible(tx, ty):
+					f.see(tx, ty)
+				case anyExplored:
+					f.explore(ty*f.w + tx)
+				}
+			}
+		}
+	}
+}
+
+// StructureAt is the footprint of the structure standing on tile (tx, ty), if
+// one does.
+func (f *Fog) StructureAt(tx, ty int) (image.Rectangle, bool) {
+	p := image.Pt(tx, ty)
+
+	for _, r := range f.structures {
+		if p.In(r) {
+			return r, true
+		}
+	}
+
+	return image.Rectangle{}, false
 }
 
 // sees is THE VISIBILITY RULE (plan §2.3), F1's day form: tile T is visible
@@ -323,6 +394,8 @@ func (f *Fog) Explore(x, y, r float64) int {
 			}
 		}
 	}
+
+	f.wholeStructures()
 
 	return n
 }

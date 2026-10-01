@@ -1,6 +1,9 @@
 package d2mapengine
 
-import "math"
+import (
+	"image"
+	"math"
+)
 
 // FOG OF WAR, F1 (1 Oct 2026; claude/fog-of-war-build-plan.md §2.3). Fog asks
 // a different question from checkLos: not "can this point see that point" but
@@ -109,4 +112,18 @@ func (m *MapEngine) tileBlocksSight(x, y int) bool {
 	flags := m.SubTileAt(x*subtilesPerTile+centre, y*subtilesPerTile+centre)
 
 	return flags == nil || m.sightBlocked(flags)
+}
+
+// SetStructures records an authored map's structure footprints, in whole tiles
+// (Max exclusive). LayAuthoredMap passes them; ResetMap clears them. Fog of war
+// reads them so a house seen by any one tile is shown whole: its art stands on
+// its front tiles, which its own footprint hides from an eye behind it, so
+// without them a house seen from behind or the side would not be drawn at all.
+func (m *MapEngine) SetStructures(footprints []image.Rectangle) {
+	m.structures = append([]image.Rectangle(nil), footprints...)
+}
+
+// Structures are the map's structure footprints (none on a generated map).
+func (m *MapEngine) Structures() []image.Rectangle {
+	return append([]image.Rectangle(nil), m.structures...)
 }
