@@ -351,6 +351,19 @@ func (v *Game) refusalWords(r *SaveRefusal) string {
 		}
 	}
 
+	// The moment after combat (the review of combat-status, B2, 1 Oct 2026;
+	// decided on the coordinator's default, Josh can overturn): only the
+	// grace, his swing or his reaction holds the save -- nothing is after him
+	// -- and under the menu, which pauses the world, that moment never ends.
+	// "You can't save in combat." with no enemy in sight read as a fault; the
+	// words say what to do. (The other option, SAVE AND EXIT settling like the
+	// close, was not taken: the menu's SAVE GAME could not settle the same
+	// way without running frames he does not see, and the two entries would
+	// then answer differently for one moment.)
+	if r.Code == SaveRefusedCombat && v.settlesForClose(r) {
+		return d2player.SaveRefusedCombatMomentWords
+	}
+
 	return saveRefusalWords(r.Code)
 }
 
@@ -627,6 +640,44 @@ func (v *Game) closeNow(rep *CloseReport) {
 	}
 
 	rep.Unloaded = true
+}
+
+// closeAskWindow is how long a close in combat's question stands: a second
+// close inside it leaves without saving (AskBeforeClose) [DIAL]. Wall time --
+// the close is a person's hand on the window, and the world may be paused
+// under the menu.
+const closeAskWindow = 5 * time.Second
+
+// AskBeforeClose is the window's close in combat (the combat-status review,
+// A2, decided 1 Oct 2026 on the coordinator's default; Josh can overturn): a
+// close that would leave without saving for combat -- his live fight or a
+// hostile chasing him; never the grace, his swing or his reaction, which the
+// close settles and then saves -- asks once. It puts "You are in combat.
+// Close again to leave without saving." up, and answers true: this close is
+// not taken. A second close within closeAskWindow answers false and the close
+// goes on (closeNow: unsaved, and since A1 no part of him written). Any close
+// not in combat answers false at once and clears the question.
+func (v *Game) AskBeforeClose(now time.Time) bool {
+	r := v.saveRefusal()
+	if r == nil || r.Code != SaveRefusedCombat || v.settlesForClose(r) {
+		v.closeAskedAt = time.Time{}
+
+		return false
+	}
+
+	if !v.closeAskedAt.IsZero() && now.Sub(v.closeAskedAt) <= closeAskWindow {
+		return false
+	}
+
+	v.closeAskedAt = now
+
+	if v.gameControls != nil {
+		v.gameControls.SaveNotice(d2player.CloseInCombatWords, closeAskWindow.Seconds())
+	}
+
+	v.Infof("CLOSE asked: %s; a second close within %v leaves without saving", r.Reason, closeAskWindow)
+
+	return true
 }
 
 // settleForClose runs frames while the save is refused for the moment after

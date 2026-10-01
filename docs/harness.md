@@ -933,7 +933,12 @@ this doc fails until it agrees.
   words, no file touched. Act 2: the fallen let go (unwatched, its chase
   released): `grace`; 170 frames on still in combat, the marker still drawn;
   out at frame 180 (one either way), the marker gone (provider and pixels);
-  SAVE GAME saves ("Game saved."). Act 3: a zombie on a fallen fifteen tiles
+  SAVE GAME saves ("Game saved."). Act 2b (the combat-status review's B2 and
+  B3, 1 Oct 2026): a zombie sent after him (`strigoi_pursue`) and released
+  puts him in the grace; under the escape menu 300 frames move the grace not
+  at all, the menu's line is "Return to the game; you can save / a moment
+  after the fighting stops.", and back in the game it runs out from where it
+  stood (within 2 frames). Act 3: a zombie on a fallen fifteen tiles
   off (a clock fight, not his): live, he is not in combat, no marker, a save
   made. Act 4 (BUG-105): a dog beside him, he holds and every blow is a hit;
   the frame his get-hit plays his fight is ended (disengaged, the dog let
@@ -1032,7 +1037,8 @@ entities are `e:N` in first-seen order (stable under a seed, per process). Error
 with codes `NOT_IN_GAME · ALREADY_IN_GAME · SAVE_NOT_FOUND · TIMEOUT_LOADING ·
 GAME_NOT_TICKING · NOT_IMPLEMENTED · UNKNOWN_HANDLE · UNKNOWN_SYSTEM ·
 FIELD_NOT_SETTABLE · OUT_OF_BOUNDS · BAD_ARGUMENT · AWAITING_PLAYER · CLOCK_FROZEN ·
-WORLD_HELD · INTERNAL`, and `strigoi_save_game`'s refusals (M4.6 B3) `FIGHTING ·
+WORLD_HELD · INTERNAL`, and `strigoi_save_game`'s refusals (M4.6 B3) `COMBAT
+(since the combat status, 30 Sep 2026) · FIGHTING ·
 DEAD · TALKING · JOURNAL · LOADOUT · NETWORK · NOT_READY`, each of which touches
 no file. `CLOCK_FROZEN` (24 Sep 2026, harness 0.12.1) is
 `strigoi_step_world`'s refusal when the clock is frozen: no number of ticks
@@ -1040,7 +1046,8 @@ moves it, and the stepper used to spin to its tick cap past the client's
 timeout before saying so. `WORLD_HELD` (harness 0.12.2) is the same refusal
 for the game's own holds, named by the ui provider's `world_held_by`
 (`Game.WorldHeldBy`): `escape_menu`, `talk`, `loadout`, and since J1 (24 Sep
-2026) `journal`. `fight` (a paced
+2026) `journal`, and since the combat-status review (1 Oct 2026) `closing`
+(the close's settle; no verb runs while it holds). `fight` (a paced
 fight) is not refused -- it moves the clock a round at a time, and its open
 turn is `AWAITING_PLAYER`'s. Both are checked every pass; the menu, a talk,
 the loadout choice and the journal only begin from input, so in practice they are caught on
@@ -1660,7 +1667,7 @@ name -- character, inventory, skills, automap, message, quest, menu, party,
 and `open_close` -- each `{x, y, w, h, visible}` in screen pixels, so a script
 clicks where they are drawn), and since 24 Sep `world_held_by` (what holds the
 world, `Game.WorldHeldBy`: `""` while it runs, `escape_menu`, `loadout`,
-`talk`, `journal`, `fight`; `"unknown"` if the game screen never attached --
+`talk`, `journal`, `fight`, `closing` (1 Oct 2026); `"unknown"` if the game screen never attached --
 `strigoi_step_world` refuses all but `""` and `fight` with `WORLD_HELD`),
 and since 27 Sep (the tables burst's review) `hand_icons` (the HUD's two
 skill icons as last drawn: his hands' keys, F and L -- or, since the polish

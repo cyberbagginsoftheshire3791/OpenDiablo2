@@ -119,9 +119,11 @@ func (h *HUD) renderCombatMarker(x, y int, target d2interface.Surface) {
 	fillRect(target, x, y, combatMarkerSize, combatMarkerSize, combatMarkerEdge)
 	fillRect(target, x+1, y+1, combatMarkerSize-2, combatMarkerSize-2, combatMarkerBand)
 
-	_, labelHeight := m.label.GetSize()
-	m.label.SetPosition(x+combatMarkerSize/2, y+(combatMarkerSize-labelHeight)/2)
-	m.label.Render(target)
+	if m.label != nil {
+		_, labelHeight := m.label.GetSize()
+		m.label.SetPosition(x+combatMarkerSize/2, y+(combatMarkerSize-labelHeight)/2)
+		m.label.Render(target)
+	}
 
 	m.drew = CombatMarkerLetter
 }

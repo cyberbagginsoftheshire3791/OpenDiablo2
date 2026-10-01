@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2gui"
@@ -593,6 +594,10 @@ type Game struct {
 	closing       bool
 	exitSavedHero bool
 
+	// closeAskedAt is when a close in combat last asked (AskBeforeClose; the
+	// combat-status review, A2), zero when none stands.
+	closeAskedAt time.Time
+
 	// The combat status (Josh, 30 Sep 2026; combat_status.go): combatGrace is
 	// the grace left after the last of his fight, a chase, his swing and his
 	// reaction, in seconds of game time -- COMBAT refuses a save while it
@@ -751,6 +756,11 @@ func (v *Game) OnLoad(_ d2screen.LoadingState) {
 
 // OnUnload releases the resources of Gameplay screen
 func (v *Game) OnUnload() error {
+	// Asked first, while the world still stands: whether he leaves in combat
+	// is the combat status's answer, and releaseWorld below closes the
+	// systems it reads (the review of combat-status, A1).
+	saveHero := v.unloadSavesHero()
+
 	d2harness.Unregister(v.gameControls) // the "ui" provider dies with the screen
 	d2harness.Unregister(progressProvider{v})
 	d2harness.Unregister(villageProvider{v})
@@ -809,7 +819,17 @@ func (v *Game) OnUnload() error {
 	// frame ran since (exitSavedHero; any frame clears it). A second
 	// write of the same moment kept the first as the .od2's .bak, so the .bak
 	// was this moment, not the save before it (rule 5).
-	if v.unloadSavesHero() {
+	//
+	// NOR WHEN HE LEAVES A SINGLE-PLAYER GAME IN COMBAT (the review of
+	// combat-status, A1, decided 1 Oct 2026 on the coordinator's default;
+	// Josh can overturn): EXIT WITHOUT SAVING from the menu, or a close
+	// refused COMBAT. "You can't save while in combat" is meant literally:
+	// before, the world file stayed his last save's while his .od2 and
+	// sidecar took the combat moment -- the experience and gear of a fight
+	// he left -- and the next load paired the two (the sidecar carries the
+	// last save's generation, so nothing refused them). Now he comes back to
+	// his last save whole.
+	if saveHero {
 		if err := v.OnPlayerSave(); err != nil {
 			v.Errorf("leaving: his .od2 was not saved: %v", err)
 		}
@@ -842,7 +862,25 @@ func (v *Game) OnUnload() error {
 // alive, the load did not tear this game down on its first frame, and no SAVE
 // AND EXIT or close has just written them (see OnUnload).
 func (v *Game) unloadSavesHero() bool {
-	return shouldSaveOnUnload(v.localPlayer) && !v.loadAbandoned && !v.exitSavedHero
+	return shouldSaveOnUnload(v.localPlayer) && !v.loadAbandoned && !v.exitSavedHero && !v.leavesInCombat()
+}
+
+// leavesInCombat is a single-player game left while he is in combat (the
+// review of combat-status, A1): the unload writes no part of him (OnUnload).
+// A network game keeps his hero and gear as it always has -- it has no last
+// save to come back to (rule 9).
+func (v *Game) leavesInCombat() bool {
+	if v.gameClient == nil || !v.gameClient.IsSinglePlayer() {
+		return false
+	}
+
+	if v.InCombat() {
+		v.Infof("LEAVING in combat: his .od2 and sidecar are left as his last save wrote them")
+
+		return true
+	}
+
+	return false
 }
 
 // Render renders the Gameplay screen
@@ -931,9 +969,7 @@ func (v *Game) Advance(elapsed float64) error {
 	// Pursuit does not re-path, because that lives inside advanceWorld. R2 §3
 	// bullet 1's "actors outside the encounter freeze" is contradicted by
 	// this, knowingly, and carries a dated marker saying so.
-	if v.worldRunning() {
-		v.advanceWorld(elapsed)
-	}
+	v.advanceWorldOrHold(elapsed)
 
 	// T1: the paced fight's own clock runs on real seconds whenever the screen
 	// is live -- not under the escape menu, which pauses everything.
@@ -1087,6 +1123,15 @@ func (v *Game) WorldHeldBy() string {
 		return d2player.WorldHeldByMenu
 	}
 
+	// The close (the review of combat-status, B1, 1 Oct 2026): the settle runs
+	// frames he no longer sees -- the grace's remainder, his swing, the
+	// fight's bookkeeping -- and the world must not run in them: before, a
+	// monster could notice him in the unseen seconds, open his fight, and the
+	// close left unsaved for a fight he never saw.
+	if v.closing {
+		return d2player.WorldHeldByClose
+	}
+
 	// T2: nothing moves while he chooses how he carries himself.
 	if v.choosingLoadout {
 		return d2player.WorldHeldByLoadout
@@ -1126,6 +1171,24 @@ func (v *Game) screenLive() bool {
 	menuClosed := v.escapeMenu != nil && !v.escapeMenu.IsOpen()
 
 	return menuClosed || len(v.gameClient.Players) != 1
+}
+
+// advanceWorldOrHold is the frame's world: run when nothing holds it. Held by
+// the close (WorldHeldByClose: the review of combat-status, B1), the fight's
+// own bookkeeping still runs -- the fight's end applied (applyFightingActivity)
+// -- because the close's settle waits on it; his swing and reaction (the map
+// engine's animations), the experience and the combat status's grace run
+// beside this in Advance as they do under any hold but the menu's.
+func (v *Game) advanceWorldOrHold(elapsed float64) {
+	if v.worldRunning() {
+		v.advanceWorld(elapsed)
+
+		return
+	}
+
+	if v.WorldHeldBy() == d2player.WorldHeldByClose && v.combat != nil {
+		v.applyFightingActivity()
+	}
 }
 
 func (v *Game) advanceWorld(elapsed float64) {
@@ -1179,6 +1242,15 @@ func (v *Game) advanceWorld(elapsed float64) {
 	// After the tables, which own the deep-night bands the rising reads.
 	if v.rising != nil {
 		v.rising.Advance()
+	}
+
+	// BUG-108 (1 Oct 2026): a hunter that has forgotten him gives up its
+	// chase -- before the aware are chased, so one that sees him again this
+	// very tick chases again.
+	if v.pursuit != nil {
+		for _, id := range v.pursuit.GiveUpOnTheForgotten(v.notice) {
+			v.Infof("CHASE given up: %s has forgotten its quarry", id)
+		}
 	}
 
 	v.startChasesForTheAware()

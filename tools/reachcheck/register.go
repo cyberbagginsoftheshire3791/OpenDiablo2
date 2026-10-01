@@ -947,6 +947,18 @@ var Register = []Entry{
 		"The grace after combat, at the end of every frame (Game.Advance): held full while a trigger is seen, counted down on the screen's live frames, and the log's COMBAT in/out lines. If it went dark the status would end the frame its last trigger did -- a save the moment a fight ended.", ""},
 	{sym(pkgScreen, "Game.settlesForClose"), BucketWire, VerdictLive,
 		"Which refusals the close's settle runs frames to cure (rule 3 reworded): FIGHTING, and COMBAT for its grace, his swing or his reaction -- never his live fight or a chase. Game.settleForClose asks it every settle frame.", ""},
+	// THE COMBAT-STATUS REVIEW'S FIXES (1 Oct 2026; each decided on the
+	// coordinator's default, Josh can overturn).
+	{sym(pkgScreen, "Game.leavesInCombat"), BucketWire, VerdictLive,
+		"A1: a single-player game left in combat (EXIT WITHOUT SAVING, or a close refused COMBAT) writes no part of him -- Game.unloadSavesHero asks it, OnUnload before releaseWorld. If it went dark the unload would write his .od2 and sidecar at the combat moment beside the last save's world file again.", ""},
+	{sym(pkgScreen, "Game.AskBeforeClose"), BucketWire, VerdictLive,
+		"A2: the window's close in combat asks once (\"You are in combat. Close again to leave without saving.\"); a second close within closeAskWindow leaves. App.onWindowClose asks it through windowCloseAsks. If it went dark one click on the X would leave a fight unsaved with no word.", ""},
+	{sym(pkgApp, "windowCloseAsks"), BucketWire, VerdictLive,
+		"A2: whether the screen in play asks before the window closes (only a game, only in combat). App.onWindowClose calls it.", ""},
+	{sym(pkgScreen, "Game.advanceWorldOrHold"), BucketWire, VerdictLive,
+		"B1: the frame's world, or its hold -- under the close's hold (WorldHeldByClose) only the fight's end is applied (applyFightingActivity). Game.Advance calls it every frame. If it went dark nothing in the world would run.", ""},
+	{sym(pkgWorld, "Pursuit.GiveUpOnTheForgotten"), BucketWire, VerdictLive,
+		"BUG-108: a chase ends when its hunter's watch of the same quarry is forgotten (the notice's MemoryMinutes unseen). Game.advanceWorld calls it before startChasesForTheAware. If it went dark a monster that lost him would hunt him -- and keep him in combat, unable to save -- until it died or dawn.", ""},
 	{sym(pkgWorld, "Pursuit.ChasersOf"), BucketWire, VerdictLive,
 		"The hunters chasing one quarry: the combat status asks it every frame whether a hostile is chasing him (Game.combatTrigger). If it went dark being chased would not be combat.", ""},
 	{sym(pkgEntity, "Player.Reacting"), BucketWire, VerdictLive,

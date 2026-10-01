@@ -205,6 +205,48 @@ func (p *Pursuit) ChasersOf(quarryID string) []string {
 	return out
 }
 
+// GiveUpOnTheForgotten releases every chase whose hunter has forgotten its
+// quarry, and returns the hunters released, in the stable order (BUG-108,
+// fixed 1 Oct 2026 on the coordinator's default, option (a); Josh can
+// overturn). A chase was started from a watch's awareness
+// (Game.startChasesForTheAware) and nothing ended it when the awareness
+// lapsed: a dog that lost him kept re-routing to where he was until it died
+// or dawn came -- and since the combat status a hostile chasing him is combat,
+// so he could not save. Now the chase ends when its hunter's watch of the
+// same quarry is no longer noticed: MemoryMinutes [DIAL] of the notice model
+// (2.0 world minutes shipped) unseen. The number is the notice's own on
+// purpose: MemoryMinutes is signed as "how long a watcher keeps coming after
+// losing sight", and the watch's minutes unseen stop counting once it
+// forgets, so a longer give-up would need a second clock in the world file
+// for no designed difference. A chase with no watch behind it (the harness's
+// strigoi_pursue), or a watch of another quarry, is left alone. A hunter that
+// sees its quarry again notices it again, and the next frame's
+// startChasesForTheAware chases again.
+func (p *Pursuit) GiveUpOnTheForgotten(n *Notice) []string {
+	if n == nil {
+		return nil
+	}
+
+	var out []string
+
+	for _, id := range p.hunterIDs() {
+		w, ok := n.watches[id]
+		if !ok || w.noticed || w.target == nil {
+			continue
+		}
+
+		if w.target.QuarryID() != p.chases[id].quarry.QuarryID() {
+			continue
+		}
+
+		delete(p.chases, id)
+
+		out = append(out, id)
+	}
+
+	return out
+}
+
 // Solves is how many routes have been computed since construction.
 func (p *Pursuit) Solves() int { return p.solves }
 

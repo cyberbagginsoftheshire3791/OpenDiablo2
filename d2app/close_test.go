@@ -4,6 +4,7 @@ package d2app
 
 import (
 	"testing"
+	"time"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2screen"
@@ -42,5 +43,44 @@ func TestTheConsolesQuitClosesTheGameFirst(t *testing.T) {
 	// The hook runs once: a second close finds it done.
 	if _, ok := a.closeTheGame("again"); ok {
 		t.Fatal("the close hook runs once")
+	}
+}
+
+// fakeAsker is a screen in play that asks, or not, before the window closes.
+type fakeAsker struct {
+	asks  bool
+	asked int
+}
+
+func (f *fakeAsker) AskBeforeClose(time.Time) bool {
+	f.asked++
+
+	return f.asks
+}
+
+// A WINDOW'S CLOSE IN COMBAT ASKS FIRST (the combat-status review, A2): the
+// screen in play is asked, and when it asks the window stays open; a screen
+// that does not ask -- out of combat, or not a game -- closes at once, and
+// the close hook runs. THE CONTROL: the same App with no game in play closes
+// (onWindowClose answers true and the hook ran).
+func TestAWindowCloseInCombatAsksFirst(t *testing.T) {
+	asker := &fakeAsker{asks: true}
+	if !windowCloseAsks(asker, time.Now()) || asker.asked != 1 {
+		t.Fatalf("a game in combat asks before the window closes (asked %d)", asker.asked)
+	}
+
+	if windowCloseAsks(&fakeAsker{}, time.Now()) {
+		t.Fatal("a game out of combat does not ask")
+	}
+
+	if windowCloseAsks(struct{}{}, time.Now()) || windowCloseAsks(nil, time.Now()) {
+		t.Fatal("a screen that is not a game, or none, does not ask")
+	}
+
+	a := &App{screen: &d2screen.ScreenManager{}, Logger: d2util.NewLogger()}
+	a.Logger.SetLevel(d2util.LogLevelNone)
+
+	if !a.onWindowClose() || !a.closed {
+		t.Fatal("the control: with no game in play the window closes and the hook runs")
 	}
 }

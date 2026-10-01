@@ -47,6 +47,9 @@ import (
 const (
 	csCombatWords = "You can't save in combat."
 
+	// The moment after combat, under the menu (the review's B2): its first line.
+	csMomentWords = "Return to the game; you can save"
+
 	// The marker's square (d2player: combatMarkerX, combatMarkerY, 32 square)
 	// and its edge's colour, 0x8c1c14.
 	csMarkerX, csMarkerY, csMarkerSize = 54, 468, 32
@@ -251,6 +254,58 @@ func TestTheCombatStatus(t *testing.T) {
 	}
 
 	t.Logf("act 2 PASS: the chase ended; in combat %d frames more (the grace), the marker gone after (%s), and SAVE GAME saved", n, shot)
+
+	// --- act 2b: the grace under the escape menu (the review's B3 and B2) -------------
+	// A chase (strigoi_pursue: no watch, so no fight) and its release put him
+	// in the grace; under the menu, which pauses a single-player world, the
+	// grace does not run -- 300 frames and not a hundredth of a second gone --
+	// and the menu's line says what to do: "Return to the game; you can save
+	// a moment after the fighting stops." (not "You can't save in combat."
+	// with nothing in sight). Back in the game the grace runs out from where
+	// it stood.
+	p = s.call("strigoi_get_player", map[string]any{})
+	spot = scClearSpot(t, s, num(p, "x"), num(p, "y"))
+	runner := spawnNPC(t, s, "zombie1", spot[0], spot[1])
+	runnerID := entityID(t, s, runner)
+	s.call("strigoi_pursue", map[string]any{"hunter": runner, "quarry": handle})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if in, reason, _ := csStatus(t, s); !in || reason != "chased" {
+		t.Fatalf("act 2b: %s sent after him: in combat (chased): %v %q", runnerID, in, reason)
+	}
+
+	setField(s, "pursuit", "release", runnerID)
+	s.call("strigoi_step", map[string]any{"frames": 60})
+
+	_, reason, leftBefore := csStatus(t, s)
+	if reason != "grace" || leftBefore <= 1.5 || leftBefore >= 2.5 {
+		t.Fatalf("act 2b: a second into the grace: %q, %.3f s left", reason, leftBefore)
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "escape"})
+	s.call("strigoi_step", map[string]any{"frames": 300})
+
+	in, reasonUnder, leftUnder := csStatus(t, s)
+	if !in || reasonUnder != "grace" || leftUnder != leftBefore {
+		t.Fatalf("act 2b: 300 frames under the escape menu, the grace is paused: %.6f s before, %v %q %.6f s after",
+			leftBefore, in, reasonUnder, leftUnder)
+	}
+
+	m = escapeMenuOf(s)
+	if !strings.HasPrefix(str(m, "note"), csMomentWords) || !flag(t, m, "exit_refused") {
+		t.Fatalf("act 2b: in the grace, the menu says %q: %v", csMomentWords, m)
+	}
+
+	csShot(t, s, "combat-2b-menu-grace")
+	menuPick(t, s, "act 2b", "RETURN TO GAME")
+
+	out := csFramesUntilOut(t, s, 200)
+	if want := int(leftBefore*60 + 0.5); out < want-2 || out > want+2 {
+		t.Fatalf("act 2b: back in the game, out %d frames later; the grace had %.3f s (%d frames) left", out, leftBefore, want)
+	}
+
+	t.Logf("act 2b PASS: the grace held at %.3f s through 300 frames under the menu, the menu said %q, and ran out %d frames after it closed",
+		leftBefore, csMomentWords, out)
 
 	// --- act 3: a village fight elsewhere --------------------------------------------
 	quarry, monster := spawnNPC(t, s, "fallen1", px+15, py+3), spawnNPC(t, s, "zombie1", px+16, py+3)

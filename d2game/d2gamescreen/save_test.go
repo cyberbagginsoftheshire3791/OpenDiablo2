@@ -247,6 +247,7 @@ var b3GameClasses = map[string]string{
 	"autosaveOff":     "D: the harness's dial save.autosave, re-applied by a load as every dial is; false in the shipped game",
 	"closing":         "D: the close hook under way (the B5 review, A1): its settle frames take no autosave of their own, and the process ends after it; never in a file",
 	"exitSavedHero":   "D: a SAVE AND EXIT or close whose save wrote his .od2 and sidecar, so the unload does not write them again (the B5 review, C2); any frame clears it",
+	"closeAskedAt":    "D: when a window's close in combat last asked (the combat-status review, A2), wall time; a person's hand on the window, never in a file",
 
 	// The combat status (30 Sep 2026): a save is never made in combat, so
 	// nothing of it is in the file.

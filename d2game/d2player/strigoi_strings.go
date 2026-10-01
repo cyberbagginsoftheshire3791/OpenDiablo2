@@ -268,15 +268,22 @@ const (
 	// It took FIGHTING's "his fight is running" case ("You can't save during
 	// a fight.", gone with it); FIGHTING is only ever the moment after a
 	// fight now.
-	SaveRefusedCombatWords  = "You can't save in combat."
-	SaveRefusedSettleWords  = "You can't save while blows are still landing.\nTry again in a moment."
-	SaveRefusedTalkWords    = "You can't save while you are talking."
-	SaveRefusedJournalWords = "You can't save with your journal open."
-	SaveRefusedLoadoutWords = "You can't save until you have chosen your gear."
-	SaveRefusedDeadWords    = "The dead can't save."
-	SaveRefusedNetworkWords = "A network game can't be saved."
-	SaveRefusedNotYetWords  = "You can't save yet: the game is still starting."
-	SaveRefusedOtherWords   = "You can't save right now."
+	SaveRefusedCombatWords = "You can't save in combat."
+
+	// COMBAT for the moment after it only -- the grace, his swing or his
+	// reaction, nothing after him (the combat-status review, B2): under the
+	// menu, which pauses the world, that moment never ends on its own.
+	CloseInCombatWords = "You are in combat.\nClose again to leave without saving."
+
+	SaveRefusedCombatMomentWords = "Return to the game; you can save\na moment after the fighting stops."
+	SaveRefusedSettleWords       = "You can't save while blows are still landing.\nTry again in a moment."
+	SaveRefusedTalkWords         = "You can't save while you are talking."
+	SaveRefusedJournalWords      = "You can't save with your journal open."
+	SaveRefusedLoadoutWords      = "You can't save until you have chosen your gear."
+	SaveRefusedDeadWords         = "The dead can't save."
+	SaveRefusedNetworkWords      = "A network game can't be saved."
+	SaveRefusedNotYetWords       = "You can't save yet: the game is still starting."
+	SaveRefusedOtherWords        = "You can't save right now."
 
 	// NOT_READY's two reasons that are not a game still starting (the B5
 	// review, C4): a game opened with no hero save, and a hero with no kit
