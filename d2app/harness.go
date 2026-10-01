@@ -32,6 +32,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2input"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2client"
+	"github.com/hajimehoshi/ebiten/v2"
 )
 
 const (
@@ -291,6 +292,14 @@ func (a *App) harnessStart() {
 	if harness.enabled == nil || !*harness.enabled {
 		return
 	}
+
+	// A harnessed game opens WITHOUT taking focus (Josh, 30 Sep 17:35: "Launch
+	// without focus"). Every playtest is a fresh process, and each one used to
+	// pull the keyboard and mouse off whatever he was doing. harnessStart runs
+	// before the renderer's Run, which is where ebiten creates the window, and
+	// SetRunnableOnUnfocused (the config's RunInBackground) already keeps an
+	// unfocused game ticking. A hand launch without -harness is unchanged.
+	ebiten.SetInitFocused(false)
 
 	host := *harness.addr
 	if i := strings.LastIndex(host, ":"); i >= 0 {
