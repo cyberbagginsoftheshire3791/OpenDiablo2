@@ -196,9 +196,27 @@ func (p fogProvider) HarnessState() map[string]interface{} {
 
 // HarnessDigest: fog is not saved in F1 (F3 saves it), so a game resumed from
 // a world save starts black and does not reproduce it -- the whole of it is
-// this process's, and the probe's screen point is presentation besides.
+// this process's. Two things are in neither part: `skipped`, which counts
+// frames (boot frames differ from launch to launch, so two launches of one
+// script would disagree), and the probe's `screen` point, presentation that
+// moves while the camera eases onto him (BUG-58's rule).
 func (p fogProvider) HarnessDigest() (world, process map[string]interface{}) {
-	return map[string]interface{}{}, p.HarnessState()
+	process = p.HarnessState()
+	delete(process, "skipped")
+
+	if probe, ok := process["probe"].(map[string]interface{}); ok {
+		kept := make(map[string]interface{}, len(probe))
+
+		for k, v := range probe {
+			if k != "screen" {
+				kept[k] = v
+			}
+		}
+
+		process["probe"] = kept
+	}
+
+	return map[string]interface{}{}, process
 }
 
 // HarnessSettableFields are fog's writes: whether it is on (the game's view,

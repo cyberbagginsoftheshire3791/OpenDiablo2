@@ -3,6 +3,7 @@ package d2gamescreen
 import (
 	"testing"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 )
 
@@ -78,5 +79,48 @@ func TestFogDefaultsAreJoshs(t *testing.T) {
 
 	if processGameFog {
 		t.Fatal("fog is on by default; F1 is opt-in behind -fog")
+	}
+}
+
+// TestFogDigestLeavesOutFramesAndScreen: the digest's process part is what two
+// launches of one script share, so fog's frame counter (skipped) and the
+// probe's screen point stay out of it; the script still reads both.
+//
+// Negative control (1 Oct 2026): return HarnessState whole as the process part
+// and this fails, "the digest carries skipped, a count of frames"
+// (strigoi-harness-runs\wt-fog\nc\nc15-digest-whole-state.txt).
+func TestFogDigestLeavesOutFramesAndScreen(t *testing.T) {
+	v := &Game{fog: newGameFog(clearSight{}, true), mapRenderer: d2maprenderer.NewViewOnlyMapRenderer(0, 0)}
+	v.fog.fog.Update(10, 10, []d2world.Eye{{ID: fogEyeID, X: 5.5, Y: 5.5}})
+	v.fog.fog.Update(10, 10, []d2world.Eye{{ID: fogEyeID, X: 5.6, Y: 5.5}})
+	v.fog.probe = &[2]int{1, 1}
+
+	p := fogProvider{v}
+
+	st := p.HarnessState()
+	if st["skipped"] != 1 {
+		t.Fatalf("the state reports skipped %v, want 1", st["skipped"])
+	}
+
+	if pr, _ := st["probe"].(map[string]interface{}); pr["screen"] == nil {
+		t.Fatalf("the state's probe has no screen point: %v", pr)
+	}
+
+	world, process := p.HarnessDigest()
+	if len(world) != 0 {
+		t.Fatalf("fog put %v in the world part; F1 does not save it", world)
+	}
+
+	if _, ok := process["skipped"]; ok {
+		t.Fatal("the digest carries skipped, a count of frames")
+	}
+
+	probe, _ := process["probe"].(map[string]interface{})
+	if _, ok := probe["screen"]; ok || probe["state"] == nil {
+		t.Fatalf("the digest's probe is %v; want its state and no screen point", probe)
+	}
+
+	if process["explored"] != st["explored"] || process["recomputes"] != 1 {
+		t.Fatalf("the digest lost the world-tile counts: %v", process)
 	}
 }

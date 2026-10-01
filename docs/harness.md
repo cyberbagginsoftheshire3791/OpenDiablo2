@@ -1674,8 +1674,9 @@ on screen now. Settable: the three dials (`day_sight` 0..64, the two looks
 game's view, like `ui.zoom`; `explore` (`{x, y, r}`: every tile whose centre is
 within r marked explored), `forget` (the explored set cleared; the next update
 re-sees what he sees) and `reveal_all` are verbs; `probe` (`{x, y}`) is a
-question. All of it is in the digest's PROCESS part: F1 does not save fog, so a
-resumed game does not reproduce it. `strigoi_get_entity` / `get_player` report
+question. It is in the digest's PROCESS part (F1 does not save fog, so a
+resumed game does not reproduce it), less `skipped` (a count of frames, which
+differ from launch to launch) and the probe's `screen` (presentation). `strigoi_get_entity` / `get_player` report
 `shown` (presentation, never in the digest): false only with fog drawn and the
 entity on a tile he does not see now (`MapRenderer.Shows`, the test the render
 passes use).
