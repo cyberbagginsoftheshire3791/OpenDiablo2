@@ -92,6 +92,21 @@ func (g *GameControls) viewScale() float64 {
 	return g.mapRenderer.Scale()
 }
 
+// processGameZoom is the zoom a new game starts at: -zoom's value
+// (d2gamescreen.SetGameZoom) until the player or a script moves the view, and
+// then the view he chose -- a death's load, "load last save" and a new game
+// keep his zoom rather than snapping back to the flag (the zoom review, C2).
+// It is this process's, never the world's: no save carries it.
+//
+// nolint:gochecknoglobals // one value per process, set from the command line and the wheel
+var processGameZoom = gameZoomMax
+
+// SetGameZoom sets the zoom new games start at, clamped to the game's range.
+func SetGameZoom(z float64) { processGameZoom = ClampGameZoom(z) }
+
+// GameZoom is the zoom new games start at.
+func GameZoom() float64 { return processGameZoom }
+
 // viewZoom is what the game zoom needs of the map renderer: its scale, read and
 // set. *d2maprenderer.MapRenderer is one; a test's fake is another.
 type viewZoom interface {
@@ -99,23 +114,71 @@ type viewZoom interface {
 	SetScale(scale float64)
 }
 
-// zoomByNotch moves the view one wheel notch (nextGameZoom) and says whether the
-// wheel did anything. MapRenderer.SetScale moves no camera: the world point at
-// the middle of the screen stays there, and the camera follows the hero, so he
-// stays where he was and the world closes in or opens out around him.
-func zoomByNotch(v viewZoom, dy float64) bool {
-	if dy == 0 {
+// setViewZoom is the one line every zoom of a game goes through -- the wheel and
+// the harness's field: the view's scale, and the zoom the next game starts at.
+// MapRenderer.SetScale moves no camera: the world point at the middle of the
+// screen stays there, and the camera follows the hero, so he stays where he was
+// and the world closes in or opens out around him.
+func setViewZoom(v viewZoom, z float64) {
+	z = ClampGameZoom(z)
+	v.SetScale(z)
+	SetGameZoom(z)
+}
+
+// wheelNotchEpsilon absorbs the float error of summed fractional scrolls: ten
+// touchpad events of 0.1 sum to 0.9999999999999999, which is one notch.
+const wheelNotchEpsilon = 1e-9
+
+// wheelNotches adds one wheel event's dy to the running sum and takes the whole
+// notches out of it (the zoom review, B1). A mouse wheel reports 1 a notch; a
+// touchpad reports fractions many times a second, and a zoom of a whole step
+// per event made a two-finger scroll fling the view from 1.0 to 0.4 at once.
+// Whole units of the sum are notches, the remainder waits for the next event,
+// and a turn of direction eats into it first.
+func wheelNotches(acc *float64, dy float64) int {
+	*acc += dy
+
+	var n int
+	if *acc >= 0 {
+		n = int(*acc + wheelNotchEpsilon)
+	} else {
+		n = int(*acc - wheelNotchEpsilon)
+	}
+
+	*acc -= float64(n)
+	if math.Abs(*acc) < wheelNotchEpsilon {
+		*acc = 0
+	}
+
+	return n
+}
+
+// zoomByWheel moves the view by the whole notches the event completes and says
+// whether it zoomed (a fraction of a notch does nothing yet).
+func zoomByWheel(v viewZoom, acc *float64, dy float64) bool {
+	n := wheelNotches(acc, dy)
+	if n == 0 {
 		return false
 	}
 
-	v.SetScale(nextGameZoom(v.Scale(), dy))
+	z := v.Scale()
+
+	for ; n > 0; n-- {
+		z = nextGameZoom(z, 1)
+	}
+
+	for ; n < 0; n++ {
+		z = nextGameZoom(z, -1)
+	}
+
+	setViewZoom(v, z)
 
 	return true
 }
 
 // setZoomField is the harness's "zoom" write: a number in the game's range, set
-// as the wheel sets it. A number outside the range is refused, not clamped, so
-// a script learns its number was not the one drawn.
+// as the wheel sets it (setViewZoom). A number outside the range is refused,
+// not clamped, so a script learns its number was not the one drawn.
 func setZoomField(v viewZoom, value interface{}) error {
 	var z float64
 
@@ -136,38 +199,53 @@ func setZoomField(v viewZoom, value interface{}) error {
 		return fmt.Errorf("the game has no map renderer yet")
 	}
 
-	v.SetScale(z)
+	setViewZoom(v, z)
 
 	return nil
 }
 
-// OnMouseWheel zooms the game's view a step per notch about the middle of the
-// screen (the camera stays on the hero). The wheel was bound to nothing in the
-// game before this: SelectPreviousSkill and SelectNextSkill name
-// KeyMouseWheelUp and KeyMouseWheelDown in key_map.go, but the ebiten adapter
-// has no row for those keys and the wheel never arrives as a key
-// (d2core/d2input/ebiten/ebiten_input.go, Wheel). It zooms nothing while a
-// modal screen is up: the death screen, a talk, the journal, the escape menu or
-// the help overlay.
+// wheelBlocked says whether the wheel must not zoom: a modal screen is up (the
+// death screen, a talk, the journal, the escape menu, the help overlay, the
+// loadout choice, the skill-select menu), or the cursor is over the kit or the
+// talent panel -- the click path's own guards (OnMouseButtonDown,
+// OnMouseButtonRepeat), so the wheel is refused wherever a click is (the zoom
+// review, C1).
+func (g *GameControls) wheelBlocked(mx, my int) bool {
+	switch {
+	case g.dead(), g.talking(), g.journalOpen():
+		return true
+	case g.escapeMenu != nil && g.escapeMenu.IsOpen():
+		return true
+	case g.HelpOverlay != nil && g.HelpOverlay.IsOpen():
+		return true
+	case g.kitHolder != nil && (g.kitHolder.ChoosingLoadout() || g.overKitPanel(mx, my)):
+		return true
+	case g.overTalentPanel(mx, my):
+		return true
+	case g.hud != nil && g.hud.skillSelectMenu != nil && g.hud.skillSelectMenu.IsOpen():
+		return true
+	}
+
+	return false
+}
+
+// OnMouseWheel zooms the game's view about the middle of the screen (the camera
+// stays on the hero), a 0.1 step per whole notch. The wheel was bound to
+// nothing in the game before this: SelectPreviousSkill and SelectNextSkill
+// name KeyMouseWheelUp and KeyMouseWheelDown in key_map.go, but the ebiten
+// adapter has no row for those keys and the wheel never arrives as a key
+// (d2core/d2input/ebiten/ebiten_input.go, Wheel).
 func (g *GameControls) OnMouseWheel(event d2interface.MouseWheelEvent) bool {
-	if g.mapRenderer == nil || g.dead() || g.talking() || g.journalOpen() {
+	if g.mapRenderer == nil || g.wheelBlocked(event.X(), event.Y()) {
 		return false
 	}
 
-	if g.escapeMenu != nil && g.escapeMenu.IsOpen() {
-		return false
-	}
-
-	if g.HelpOverlay != nil && g.HelpOverlay.IsOpen() {
-		return false
-	}
-
-	return zoomByNotch(g.mapRenderer, event.ScrollY())
+	return zoomByWheel(g.mapRenderer, &g.wheelAcc, event.ScrollY())
 }
 
 // HarnessSettableFields lists the one field a script may write on "ui": the
-// game zoom. The harness has no wheel verb, so a scripted zoom sets the scale
-// the way the wheel does (zoomByNotch and setZoomField both end in SetScale).
+// game zoom. The harness has no wheel verb, so a scripted zoom goes through
+// setViewZoom, the line the wheel goes through.
 func (g *GameControls) HarnessSettableFields() []string { return []string{"zoom"} }
 
 // HarnessSet writes the zoom (setZoomField).
@@ -181,4 +259,29 @@ func (g *GameControls) HarnessSet(field string, value interface{}) error {
 	}
 
 	return setZoomField(g.mapRenderer, value)
+}
+
+// spriteUnder is the hover loop's and squad selection's hit test for one
+// entity: is the screen point inside its sprite as drawn, at the view's scale
+// (spriteHitRect)?
+func spriteUnder(mr *d2maprenderer.MapRenderer, ent d2interface.MapEntity, mx, my int) bool {
+	sxf, syf := mr.WorldToScreenF(ent.GetPositionF())
+	ex, ey := int(math.Floor(sxf)), int(math.Floor(syf))
+	w, h := ent.GetSize()
+
+	l, r, t, b := spriteHitRect(ex, ey, w, h, mr.Scale())
+
+	return l <= mx && r >= mx && t <= my && b >= my
+}
+
+// tacticalSpriteHit is the paced fight's hit test on an enemy's sprite: the
+// sprite as a PNG creature draws it, feet-anchored and centred, at the view's
+// scale.
+func tacticalSpriteHit(mr *d2maprenderer.MapRenderer, ent d2interface.MapEntity, mx, my int) bool {
+	sx, sy := mr.WorldToScreenF(ent.GetPositionF())
+	w, hgt := ent.GetSize()
+	w, hgt = mr.ScaleLength(w), mr.ScaleLength(hgt)
+
+	return float64(mx) >= sx-float64(w)/2 && float64(mx) <= sx+float64(w)/2 &&
+		float64(my) >= sy-float64(hgt) && float64(my) <= sy
 }

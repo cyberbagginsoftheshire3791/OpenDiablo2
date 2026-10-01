@@ -434,13 +434,8 @@ func (g *GameControls) tacticalEnemyAt(mx, my int) string {
 			continue
 		}
 
-		sx, sy := g.mapRenderer.WorldToScreenF(ent.GetPositionF())
-		w, hgt := ent.GetSize()
 		// The sprite as drawn, at the view's scale (view_scale.go).
-		w, hgt = g.mapRenderer.ScaleLength(w), g.mapRenderer.ScaleLength(hgt)
-
-		if float64(mx) >= sx-float64(w)/2 && float64(mx) <= sx+float64(w)/2 &&
-			float64(my) >= sy-float64(hgt) && float64(my) <= sy {
+		if tacticalSpriteHit(g.mapRenderer, ent, mx, my) {
 			return e.ID
 		}
 	}

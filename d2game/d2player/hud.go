@@ -846,14 +846,8 @@ func (h *HUD) hoveredEntityWhere(mx, my int, keep func(d2interface.MapEntity) bo
 			continue
 		}
 
-		entScreenXf, entScreenYf := h.mapRenderer.WorldToScreenF(entity.GetPositionF())
-		entScreenX := int(math.Floor(entScreenXf))
-		entScreenY := int(math.Floor(entScreenYf))
-		entityWidth, entityHeight := entity.GetSize()
 		// The sprite as drawn, at the view's scale (view_scale.go).
-		l, r, t, b := spriteHitRect(entScreenX, entScreenY, entityWidth, entityHeight, h.mapRenderer.Scale())
-
-		if l <= mx && r >= mx && t <= my && b >= my {
+		if spriteUnder(h.mapRenderer, entity, mx, my) {
 			return entity
 		}
 	}

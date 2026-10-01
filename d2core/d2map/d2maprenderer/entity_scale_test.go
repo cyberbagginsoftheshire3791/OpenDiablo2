@@ -2,9 +2,11 @@ package d2maprenderer
 
 import (
 	"image"
+	"image/color"
 	"math"
 	"testing"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 )
 
@@ -61,7 +63,7 @@ const (
 
 // drawInkEntity draws e on its tile the way renderPass2 and renderPass3 do: the
 // tile's translation through the viewport, then renderEntity.
-func drawInkEntity(scale float64, e *inkEntity) (*paintSurface, *MapRenderer) {
+func drawInkEntity(scale float64, e d2interface.MapEntity) (*paintSurface, *MapRenderer) {
 	target := newPaintSurface(800, 600)
 	mr := &MapRenderer{viewport: newTestViewport(4000, 2000)}
 	mr.viewport.SetScale(scale)
@@ -91,7 +93,9 @@ func drawInkEntity(scale float64, e *inkEntity) (*paintSurface, *MapRenderer) {
 // entity's offsets unscaled and it fails too: the picture shrinks but hangs at
 // its full-size offset from the feet, "at scale 0.5 the sprite painted
 // (380,215)-(410,265)" -- 35 pixels above where he stands
-// (nc3-unscaled-offsets.txt).
+// (nc3-unscaled-offsets.txt). Drop the linear filter (the review's B2) and it
+// fails: "at scale 0.5 the sprite was drawn with filter 0; a shrunk sprite is
+// sampled linearly" (nc16-no-linear-filter.txt).
 func TestRenderEntityScalesTheSprite(t *testing.T) {
 	for _, scale := range []float64{0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.25, 2} {
 		e := &inkEntity{art: blockArt(entW, entH), feetX: entFeetX, feetY: entFeetY}
@@ -110,6 +114,11 @@ func TestRenderEntityScalesTheSprite(t *testing.T) {
 
 		if target.GetDepth() != 0 {
 			t.Errorf("at scale %v renderEntity left %d state(s) pushed on the target", scale, target.GetDepth())
+		}
+
+		if target.lastFilter != d2enum.FilterLinear {
+			t.Errorf("at scale %v the sprite was drawn with filter %v; a shrunk sprite is sampled linearly",
+				scale, target.lastFilter)
 		}
 	}
 }
@@ -130,9 +139,9 @@ func TestRenderEntityAtScale1IsTheUnscaledDraw(t *testing.T) {
 		t.Fatalf("at 1.0 the entity was handed %T, not the target", e.got)
 	}
 
-	if target.scalePushes != 0 {
-		t.Fatalf("at 1.0 renderEntity pushed %d scale(s); the shipped game's draw is e.Render(target) alone",
-			target.scalePushes)
+	if target.scalePushes != 0 || target.filterPushes != 0 {
+		t.Fatalf("at 1.0 renderEntity pushed %d scale(s) and %d filter(s); the shipped game's draw is e.Render(target) alone",
+			target.scalePushes, target.filterPushes)
 	}
 
 	mr.viewport.PushTranslationWorld(entTileX, entTileY)
@@ -197,6 +206,134 @@ func TestViewScaledSurfaceDoesNotAccumulateRounding(t *testing.T) {
 	if target.cur.x != 0 || target.cur.y != 0 || target.GetDepth() != 0 {
 		t.Fatalf("after ten pops the target is at %d, %d with %d state(s); it must be back where it began",
 			target.cur.x, target.cur.y, target.GetDepth())
+	}
+}
+
+// TestViewScaledSurfacePopRestoresTheOffset: push, pop, push lands where one
+// push does -- the pop restores the wrapper's own running offset with the
+// target's, or the next push is measured from where the popped one left it.
+//
+// Negative control (1 Oct 2026, the review's M1): make Pop leave v.cur alone
+// and this fails: "push 3, pop, push 3 at 0.5 moved the target 1, 1; one push
+// of 3 moves it 2, 2" (nc11-pop-keeps-cur.txt).
+func TestViewScaledSurfacePopRestoresTheOffset(t *testing.T) {
+	target := newPaintSurface(10, 10)
+	v := newViewScaledSurface(target, 0.5)
+
+	v.PushTranslation(3, 3)
+	v.Pop()
+	v.PushTranslation(3, 3)
+
+	if target.cur.x != 2 || target.cur.y != 2 {
+		t.Fatalf("push 3, pop, push 3 at 0.5 moved the target %d, %d; one push of 3 moves it 2, 2",
+			target.cur.x, target.cur.y)
+	}
+}
+
+// layeredEntity draws like Composite.Render: the feet, a highlight, then
+// sibling layers, each pushing its own origin and frame offset and every other
+// kind of state, drawing, and popping them all before the next layer.
+type layeredEntity struct {
+	d2interface.MapEntity
+	art *paintSurface
+}
+
+func (e *layeredEntity) Render(target d2interface.Surface) {
+	target.PushTranslation(entFeetX, entFeetY)
+	defer target.Pop()
+
+	target.PushBrightness(1.5) // highlight
+	defer target.Pop()
+
+	for i := 0; i < 3; i++ {
+		target.PushTranslation(0, -e.art.h)
+		target.PushTranslation(-e.art.w/2, 0)
+		target.PushEffect(d2enum.DrawEffectNone)
+		target.PushColor(color.White)
+		target.PushSaturation(1)
+		target.PushFilter(d2enum.FilterLinear)
+		target.PushSkew(0, 0)
+		target.Render(e.art)
+		target.PopN(7)
+	}
+}
+
+// TestRenderEntitySiblingLayersLandTogether (the zoom review's B3 probe): three
+// sibling layers, each with every kind of push, paint exactly where one layer
+// does, and leave the target's stack as they found it. Every push on the wrapper
+// must be one push on the target -- a pass-through push that skipped the
+// wrapper's own save would pop the target one state too many.
+//
+// Negative controls (1 Oct 2026, the review's M2 and M14): make PushBrightness
+// or PushSaturation forward without saving and this fails: "at 0.5 the layered
+// entity panicked" (nc12-brightness-no-save.txt, nc13-saturation-no-save.txt).
+func TestRenderEntitySiblingLayersLandTogether(t *testing.T) {
+	for _, s := range []float64{1, 0.5, 0.4, 0.7} {
+		single, _ := drawInkEntity(s, &inkEntity{art: blockArt(entW, entH), feetX: entFeetX, feetY: entFeetY})
+
+		var layered *paintSurface
+
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					layered = nil
+				}
+			}()
+
+			layered, _ = drawInkEntity(s, &layeredEntity{art: blockArt(entW, entH)})
+		}()
+
+		if layered == nil {
+			t.Errorf("at %v the layered entity panicked", s)
+			continue
+		}
+
+		if a, b := single.inkBounds(), layered.inkBounds(); a != b {
+			t.Errorf("at %v three sibling layers painted %v; one layer paints %v", s, b, a)
+		}
+
+		if layered.GetDepth() != 0 {
+			t.Errorf("at %v the target has %d state(s) left", s, layered.GetDepth())
+		}
+	}
+}
+
+// recSurface records the skews and rects the wrapper forwards.
+type recSurface struct {
+	*paintSurface
+	skews []float64
+	rects [][2]int
+}
+
+func (r *recSurface) PushSkew(x, y float64) {
+	r.skews = append(r.skews, x, y)
+	r.paintSurface.PushSkew(x, y)
+}
+
+func (r *recSurface) DrawRect(w, h int, _ color.Color) { r.rects = append(r.rects, [2]int{w, h}) }
+
+// TestViewScaledSurfaceSkewIsAnAngleAndRectsScale (the zoom review's B4 probe):
+// the shadow's skew is a shear -- a ratio, not a length -- and reaches the
+// target unscaled; a rect's sides are lengths and are scaled.
+//
+// Negative controls (1 Oct 2026, the review's M3 and M4): scale the skew and
+// this fails, "the shadow's skew 0.5 reached the target as [0.25 0]"
+// (nc14-skew-scaled.txt); forward DrawRect unscaled and it fails, "DrawRect(40,
+// 20) at 0.5 reached the target as [[40 20]], want [20 10]"
+// (nc15-drawrect-unscaled.txt).
+func TestViewScaledSurfaceSkewIsAnAngleAndRectsScale(t *testing.T) {
+	r := &recSurface{paintSurface: newPaintSurface(10, 10)}
+	v := newViewScaledSurface(r, 0.5)
+	v.PushSkew(0.5, 0)
+	v.DrawRect(40, 20, color.White)
+	v.Pop()
+
+	if len(r.skews) != 2 || r.skews[0] != 0.5 || r.skews[1] != 0 {
+		t.Errorf("the shadow's skew 0.5 reached the target as %v; a skew is an angle, not a length", r.skews)
+	}
+
+	if len(r.rects) != 1 || r.rects[0] != [2]int{20, 10} {
+		t.Errorf("DrawRect(40, 20) at 0.5 reached the target as %v, want [20 10]", r.rects)
 	}
 }
 

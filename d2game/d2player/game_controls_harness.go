@@ -449,11 +449,16 @@ func (g *GameControls) handIconsReport() map[string]interface{} {
 // player's view, not the world -- a game resumed in another process starts at
 // its own -zoom -- so it is this process's presentation too.
 func (g *GameControls) HarnessDigest() (world, process map[string]interface{}) {
-	world = g.HarnessState()
+	return splitUIDigest(g.HarnessState())
+}
 
+// splitUIDigest is HarnessDigest's split of the ui state into its world and
+// process parts (above), apart from the state it splits so a test can hand it
+// one.
+func splitUIDigest(world map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
 	rect := []string{"x", "y", "w", "h"}
 
-	process = map[string]interface{}{
+	process := map[string]interface{}{
 		"torch_verbs": world["torch_verbs"], "clock": world["clock"],
 		"talent_cells": withoutKeys(world["talent_cells"], rect...), "journal_notice": world["journal_notice"],
 		"escape_menu": world["escape_menu"], "save_notice": world["save_notice"],

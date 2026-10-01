@@ -17,8 +17,9 @@ arithmetic it did (pinned by `TestRenderEntityAtScale1IsTheUnscaledDraw`,
 | Control | Effect |
 |---|---|
 | `-zoom <float>` | the scale every game starts at, clamped to 0.4..1.0 (default 1.0). A load is a new game and starts at it too. |
-| mouse wheel (in a game) | one notch is 0.1, toward the player zooms out, away zooms in, clamped to 0.4..1.0. About the middle of the screen: the camera stays on the hero. Not while the death screen, a talk, the journal, the escape menu or the help overlay is up. |
-| harness `ui.zoom` | settable: a number in 0.4..1.0 (refused, not clamped, outside it), set as the wheel sets it. Classified not-a-dial in `harnessNotDials` -- the view, not the world. |
+| mouse wheel (in a game) | one notch is 0.1, toward the player zooms out, away zooms in, clamped to 0.4..1.0. About the middle of the screen: the camera stays on the hero. A touchpad's fractional scrolls are summed and step once per whole unit (ten scrolls of 0.1 are one notch). Not while the death screen, a talk, the journal, the escape menu, the help overlay, the loadout choice or the skill-select menu is up, nor over the kit or the talent panel -- wherever a click is refused. |
+| the zoom a new game starts at | `-zoom`'s value until the wheel or the harness moves the view; then the view the player chose, so a death's load, "load last save" and a new game keep his zoom. Process-wide (`d2player.GameZoom`), never in the world file. |
+| harness `ui.zoom` | settable: a number in 0.4..1.0 (refused, not clamped, outside it), set as the wheel sets it -- including the zoom the next game starts at. Classified not-a-dial in `harnessNotDials`: a load does not re-apply it; it carries over because the next game starts at it. |
 | harness `ui.view_scale` | read-only: the scale the map is drawn at. In the state digest's process part (a resumed game starts at its own `-zoom`). |
 
 The wheel was bound to nothing in the game before this. `SelectPreviousSkill`
@@ -47,8 +48,11 @@ Everything drawn in world space, at the one scale the viewport holds:
   translation the entity pushes itself (its sub-tile offset, each frame's
   offset from the sprite's origin, the shadow's shift), multiplies any scale it
   pushes (the shadow's 1 x 0.5), and scales the lengths of `DrawRect` /
-  `DrawLine`. Scaling the pictures alone would hang each one at its full-size
-  offset from the feet.
+  `DrawLine` (a skew is a ratio and passes through). Scaling the pictures alone
+  would hang each one at its full-size offset from the feet. A shrunk sprite is
+  sampled with `FilterLinear` (ebiten mipmaps a linear minification), so a
+  figure's outline does not break up at 0.4; an entity that pushes its own
+  filter keeps it. At 1.0 nothing is pushed.
 - **Everything anchored to an entity** (`d2player/view_scale.go`): the hover
   and squad-selection hit boxes (`spriteHitRect`), the tactical hit test, the
   point the hover label and the overhead bar hang from (`headAnchor`), and the
@@ -85,6 +89,25 @@ screen" in mind (`TacticalEngageTiles` 5, `NoticeDials.Radius` 12 "deliberately
 larger than the viewport"). At 0.5 about ten tiles are on screen in each
 direction. The distances are unchanged by ruling; whether a fight should still
 open at 5 tiles when the player can see 10 is a design question, not a zoom bug.
+
+## Known gaps
+
+- **Enemies show in the dark when zoomed out (BUG-107, OPEN, owner: fog of war
+  F2).** The overhead bars, hover label, corpse marks and the tactical and
+  click hit tests ask no light. At 1.0 the screen is about the torch's 5 tiles;
+  at 0.4 it reaches about 9 x 13 tiles from the hero, inside the 12-tile notice
+  band, so a bar floats over a wolf the dark hides. Deliberately not fixed here:
+  gating them on light changes frames at 1.0, and F2's one visibility predicate
+  owns it.
+- **Moving sprites can drift by about a pixel at any scale but 1.0** (the
+  review's C3). Every translation is a whole pixel: the tile anchor is floored
+  by the viewport and the entity's offsets are rounded once by the wrapper, so
+  a walking man's feet sit within about one pixel of `WorldToScreenF` of his
+  position and can step by a pixel between frames where the true point moved
+  less. Not visible in the software tests' 2 px tolerance; a real-render look.
+- **Tiles are still drawn nearest** (`drawTileArt`). Their seam measurements
+  are against a nearest draw; whether linear sampling would read better on the
+  ground, and whether it opens seams, is a real-render check not yet made.
 
 ## Verifying on screen
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 )
 
 // THE GAME ZOOMS OUT; THE ART AND THE WORLD'S DISTANCES DO NOT CHANGE (Josh, 1
@@ -33,6 +34,15 @@ import (
 // with it. Scaling only the pictures would leave each one at its full-size
 // offset from the feet: a 100-pixel hero at 0.5 would hang 50 pixels above
 // where he stands.
+//
+// A SHRUNK SPRITE IS SAMPLED LINEARLY (the zoom review, B2). The surface's
+// default filter is nearest, which at 0.4 keeps two pixels in five and throws
+// the rest away: a figure's outline and a blade's edge break up and shimmer as
+// he walks. ebiten (2.9) mipmaps a linear minification, so FilterLinear is
+// pushed under the scale; an entity that pushes a filter of its own (the
+// shadow's linear) keeps it. Tiles stay nearest (drawTileArt): their seams
+// are measured against a nearest draw, and a linear one is a real-render
+// check still owed (docs/camera.md).
 func (mr *MapRenderer) renderEntity(target d2interface.Surface, e d2interface.MapEntity) {
 	s := mr.viewport.Scale()
 	if s == defaultScale {
@@ -40,9 +50,24 @@ func (mr *MapRenderer) renderEntity(target d2interface.Surface, e d2interface.Ma
 		return
 	}
 
+	target.PushFilter(d2enum.FilterLinear)
 	target.PushScale(s, s)
 	e.Render(newViewScaledSurface(target, s))
-	target.Pop()
+	target.PopN(2)
+}
+
+// NewViewOnlyMapRenderer is a MapRenderer with an 800x600 viewport and a camera
+// at the given orthogonal point and nothing else -- no map engine, no assets,
+// nothing to draw. Its transforms, Scale, SetScale and ScaleLength work; Render
+// does not. It is for code that projects through a renderer without a map: the
+// HUD's hit tests and anchors in other packages' tests.
+func NewViewOnlyMapRenderer(camOrthoX, camOrthoY float64) *MapRenderer {
+	position := d2vector.NewPosition(camOrthoX, camOrthoY)
+	mr := &MapRenderer{viewport: NewViewport(0, 0, 800, 600)}
+	mr.Camera = Camera{position: &position}
+	mr.viewport.SetCamera(&mr.Camera)
+
+	return mr
 }
 
 // ScaleLength is n screen pixels of something drawn in world space -- an

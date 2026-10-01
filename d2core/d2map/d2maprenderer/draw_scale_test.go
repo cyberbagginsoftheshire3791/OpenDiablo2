@@ -31,6 +31,7 @@ import (
 type paintState struct {
 	x, y   int
 	sx, sy float64
+	filter d2enum.Filter
 }
 
 type paintSurface struct {
@@ -40,7 +41,8 @@ type paintSurface struct {
 	cur   paintState
 	stack []paintState
 
-	renders, scalePushes int
+	renders, scalePushes, filterPushes int
+	lastFilter                         d2enum.Filter // the filter the last Render drew with
 }
 
 func newPaintSurface(w, h int) *paintSurface {
@@ -98,12 +100,16 @@ func (p *paintSurface) PopN(n int) {
 
 func (p *paintSurface) PushColor(color.Color)        { p.push() }
 func (p *paintSurface) PushEffect(d2enum.DrawEffect) { p.push() }
-func (p *paintSurface) PushFilter(d2enum.Filter)     { p.push() }
-func (p *paintSurface) PushSkew(float64, float64)    { p.push() }
-func (p *paintSurface) PushBrightness(float64)       { p.push() }
-func (p *paintSurface) PushSaturation(float64)       { p.push() }
-func (p *paintSurface) ReplacePixels([]byte)         {}
-func (p *paintSurface) Screenshot() *image.RGBA      { return nil }
+func (p *paintSurface) PushFilter(f d2enum.Filter) {
+	p.push()
+	p.filterPushes++
+	p.cur.filter = f
+}
+func (p *paintSurface) PushSkew(float64, float64) { p.push() }
+func (p *paintSurface) PushBrightness(float64)    { p.push() }
+func (p *paintSurface) PushSaturation(float64)    { p.push() }
+func (p *paintSurface) ReplacePixels([]byte)      {}
+func (p *paintSurface) Screenshot() *image.RGBA   { return nil }
 func (p *paintSurface) RenderSection(d2interface.Surface, image.Rectangle) {
 }
 
@@ -124,6 +130,7 @@ func (p *paintSurface) PushScale(x, y float64) {
 func (p *paintSurface) Render(sfc d2interface.Surface) {
 	src := sfc.(*paintSurface)
 	p.renders++
+	p.lastFilter = p.cur.filter
 
 	x0, y0 := float64(p.cur.x), float64(p.cur.y)
 	x1, y1 := x0+float64(src.w)*p.cur.sx, y0+float64(src.h)*p.cur.sy

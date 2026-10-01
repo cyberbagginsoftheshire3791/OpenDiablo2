@@ -1616,8 +1616,9 @@ reports `view_scale`, the scale the map is drawn at (1.0 unless `-zoom`, the
 wheel or `zoom` moved it; in the digest's process part), and has ONE settable
 field, **`zoom`**: a number in 0.4..1.0 (refused outside it), set as the game's
 mouse wheel sets it, about the middle of the screen -- the harness has no wheel
-verb. It is the view, not the world: not a dial, and a load (a new game) starts
-at `-zoom`'s value again (docs/camera.md).
+verb -- and, as the wheel does, sets the zoom the next game starts at (a load
+is a new game, so it keeps the zoom). It is the view, not the world: not a dial,
+never in the world file (docs/camera.md).
 Otherwise read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
 register when the game screen is constructed and close on unload.
