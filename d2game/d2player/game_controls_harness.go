@@ -463,16 +463,23 @@ func splitUIDigest(world map[string]interface{}) (map[string]interface{}, map[st
 		"talent_cells": withoutKeys(world["talent_cells"], rect...), "journal_notice": world["journal_notice"],
 		"escape_menu": world["escape_menu"], "save_notice": world["save_notice"],
 		"view_scale": world["view_scale"],
+
+		// The overhead bars (fog of war F2 review B6): with fog on, which
+		// bars are drawn depends on what he sees, and fog is display only --
+		// so the bars are the HUD's presentation, in the process part, and
+		// fog never reaches the world part. (A bar's health is its body's,
+		// which the combat provider's world part carries.)
+		"bars": withoutKeys(world["bars"], rect...),
 	}
 
 	for _, key := range []string{
 		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button",
 		"talent_cells", "journal_notice", "escape_menu", "save_notice", "view_scale",
+		"bars",
 	} {
 		delete(world, key)
 	}
 
-	world["bars"] = withoutKeys(world["bars"], rect...)
 	world["kit_rows"] = withoutKeys(world["kit_rows"], rect...)
 
 	if talk, ok := world["talk_view"].(map[string]interface{}); ok {

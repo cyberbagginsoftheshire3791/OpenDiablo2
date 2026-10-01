@@ -68,16 +68,43 @@ eye's own tile, or when the straight line to it is clear (as above) AND either
   iterating the lit SOURCES' discs, never the whole map, and tries each lit
   tile's lines once a recompute (`Fog.seeLitGround`).
 
-**Every one of his squads' models is an eye** (`Squads.ModelEntities`; s:1 is
-the player). Villagers are not (Q5).
+  *Art, not sight* (the F2 review's C6): a lit wall face seen from afar makes
+  its house visible whole (the whole-structure reveal), so at night a lamp on
+  one face across the village shows the whole house's ART -- its roof and far
+  walls -- though only the lit face is what he can really see. Only the
+  structure's own tiles are drawn; nothing standing in it is shown unless its
+  own tile is seen.
+
+**When fog recomputes at night.** The key is the eyes' tiles and the light:
+the sky fraction in 1/64 steps, the sky AS DRAWN (the ambient's quantised
+band -- the two step at different moments, and the lit set follows the band;
+the F2 review's C1), the moon, the fixed sources exactly, and a CARRIED
+source (his torch) by the TILE it shines from (the review's B4). So a walk
+with his torch lit recomputes once a tile step, not once a frame; between
+steps the lit set is the one computed as he entered the tile -- the drawn
+light follows him exactly, and the seen edge of his own torch can lag it by
+under a tile. Measured over a whole dusk frame by frame
+(`TestDuskKeepsTheLitSetAndItsCost`): 2,241 frames, 79 recomputes, and on
+every frame the tiles fog sees by the lit term are exactly the tiles drawn
+lit.
+
+**Every one of his squads' LIVING models is an eye**
+(`Squads.LivingModelEntities`: a deployed model at 0 health, or his own body
+at 0, sees nothing -- the F2 review's B3; s:1 is the player). Villagers are
+not (Q5).
 
 **His fight's enemies are shown** (Q4): every enemy of his own fight that is
-neither dead nor routed is a **contact** -- an eye that reveals the tile it
-stands on and nothing else, so the enemy is drawn (at its tile's own light)
-and its bar, diamond and click target are there, lit or not, and nothing
-around it is revealed.
+not gone (dead, routed or broke off at first light: `TacticalEnemy.Gone`) is
+a **contact** -- it shows the tile it stands on and nothing else, so the
+enemy is drawn (at its tile's own light) and its bar, diamond and click target
+are there, lit or not. A contact's tile is SHOWN, not seen (the F2 review's
+B1/B2): it is shown after the whole-structure reveal, so a wolf standing in a
+house does not reveal the house, and it is never explored, so when the fight
+ends ground he never saw is black again (the renderer draws a tile that is
+visible though unexplored). A contact sees nothing for him: no line is tried
+from it, not even to lit ground.
 
-**The light he sees by is where he stands (BUG-108).** The light model's
+**The light he sees by is where he stands (BUG-110).** The light model's
 carried torch shines from where the world last ran (`Light.SetPlayer` runs in
 the gated `advanceWorld`), so during a held turn his torch stayed where the
 turn opened while he walked his Move. Fog reads a `d2world.LightView` -- the
@@ -87,7 +114,7 @@ sees it" and "it is drawn lit" are one fact. The view never writes the light
 model: the sim (Notice, the combat resolver's lit/dark rule, spawns) reads
 the light model as master does, so fog stays display only. Whenever the world
 has just run, the view is the light model to the bit
-(`TestTheViewIsTheLightWhereHeStands`). The sim's own half of BUG-108 is
+(`TestTheViewIsTheLightWhereHeStands`). The sim's own half of BUG-110 is
 Josh's to rule.
 
 **The HUD asks the same question (BUG-107).** The overhead bars and the
@@ -135,8 +162,12 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
   `TestFogNeverTouchesTheSim` (the light model's state is untouched by a
   night of fog updates; the plan's one-liner, fog calling `SetPlayer`, goes
   red) and the playtest `TestFogNeverTouchesTheSim` (fog on and off, one seed,
-  a torch-lit walk at 23:00: every system's world hash agrees but fog's and
-  the ui's).
+  a torch-lit walk at 23:00 and a fight: every system's world hash agrees,
+  fog's and the ui's included, and the ui less its `bars` and `hover_label`
+  is equal). (fd3c2e6d's docs said the hashes agreed "but fog's and the
+  ui's": the test allowed those two to differ and asserted nothing about the
+  ui -- the F2 review's C2. Since its B6 the ui's bars, which fog decides,
+  are in the digest's process part, so fog reaches no world part at all.)
 - **Fog off is master's frame**, at night with a torch too: one seeded frame
   at 22:45 and one at noon, 0 of 480,000 pixels differ from master `b84a7241`
   (`strigoi-harness-runs\wt-fog2\pix-compare.txt`; the control, master's
@@ -173,10 +204,13 @@ torch lit, hearths in a ring 14 tiles out; 1 Oct 2026, the same machine):
 
 The lit term (Q3, any distance) is a line from every eye to every lit tile:
 24 eyes and 16 fires is over the plan's 0.5 ms frame budget, which F4 (the
-24-eye horizon) must answer. **With his torch lit, every frame of a walk
-recomputes** (the torch's disc moves with him, and its signature is in the
-key); with no torch, fog recomputes only when an eye changes tile, the sky
-moves 1/64, the moon or a lit source changes.
+24-eye horizon) must answer. Those are the frames on which something changed;
+**a walk with his torch lit recomputes once a tile step** (the review's B4),
+so `BenchmarkFogWalkWithATorch` -- a frame of a walk at ~4 tiles a second --
+averages 0.0003 ms (his torch only), 0.006 ms (4 hearths) and 0.017 ms (16
+hearths) a frame, with a recompute on 6% of frames (fd3c2e6d recomputed on
+every one). With no torch, fog recomputes only when an eye changes tile, the
+sky moves 1/64 or a band, the moon or a lit source changes.
 
 ## Cost (F1, by day)
 

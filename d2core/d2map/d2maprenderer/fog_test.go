@@ -101,10 +101,13 @@ func (o *opSurface) Render(src d2interface.Surface) {
 type fakeFog struct {
 	explored map[[2]int]bool // listed: explored and not visible
 	hidden   map[[2]int]bool // listed: unexplored
+	shown    map[[2]int]bool // listed: visible, not explored (a contact's tile, F2)
 }
 
 func (f *fakeFog) FogAt(tx, ty int) (explored, visible bool) {
 	switch {
+	case f.shown[[2]int{tx, ty}]:
+		return false, true
 	case f.hidden[[2]int{tx, ty}]:
 		return false, false
 	case f.explored[[2]int{tx, ty}]:
@@ -320,6 +323,24 @@ func TestUnexploredTileIsNotDrawn(t *testing.T) {
 
 	if o.GetDepth() != 0 {
 		t.Fatalf("the passes left %d states pushed", o.GetDepth())
+	}
+}
+
+// TestAContactsTileIsDrawnUnexplored (the F2 review's B2): a tile shown but
+// never explored -- the tile an enemy of his fight stands on, on ground he
+// never saw -- is drawn, floor, wall and roof, as a visible tile is.
+//
+// Negative control: tileDrawn answers explored alone (fd3c2e6d) and this
+// fails, "the shown, unexplored tile (3,3) was drawn: floor 0, upper wall 0,
+// roof 0" (nc-r-shown-not-drawn.txt).
+func TestAContactsTileIsDrawnUnexplored(t *testing.T) {
+	fx := newFogFixture(t, [2]int{3, 3})
+	fx.mr.SetFogSampler(&fakeFog{shown: map[[2]int]bool{{3, 3}: true}})
+
+	o := fx.render()
+
+	if floor, wall, roof := fx.specialDraws(o); len(floor) != 1 || len(wall) != 1 || len(roof) != 1 {
+		t.Fatalf("the shown, unexplored tile (3,3) was drawn: floor %d, upper wall %d, roof %d", len(floor), len(wall), len(roof))
 	}
 }
 

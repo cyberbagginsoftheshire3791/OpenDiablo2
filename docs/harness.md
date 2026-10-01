@@ -946,12 +946,20 @@ this doc fails until it agrees.
   dark between (skipped on a black-floor launch); act 8, `squad_add` there:
   two `eyes`, the model's tile `visible` (it was not, the control); act 9, a
   villager on remembered ground (the probe says `explored`, plan §3.11) is not
-  `shown`, the cursor on him names nothing and he has no `ui.bars` entry --
-  and the control, the dark radius opened to 30, names him. A fourth,
-  `TestFogNeverTouchesTheSim` (two launches, fog on and off, the same seed, a
-  torch-lit walk at 23:00 and 300 frames): every system's world hash agrees
-  but `fog` and `ui`, and so does every digest part but `systems` and
-  `process`. A second function, `TestZoomInToTwo` (the zoom-in, the same day), with
+  `shown` and the cursor on him names nothing -- and the control, the dark
+  radius opened to 30, names him. (It also finds no `ui.bars` entry for him,
+  but a villager never carries a bar, seen or not, so that half cannot fail;
+  the bars' gate is held by d2player's `TestNoBarOverABodyHeDoesNotSee`.) A
+  fourth, `TestFogNeverTouchesTheSim` (two launches, fog on and off, the same
+  seed: a torch-lit walk at 23:00, then a fight under the shipped tactical layer
+  (`combat.player_control` human) -- a zombie three tiles off set to watch
+  him, 600 frames of it -- with a second zombie
+  standing nine tiles off in the dark): EVERY system's world hash agrees, fog's
+  and the ui's included, every digest part but `process` agrees, the ui state
+  less only `bars` and `hover_label` is equal field for field, and with fog on
+  the fight's enemies were contacts (the control that fog was engaged). Since
+  the F2 review (B6) the ui's `bars` are in the digest's PROCESS part: with fog
+  on, which bars are drawn depends on what he sees. A second function, `TestZoomInToTwo` (the zoom-in, the same day), with
   fog off: `ui.zoom` takes 2.0 and refuses 2.1, `view_scale` reads 2, and his
   feet stay where they were on screen at 1.0 (within 3 px: the camera stays on
   him).
@@ -1697,7 +1705,7 @@ recompute saw by the lit term alone -- lit ground past every eye's reach, Q3),
 `contacts[]` (`{id fight/<entity>, x, y}`: the enemies of his own fight, whose
 own tile is shown, Q4), `by_light` (fog sees by the light model) and
 `draws_by` (`view` while fog is drawn: the renderer draws by the light with
-his torch where he stands, BUG-108; `light` otherwise, master's draw); the cost counters `recomputes`, `skipped` (an
+his torch where he stands, BUG-110; `light` otherwise, master's draw); the cost counters `recomputes`, `skipped` (an
 update that found his tile unchanged) and `cells_read`, `saved` (false: F3), and
 `probe` once one is asked -- `{x, y, state, clear_from{<eye>}, lit, screen,
 structure}` (`lit`: brighter than the sky now), the tile's state, whether the line from his eye is clear, where

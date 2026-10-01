@@ -3,6 +3,7 @@
 package playtest
 
 import (
+	"fmt"
 	"image"
 	"math"
 	"sort"
@@ -656,7 +657,7 @@ func TestFogAtNight(t *testing.T) {
 	}
 
 	if str(fog, "draws_by") != "view" {
-		t.Fatalf("act 5: with fog on the renderer draws by %v; want the light view (BUG-108)", fog["draws_by"])
+		t.Fatalf("act 5: with fog on the renderer draws by %v; want the light view (BUG-110)", fog["draws_by"])
 	}
 
 	if st := probeState(s, at4); st != "explored" {
@@ -744,6 +745,10 @@ func TestFogAtNight(t *testing.T) {
 	if mustNum(t, fog, "lit_seen") == 0 {
 		t.Fatal("act 7: the provider counts no tile seen by the lit term")
 	}
+
+	// The OS cursor is drawn over the frame wherever the mouse is: park it.
+	s.call("strigoi_move_cursor", map[string]any{"x": 6, "y": 594})
+	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	img := s.frame(t, "fog-n7-hearth-afar") // Josh's: a hearth seen from afar
 	hsx, hsy := probeScreen(ph)
@@ -960,11 +965,17 @@ func fogHoverAt(t *testing.T, s *session, handle string) string {
 	return str(uiState(s), "hover_label")
 }
 
-// TestFogNeverTouchesTheSim (plan §3.3): the same seed and the same scripted
-// night -- a torch lit, a walk, 300 frames -- with fog on and with fog off
-// give the same world: every provider's world hash agrees but fog's own and
-// the ui's (what the HUD drew: with fog the hidden carry no bar), and so do
-// the digest's parts but the systems and process parts that hold them.
+// TestFogNeverTouchesTheSim (plan §3.3; strengthened by the F2 review's B5
+// and B6): the same seed and the same scripted night -- a torch-lit walk at
+// 23:00, then a FIGHT under the shipped tactical layer (a zombie three tiles
+// off, set to watch him; 600 frames of it, his turn held as the shipped game
+// holds it) with a second zombie standing out in the dark --
+// with fog on and with fog off give the same world: EVERY system's world
+// hash agrees (fog's included; the ui's too, now that the bars are in the
+// process part), every digest part but the process part agrees, and the ui
+// itself, less only `bars` and `hover_label` (what the HUD drew), is equal
+// field for field. With fog on the fight's enemies were contacts (fog was
+// engaged, the control that the run is not vacuous).
 //
 // The unit control is d2world's TestFogNeverTouchesTheSim (the plan's
 // one-liner, fog calling the light model's SetPlayer, goes red there).
@@ -982,32 +993,46 @@ func TestFogNeverTouchesTheSim(t *testing.T) {
 
 	sort.Strings(differ)
 	t.Logf("systems whose world hash differs with fog on and off: %v", differ)
+	t.Logf("bars drawn at the end: %d with fog, %d without; contacts seen during the fight with fog: %d",
+		on.bars, off.bars, on.contacts)
 
-	for _, name := range differ {
-		if name != "fog" && name != "ui" {
-			t.Errorf("the %s system's world differs with fog on and off: fog touched the sim", name)
-		}
+	if len(differ) != 0 {
+		t.Errorf("the world differs with fog on and off in %v: fog touched the sim (or reached a world part)", differ)
 	}
 
 	for part, h := range on.parts {
-		if part == "systems" || part == "process" {
-			continue
-		}
-
-		if off.parts[part] != h {
+		if part != "process" && off.parts[part] != h {
 			t.Errorf("the digest's %s part differs with fog on and off", part)
 		}
 	}
 
-	if on.walked != off.walked {
-		t.Errorf("the walks differ: %v with fog, %v without", on.walked, off.walked)
+	for k, v := range on.ui {
+		if fmt.Sprint(off.ui[k]) != fmt.Sprint(v) {
+			t.Errorf("the ui's %s differs with fog on and off: %v / %v", k, v, off.ui[k])
+		}
+	}
+
+	if on.walked != off.walked || on.fought != off.fought {
+		t.Errorf("the runs differ: walked %v / %v, fought %v / %v", on.walked, off.walked, on.fought, off.fought)
+	}
+
+	if !on.fought {
+		t.Fatal("no fight opened: the scripted fight is the point of this test")
+	}
+
+	if on.contacts == 0 {
+		t.Fatal("the control: with fog on, no enemy of his fight was ever a contact -- fog was not engaged")
 	}
 }
 
 type nightRun struct {
-	systems map[string]any
-	parts   map[string]any
-	walked  [2]float64
+	systems  map[string]any
+	parts    map[string]any
+	ui       map[string]any
+	walked   [2]float64
+	fought   bool
+	contacts int
+	bars     int
 }
 
 func nightDigest(t *testing.T, fog bool) nightRun {
@@ -1025,9 +1050,19 @@ func nightDigest(t *testing.T, fog bool) nightRun {
 		"hero_name": "Same", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
 	})
 
+	// Nothing comes for him before the scripted fight: no pack, and the dead
+	// stay down (without this the risen killed him before 23:00, and both
+	// launches agreed on a dead man -- the first draft of this test).
 	setField(s, "spawns", "chance", 0)
+	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0)
 	s.call("strigoi_step_world", map[string]any{"world_minutes": 23*60 - 165.0})
+
+	if hp := mustNum(t, metersState(s), "health"); hp <= 0 {
+		t.Fatalf("he is dead (health %v) before the scripted fight", hp)
+	}
 	setField(s, "light", "carried_source", "torch")
+	s.call("strigoi_move_cursor", map[string]any{"x": 6, "y": 594})
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	if got := flag(t, fogState(s), "enabled"); got != fog {
@@ -1050,12 +1085,64 @@ func nightDigest(t *testing.T, fog bool) nightRun {
 		}
 	}
 
-	s.call("strigoi_step", map[string]any{"frames": 300})
+	// The fight: a zombie three tiles off watching him, and a second standing
+	// nine tiles off in the dark, outside his torch. The SHIPPED screen's
+	// tactical layer (the launcher drops every script to policy, where a
+	// fight opens only at adjacency): the fight opens at the engage radius,
+	// as TestTacticalFight's does.
+	setField(s, "combat", "player_control", "human")
+
+	pl := s.call("strigoi_get_player", map[string]any{})
+	px, py, handle := num(pl, "x"), num(pl, "y"), str(pl, "handle")
+
+	near := clearSpotAt(t, s, px, py, 3)
+	enemy := spawnNPC(t, s, "zombie1", near[0], near[1])
+
+	if far := farSpot(s, px, py, 9); far != nil {
+		spawnNPC(t, s, "zombie1", far[0], far[1])
+	}
+
+	s.call("strigoi_watch", map[string]any{"watcher": enemy, "target": handle})
+
+	for i := 0; i < 20; i++ {
+		s.call("strigoi_step", map[string]any{"frames": 30})
+
+		if flag(t, combatState(s), "fighting") {
+			run.fought = true
+
+			if fog {
+				run.contacts = max(run.contacts, len(asList(fogState(s)["contacts"])))
+			}
+		} else if run.fought {
+			break
+		}
+	}
+
+	s.call("strigoi_move_cursor", map[string]any{"x": 6, "y": 594})
+	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	out := s.call("strigoi_get_state_digest", map[string]any{})
 	run.systems, run.parts = sub(out, "systems"), sub(out, "parts")
 
+	run.ui = uiState(s)
+	run.bars = len(asList(run.ui["bars"]))
+	delete(run.ui, "bars")
+	delete(run.ui, "hover_label")
+
 	s.stop()
 
 	return run
+}
+
+// farSpot is a point d tiles from (x, y) on an orthogonal bearing with a
+// clear straight line, or nil.
+func farSpot(s *session, x, y, d float64) []float64 {
+	for _, dir := range [][2]float64{{0, 1}, {-1, 0}, {0, -1}, {1, 0}} {
+		tx, ty := x+dir[0]*d, y+dir[1]*d
+		if b, _ := s.call("strigoi_find_path", map[string]any{"to_x": tx, "to_y": ty})["straight_line_clear"].(bool); b {
+			return []float64{tx, ty}
+		}
+	}
+
+	return nil
 }

@@ -179,3 +179,59 @@ func TestNoFogShowsEverything(t *testing.T) {
 		t.Fatal("with no fog sampler a gate is shut")
 	}
 }
+
+// TestAnEnemyWithNoBodyAsksTheFogWhereTheFightHasIt (the review's C4, its M8):
+// an enemy of his fight with no entity on the map is gated by the tile the
+// fight has it on.
+//
+// Negative control: return true from enemyShown's fallback (the reviewer's
+// M8) and this fails, "an enemy with no body on a hidden tile is shown"
+// (nc-r-enemy-fallback-true.txt).
+func TestAnEnemyWithNoBodyAsksTheFogWhereTheFightHasIt(t *testing.T) {
+	h, _, _, _, _, _ := fightAt05(t)
+	ghost := d2world.TacticalEnemy{ID: "ghost", X: siteTileX + 5.5, Y: siteTileY + 0.5}
+	entities := h.mapEngine.Entities()
+
+	h.mapRenderer.SetFogSampler(hiding())
+
+	if !h.enemyShown(entities, ghost) {
+		t.Fatal("the control: an enemy with no body on a tile he sees is hidden")
+	}
+
+	h.mapRenderer.SetFogSampler(hiding([2]int{siteTileX + 5, siteTileY}))
+
+	if h.enemyShown(entities, ghost) {
+		t.Fatal("an enemy with no body on a hidden tile is shown")
+	}
+}
+
+// TestTheBarsAreInTheDigestsProcessPart (the review's B6): which bars are
+// drawn depends, with fog on, on what he sees -- presentation -- so the bars
+// are in the digest's process part (without their screen rects) and never in
+// the world part, which fog must not reach.
+//
+// Negative control: leave bars in the world part (fd3c2e6d) and this fails,
+// "the bars are in the digest's world part" (nc-r-bars-in-world.txt).
+func TestTheBarsAreInTheDigestsProcessPart(t *testing.T) {
+	world, process := splitUIDigest(map[string]interface{}{
+		"bars":     []map[string]interface{}{{"entity": "wolf", "x": 3, "y": 4, "w": 30, "h": 4, "fill": 0.5}},
+		"free_cam": false,
+	})
+
+	if _, ok := world["bars"]; ok {
+		t.Fatal("the bars are in the digest's world part")
+	}
+
+	rows, _ := process["bars"].([]map[string]interface{})
+	if len(rows) != 1 || rows[0]["entity"] != "wolf" || rows[0]["fill"] != 0.5 {
+		t.Fatalf("the digest's process part has bars %v; want the wolf's", process["bars"])
+	}
+
+	if _, ok := rows[0]["x"]; ok {
+		t.Fatal("a bar's screen rect is in the digest")
+	}
+
+	if _, ok := world["free_cam"]; !ok {
+		t.Fatal("the control: free_cam, world state, left the world part")
+	}
+}

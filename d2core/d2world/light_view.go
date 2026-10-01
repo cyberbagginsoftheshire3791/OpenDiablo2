@@ -2,13 +2,13 @@ package d2world
 
 import "math"
 
-// LIGHT AS HE SEES IT THIS FRAME (fog of war F2, 1 Oct 2026; BUG-108).
+// LIGHT AS HE SEES IT THIS FRAME (fog of war F2, 1 Oct 2026; BUG-110).
 //
 // The light model's carried torch shines from where the player was last told
 // to be (Light.SetPlayer), and SetPlayer runs only inside the game's gated
 // advanceWorld. During a held player turn the world is stopped but his Move
 // is a real walk (MapEngine.Advance is not gated), so the torch's light stayed
-// where the turn opened while he walked out of it: BUG-108.
+// where the turn opened while he walked out of it: BUG-110.
 //
 // A LightView is the same light with the carried sources shining from where
 // he stands THIS frame. It is what fog reads ("lit" is "brighter than the
@@ -75,6 +75,15 @@ func (v *LightView) Lit(tileX, tileY int) bool {
 	return v.Level(tileX, tileY) > v.light.quantise(clamp01(v.light.Ambient()))
 }
 
+// SkyBand is the sky as drawn: the quantised ambient a lit tile exceeds.
+func (v *LightView) SkyBand() float64 {
+	if v.live {
+		return v.skyBand
+	}
+
+	return v.light.quantise(clamp01(v.light.Ambient()))
+}
+
 // SkyFraction is the sky from the night floor (0) to full day (1).
 func (v *LightView) SkyFraction() float64 { return v.light.SkyFraction() }
 
@@ -83,9 +92,10 @@ func (v *LightView) Moon() float64 { return v.light.clock.Moon() }
 
 // LitDisc is one lit source as fog needs it: where it shines from and how far.
 type LitDisc struct {
-	ID     int
-	X, Y   float64
-	Radius float64
+	ID      int
+	X, Y    float64
+	Radius  float64
+	Carried bool // follows him: fog keys it by its tile (B4)
 }
 
 // LitDiscs appends every lit source, carried ones where he stands now, in the
@@ -104,7 +114,7 @@ func (v *LightView) LitDiscs(dst []LitDisc) []LitDisc {
 			x, y = cx, cy
 		}
 
-		dst = append(dst, LitDisc{ID: s.ID, X: x, Y: y, Radius: s.Radius})
+		dst = append(dst, LitDisc{ID: s.ID, X: x, Y: y, Radius: s.Radius, Carried: s.Carried})
 	}
 
 	return dst

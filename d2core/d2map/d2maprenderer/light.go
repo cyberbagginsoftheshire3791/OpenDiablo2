@@ -36,7 +36,7 @@ func (mr *MapRenderer) SetLightSampler(sampler LightSampler) {
 
 // LightSampler is the light model the renderer draws by now (nil: none). With
 // fog of war F2 it is the light as he sees it this frame while fog is
-// attached, and the light model itself otherwise (BUG-108).
+// attached, and the light model itself otherwise (BUG-110).
 func (mr *MapRenderer) LightSampler() LightSampler {
 	return mr.lightSampler
 }

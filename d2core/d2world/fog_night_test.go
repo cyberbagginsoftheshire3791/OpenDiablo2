@@ -17,6 +17,7 @@ import (
 // fakeSky is a FogLight whose sky, moon and lit tiles a test sets.
 type fakeSky struct {
 	sky, moon float64
+	band      float64
 	lit       map[[2]int]bool
 	discs     []LitDisc
 }
@@ -24,6 +25,7 @@ type fakeSky struct {
 func (s *fakeSky) SkyFraction() float64 { return s.sky }
 func (s *fakeSky) Moon() float64        { return s.moon }
 func (s *fakeSky) Lit(tx, ty int) bool  { return s.lit[[2]int{tx, ty}] }
+func (s *fakeSky) SkyBand() float64     { return s.band }
 
 func (s *fakeSky) LitDiscs(dst []LitDisc) []LitDisc { return append(dst, s.discs...) }
 
@@ -292,7 +294,7 @@ func TestAContactShowsItsOwnTileOnly(t *testing.T) {
 	}
 }
 
-// TestTheTorchFollowsHimThroughAHeldTurn (BUG-108): the turn opens with him
+// TestTheTorchFollowsHimThroughAHeldTurn (BUG-110): the turn opens with him
 // at (10.5,10.5) and his torch lit; the world is held, so the light model is
 // not told he moves; he walks his Move two tiles east. The tile 4 ahead of
 // where he now stands is lit and seen -- and the light model itself still

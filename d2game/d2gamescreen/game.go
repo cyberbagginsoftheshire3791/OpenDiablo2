@@ -948,7 +948,7 @@ func (v *Game) Advance(elapsed float64) error {
 
 	// Fog of war (F1, F2): after the map has moved him, every frame -- a held
 	// turn stops the world clock, not his Move (plan §2.4), and his torch is
-	// drawn and seen by where he stands now (BUG-108). Nothing when fog is off.
+	// drawn and seen by where he stands now (BUG-110). Nothing when fog is off.
 	v.fogAdvance()
 
 	// The decision timer counts only frames on which the world stopped FOR THE
@@ -2331,7 +2331,12 @@ func (v *Game) OverheadBars() []d2player.OverheadBar {
 		}
 
 		// Fog of war (F2; BUG-107): the enemy list asks the one predicate the
-		// HUD's draw asks -- no bar over a body he does not see.
+		// HUD's draw asks -- no bar over a body he does not see. REDUNDANT
+		// TODAY, KEPT ON PURPOSE (the F2 review's C4): the HUD's own gate
+		// (refreshOverheadBars) already drops these bars before anything draws
+		// or reports them, so no test can see this one alone (the reviewer's
+		// M4 survived). It stays so that any other reader of this list -- a
+		// future enemy list on the HUD -- gets the fogged list, not the raw one.
 		if !v.fogShows(id) {
 			continue
 		}

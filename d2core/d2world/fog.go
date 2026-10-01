@@ -87,6 +87,11 @@ type Structured interface {
 type FogLight interface {
 	SkyFraction() float64
 	Moon() float64
+	// SkyBand is the sky as drawn: the quantised ambient that "lit" must
+	// exceed. It is in the recompute key (the F2 review's C1): the sky
+	// fraction's 1/64 steps and the ambient's 1/16 bands do not cross
+	// together, so a band could change with the key unchanged.
+	SkyBand() float64
 	Lit(tileX, tileY int) bool
 	LitDiscs(dst []LitDisc) []LitDisc
 }
@@ -171,24 +176,42 @@ const fogSkySteps = 64
 // lightKey is everything in the light that decides what fog sees: the
 // quantised sky, the moon, and every lit source where it shines from. A
 // changed key recomputes.
+//
+// A CARRIED source is keyed by the TILE it shines from (the F2 review's B4):
+// keyed exactly, a lit torch recomputed fog on every frame of a walk. Keyed by
+// its tile it recomputes once a tile step -- when his own eye moves tile
+// anyway -- and between steps the lit set is the one computed as he entered
+// the tile (the drawn light still follows him exactly; the seen edge of his
+// own torch can lag by under a tile until the next step). A fixed source is
+// keyed exactly: it does not move.
 type lightKey struct {
 	sky   int
 	moon  float64
+	band  float64
 	discs []LitDisc
 }
 
-func (k *lightKey) same(sky int, moon float64, discs []LitDisc) bool {
-	if k.sky != sky || k.moon != moon || len(k.discs) != len(discs) {
+func (k *lightKey) same(sky int, moon, band float64, discs []LitDisc) bool {
+	if k.sky != sky || k.moon != moon || k.band != band || len(k.discs) != len(discs) {
 		return false
 	}
 
 	for i := range discs {
-		if k.discs[i] != discs[i] {
+		if keyOf(k.discs[i]) != keyOf(discs[i]) {
 			return false
 		}
 	}
 
 	return true
+}
+
+// keyOf is a lit disc as the key sees it: a carried one at its tile.
+func keyOf(d LitDisc) LitDisc {
+	if d.Carried {
+		d.X, d.Y = float64(tileOf(d.X)), float64(tileOf(d.Y))
+	}
+
+	return d
 }
 
 // NewFog is an empty fog over no map; Update sizes it to the map it is given.
@@ -253,23 +276,23 @@ func (f *Fog) Update(w, h int, eyes []Eye) bool {
 		f.resize(w, h)
 	}
 
-	sky, moon := 1.0, 0.0
+	sky, moon, band := 1.0, 0.0, 1.0
 	f.discs = f.discs[:0]
 
 	if f.light != nil {
-		sky, moon = clamp01(f.light.SkyFraction()), clamp01(f.light.Moon())
+		sky, moon, band = clamp01(f.light.SkyFraction()), clamp01(f.light.Moon()), f.light.SkyBand()
 		f.discs = f.light.LitDiscs(f.discs)
 	}
 
 	skyQ := int(math.Round(sky * fogSkySteps))
 
-	if !f.dirty && f.sameEyes(eyes) && f.key.same(skyQ, moon, f.discs) {
+	if !f.dirty && f.sameEyes(eyes) && f.key.same(skyQ, moon, band, f.discs) {
 		f.skipped++
 
 		return false
 	}
 
-	f.key.sky, f.key.moon = skyQ, moon
+	f.key.sky, f.key.moon, f.key.band = skyQ, moon, band
 	f.key.discs = append(f.key.discs[:0], f.discs...)
 	f.sky = float64(skyQ) / fogSkySteps
 	f.darkRadius = f.dials.DarkRadius + (f.dials.MoonDarkRadius-f.dials.DarkRadius)*moon
@@ -332,14 +355,13 @@ func (f *Fog) recompute() {
 	reach := f.UnlitReach()
 
 	for _, e := range f.eyes {
-		// The eye's own tile, even an eye standing off the grid's last row.
-		// A contact eye (an enemy of his fight, Q4) sees that and no more.
-		if ex, ey := tileOf(e.X), tileOf(e.Y); f.in(ex, ey) && !f.isVisible(ex, ey) {
-			f.see(ex, ey)
+		if e.Contact {
+			continue // shown last, below
 		}
 
-		if e.Contact {
-			continue
+		// The eye's own tile, even an eye standing off the grid's last row.
+		if ex, ey := tileOf(e.X), tileOf(e.Y); f.in(ex, ey) && !f.isVisible(ex, ey) {
+			f.see(ex, ey)
 		}
 
 		r := reach
@@ -365,6 +387,17 @@ func (f *Fog) recompute() {
 	}
 
 	f.wholeStructures()
+
+	// A CONTACT (an enemy of his fight, Q4) shows the tile it stands on and
+	// nothing else (the F2 review's B1 and B2): after the whole-structure
+	// reveal, so a wolf standing in a house does not show the house, and
+	// SHOWN, not seen -- the tile is not explored, so when the fight ends
+	// the ground he never saw is black again, not remembered.
+	for _, e := range f.eyes {
+		if ex, ey := tileOf(e.X), tileOf(e.Y); e.Contact && f.in(ex, ey) && !f.isVisible(ex, ey) {
+			f.show(ex, ey)
+		}
+	}
 }
 
 // UnlitReach is how far an eye sees ground that is not lit: its day sight by
@@ -443,7 +476,11 @@ func (f *Fog) LitSeen() int { return f.litSeen }
 // strips), which its own footprint hides from an eye behind or beside it --
 // without this the house seen from behind is not drawn at all, and one seen
 // from the side is drawn in slices.
-func (f *Fog) wholeStructures() {
+func (f *Fog) wholeStructures() { f.structuresWhole(true) }
+
+// structuresWhole is wholeStructures; with reveal false only the explored
+// half runs (the harness's explore verb, which sees nothing).
+func (f *Fog) structuresWhole(reveal bool) {
 	for _, r := range f.structures {
 		anyVisible, anyExplored := false, false
 
@@ -457,7 +494,7 @@ func (f *Fog) wholeStructures() {
 		for ty := r.Min.Y; ty < r.Max.Y; ty++ {
 			for tx := r.Min.X; tx < r.Max.X; tx++ {
 				switch {
-				case anyVisible && !f.isVisible(tx, ty):
+				case reveal && anyVisible && !f.isVisible(tx, ty):
 					f.see(tx, ty)
 				case anyExplored:
 					f.explore(ty*f.w + tx)
@@ -513,10 +550,15 @@ func (f *Fog) lineClear(e Eye, tx, ty int) bool {
 }
 
 func (f *Fog) see(tx, ty int) {
-	i := ty*f.w + tx
-	f.stamp[i] = f.epoch
+	f.show(tx, ty)
+	f.explore(ty*f.w + tx)
+}
+
+// show makes a tile visible this epoch without exploring it: a contact's
+// tile (Q4), drawn while the fight lasts and forgotten after it.
+func (f *Fog) show(tx, ty int) {
+	f.stamp[ty*f.w+tx] = f.epoch
 	f.visibleCount++
-	f.explore(i)
 }
 
 func (f *Fog) explore(i int) bool {
@@ -587,7 +629,7 @@ func (f *Fog) Explore(x, y, r float64) int {
 		}
 	}
 
-	f.wholeStructures()
+	f.structuresWhole(false)
 
 	return n
 }

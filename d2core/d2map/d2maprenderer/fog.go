@@ -39,15 +39,17 @@ func (mr *MapRenderer) HasFog() bool {
 }
 
 // tileDrawn is whether a tile is drawn at all: always without fog; with fog,
-// only once explored.
+// once explored -- or while it is visible without being explored, which is a
+// contact's tile (an enemy of his fight on ground he never saw, F2 review B2:
+// shown while the fight lasts, black again after it).
 func (mr *MapRenderer) tileDrawn(tileX, tileY int) bool {
 	if mr.fogSampler == nil {
 		return true
 	}
 
-	explored, _ := mr.fogSampler.FogAt(tileX, tileY)
+	explored, visible := mr.fogSampler.FogAt(tileX, tileY)
 
-	return explored
+	return explored || visible
 }
 
 // pushTileView pushes how a drawn tile looks -- its light, and for remembered

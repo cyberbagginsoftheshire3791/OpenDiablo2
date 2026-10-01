@@ -44,16 +44,19 @@ func TestEachSquadIsAnEye(t *testing.T) {
 }
 
 // TestHisFightsEnemiesAreContacts (Q4): every enemy of his fight still in it
-// is a contact at its body's position on the map (else the fight's); the dead
-// and the routed are not.
+// is a contact at its body's position on the map (else the fight's); the
+// gone -- dead, routed, or broke off at first light (the review's C3,
+// TacticalEnemy.Gone) -- are not.
 //
-// Negative control: keep the dead and the routed and this fails, "the
-// contacts are [fight/wolf fight/dog fight/rat fight/ghost]"
-// (nc-game-dead-contacts.txt).
+// Negative controls: keep the dead and the routed and this fails, "the
+// contacts are [fight/wolf fight/dog fight/rat fight/ghost fight/risen]"
+// (nc-game-dead-contacts.txt); read dead-or-routed only (the pre-review
+// filter) and it fails on fight/risen (nc-game-broke-contact.txt).
 func TestHisFightsEnemiesAreContacts(t *testing.T) {
 	enemies := []d2world.TacticalEnemy{
 		{ID: "wolf", X: 1, Y: 1}, {ID: "dog", X: 2, Y: 2, Dead: true},
 		{ID: "rat", X: 3, Y: 3, Routed: true}, {ID: "ghost", X: 9.5, Y: 8.5},
+		{ID: "risen", X: 4, Y: 4, Broke: true},
 	}
 	got := fightContacts(nil, enemies, at(map[string][2]float64{"wolf": {14.3, 7.6}}))
 
@@ -63,7 +66,7 @@ func TestHisFightsEnemiesAreContacts(t *testing.T) {
 	}
 
 	if len(got) != 2 || got[0].ID != "fight/wolf" || got[1].ID != "fight/ghost" {
-		t.Fatalf("the contacts are %v; want the wolf and the ghost, not the dead dog or the routed rat", ids)
+		t.Fatalf("the contacts are %v; want the wolf and the ghost, not the dead dog, the routed rat or the risen man who broke off", ids)
 	}
 
 	if !got[0].Contact || got[0].X != 14.3 || got[0].Y != 7.6 || got[1].X != 9.5 {
@@ -71,7 +74,7 @@ func TestHisFightsEnemiesAreContacts(t *testing.T) {
 	}
 }
 
-// TestFogDrawsByTheLightHeSees (BUG-108): while fog is attached the renderer
+// TestFogDrawsByTheLightHeSees (BUG-110): while fog is attached the renderer
 // draws by the light view (his torch where he stands), and when fog is taken
 // away it draws by the light model itself again -- master's draw.
 //

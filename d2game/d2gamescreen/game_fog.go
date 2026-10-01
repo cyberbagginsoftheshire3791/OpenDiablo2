@@ -63,7 +63,7 @@ type gameFog struct {
 	attached bool // the map renderer holds the fog as its sampler
 	probe    *[2]int
 
-	// view is the light as he sees it this frame (F2; BUG-108): the light
+	// view is the light as he sees it this frame (F2; BUG-110): the light
 	// model with his carried torch where he stands NOW, not where the world
 	// last ran. Fog reads it, and the renderer draws by it while fog is
 	// attached. nil when the game has no light model.
@@ -160,7 +160,7 @@ func (v *Game) fogAdvance() {
 	size := v.gameClient.MapEngine.Size()
 	at := v.localPlayer.Position.World()
 
-	// BUG-108: his torch shines from where he stands THIS frame, for fog and
+	// BUG-110: his torch shines from where he stands THIS frame, for fog and
 	// for the drawn light -- the light model itself (what the sim reads) is
 	// not touched; it learns where he is in advanceWorld, as it always has.
 	if v.fog.view != nil {
@@ -191,7 +191,8 @@ func (v *Game) fogEyes(dst []d2world.Eye, px, py float64) []d2world.Eye {
 	}
 
 	if v.squads != nil {
-		dst = squadEyes(dst, v.localPlayer.ID(), v.squads.ModelEntities(), pos)
+		// The living only (the F2 review's B3): a dead model sees nothing.
+		dst = squadEyes(dst, v.localPlayer.ID(), v.squads.LivingModelEntities(), pos)
 	}
 
 	if v.combat != nil && v.combat.Fighting() {
@@ -219,13 +220,14 @@ func squadEyes(dst []d2world.Eye, playerID string, models []d2world.SquadModel,
 	return dst
 }
 
-// fightContacts appends a contact for every enemy of his fight that is
-// neither dead nor routed (Q4: "shown for as long as the fight lasts"), at its
-// body's position on the map (where it is drawn), else where the fight has it.
+// fightContacts appends a contact for every enemy of his fight that is not
+// gone -- dead, routed or broke off (Q4: "shown for as long as the fight
+// lasts"; the review's C3: the encounter's own Gone) -- at its body's
+// position on the map (where it is drawn), else where the fight has it.
 func fightContacts(dst []d2world.Eye, enemies []d2world.TacticalEnemy,
 	pos func(id string) (x, y float64, ok bool)) []d2world.Eye {
 	for _, e := range enemies {
-		if e.Dead || e.Routed {
+		if e.Gone() {
 			continue
 		}
 
@@ -245,7 +247,7 @@ func (v *Game) fogAttach() {
 	if !v.fog.attached && v.mapRenderer != nil {
 		v.mapRenderer.SetFogSampler(v.fog.fog)
 
-		// F2: the drawn light is the light he sees by (BUG-108).
+		// F2: the drawn light is the light he sees by (BUG-110).
 		if v.fog.view != nil {
 			v.mapRenderer.SetLightSampler(v.fog.view)
 		}
@@ -513,7 +515,7 @@ func (v *Game) fogShows(id string) bool {
 }
 
 // fogDrawsBy names the light the renderer draws by now, for the provider:
-// "view" (his torch where he stands, BUG-108's fix, while fog is attached),
+// "view" (his torch where he stands, BUG-110's fix, while fog is attached),
 // "light" (the light model itself: master's draw) or "none".
 func (v *Game) fogDrawsBy() string {
 	if v.mapRenderer == nil || v.mapRenderer.LightSampler() == nil {

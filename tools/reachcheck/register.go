@@ -1459,13 +1459,13 @@ var Register = []Entry{
 
 	// FOG OF WAR F2 (1 Oct 2026, fog-f2; docs/fog.md): the night. CreateGame
 	// gives every game's fog the light through a LightView (gameFog.seeByLight);
-	// Game.fogAdvance moves the view to where he stands each frame (BUG-108) and
+	// Game.fogAdvance moves the view to where he stands each frame (BUG-110) and
 	// fogAttach makes it the renderer's light sampler while fog is drawn. The
 	// HUD's five leaks ask MapRenderer.Shows / ShowsEntity (BUG-107).
 	{sym(pkgWorld, "NewLightView"), BucketWire, VerdictLive,
 		"gameFog.seeByLight, from CreateGame: every game's fog sees by the light through a view.", ""},
 	{sym(pkgWorld, "LightView.SetCarriedAt"), BucketWire, VerdictLive,
-		"Game.fogAdvance, every frame with fog on: his torch where he stands now (BUG-108).", ""},
+		"Game.fogAdvance, every frame with fog on: his torch where he stands now (BUG-110).", ""},
 	{sym(pkgWorld, "LightView.Level"), BucketWire, VerdictLive,
 		"The renderer's LightSampler while fog is drawn (fogAttach), and fog's Lit.", ""},
 	{sym(pkgWorld, "LightView.Lit"), BucketWire, VerdictLive,
@@ -1492,6 +1492,12 @@ var Register = []Entry{
 		"The fog provider's lit_seen: a counter read.", ""},
 	{sym(pkgMapRenderer, "MapRenderer.ShowsEntity"), BucketWire, VerdictLive,
 		"renderEntity's fog gate and the HUD's (hover, bars, diamonds, click-to-strike): the one predicate (BUG-107).", ""},
+	{sym(pkgWorld, "LightView.SkyBand"), BucketWire, VerdictLive,
+		"Fog's recompute key holds the sky as drawn (the F2 review's C1), every Update with fog on.", ""},
+	{sym(pkgWorld, "Squads.LivingModelEntities"), BucketWire, VerdictLive,
+		"Game.fogEyes: every living squad model is an eye (the F2 review's B3).", ""},
+	{sym(pkgWorld, "TacticalEnemy.Gone"), BucketWire, VerdictLive,
+		"fightContacts: an enemy dead, routed or broke off is no contact (the F2 review's C3).", ""},
 	{sym(pkgMapRenderer, "MapRenderer.LightSampler"), BucketObserve, VerdictHarnessOnly,
 		"The fog provider's draws_by: which light the renderer draws by now, a read.", ""},
 }
