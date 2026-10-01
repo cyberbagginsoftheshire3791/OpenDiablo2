@@ -338,6 +338,10 @@ type GameControls struct {
 	// worldHolder answers what holds the world still (history item 121).
 	worldHolder WorldHolder
 
+	// combatHolder is the game screen's combat status (30 Sep 2026): the HUD's
+	// combat marker asks it (hud_combat.go).
+	combatHolder CombatHolder
+
 	// progressHolder is the owner of his experience and talents (T3).
 	progressHolder ProgressHolder
 

@@ -262,7 +262,13 @@ const (
 
 	// The refusals (d2gamescreen's SaveRefused* codes), for the menu and the
 	// close hook's log line.
-	SaveRefusedFightWords   = "You can't save during a fight."
+	//
+	// COMBAT (Josh, 30 Sep 2026: "you can't save while in combat"): his fight,
+	// a hostile chasing him, his own swing or reaction, or the seconds after.
+	// It took FIGHTING's "his fight is running" case ("You can't save during
+	// a fight.", gone with it); FIGHTING is only ever the moment after a
+	// fight now.
+	SaveRefusedCombatWords  = "You can't save in combat."
 	SaveRefusedSettleWords  = "You can't save while blows are still landing.\nTry again in a moment."
 	SaveRefusedTalkWords    = "You can't save while you are talking."
 	SaveRefusedJournalWords = "You can't save with your journal open."

@@ -232,6 +232,9 @@ func CreateGame(
 		// Before anything this screen does can place an entity: what is on
 		// the map now is what the map built (M4.6 B3).
 		natives: nativesOf(gameClient.MapEngine),
+
+		// The combat status's grace (30 Sep 2026), shipped [DIAL].
+		combatGraceSeconds: DefaultCombatGraceSeconds,
 	}
 	// The world clock and the light it drives (M4.1, S1 §3–§4). Built here,
 	// at construction, so they are registered providers from the screen's
@@ -575,6 +578,16 @@ type Game struct {
 	// frame of this screen clears it.
 	closing       bool
 	exitSavedHero bool
+
+	// The combat status (Josh, 30 Sep 2026; combat_status.go): combatGrace is
+	// the grace left after the last of his fight, a chase, his swing and his
+	// reaction, in seconds of game time -- COMBAT refuses a save while it
+	// runs; combatLast the last trigger seen, for the grace's reason and the
+	// log's COMBAT in/out lines; combatGraceSeconds the grace's dial
+	// (DefaultCombatGraceSeconds; the harness's save.combat_grace).
+	combatGrace        float64
+	combatLast         string
+	combatGraceSeconds float64
 
 	// saveGeneration is the saved_at of the last world save this hero's
 	// sidecar belongs to: SaveWorld sets it, bindKit reads it from the
@@ -975,6 +988,11 @@ func (v *Game) Advance(elapsed float64) error {
 			v.gameControls.PartyPanel.UpdatePlayersList(v.gameClient.Players)
 		}
 	}
+
+	// The combat status (30 Sep 2026), from the frame's end state -- his
+	// swing and reaction as the map's animations left them -- and before the
+	// autosave asks, so a dawn that finds him in combat waits.
+	v.advanceCombatStatus(elapsed)
 
 	// M4.6 B5, rule 10: the dawn autosave, at the END of the frame -- after
 	// everything the dawn's frame did (the night paid, the watch, the
@@ -2373,6 +2391,7 @@ func (v *Game) bindGameControls() error {
 		v.gameControls.SetCorpseHolder(v)
 		v.gameControls.SetWorldHolder(v)
 		v.gameControls.SetJournalHolder(v)
+		v.gameControls.SetCombatHolder(v)
 
 		// M4.7 Q2a: Night 1's dead, around where he enters -- unless this game
 		// resumes a world save, whose dead are the file's (trap 5; M4.6 B4a):

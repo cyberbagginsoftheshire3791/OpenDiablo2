@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
-	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2saveref"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
@@ -417,9 +416,12 @@ func TestAVillagerTheFileLacksIsNotedAndForgotten(t *testing.T) {
 // C7: A RISEN MAN WALKING AT T RESUMES. The review read, and did not run, that
 // the risen are rebuilt by the pack's path (Spawns.Raise -> gameSpawner.Spawn
 // -> the bestiary's strigoi). Here one is on the map at T -- the strigoi
-// entry, in a group of the risen row, a watch and a chase on him, walking in
+// entry, in a group of the risen row, a watch on him and a chase, walking in
 // -- and the resumed game is the saved one at once and run on, the risen man
-// still walking in both. (The unit spawner cannot stand one up itself: it has
+// still walking in both. THE CHASE IS OF THE VILLAGER since the combat status
+// (Josh, 30 Sep 2026): a hostile chasing HIM is combat, and a save is refused
+// in combat, so the moment moved -- the risen man walks in after the
+// villager, and the chase names the villager by the id the re-key gives back. (The unit spawner cannot stand one up itself: it has
 // no stand-in monstat to place him with, so he is built as b4bHunt builds the
 // pack, and his group put on the tables through Restore.)
 func TestARisenManWalkingAtTResumes(t *testing.T) {
@@ -432,8 +434,9 @@ func TestARisenManWalkingAtTResumes(t *testing.T) {
 	// Walking in: a route ahead, as a chase hands one (and the chase too).
 	risen.SetPath([]d2vector.Position{d2vector.NewPosition(135, 112), d2vector.NewPosition(140, 112)}, nil)
 
+	villager := b4bVillager(t, saved)
 	require.True(t, saved.Watch(risen, saved.localPlayer))
-	require.True(t, saved.Pursue(risen, saved.localPlayer))
+	require.True(t, saved.Pursue(risen, villager))
 
 	r := worldResolver{saved}
 	snap, err := saved.spawns.Snapshot(r)
@@ -456,7 +459,7 @@ func TestARisenManWalkingAtTResumes(t *testing.T) {
 	require.Equal(t, d2world.RisenRow, w.Spawns.Groups[0].Row)
 	require.Len(t, w.Pursuit.Chases, 1)
 	require.Equal(t, risen.ID(), w.Pursuit.Chases[0].Hunter)
-	require.Equal(t, d2saveref.Player, w.Pursuit.Chases[0].Quarry)
+	require.Equal(t, villager.ID(), w.Pursuit.Chases[0].Quarry, "the chase is of the villager: never of him, at a save")
 
 	resumed, _ := b4bGame(t)
 	require.NoError(t, b4Load(t, resumed, w))

@@ -156,9 +156,9 @@ const (
 )
 
 // bullets is the help's rows: ten since J2b (U and Q), eleven since M4.6 B5
-// (the save), at y 59 + 20i, the last at 259 -- above the highest of the D2
-// callouts, at y 355.
-const bullets = 11
+// (the save), twelve since the combat status (30 Sep 2026: the marker), at y
+// 59 + 20i, the last at 279 -- above the highest of the D2 callouts, at y 355.
+const bullets = 12
 
 // NewHelpOverlay creates a new HelpOverlay instance
 func NewHelpOverlay(

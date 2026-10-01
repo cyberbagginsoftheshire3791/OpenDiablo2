@@ -190,6 +190,8 @@ func TestEveryRefusalIsSaidInWords(t *testing.T) {
 		SaveRefusedNetwork:  d2player.SaveRefusedNetworkWords,
 		SaveRefusedNotReady: d2player.SaveRefusedNotYetWords,
 		SaveRefusedDead:     d2player.SaveRefusedDeadWords,
+		SaveRefusedCombat:   d2player.SaveRefusedCombatWords,
+		SaveRefusedFighting: d2player.SaveRefusedSettleWords,
 		SaveRefusedTalking:  d2player.SaveRefusedTalkWords,
 		SaveRefusedJournal:  d2player.SaveRefusedJournalWords,
 		SaveRefusedLoadout:  d2player.SaveRefusedLoadoutWords,
@@ -198,11 +200,9 @@ func TestEveryRefusalIsSaidInWords(t *testing.T) {
 	seen := map[string]string{}
 
 	for code, want := range saves {
-		for _, hisFight := range []bool{false, true} {
-			got := saveRefusalWords(code, hisFight)
-			require.Equal(t, want, got, "code %s", code)
-			require.NotContains(t, got, code, "a code is the log's, not his")
-		}
+		got := saveRefusalWords(code)
+		require.Equal(t, want, got, "code %s", code)
+		require.NotContains(t, got, code, "a code is the log's, not his")
 
 		require.NotEqual(t, d2player.SaveRefusedOtherWords, want)
 
@@ -213,14 +213,15 @@ func TestEveryRefusalIsSaidInWords(t *testing.T) {
 		seen[want] = code
 	}
 
-	// Rule 2's own case: his fight; and the moment after one (its end not yet
-	// applied, his last swing still playing -- and, until the save-held merge,
-	// a monster's blow or death), which a moment cures.
-	require.Equal(t, d2player.SaveRefusedFightWords, saveRefusalWords(SaveRefusedFighting, true))
-	require.Equal(t, "You can't save during a fight.", d2player.SaveRefusedFightWords)
-	require.Equal(t, d2player.SaveRefusedSettleWords, saveRefusalWords(SaveRefusedFighting, false))
-	require.Equal(t, d2player.SaveRefusedOtherWords, saveRefusalWords("HELD", false))
-	require.Equal(t, d2player.SaveRefusedOtherWords, saveRefusalWords("", true))
+	// Rule 2's own case since the combat status (Josh, 30 Sep 2026): in
+	// combat -- his fight, a hostile chasing him, his swing or reaction, the
+	// grace after -- the words are his: "You can't save in combat." FIGHTING
+	// is only the moment after a fight now (its end not yet applied), which a
+	// moment cures.
+	require.Equal(t, "You can't save in combat.", d2player.SaveRefusedCombatWords)
+	require.Equal(t, "You can't save while blows are still landing.\nTry again in a moment.", d2player.SaveRefusedSettleWords)
+	require.Equal(t, d2player.SaveRefusedOtherWords, saveRefusalWords("HELD"))
+	require.Equal(t, d2player.SaveRefusedOtherWords, saveRefusalWords(""))
 
 	loads := []string{
 		LoadRefusedVersion, LoadRefusedFile, LoadRefusedNetwork, LoadRefusedHero, LoadRefusedTorn,

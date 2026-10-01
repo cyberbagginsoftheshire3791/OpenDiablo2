@@ -179,6 +179,10 @@ type HUD struct {
 	saveNotice       *saveNoticeOverlay
 	saveNoticeWidget *d2ui.CustomWidget
 
+	// The combat marker by the health globe (hud_combat.go; 30 Sep 2026).
+	combat       *combatMarker
+	combatWidget *d2ui.CustomWidget
+
 	// Death screen v0: over everything.
 	death       *deathOverlay
 	deathWidget *d2ui.CustomWidget
@@ -287,6 +291,7 @@ func (h *HUD) Load() {
 
 	h.loadTooltips()
 	h.loadSkillResources()
+	h.loadCombatMarker()
 	h.loadCustomWidgets()
 	h.loadUIButtons()
 
@@ -357,6 +362,18 @@ func (h *HUD) loadCustomWidgets() {
 	h.widgetRightSkill = h.uiManager.NewCustomWidget(rightRenderFunc, skillIconWidth, skillIconHeight)
 	h.widgetRightSkill.SetPosition(rightSkillX, screenHeight)
 	h.panelGroup.AddWidget(h.widgetRightSkill)
+
+	// The combat marker over the health globe (30 Sep 2026): drawn only while
+	// he is in combat, over the map and under every panel.
+	combatRenderFunc := func(target d2interface.Surface) {
+		x, y := h.combatWidget.GetPosition()
+		h.renderCombatMarker(x, y, target)
+	}
+
+	h.combatWidget = h.uiManager.NewCustomWidget(combatRenderFunc, combatMarkerSize, combatMarkerSize)
+	h.combatWidget.SetPosition(combatMarkerX, combatMarkerY)
+	h.combatWidget.SetRenderPriority(d2ui.RenderPriorityForeground)
+	h.panelGroup.AddWidget(h.combatWidget)
 
 	// The always-visible clock strip (M4.4a, seam B). Drawn last, over the map,
 	// so nothing but an open panel occludes it.

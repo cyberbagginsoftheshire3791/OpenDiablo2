@@ -187,6 +187,24 @@ func (p *Pursuit) Chasing(hunterID string) bool {
 // Count is how many chases are live.
 func (p *Pursuit) Count() int { return len(p.chases) }
 
+// ChasersOf is every hunter chasing quarryID, in the stable order the rest of
+// the system uses (sorted ids), or nil. The game screen's combat status asks
+// it every frame whether anything is chasing HIM (Josh, 30 Sep 2026: "Fight,
+// action, or chased"): a chase lives here from Chase to Release, whatever its
+// route does -- a re-path replaces the route, never the chase -- so the answer
+// does not flicker as a hunter re-paths.
+func (p *Pursuit) ChasersOf(quarryID string) []string {
+	var out []string
+
+	for _, id := range p.hunterIDs() {
+		if p.chases[id].quarry.QuarryID() == quarryID {
+			out = append(out, id)
+		}
+	}
+
+	return out
+}
+
 // Solves is how many routes have been computed since construction.
 func (p *Pursuit) Solves() int { return p.solves }
 

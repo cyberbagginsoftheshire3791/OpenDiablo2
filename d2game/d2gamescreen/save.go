@@ -42,13 +42,18 @@ import (
 //   - the game is a network game (NETWORK, rule 9);
 //   - there is no hero in the world yet (NOT_READY);
 //   - he is dead (DEAD, the 12 Sep ruling: a dead hero is never written);
-//   - a fight is running or has not settled (FIGHTING, rule 2): the combat
-//     model's own refusal (Combat.Snapshot), the screen's fight-only state --
-//     a strike waiting on a walk, a tactical walk still out, the fight edge
-//     not yet taken back -- and his last swing still playing. (A monster's or
-//     villager's held action -- a swing, a blow taken, a death -- is NOT
-//     refused since BUG-87: the file carries it at its frame, and the load
-//     resumes it there. The B4b review fixes had refused it, BUG-76.)
+//   - he is in combat (COMBAT, Josh's ruling of 30 Sep 2026: "you can't save
+//     while in combat"): his fight live, a hostile chasing him, his own swing
+//     or hit or block reaction playing, or the few seconds after the last of
+//     these (combat_status.go);
+//   - a fight has not settled (FIGHTING, rule 2): the combat model's own
+//     refusal (Combat.Snapshot), the screen's fight-only state -- a strike
+//     waiting on a walk, a tactical walk still out, the fight edge not yet
+//     taken back. (A monster's or villager's held action -- a swing, a blow
+//     taken, a death -- is NOT refused since BUG-87: the file carries it at
+//     its frame, and the load resumes it there. The B4b review fixes had
+//     refused it, BUG-76. His fight running and his last swing playing were
+//     FIGHTING's until the combat status took them: they are COMBAT now.)
 //   - he is talking (TALKING);
 //   - his journal is open (JOURNAL);
 //   - he is choosing his loadout (LOADOUT).
@@ -75,6 +80,7 @@ const (
 	SaveRefusedNetwork  = "NETWORK"
 	SaveRefusedNotReady = "NOT_READY"
 	SaveRefusedDead     = "DEAD"
+	SaveRefusedCombat   = "COMBAT"
 	SaveRefusedFighting = "FIGHTING"
 	SaveRefusedTalking  = "TALKING"
 	SaveRefusedJournal  = "JOURNAL"
@@ -452,6 +458,12 @@ func (v *Game) saveRefusal() *SaveRefusal {
 		return refuse(SaveRefusedDead, "he is dead, and a dead hero is never saved")
 	}
 
+	// The combat status (Josh, 30 Sep 2026): his fight, a hostile after him,
+	// his own swing or reaction, and the grace after them (combat_status.go).
+	if code, detail := v.CombatReason(); code != "" {
+		return refuse(SaveRefusedCombat, "he is in combat (%s): %s", code, detail)
+	}
+
 	if why := v.fightUnsettled(); why != "" {
 		return refuse(SaveRefusedFighting, "%s", why)
 	}
@@ -478,6 +490,15 @@ func (v *Game) saveRefusal() *SaveRefusal {
 // whenever one is not running and its close has been applied: the save
 // refuses rather than carry it (the plan's section 1, "UI and fight state").
 //
+// THE COMBAT STATUS TOOK TWO OF ITS CLAUSES (30 Sep 2026): "a fight is
+// running" (Combat.Fighting) and "his last swing is still playing"
+// (Player.IsCasting) were the same thing as being in combat, which COMBAT
+// refuses before this is asked -- and for the grace after them, so both are
+// COMBAT now, never FIGHTING. What is left here is the fight's own
+// bookkeeping, which a frame or two after his fight clears; the grace is
+// longer than any of it measured, so in the game FIGHTING is a backstop (and
+// the whole of it with the harness's save.combat_grace at 0).
+//
 // The combat model's own refusal is here, with the screen's (the B3 review:
 // it used to come after TALKING, JOURNAL and LOADOUT, from inside the
 // snapshots, so a talk opened on a fight's closing frame was refused TALKING
@@ -491,19 +512,8 @@ func (v *Game) fightUnsettled() string {
 	}
 
 	switch {
-	case v.combat != nil && v.combat.Fighting():
-		return "a fight is running"
 	case unsettled != "":
 		return unsettled
-	case v.localPlayer != nil && v.localPlayer.IsCasting():
-		// A swing's animation outlives the blow by a frame or two; the
-		// digest compares casting and the animation mode, and a load stands
-		// him still (rule 4). Nothing else in Strigoi's game casts. KEPT by
-		// BUG-87, which dropped the refusal for a monster's or villager's
-		// held action (the file carries theirs at its frame): his is not in
-		// the file -- rule 4 stands him still -- and it plays only in or
-		// just after his own fight, which is refused already.
-		return "his last swing is still playing"
 	case v.wasFighting:
 		return "the fight's end has not been applied yet"
 	case v.pendingStrike != "":

@@ -45,8 +45,13 @@ import (
 //	   day where first light laid them down (a risen body Closed), the watch
 //	   promised in a talk and stood at the headman's post from true dark, a
 //	   second squad deployed (its model an NPC on the map: B4b), his torch
-//	   lit; and, last, a pack forced from the table that NOTICES him and gives
-//	   chase -- T is the first frames of the chase, the pack walking in (B4b).
+//	   lit; and, last, a pack forced from the table, WATCHING him and not yet
+//	   aware of him, and a fallen far off walking after a villager -- T is
+//	   the moment before the pack sees him (the combat status, 30 Sep 2026:
+//	   a hostile chasing HIM is combat, and a save is refused in combat, so
+//	   B4b's T -- the first frames of the pack's chase -- is a moment no save
+//	   can be made at; the notice radius opens at T and the pack gives chase
+//	   after it).
 //	   The precondition names every block and requires it non-empty
 //	   (huntedPrecondition for B4b's) -- and (the B4a review, A3) every field
 //	   the load restores ON HIM differs from what a fresh game gives him: his
@@ -55,8 +60,8 @@ import (
 //	2  At T -- about 01:40 of the third day, standing still at the post -- the
 //	   save, which moves nothing (the digest before and after is one digest),
 //	   and the file holds the packs, watches, chases, bodies, the entities the
-//	   map does not build and the deployed squad.
-//	3  120 world minutes more: the pack walks in and its fight is played
+//	   map does not build and the deployed squad -- and no chase of him.
+//	3  120 world minutes more: the pack sees him, walks in and its fight is played
 //	   BLOW BY BLOW (the B4b review fixes, BUG-77: B4b quick-resolved it
 //	   before its first blow, so no roll or blow after T was ever compared;
 //	   now the quick resolve is off and every blow a graze both ways -- dials
@@ -112,16 +117,20 @@ import (
 //	   id, and the resumed game saves that file, byte for byte but its stamp.
 //	8  RULE 4 (B4b): he is walked, saved mid-stride, and loaded; he stands
 //	   where he was saved, and every system, entity and part is the saved
-//	   moment's but his walk (sameWorldExcept, hisWalk).
-//	6i A SAVE IN THE DEATH WINDOW (the B4b review fixes, BUG-75, and BUG-87;
-//	   the review's real-game probe, run after act 8): T resumed with B4b's
+//	   moment's but his walk (sameWorldExcept, hisWalk). The pack not yet
+//	   seeing him (the notice radius T's, half a tile), so no chase of him
+//	   refuses the save (the combat status).
+//	6i THE SAVE AFTER HIS FIGHT (the B4b review fixes, BUG-75; the review's
+//	   real-game probe, run after act 8): T resumed with B4b's
 //	   quick-resolving dials, the pack's fight quick-resolved; each member it
-//	   slew lies where his fall was recorded; the save is made at once, on
-//	   the first try, while the slain still play their deaths, each saved at
-//	   its frame; and that moment resumes exactly -- the deaths at their
-//	   frames -- runs on the same through the deaths' ends, and each slain
-//	   lies where the saved game's lies. (BUG-76 had refused the save until
-//	   the last lay; BUG-87 carries the deaths instead.)
+//	   slew lies where his fall was recorded; the save at once is refused
+//	   COMBAT (the grace after his fight: the combat status, 30 Sep 2026 --
+//	   BUG-87 had made it there, the slain still playing their deaths, and
+//	   the deaths end inside the grace, so that moment can no longer be
+//	   saved); the save is made on the first frame out of combat; and that
+//	   moment resumes exactly, runs on the same, and each slain lies where
+//	   the saved game's lies. (A death saved at its frame is
+//	   TestSaveResumeMidAction's: a village fight, which he is not in.)
 //
 // THE COMPARISON (BUG-58 fixed, 29 Sep 2026): the digest's resume_digest is
 // every part a resumed game must reproduce -- not sim (the harness's clock)
@@ -592,6 +601,20 @@ func eveningActs1to3(t *testing.T) evening {
 
 	setField(s, "combat", "disengage", true)
 	s.call("strigoi_watch", map[string]any{"watcher": survivor, "target": str(pl, "handle"), "release": true})
+
+	// ...and its chase released too (the combat status, 30 Sep 2026): the
+	// unwatch drops the watch and not the chase (Notice.Unwatch is not
+	// Pursuit.Release), and a dog still chasing him -- standing beside him,
+	// arrived -- is a hostile chasing him: combat, all the way to T and past
+	// it, in which no save is made (measured: the first run of this change
+	// found one chase of him at T and no pack member's). Let go means let go.
+	survivorID := entityID(t, s, survivor)
+	for _, raw := range asList(sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")["chase_list"]) {
+		if c, _ := raw.(map[string]any); str(c, "hunter") == survivorID {
+			setField(s, "pursuit", "release", survivorID)
+		}
+	}
+
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	if flag(t, combatState(s), "fighting") || str(combatState(s), "ended_reason") != "disengaged" {
@@ -760,15 +783,26 @@ func eveningActs1to3(t *testing.T) evening {
 
 	setField(s, "combat", "quick_resolve_advantage", quickResolveOff)
 	setField(s, "combat", "forced_band", "graze")
-	setField(s, "spawns", "notice_radius", huntedNoticeRadius)
 
-	for i := 0; i < 200 && !packChasing(t, s, pack); i++ {
-		s.call("strigoi_step", map[string]any{"frames": 1})
-	}
+	// THE COMBAT STATUS MOVED T (Josh, 30 Sep 2026: "you can't save while in
+	// combat"). B4b's T was the first frames of the pack's chase of him, and
+	// a hostile chasing him is combat: the save there is refused COMBAT. So
+	// the pack is on the map watching him, the notice radius still T's half a
+	// tile -- none of it has seen him -- and it opens at T (below, before the
+	// snapshot, with no frame between: SetRadius evaluates nothing), so the
+	// chase begins in the frames after T, in both games alike. The chase and
+	// the walk the file must still hold (B4b: a chase, a chaser's motion
+	// restored mid-walk) are a fallen's, far off, sent after a villager
+	// (act 7c's arrangement): a chase that is not of him.
+	pl = s.call("strigoi_get_player", map[string]any{})
+	far := scClearSpot(t, s, num(pl, "x"), num(pl, "y"))
+	walker := spawnNPC(t, s, "fallen1", far[0], far[1])
+	s.call("strigoi_pursue", map[string]any{"hunter": walker, "quarry": farthestNative(t, s, far[0], far[1])})
+	s.call("strigoi_step", map[string]any{"frames": 2})
 
-	if !packChasing(t, s, pack) || flag(t, combatState(s), "fighting") {
-		t.Fatalf("act 1 (B4b): %s notices him and gives chase, no fight yet: fighting %v, %v",
-			pack, combatState(s)["fighting"], sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")["chase_list"])
+	if packChasing(t, s, pack) || flag(t, combatState(s), "fighting") || flag(t, saveState(s), "in_combat") {
+		t.Fatalf("act 1: at T the pack has not seen him and he is not in combat: pack chasing %v, fighting %v, save %v",
+			packChasing(t, s, pack), combatState(s)["fighting"], saveState(s))
 	}
 
 	// His wind below its maximum (the village's tiles are a town's, where
@@ -779,8 +813,12 @@ func eveningActs1to3(t *testing.T) evening {
 
 	// --- 1: THE PRECONDITION: every block is non-empty ---------------------
 	eveningPrecondition(t, s)
-	huntedPrecondition(t, s, pack, entityID(t, s, dog), entityID(t, s, survivor))
+	huntedPrecondition(t, s, pack, entityID(t, s, dog), entityID(t, s, survivor), entityID(t, s, walker))
 	heroNotFresh(t, s, fresh)
+
+	// The notice radius opens (a dial: never saved; huntedDials carries it
+	// for the resumed game, set as it resumes, before its first frame).
+	setField(s, "spawns", "notice_radius", huntedNoticeRadius)
 
 	// --- 2: the save at T --------------------------------------------------
 	atT := combatState(s)
@@ -989,22 +1027,54 @@ func packChasing(t *testing.T, s *session, pack string) bool {
 }
 
 // huntedPrecondition is act 1's for the hunted night (B4b): every block B4a
-// refused holds something at T -- a pack aware of him, one of it walking a
-// chase (a walk in progress: his motion is saved and must be restored), no
-// fight, a slain monster lying on the map with his body at 0, a wounded
-// survivor of an ended fight, and a deployed squad whose model is an NPC on
-// the map.
-func huntedPrecondition(t *testing.T, s *session, pack, slain, survivor string) {
+// refused holds something at T -- a pack watching him, a chase with its
+// chaser walking (a walk in progress: his motion is saved and must be
+// restored), no fight, a slain monster lying on the map with his body at 0, a
+// wounded survivor of an ended fight, and a deployed squad whose model is an
+// NPC on the map.
+//
+// SINCE THE COMBAT STATUS (30 Sep 2026) THE PACK IS NOT YET AWARE OF HIM AND
+// THE CHASE IS NOT OF HIM: B4b's "a pack aware of him" and "one of the pack
+// chasing him" were a hostile chasing him -- combat, in which a save is
+// refused. The pack watches him (its watches are in the file), and the chase
+// is walker's, after a villager; and he is out of combat, which is what lets
+// T be saved at all.
+func huntedPrecondition(t *testing.T, s *session, pack, slain, survivor, walker string) {
 	t.Helper()
 
-	walking := false
+	walking, walkerChases := false, false
 
-	for _, id := range stringsOf(groupNamed(t, s, pack)["member_ids"]) {
-		if h := handleOfID(t, s, id); h != "" {
-			st := sub(s.call("strigoi_get_entity", map[string]any{"handle": h}), "state")
-			if len(asList(st["waypoints"])) > 0 {
-				walking = true
-			}
+	// Mid-walk: waypoints ahead of him, or -- a route of one straight leg,
+	// which the walk takes as its target (measured: the fallen after a
+	// villager walks one) -- a target that is not where he stands. Either
+	// is motion the file carries and the load must restore.
+	if h := handleOfID(t, s, walker); h != "" {
+		e := s.call("strigoi_get_entity", map[string]any{"handle": h})
+		st := sub(e, "state")
+		tg := asList(st["target"])
+		walking = len(asList(st["waypoints"])) > 0 ||
+			(len(tg) == 2 && (tg[0].(float64) != num(e, "x") || tg[1].(float64) != num(e, "y")))
+	}
+
+	him := str(s.call("strigoi_get_player", map[string]any{}), "id")
+	hisChases := 0
+
+	for _, raw := range asList(sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")["chase_list"]) {
+		c, _ := raw.(map[string]any)
+		if str(c, "hunter") == walker {
+			walkerChases = true
+		}
+
+		if str(c, "quarry") == him {
+			hisChases++
+		}
+	}
+
+	watchingHim := 0
+	for _, raw := range asList(spawnsState(s)["notice_list"]) {
+		w, _ := raw.(map[string]any)
+		if hasString(stringsOf(groupNamed(t, s, pack)["member_ids"]), str(w, "watcher")) && str(w, "quarry") == him {
+			watchingHim++
 		}
 	}
 
@@ -1029,10 +1099,13 @@ func huntedPrecondition(t *testing.T, s *session, pack, slain, survivor string) 
 		what string
 		ok   bool
 	}{
-		{"a pack aware of him", mustNum(t, groupNamed(t, s, pack), "aware") >= 1},
-		{"one of the pack chasing him", packChasing(t, s, pack)},
-		{"a chaser mid-walk (his waypoints ahead of him)", walking},
+		{"the pack watching him", watchingHim >= 1},
+		{"the pack not yet aware of him (the combat status: its chase would be combat)", mustNum(t, groupNamed(t, s, pack), "aware") == 0},
+		{"no chase of him", hisChases == 0},
+		{"a chase: the walker after a villager", walkerChases},
+		{"a chaser mid-walk (his waypoints, or his target, ahead of him)", walking},
 		{"no fight (a save is refused mid-fight)", !flag(t, combatState(s), "fighting")},
+		{"out of combat (a save is refused in combat)", !flag(t, saveState(s), "in_combat")},
 		{"the slain dog lying on the map, his body at 0", onTheMap(s, slain) && bodies[slain] != nil && num(bodies[slain], "health") == 0},
 		{"the wounded survivor: alive, below his maximum", bodies[survivor] != nil &&
 			num(bodies[survivor], "health") > 0 && num(bodies[survivor], "health") < num(bodies[survivor], "max_health")},
@@ -1045,8 +1118,8 @@ func huntedPrecondition(t *testing.T, s *session, pack, slain, survivor string) 
 		}
 	}
 
-	t.Logf("act 1 (B4b): a hunted night at T: %s aware and chasing, a chaser mid-walk, the slain %s at 0, the survivor %s at %v of %v, the deployed model %s",
-		pack, slain, survivor, bodies[survivor]["health"], bodies[survivor]["max_health"], model)
+	t.Logf("act 1 (B4b): a hunted night at T: %s watching him (%d, none aware), %s mid-walk after a villager, the slain %s at 0, the survivor %s at %v of %v, the deployed model %s; out of combat",
+		pack, watchingHim, walker, slain, survivor, bodies[survivor]["health"], bodies[survivor]["max_health"], model)
 }
 
 // otherNeighbour is an orthogonal neighbour of px, py with a clear line to
@@ -1280,6 +1353,27 @@ func eveningHarness(t *testing.T, s *session, ev evening) {
 		"Its S_T and S_U are the other harness's digests, so nothing compared with them means anything. "+
 		"Keep a new one: run TestSaveResume green (it keeps its evening at <run dir>/pt/TestSaveResume/evening) "+
 		"and point STRIGOI_SAVE_RESUME_FROM there.", ev.keptFrom, kept, now)
+}
+
+// withDial is dials with d's system and field written d's value instead
+// (appended when dials has none).
+func withDial(dials []dialWrite, d dialWrite) []dialWrite {
+	out := make([]dialWrite, 0, len(dials)+1)
+	found := false
+
+	for _, w := range dials {
+		if w.System == d.System && w.Field == d.Field {
+			w, found = d, true
+		}
+
+		out = append(out, w)
+	}
+
+	if !found {
+		out = append(out, d)
+	}
+
+	return out
 }
 
 // hasDial is whether dials writes d's system and field.
@@ -1632,7 +1726,13 @@ func huntedActs6h8(t *testing.T, s *session, ev evening) {
 	t.Logf("act 6h PASS: %d villager(s) re-keyed in place to the file's ids; the resumed game saves the file", len(renamed))
 
 	// --- 8: rule 4, a save mid-walk ------------------------------------------
-	for _, d := range ev.savedDial {
+	// The pack not yet seeing him: T's half-tile notice radius, not the
+	// hunted night's (the combat status, 30 Sep 2026): a chase of him in the
+	// three frames he walks would be combat, and refuse the save this act
+	// makes. Both games here run with the same dials.
+	walkDials := withDial(ev.savedDial, dialWrite{"spawns", "notice_radius", 0.5})
+
+	for _, d := range walkDials {
 		setField(s, d.System, d.Field, d.Value)
 	}
 
@@ -1663,7 +1763,7 @@ func huntedActs6h8(t *testing.T, s *session, ev evening) {
 		t.Fatalf("act 8: the save made mid-walk resumes: %v", load)
 	}
 
-	for _, d := range ev.savedDial {
+	for _, d := range walkDials {
 		setField(s, d.System, d.Field, d.Value)
 	}
 
@@ -1703,12 +1803,19 @@ func huntedActs6h8(t *testing.T, s *session, ev evening) {
 //
 // Here, on the same T (the evening's file beside his act-3 files, as act 4
 // loads it) with B4b's dials (quickResolvedDials): the quick resolve fires;
-// every member it slew lies where his fall was recorded (BUG-75); the save is
-// made at once, on the first try, with the slain still playing their deaths
-// -- each in the file at its frame; and that moment T' resumes exactly (S_R0
-// = S_T', the deaths at their frames), is the same world 20 frames on (S_R =
-// S_M', the deaths still playing) and 120 frames on (S_R = S_U', every slain
-// a corpse), and each resumed corpse lies where the saved game's lies.
+// every member it slew lies where his fall was recorded (BUG-75); and that
+// moment T' resumes exactly, is the same world 20 frames on (S_R = S_M') and
+// 120 frames on (S_R = S_U', every slain a corpse), and each resumed corpse
+// lies where the saved game's lies.
+//
+// THE COMBAT STATUS MOVED T' (Josh, 30 Sep 2026: "you can't save while in
+// combat"). BUG-87 made the save at once, with the slain still playing their
+// deaths. That moment is the second after HIS fight -- in combat, the grace --
+// and a death (56 frames) ends inside the grace's 180, so no save can be made
+// while one of his fight's slain still falls. So: the save at once is REFUSED
+// COMBAT (the rule's teeth here), and T' is the first frame he is out of
+// combat. What BUG-87 carried for this act -- a death saved at its frame --
+// is TestSaveResumeMidAction's M-DT, on a village fight he is not in.
 func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 	t.Helper()
 
@@ -1761,9 +1868,48 @@ func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 
 	lieWhereTheyFell(t, s, "act 6i (the first look after the quick resolve)", slain)
 
-	// BUG-87: the save is made at once, with the slain still falling.
+	// The combat status: at once, he is in combat (the grace after his fight,
+	// and the rest of the night's hunters still after him), and the save is
+	// refused. Measured, the first run of this change: three more of the
+	// night's pack members were chasing him 900 frames after the quick
+	// resolve. So the board is cleared -- every watch on him dropped and every
+	// chase of him released, the let-go of TestTheCombatStatus -- and T' is
+	// the first frame out of combat after it: the moment after his fight
+	// that a save CAN be made at. (A save waits for no pack on its own: a
+	// chase of him ends only when its hunter dies, a fight takes it or
+	// daybreak despawns it -- BUG-108.)
+	refusedWith(t, s, "act 6i (at once, the second after his fight)", "COMBAT", map[string]any{})
+
+	pl := s.call("strigoi_get_player", map[string]any{})
+	him, himHandle := str(pl, "id"), str(pl, "handle")
+	letGo := 0
+
+	for _, raw := range asList(spawnsState(s)["notice_list"]) {
+		if w, _ := raw.(map[string]any); str(w, "quarry") == him {
+			if h := handleOfID(t, s, str(w, "watcher")); h != "" {
+				s.call("strigoi_watch", map[string]any{"watcher": h, "target": himHandle, "release": true})
+				letGo++
+			}
+		}
+	}
+
+	for _, raw := range asList(sub(s.call("strigoi_get_system_state", map[string]any{"system": "pursuit"}), "state")["chase_list"]) {
+		if c, _ := raw.(map[string]any); str(c, "quarry") == him {
+			setField(s, "pursuit", "release", str(c, "hunter"))
+		}
+	}
+
+	outAfter := 0
+	for ; outAfter < 900 && flag(t, saveState(s), "in_combat"); outAfter++ {
+		s.call("strigoi_step", map[string]any{"frames": 1})
+	}
+
+	if flag(t, saveState(s), "in_combat") {
+		t.Fatalf("act 6i: out of combat within 900 frames of the quick resolve: %v", saveState(s))
+	}
+
 	if e := s.callErr("strigoi_save_game", map[string]any{}); e != "" {
-		t.Fatalf("RED act 6i: the save in the death window is made on the first try (BUG-87): refused %q", e)
+		t.Fatalf("RED act 6i: out of combat, the save is made on the first try: refused %q", e)
 	}
 
 	sT := snapWorld(t, s)
@@ -1783,9 +1929,8 @@ func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 		}
 	}
 
-	if len(dying) == 0 {
-		t.Fatalf("act 6i: at T' at least one slain is still playing his death, so the save is made mid-death (%d slain, none holding an action)", len(slain))
-	}
+	t.Logf("act 6i: %d watcher(s) of him let go; out of combat %d frames after; at T' %d of %d slain still hold an action (%v)",
+		letGo, outAfter, len(dying), len(slain), dying)
 
 	lieWhereTheyFell(t, s, "act 6i (at T')", slain)
 
@@ -1822,17 +1967,17 @@ func deathWindowAct6i(t *testing.T, s *session, ev evening) {
 		setField(s, d.System, d.Field, d.Value)
 	}
 
-	sameWorld(t, "act 6i (S_R0 = S_T', saved mid-death: each death at its frame)", sT, snapWorld(t, s))
+	sameWorld(t, "act 6i (S_R0 = S_T', saved on the first frame out of combat)", sT, snapWorld(t, s))
 
 	s.call("strigoi_step", map[string]any{"frames": 20})
-	sameWorld(t, "act 6i (S_R = S_M', twenty frames on, the deaths still playing)", sM, snapWorld(t, s))
+	sameWorld(t, "act 6i (S_R = S_M', twenty frames on)", sM, snapWorld(t, s))
 
 	s.call("strigoi_step", map[string]any{"frames": 100})
 	sameWorld(t, "act 6i (S_R = S_U', 120 frames on, every slain a corpse)", sU, snapWorld(t, s))
 	lieWhereTheyFell(t, s, "act 6i (resumed: where the saved game's lie)", corpses)
 
-	t.Logf("act 6i PASS: the quick resolve after %d frames slew %d; the save was made at once, on the first try, with %d still falling (%v); "+
-		"S_R0 = S_T', S_R = S_M' twenty frames on and S_R = S_U' 120 frames on; each lies where he fell, in both games", frames, len(slain), len(dying), dying)
+	t.Logf("act 6i PASS: the quick resolve after %d frames slew %d; the save at once refused COMBAT, made %d frames later out of combat (%d still falling); "+
+		"S_R0 = S_T', S_R = S_M' twenty frames on and S_R = S_U' 120 frames on; each lies where he fell, in both games", frames, len(slain), outAfter, len(dying))
 }
 
 // lieWhereTheyFell requires each slain entity to stand exactly where his fall
@@ -2197,8 +2342,9 @@ func refusedToDawn(t *testing.T, s *session, act, save, code string, seed int, f
 //	    document the world file embeds -- and SAVING CHANGES NOTHING: the
 //	    state digest before and after is one digest (rule 10's autosave runs
 //	    inside a frame; a save that drew a number would move the night).
-//	7b  mid-fight: FIGHTING, and every file untouched (hashed before and
-//	    after), a save to another path included.
+//	7b  mid-fight: COMBAT (FIGHTING's until the combat status, 30 Sep 2026:
+//	    in his fight he is in combat), and every file untouched (hashed
+//	    before and after), a save to another path included.
 //	7c  a busy world -- a lit torch, a pack on the map, a chase, the placed
 //	    dead, a slain dog with his wounds, a fight's counters -- saves with
 //	    every list block non-empty and every live pack member in the entity
@@ -2305,7 +2451,7 @@ func saveVerbActs(t *testing.T) {
 	t.Logf("7a PASS: %d bytes, %d blocks, the sidecar embedded byte for byte, digest unmoved; %s the %s facing %v with %v stamina, generation %s",
 		len(first), len(file), str(hero, "name"), str(hero, "class"), hero["facing"], hero["stamina"], gen7a)
 
-	// --- 7b: mid-fight, FIGHTING, and nothing is touched --------------------
+	// --- 7b: mid-fight, COMBAT, and nothing is touched ----------------------
 	pl := s.call("strigoi_get_player", map[string]any{})
 	spot := clearNeighbour(t, s, num(pl, "x"), num(pl, "y"))
 	dog := spawnNPC(t, s, "fallen1", spot[0], spot[1])
@@ -2318,8 +2464,8 @@ func saveVerbActs(t *testing.T) {
 	before := hashFiles(t, files)
 	elsewhere := filepath.Join(t.TempDir(), "mid-fight.world.json")
 
-	refusedWith(t, s, "7b", "FIGHTING", map[string]any{})
-	refusedWith(t, s, "7b (to)", "FIGHTING", map[string]any{"to": elsewhere, "omit": []any{"corpses"}})
+	refusedWith(t, s, "7b", "COMBAT", map[string]any{})
+	refusedWith(t, s, "7b (to)", "COMBAT", map[string]any{"to": elsewhere, "omit": []any{"corpses"}})
 
 	if after := hashFiles(t, files); !equalHashes(before, after) {
 		t.Fatalf("7b: a refused save touched a file:\n before %v\n after  %v", before, after)
@@ -2329,7 +2475,7 @@ func saveVerbActs(t *testing.T) {
 		t.Fatalf("7b: a refused save wrote %s (%v)", elsewhere, err)
 	}
 
-	t.Logf("7b PASS: mid-fight FIGHTING, %d files untouched, nothing written elsewhere", len(files))
+	t.Logf("7b PASS: mid-fight COMBAT, %d files untouched, nothing written elsewhere", len(files))
 
 	// --- 7c: a busy world saves whole ---------------------------------------
 	// The dog dies (forced crits, as TestCombatResolver finishes its own), so
@@ -2346,6 +2492,18 @@ func saveVerbActs(t *testing.T) {
 	}
 
 	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	// THE COMBAT STATUS (30 Sep 2026) MOVED 7c'S MOMENT: the seconds after his
+	// fight are combat (the grace), and so is a pack that sees him and gives
+	// chase -- in either a save is refused. So he waits the grace out, and
+	// the pack is placed with the notice radius at half a tile: on the map,
+	// watching him, not seeing him. Its chase in the file is the fallen's,
+	// after a villager, as before.
+	for i := 0; i < 400 && flag(t, saveState(s), "in_combat"); i++ {
+		s.call("strigoi_step", map[string]any{"frames": 1})
+	}
+
+	setField(s, "spawns", "notice_radius", 0.5)
 
 	// His torch, lit.
 	s.call("strigoi_key", map[string]any{"key": "l"})
@@ -2377,8 +2535,8 @@ func saveVerbActs(t *testing.T) {
 	s.call("strigoi_pursue", map[string]any{"hunter": chaser, "quarry": villager})
 	s.call("strigoi_step", map[string]any{"frames": 1})
 
-	if flag(t, combatState(s), "fighting") {
-		t.Fatalf("7c: the arranged world must not be in a fight when it saves: %v", combatState(s))
+	if flag(t, combatState(s), "fighting") || flag(t, saveState(s), "in_combat") {
+		t.Fatalf("7c: the arranged world must not be in a fight, or in combat, when it saves: %v; %v", combatState(s), saveState(s))
 	}
 
 	// The fight's end rewrote his sidecar (saveKit); it carries the last
@@ -2784,6 +2942,39 @@ func nativeHandle(t *testing.T, s *session) string {
 	t.Fatalf("no native entity among the npcs (scene natives %v)", scene["natives"])
 
 	return ""
+}
+
+// farthestNative is the handle of the villager (a native) farthest from x, y:
+// a walk after him is a long one.
+func farthestNative(t *testing.T, s *session, x, y float64) string {
+	t.Helper()
+
+	scene := sub(s.call("strigoi_get_system_state", map[string]any{"system": "scene"}), "state")
+
+	natives := map[string]bool{}
+	for _, raw := range asList(scene["natives"]) {
+		n, _ := raw.(map[string]any)
+		natives[str(n, "id")] = true
+	}
+
+	best, bestD := "", -1.0
+
+	for _, raw := range asList(s.call("strigoi_get_entities", map[string]any{"kind": "npc", "limit": 200})["items"]) {
+		e, _ := raw.(map[string]any)
+		if !natives[str(e, "id")] {
+			continue
+		}
+
+		if d := math.Hypot(num(e, "x")-x, num(e, "y")-y); d > bestD {
+			best, bestD = str(e, "handle"), d
+		}
+	}
+
+	if best == "" {
+		t.Fatalf("no native entity among the npcs (scene natives %v)", scene["natives"])
+	}
+
+	return best
 }
 
 func stringsOf(v any) []string {

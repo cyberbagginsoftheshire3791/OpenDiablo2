@@ -263,3 +263,35 @@ a wrong size would draw over the globes. The harness's `ui` state says which
 each hand drew: `hand_icons` is `{"left": "F" | "art:blade", "right": "L" |
 "art:torch", "right_frame": 0 | 1}`. Only Strigoi's game draws them; `-classic`
 draws Diablo II's skill icons. Every file gets its `CREDITS.md` line (§4).
+
+## 7. The combat marker — one icon, drop-in
+
+Not a creature either, and the same loader. While he is **in combat** — his
+fight live, a hostile chasing him, his own swing or hit/block reaction
+playing, or the three seconds after the last of these (Josh, 30 Sep 2026: "you
+can't save while in combat") — he cannot save, and a small marker sits over
+the health globe saying so. Until its art lands it is a red `!` on a dark
+square with a red edge, in the HUD's font (a glyph, not a letter: every letter
+the HUD draws beside the globes is a key — F, L, and C opens his character
+panel). The art drops in with no code:
+
+| icon | file | size | frames |
+|---|---|---|---|
+| in combat | `data/strigoi/ui/combat.png` | 32×32 | 1 — no manifest |
+
+**The brief for the artist:** a small alarm mark for "in combat — you cannot
+save", read at a glance over a dark map at night and beside the red life
+globe: crossed blades, a drawn sword, a bared-teeth wolf's head, or a
+blood-red sigil; Wallachia 1462, not a modern warning triangle. It must read
+at 32×32 and stand apart from the red globe under it (a pale or gold edge
+helps). Transparent where it is not drawn.
+
+It is drawn with its top-left corner at (54, 468): centred over the globe
+(x 54–86), its foot at y 500, above the globe's stone frame, clear of the
+globe and of the left hand's icon (x 117–165, y 552–600). Art that is there and
+does not fit — another size, more than one frame — is reported in the log
+(`combat marker art refused`) and the glyph is drawn. The harness's `ui` state
+says what it drew: `combat_marker.drew` is `"!"`, `"art:combat"`, or `""` (not
+in combat), with its square (`x`, `y`, `w`, `h`). It is drawn in both games
+(`-classic` too: the status is the save's, and the save is both games').
+Every file gets its `CREDITS.md` line (§4).
