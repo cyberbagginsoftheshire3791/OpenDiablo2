@@ -832,19 +832,44 @@ func eveningActs1to3(t *testing.T) evening {
 	t.Logf("act 3: in the two hours the fights ran to %v encounters (%q the last's end)",
 		combatState(s)["encounters"], str(combatState(s), "ended_reason"))
 
+	// The raid's R2: who the pack chose among the living after T (the
+	// deployed squad's model is one), and the fights he was not in.
+	sk := seekState(s)
+	t.Logf("MEASURE act 3: seek looks %v retargets %v holds %v; the clock fights %v",
+		sk["looks"], sk["retargets"], sk["holds"], afhClock(s))
+
 	// The B4b review fixes (BUG-77): the fight after T landed blows -- rolls
 	// drawn, rebuilt monsters swinging and struck -- and none was
 	// quick-resolved, so act 6 compares a fight, not its absence.
+	//
+	// HIS FIGHT OR THE VILLAGE'S (the raid R2 review fixes, 1 Oct 2026). His
+	// deployed squad's model is a quarry (the review's C7 (a), on default),
+	// two tiles from him, and since Seek holds a seen target (the review's B1)
+	// the hunters that turn to it stay on it: measured, 11 retargets and 31
+	// holds after T, both fights after T on the model (clock fights, routed
+	// by it) and none on him -- where R2's strict nearest flipped some back
+	// onto him (13 retargets, his third fight, 16 blows). Either is a fight
+	// after T that act 6 compares blow by blow (the clock fights' rolls are the
+	// combat-clock stream, in the digest), so the act asks for blows and
+	// rounds in his fight and the clock's together, and no quick resolve in
+	// either (strigoi-harness-runs\wt-r2\fix\logs\pt-exp-*.txt).
 	atU := combatState(s)
-	if blows := mustNum(t, atU, "actions_total") - mustNum(t, atT, "actions_total"); blows <= 0 ||
-		mustNum(t, atU, "rounds") <= mustNum(t, atT, "rounds") ||
-		mustNum(t, atU, "quick_resolved") != mustNum(t, atT, "quick_resolved") {
-		t.Fatalf("act 3: the fight after T is fought blow by blow: %v blows, rounds %v -> %v, quick_resolved %v -> %v",
-			blows, atT["rounds"], atU["rounds"], atT["quick_resolved"], atU["quick_resolved"])
+	clockT, clockU := sub(atT, "clock"), sub(atU, "clock")
+	hisBlows := mustNum(t, atU, "actions_total") - mustNum(t, atT, "actions_total")
+	hisRounds := mustNum(t, atU, "rounds") - mustNum(t, atT, "rounds")
+	clockBlows := mustNum(t, clockU, "actions_total") - mustNum(t, clockT, "actions_total")
+	clockRounds := mustNum(t, clockU, "rounds") - mustNum(t, clockT, "rounds")
+
+	if hisBlows+clockBlows <= 0 || hisRounds+clockRounds <= 0 ||
+		mustNum(t, atU, "quick_resolved") != mustNum(t, atT, "quick_resolved") ||
+		mustNum(t, clockU, "quick_resolved") != mustNum(t, clockT, "quick_resolved") {
+		t.Fatalf("act 3: the fight after T is fought blow by blow: his %v blows and %v rounds, the clock's %v and %v; quick_resolved %v -> %v, the clock's %v -> %v",
+			hisBlows, hisRounds, clockBlows, clockRounds, atT["quick_resolved"], atU["quick_resolved"],
+			clockT["quick_resolved"], clockU["quick_resolved"])
 	}
 
-	t.Logf("act 3: after T, %v rounds and %v blows, none quick-resolved",
-		mustNum(t, atU, "rounds")-mustNum(t, atT, "rounds"), mustNum(t, atU, "actions_total")-mustNum(t, atT, "actions_total"))
+	t.Logf("act 3: after T, his fight %v rounds and %v blows, the clock fights %v rounds and %v blows, none quick-resolved",
+		hisRounds, hisBlows, clockRounds, clockBlows)
 
 	c := clockState(s)
 	if str(c, "stage") == "night" || flag(t, lightState(s), "carried_lit") {
