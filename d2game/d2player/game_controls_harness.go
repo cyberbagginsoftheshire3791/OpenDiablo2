@@ -142,6 +142,10 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"free_cam":          g.FreeCam,
 		"clock":             g.clock,
 
+		// The game zoom (1 Oct 2026): the map renderer's scale as drawn, 1.0
+		// unless -zoom, the wheel or the settable "zoom" field moved it.
+		"view_scale": g.viewScale(),
+
 		// The M4.4a clock strip -- exactly what the player reads at the top of
 		// the screen, so a playtest can assert the eyes work. These are the
 		// strings the HUD last computed (refreshed once a world minute), plus
@@ -440,6 +444,10 @@ func (g *GameControls) handIconsReport() map[string]interface{} {
 // my journal: ..."), which a resumed game has not shown. Both are this
 // process's presentation, compared by the determinism proof and not across a
 // resume.
+//
+// And view_scale since the game zoom (1 Oct 2026): the camera's zoom is the
+// player's view, not the world -- a game resumed in another process starts at
+// its own -zoom -- so it is this process's presentation too.
 func (g *GameControls) HarnessDigest() (world, process map[string]interface{}) {
 	world = g.HarnessState()
 
@@ -449,11 +457,12 @@ func (g *GameControls) HarnessDigest() (world, process map[string]interface{}) {
 		"torch_verbs": world["torch_verbs"], "clock": world["clock"],
 		"talent_cells": withoutKeys(world["talent_cells"], rect...), "journal_notice": world["journal_notice"],
 		"escape_menu": world["escape_menu"], "save_notice": world["save_notice"],
+		"view_scale": world["view_scale"],
 	}
 
 	for _, key := range []string{
 		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button",
-		"talent_cells", "journal_notice", "escape_menu", "save_notice",
+		"talent_cells", "journal_notice", "escape_menu", "save_notice", "view_scale",
 	} {
 		delete(world, key)
 	}

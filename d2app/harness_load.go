@@ -152,6 +152,9 @@ var harnessNotDials = map[string][]string{
 	// state: a group's morale, the open bodies (the file's spawns block); a
 	// verb: a group despawned.
 	"spawns": {"despawn", "morale", "open_bodies"},
+	// the game's view, not the world: a new game starts at -zoom's, and a
+	// load is a new game (1 Oct 2026, the game zoom).
+	"ui": {"zoom"},
 	// state: his standing (the sidecar's village block).
 	"village": {"rep"},
 }

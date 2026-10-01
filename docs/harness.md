@@ -1008,7 +1008,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.15.2)
+## The tools (37; harness 0.15.3)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1611,8 +1611,14 @@ shown). `hover_label` is what the hover shows under the cursor, from the same
 naming function the combat log uses (`GameControls.nameFor`). The `village`
 provider gained `sound_env` (the sound environment the game set from the map
 he stands on) and `music` (the file of the song that environment started,
-`""` when none) the same day.
-Read-only. It registers in
+`""` when none) the same day. Since 0.15.3 (1 Oct 2026, the game zoom) `ui`
+reports `view_scale`, the scale the map is drawn at (1.0 unless `-zoom`, the
+wheel or `zoom` moved it; in the digest's process part), and has ONE settable
+field, **`zoom`**: a number in 0.4..1.0 (refused outside it), set as the game's
+mouse wheel sets it, about the middle of the screen -- the harness has no wheel
+verb. It is the view, not the world: not a dial, and a load (a new game) starts
+at `-zoom`'s value again (docs/camera.md).
+Otherwise read-only. It registers in
 `bindGameControls` and unregisters in `Game.OnUnload`; `clock` and `light`
 register when the game screen is constructed and close on unload.
 

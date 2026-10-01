@@ -265,6 +265,9 @@ func (a *App) parseArguments() {
 	authoredMap := flag.String("map", "", "the authored Tiled map played on (default "+defaultMap+"; diablo = Diablo II's generated Act 1)")
 	editorFlag := &editorFlagValue{}
 	flag.Var(editorFlag, "editor", "open the World Editor on a map instead of the main menu (default "+defaultMap+"): -editor, -editor <path> or -editor=<path>")
+	zoom := flag.Float64("zoom", 1.0, "the game's view scale, "+
+		"0.4 (zoomed out: everything drawn at 0.4 size, the world's distances unchanged) to 1.0 (the shipped view); "+
+		"the mouse wheel steps it by 0.1 in a game")
 	serverPort := flag.String("server-port", "6669", "the port a local game's server listens on for other players (0 = any free port, which is how the playtest harness runs several games at once)")
 
 	flag.Usage = func() {
@@ -292,6 +295,7 @@ func (a *App) parseArguments() {
 	a.Options.classic = *classic
 
 	d2server.SetPort(*serverPort)
+	d2gamescreen.SetGameZoom(*zoom)
 
 	d2mapgen.SetAuthoredMap(launch.Map)
 	d2mapentity.SetHeroArt(launch.Hero)

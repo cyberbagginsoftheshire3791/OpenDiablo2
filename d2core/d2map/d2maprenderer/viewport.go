@@ -101,7 +101,8 @@ func NewViewport(x, y, width, height int) *Viewport {
 }
 
 // Scale returns the viewport's zoom: screen pixels per orthogonal pixel. 1.0 is
-// unzoomed, and is what the shipped game runs at.
+// unzoomed, and is what the shipped game runs at by default (-zoom and the
+// game's mouse wheel move it, between 0.4 and 1.0; docs/camera.md).
 func (v *Viewport) Scale() float64 {
 	return v.scaleOrDefault()
 }
@@ -113,8 +114,11 @@ func (v *Viewport) Scale() float64 {
 // 28 Sep review's A1 -- until then only the POSITIONS followed the zoom, and the
 // art was drawn at full size on scaled anchors). Surface.PushScale assigns
 // rather than multiplies and scales the art about its own top-left, not where
-// it goes, so it is pushed AFTER the translation. Entities are not scaled: the
-// shipped game draws them only at 1.0, and the editor draws none.
+// it goes, so it is pushed AFTER the translation. Entities follow it too, since
+// the game zoom (1 Oct 2026): MapRenderer.renderEntity draws every entity
+// through a viewScaledSurface at any scale but 1.0, which scales the sprite AND
+// every offset the entity pushes from its feet (entity_scale.go). The game
+// starts at 1.0 unless -zoom says otherwise, and 1.0 draws exactly as before.
 func (v *Viewport) SetScale(scale float64) {
 	v.scale = clampScale(scale)
 }

@@ -31,10 +31,9 @@ func (g *GameControls) squadAtScreen(mx, my int) string {
 		ex, ey := int(math.Floor(sxf)), int(math.Floor(syf))
 
 		w, h := ent.GetSize()
-		halfW, halfH := w>>1, h>>1
 
-		l, r := ex-halfW-hoverLabelOuterPad, ex+halfW+hoverLabelOuterPad
-		t, b := ey-halfH-hoverLabelOuterPad, ey+halfH-hoverLabelOuterPad
+		// The model's sprite as drawn, at the view's scale (view_scale.go).
+		l, r, t, b := spriteHitRect(ex, ey, w, h, g.mapRenderer.Scale())
 
 		if l <= mx && r >= mx && t <= my && b >= my {
 			return sm.Squad

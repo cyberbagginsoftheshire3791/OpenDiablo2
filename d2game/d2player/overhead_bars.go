@@ -146,8 +146,9 @@ func (h *HUD) refreshOverheadBars() {
 
 		_, entHeight := ent.GetSize()
 
-		anchorX := ex - xOff
-		anchorY := ey - yOff - entHeight - hoverLabelOuterPad
+		// Above the head as drawn: the offset and the height at the view's
+		// scale, the pad and the bar itself in UI pixels (view_scale.go).
+		anchorX, anchorY := headAnchor(ex, ey, xOff, yOff, entHeight, h.mapRenderer.Scale())
 
 		fill := 0.0
 		if b.Max > 0 {
