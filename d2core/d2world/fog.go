@@ -21,11 +21,17 @@ import (
 // FOG IS DISPLAY ONLY. Nothing in the world reads it: not Notice, Combat, Seek
 // or Pursuit. A beast that cannot be seen still sees him.
 //
-// WHAT F1 IS NOT (the plan's later bursts): the night (F2: sight shrinks to
-// the dark radius and what is lit; here the sky fraction is pinned to 1, every
-// hour is day), every squad as an eye (F2; here s:1, the player, alone), the
-// save (F3: the explored grid is NOT saved -- a load starts black), raised
-// sight (F4: talents, gear, height, towers), and default-on (F5).
+// F2, "the night closes it" (1 Oct 2026, Josh's Q2-Q5): by night an eye sees
+// only its dark radius (1.5 tiles, rising to about 4 under a full moon) and
+// what is LIT -- lit ground with a clear line is seen at any distance (Q3);
+// dusk and dawn blend by the sky fraction; every one of his squads' models is
+// an eye (Q5: villagers' eyes do not count); and the enemies of his own fight
+// are shown for as long as it lasts (Q4: "contact" eyes, which reveal the tile
+// they stand on and nothing else).
+//
+// WHAT IT IS NOT YET (the plan's later bursts): the save (F3: the explored
+// grid is NOT saved -- a load starts black), raised sight (F4: talents, gear,
+// height, towers), and default-on (F5).
 //
 // Resolution is the TILE (§6): authored maps block whole tiles, the renderer
 // draws and lights per tile, entities are bucketed per tile. The village is
@@ -37,6 +43,15 @@ type FogDials struct {
 	// a tile's centre. Josh's Q1 (1 Oct 2026): 12, the notice radius.
 	DaySight float64
 
+	// DarkRadius is how far an eye sees in the dark with no light and no
+	// moon; MoonDarkRadius is how far under a full moon. Tonight's dark
+	// radius is lerp(DarkRadius, MoonDarkRadius, moon). Josh's Q2 (1 Oct
+	// 2026): "1.5 tiles, rising to about 4 under a full moon"; 1.5 is the
+	// light model's own FloorRadius (S1 §4: "the tile they stand on and
+	// little else"). Both ends [DIAL].
+	DarkRadius     float64
+	MoonDarkRadius float64
+
 	// MemoryLevel is the brightness an explored-but-unseen tile is drawn at
 	// AT MOST: min(the tile's light, MemoryLevel), never a product, so a
 	// remembered tile at night is not darkened twice. MemorySaturation is its
@@ -47,7 +62,7 @@ type FogDials struct {
 
 // DefaultFogDials are F1's shipped dials.
 func DefaultFogDials() FogDials {
-	return FogDials{DaySight: 12, MemoryLevel: 0.45, MemorySaturation: 0.25}
+	return FogDials{DaySight: 12, DarkRadius: 1.5, MoonDarkRadius: 4, MemoryLevel: 0.45, MemorySaturation: 0.25}
 }
 
 // TileSight is the line of sight fog needs: whether the line from a point to
@@ -65,10 +80,25 @@ type Structured interface {
 	Structures() []image.Rectangle
 }
 
-// Eye is one point the fog sees from, in world tiles. F1 has one: the player.
+// FogLight is the light fog needs (F2): the sky (0 night floor .. 1 day),
+// tonight's moon, whether a tile is lit above the sky, and the lit sources to
+// look for lit ground around. *LightView is one. A fog with no FogLight sees
+// by day at every hour (F1's rule).
+type FogLight interface {
+	SkyFraction() float64
+	Moon() float64
+	Lit(tileX, tileY int) bool
+	LitDiscs(dst []LitDisc) []LitDisc
+}
+
+// Eye is one point the fog sees from, in world tiles: every model of his
+// squads (F2; Q5: villagers' eyes do not count). A CONTACT eye is an enemy of
+// his own fight (Q4): it reveals the tile it stands on and nothing else, for
+// as long as the fight lasts, so the enemy is shown lit or not.
 type Eye struct {
-	ID   string
-	X, Y float64
+	ID      string
+	X, Y    float64
+	Contact bool
 }
 
 // FogTile is what fog says of one tile.
@@ -97,6 +127,16 @@ func (s FogTile) String() string {
 type Fog struct {
 	dials FogDials
 	sight TileSight
+	light FogLight // nil: day at every hour (F1)
+
+	// The light the last recompute saw (lightKey) and what it decided: the
+	// sky fraction quantised to fogSkySteps, and tonight's dark radius.
+	key        lightKey
+	discs      []LitDisc // scratch for the next key
+	sky        float64
+	darkRadius float64
+	litTried   []uint32 // a lit tile whose lines were tried this epoch
+	litSeen    int      // tiles made visible by the lit term alone, last recompute
 
 	w, h     int
 	explored []uint64 // bit per tile, row-major
@@ -117,8 +157,38 @@ type Fog struct {
 }
 
 type eyeKey struct {
-	id   string
-	x, y int
+	id      string
+	x, y    int
+	contact bool
+}
+
+// fogSkySteps quantises the sky fraction fog keys on and reaches by: dusk's
+// sky moves every frame, and a recompute per frame for a 1/1000 change in a
+// radius would be the M4.3a shape. 1/64 of the way from 1.5 to 12 tiles is
+// 0.16 tiles -- below a tile, which is fog's resolution.
+const fogSkySteps = 64
+
+// lightKey is everything in the light that decides what fog sees: the
+// quantised sky, the moon, and every lit source where it shines from. A
+// changed key recomputes.
+type lightKey struct {
+	sky   int
+	moon  float64
+	discs []LitDisc
+}
+
+func (k *lightKey) same(sky int, moon float64, discs []LitDisc) bool {
+	if k.sky != sky || k.moon != moon || len(k.discs) != len(discs) {
+		return false
+	}
+
+	for i := range discs {
+		if k.discs[i] != discs[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // NewFog is an empty fog over no map; Update sizes it to the map it is given.
@@ -128,6 +198,13 @@ func NewFog(dials FogDials, sight TileSight) *Fog {
 
 // Dials are fog's dials.
 func (f *Fog) Dials() FogDials { return f.dials }
+
+// SetLight gives fog the light it sees the night by (F2); nil is day at every
+// hour. The next Update recomputes.
+func (f *Fog) SetLight(l FogLight) {
+	f.light = l
+	f.dirty = true
+}
 
 // SetDials changes fog's dials; the next Update recomputes.
 func (f *Fog) SetDials(d FogDials) {
@@ -143,6 +220,7 @@ func (f *Fog) resize(w, h int) {
 	f.w, f.h = w, h
 	f.explored = make([]uint64, (w*h+63)/64)
 	f.stamp = make([]uint32, w*h)
+	f.litTried = make([]uint32, w*h)
 	f.epoch = 1
 	f.exploredCount, f.visibleCount = 0, 0
 	f.dirty = true
@@ -165,19 +243,36 @@ func (f *Fog) resize(w, h int) {
 // dial, the explored set or the map's size -- and otherwise counts the call
 // as skipped and does nothing. It says whether it recomputed.
 //
-// F1 needs no clock: by day nothing but the eyes changes what is seen (tiles
-// never change after generation, plan §1.4). F2's night adds the light's
-// signature to the key.
+// The key is the eyes' tiles and the light's signature (F2): the sky
+// quantised to 1/64, the moon, and every lit source where it shines from --
+// a torch carried as he walks moves its disc every frame, so a lit torch
+// recomputes per frame of a walk (measured: BenchmarkFogRecompute's night
+// rows). Tiles never change after generation (plan §1.4).
 func (f *Fog) Update(w, h int, eyes []Eye) bool {
 	if w != f.w || h != f.h {
 		f.resize(w, h)
 	}
 
-	if !f.dirty && f.sameEyes(eyes) {
+	sky, moon := 1.0, 0.0
+	f.discs = f.discs[:0]
+
+	if f.light != nil {
+		sky, moon = clamp01(f.light.SkyFraction()), clamp01(f.light.Moon())
+		f.discs = f.light.LitDiscs(f.discs)
+	}
+
+	skyQ := int(math.Round(sky * fogSkySteps))
+
+	if !f.dirty && f.sameEyes(eyes) && f.key.same(skyQ, moon, f.discs) {
 		f.skipped++
 
 		return false
 	}
+
+	f.key.sky, f.key.moon = skyQ, moon
+	f.key.discs = append(f.key.discs[:0], f.discs...)
+	f.sky = float64(skyQ) / fogSkySteps
+	f.darkRadius = f.dials.DarkRadius + (f.dials.MoonDarkRadius-f.dials.DarkRadius)*moon
 
 	f.eyes = f.eyes[:0]
 	f.eyeKeys = f.eyeKeys[:0]
@@ -190,8 +285,8 @@ func (f *Fog) Update(w, h int, eyes []Eye) bool {
 	// ground.
 	for _, e := range eyes {
 		x, y := tileOf(e.X), tileOf(e.Y)
-		f.eyeKeys = append(f.eyeKeys, eyeKey{e.ID, x, y})
-		f.eyes = append(f.eyes, Eye{ID: e.ID, X: float64(x) + 0.5, Y: float64(y) + 0.5})
+		f.eyeKeys = append(f.eyeKeys, eyeKey{e.ID, x, y, e.Contact})
+		f.eyes = append(f.eyes, Eye{ID: e.ID, X: float64(x) + 0.5, Y: float64(y) + 0.5, Contact: e.Contact})
 	}
 
 	f.recompute()
@@ -206,7 +301,7 @@ func (f *Fog) sameEyes(eyes []Eye) bool {
 	}
 
 	for i, e := range eyes {
-		if f.eyeKeys[i] != (eyeKey{e.ID, tileOf(e.X), tileOf(e.Y)}) {
+		if f.eyeKeys[i] != (eyeKey{e.ID, tileOf(e.X), tileOf(e.Y), e.Contact}) {
 			return false
 		}
 	}
@@ -222,6 +317,7 @@ func (f *Fog) recompute() {
 	if f.epoch == 0 { // wrapped: every stamp is stale again
 		for i := range f.stamp {
 			f.stamp[i] = 0
+			f.litTried[i] = 0
 		}
 
 		f.epoch = 1
@@ -233,8 +329,20 @@ func (f *Fog) recompute() {
 		return
 	}
 
+	reach := f.UnlitReach()
+
 	for _, e := range f.eyes {
-		r := f.dials.DaySight
+		// The eye's own tile, even an eye standing off the grid's last row.
+		// A contact eye (an enemy of his fight, Q4) sees that and no more.
+		if ex, ey := tileOf(e.X), tileOf(e.Y); f.in(ex, ey) && !f.isVisible(ex, ey) {
+			f.see(ex, ey)
+		}
+
+		if e.Contact {
+			continue
+		}
+
+		r := reach
 		x0, x1 := clampInt(tileOf(e.X-r), 0, f.w-1), clampInt(tileOf(e.X+r), 0, f.w-1)
 		y0, y1 := clampInt(tileOf(e.Y-r), 0, f.h-1), clampInt(tileOf(e.Y+r), 0, f.h-1)
 
@@ -244,20 +352,89 @@ func (f *Fog) recompute() {
 					continue // another eye saw it already
 				}
 
-				if f.sees(e, tx, ty) {
+				if f.sees(e, tx, ty, r) {
 					f.see(tx, ty)
 				}
 			}
 		}
+	}
 
-		// The eye's own tile, even an eye standing off the grid's last row.
-		if ex, ey := tileOf(e.X), tileOf(e.Y); f.in(ex, ey) && !f.isVisible(ex, ey) {
-			f.see(ex, ey)
-		}
+	f.litSeen = 0
+	if f.light != nil && f.sky < 1 {
+		f.seeLitGround()
 	}
 
 	f.wholeStructures()
 }
+
+// UnlitReach is how far an eye sees ground that is not lit: its day sight by
+// day, tonight's dark radius at deep night, and between them by the sky
+// fraction at dusk and dawn -- exactly as the light model's Radius blends
+// (plan §2.3). Never past the day sight.
+func (f *Fog) UnlitReach() float64 {
+	dark := math.Min(f.darkRadius, f.dials.DaySight)
+
+	return dark + (f.dials.DaySight-dark)*clamp01(f.sky)
+}
+
+// DarkRadius is tonight's dark radius (Q2): DarkRadius rising to
+// MoonDarkRadius with the moon, as of the last recompute.
+func (f *Fog) DarkRadius() float64 { return f.darkRadius }
+
+// seeLitGround is the lit term (Josh's Q3, 1 Oct 2026: "lit ground with a
+// clear line is seen at any distance"): every tile brighter than the sky that
+// some squad eye has a clear line to is visible, however far. It iterates the
+// LIT SOURCES' discs, never the whole map -- a tile outside every disc gets
+// nothing from any source, so it cannot be lit above the sky -- and tries
+// each lit tile's lines once per recompute.
+func (f *Fog) seeLitGround() {
+	for _, d := range f.key.discs {
+		r := d.Radius
+		x0, x1 := clampInt(tileOf(d.X-r), 0, f.w-1), clampInt(tileOf(d.X+r), 0, f.w-1)
+		y0, y1 := clampInt(tileOf(d.Y-r), 0, f.h-1), clampInt(tileOf(d.Y+r), 0, f.h-1)
+
+		for ty := y0; ty <= y1; ty++ {
+			for tx := x0; tx <= x1; tx++ {
+				i := ty*f.w + tx
+				if f.stamp[i] == f.epoch || f.litTried[i] == f.epoch {
+					continue
+				}
+
+				if math.Hypot(float64(tx)+0.5-d.X, float64(ty)+0.5-d.Y) >= r {
+					continue // outside the disc: this source gives it nothing
+				}
+
+				f.litTried[i] = f.epoch
+
+				if !f.light.Lit(tx, ty) {
+					continue
+				}
+
+				for _, e := range f.eyes {
+					if e.Contact {
+						continue
+					}
+
+					if f.lineClear(e, tx, ty) {
+						f.see(tx, ty)
+						f.litSeen++
+
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
+// LitAt is whether a tile is lit above the sky now (false with no light).
+func (f *Fog) LitAt(tx, ty int) bool {
+	return f.light != nil && f.light.Lit(tx, ty)
+}
+
+// LitSeen is how many tiles the last recompute saw by the lit term alone:
+// lit ground past every eye's unlit reach.
+func (f *Fog) LitSeen() int { return f.litSeen }
 
 // wholeStructures is the plan's whole-structure reveal (§2.3; pulled into F1
 // on 1 Oct 2026 so Josh's first look shows no house missing): a structure with
@@ -304,21 +481,27 @@ func (f *Fog) StructureAt(tx, ty int) (image.Rectangle, bool) {
 	return image.Rectangle{}, false
 }
 
-// sees is THE VISIBILITY RULE (plan §2.3), F1's day form: tile T is visible
-// to eye E (at the centre of its tile) when it is E's own tile, or when T's
-// centre is within E's sight
-// AND the line to it crosses no blocking tile strictly between (T itself may
-// block: a wall is seen by its face). F2 adds "and within the night's reach,
-// or lit"; by day the night's reach is the sight radius, so the term is true.
-func (f *Fog) sees(e Eye, tx, ty int) bool {
+// sees is THE VISIBILITY RULE's unlit half (plan §2.3; F2): tile T is
+// visible to eye E (at the centre of its tile) when it is E's own tile, or
+// when T's centre is within E's unlit reach r -- the day sight by day,
+// tonight's dark radius by night, blended at dusk (UnlitReach) -- AND the line
+// to it crosses no blocking tile strictly between (T itself may block: a wall
+// is seen by its face). The other half, lit ground at any distance with a
+// clear line, is seeLitGround.
+func (f *Fog) sees(e Eye, tx, ty int, r float64) bool {
 	if tx == tileOf(e.X) && ty == tileOf(e.Y) {
 		return true
 	}
 
-	if math.Hypot(float64(tx)+0.5-e.X, float64(ty)+0.5-e.Y) > f.dials.DaySight {
+	if math.Hypot(float64(tx)+0.5-e.X, float64(ty)+0.5-e.Y) > r {
 		return false
 	}
 
+	return f.lineClear(e, tx, ty)
+}
+
+// lineClear is the map's line of sight from an eye to a tile, counted.
+func (f *Fog) lineClear(e Eye, tx, ty int) bool {
 	if f.sight == nil {
 		return true
 	}
@@ -447,6 +630,10 @@ func (f *Fog) ClearFrom(tx, ty int) map[string]bool {
 	out := make(map[string]bool, len(f.eyes))
 
 	for _, e := range f.eyes {
+		if e.Contact {
+			continue // a contact sees its own tile only; no line is asked
+		}
+
 		clear := true
 		if f.sight != nil {
 			clear, _ = f.sight.TileSightClear(e.X, e.Y, tx, ty)

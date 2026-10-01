@@ -1449,13 +1449,51 @@ var Register = []Entry{
 	{sym(pkgMapRenderer, "MapRenderer.SetFogSampler"), BucketWire, VerdictLive,
 		"Game.fogAdvance hands the renderer the fog (and fogDetach takes it back): the one switch between the fogged and the unfogged draw.", ""},
 	{sym(pkgMapRenderer, "MapRenderer.Shows"), BucketWire, VerdictLive,
-		"renderEntity's fog gate (entityShown): no one is drawn on ground he does not see now. get_entity's shown reads the same.", ""},
+		"The fog's one visibility predicate (ShowsEntity is it for an entity): no one is drawn, barred, named, marked or struck at on ground he does not see now. get_entity's shown reads the same.", ""},
 	{sym(pkgScreen, "SetGameFog"), BucketWire, VerdictLive,
 		"d2app sets it from -fog before any game exists.", ""},
 	{sym(pkgMapEngine, "MapEngine.SetStructures"), BucketWire, VerdictLive,
 		"LayAuthoredMap hands the engine the authored map's structure footprints (pulled into F1, 1 Oct 2026), so fog shows a house whole once any of it is seen.", ""},
 	{sym(pkgMapEngine, "MapEngine.Structures"), BucketWire, VerdictLive,
 		"Fog reads the footprints when it sizes itself to the map (Fog.resize through mapTileSight, every new game with fog on).", ""},
+
+	// FOG OF WAR F2 (1 Oct 2026, fog-f2; docs/fog.md): the night. CreateGame
+	// gives every game's fog the light through a LightView (gameFog.seeByLight);
+	// Game.fogAdvance moves the view to where he stands each frame (BUG-108) and
+	// fogAttach makes it the renderer's light sampler while fog is drawn. The
+	// HUD's five leaks ask MapRenderer.Shows / ShowsEntity (BUG-107).
+	{sym(pkgWorld, "NewLightView"), BucketWire, VerdictLive,
+		"gameFog.seeByLight, from CreateGame: every game's fog sees by the light through a view.", ""},
+	{sym(pkgWorld, "LightView.SetCarriedAt"), BucketWire, VerdictLive,
+		"Game.fogAdvance, every frame with fog on: his torch where he stands now (BUG-108).", ""},
+	{sym(pkgWorld, "LightView.Level"), BucketWire, VerdictLive,
+		"The renderer's LightSampler while fog is drawn (fogAttach), and fog's Lit.", ""},
+	{sym(pkgWorld, "LightView.Lit"), BucketWire, VerdictLive,
+		"Fog's lit term (seeLitGround): brighter than the quantised sky.", ""},
+	{sym(pkgWorld, "LightView.LitDiscs"), BucketWire, VerdictLive,
+		"Fog's recompute key and the lit term's discs, every Update with fog on.", ""},
+	{sym(pkgWorld, "LightView.SkyFraction"), BucketWire, VerdictLive,
+		"Fog's unlit reach blends by it (Update).", ""},
+	{sym(pkgWorld, "LightView.Moon"), BucketWire, VerdictLive,
+		"Fog's dark radius rises with it (Update; Josh's Q2).", ""},
+	{sym(pkgWorld, "LightView.Light"), BucketWire, VerdictLive,
+		"fogDetach gives the renderer the light model back: fog off draws as master does.", ""},
+	{sym(pkgWorld, "Light.SkyFraction"), BucketWire, VerdictLive,
+		"Light.Radius blends by it, and the view passes it to fog.", ""},
+	{sym(pkgWorld, "Fog.SetLight"), BucketWire, VerdictLive,
+		"gameFog.seeByLight, from CreateGame.", ""},
+	{sym(pkgWorld, "Fog.UnlitReach"), BucketWire, VerdictLive,
+		"The night's reach, every recompute (and the provider reports it).", ""},
+	{sym(pkgWorld, "Fog.DarkRadius"), BucketObserve, VerdictHarnessOnly,
+		"The fog provider's tonight_dark: a read of the last recompute's dark radius.", ""},
+	{sym(pkgWorld, "Fog.LitAt"), BucketObserve, VerdictHarnessOnly,
+		"The fog provider's probe.lit: a read.", ""},
+	{sym(pkgWorld, "Fog.LitSeen"), BucketObserve, VerdictHarnessOnly,
+		"The fog provider's lit_seen: a counter read.", ""},
+	{sym(pkgMapRenderer, "MapRenderer.ShowsEntity"), BucketWire, VerdictLive,
+		"renderEntity's fog gate and the HUD's (hover, bars, diamonds, click-to-strike): the one predicate (BUG-107).", ""},
+	{sym(pkgMapRenderer, "MapRenderer.LightSampler"), BucketObserve, VerdictHarnessOnly,
+		"The fog provider's draws_by: which light the renderer draws by now, a read.", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in

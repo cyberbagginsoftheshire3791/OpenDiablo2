@@ -137,6 +137,11 @@ func (h *HUD) refreshOverheadBars() {
 			continue
 		}
 
+		// Fog of war (F2; BUG-107): no bar over a body he does not see.
+		if !h.mapRenderer.ShowsEntity(ent) {
+			continue
+		}
+
 		sxf, syf := h.mapRenderer.WorldToScreenF(ent.GetPositionF())
 		ex, ey := int(math.Floor(sxf)), int(math.Floor(syf))
 

@@ -1,4 +1,4 @@
-# Fog of war (F1: black until explored, by day) -- 1 Oct 2026
+# Fog of war (F1: black until explored; F2: the night closes it) -- 1 Oct 2026
 
 **Josh, 1 Oct 2026:** "Since we are zooming out, I think we should add a fog of
 war with similar functionality to how Age of Empires 2 uses. Black until
@@ -45,6 +45,58 @@ look shows no house missing.
 Fog is in **world tiles**: the camera is not in its rule, so zooming out shows
 more of the map's black and grey, never more of what he sees.
 
+## The night (F2)
+
+Josh's answers of 1 Oct 2026 (the plan's §7): **Q2** "1.5 tiles, rising to
+about 4 under a full moon"; **Q3** lit ground with a clear line is seen at
+any distance; **Q4** the enemies of his own fight are shown for as long as the
+fight lasts; **Q5** (the default) villagers' eyes do not count.
+
+A tile is **visible** to an eye (each at the centre of its tile) when it is the
+eye's own tile, or when the straight line to it is clear (as above) AND either
+
+- its centre is within the eye's **unlit reach** -- the day sight (12) by day,
+  tonight's **dark radius** at deep night, and between them at dusk and dawn
+  by the sky fraction, exactly as the light model's own radius blends
+  (`Fog.UnlitReach`; the sky is quantised to 1/64, 0.16 tiles of reach); the
+  dark radius is `lerp(dark_radius 1.5, moon_dark_radius 4, moon)`, the moon
+  read from the world clock (`Clock.Moon`, the day table's illuminated
+  fraction); or
+- it is **lit**: drawn brighter than the sky (`Level > quantise(Ambient)`,
+  never the raw ambient -- the level is quantised, so a raw comparison calls
+  the whole night lit), **at any distance** (Q3). Fog finds lit ground by
+  iterating the lit SOURCES' discs, never the whole map, and tries each lit
+  tile's lines once a recompute (`Fog.seeLitGround`).
+
+**Every one of his squads' models is an eye** (`Squads.ModelEntities`; s:1 is
+the player). Villagers are not (Q5).
+
+**His fight's enemies are shown** (Q4): every enemy of his own fight that is
+neither dead nor routed is a **contact** -- an eye that reveals the tile it
+stands on and nothing else, so the enemy is drawn (at its tile's own light)
+and its bar, diamond and click target are there, lit or not, and nothing
+around it is revealed.
+
+**The light he sees by is where he stands (BUG-108).** The light model's
+carried torch shines from where the world last ran (`Light.SetPlayer` runs in
+the gated `advanceWorld`), so during a held turn his torch stayed where the
+turn opened while he walked his Move. Fog reads a `d2world.LightView` -- the
+same light with his carried sources where he stands THIS frame -- and while
+fog is drawn the renderer draws by the same view (`draws_by: view`), so "he
+sees it" and "it is drawn lit" are one fact. The view never writes the light
+model: the sim (Notice, the combat resolver's lit/dark rule, spawns) reads
+the light model as master does, so fog stays display only. Whenever the world
+has just run, the view is the light model to the bit
+(`TestTheViewIsTheLightWhereHeStands`). The sim's own half of BUG-108 is
+Josh's to rule.
+
+**The HUD asks the same question (BUG-107).** The overhead bars and the
+game's enemy-bar list, the hover and talk label and its hit test, the corpse
+marks, the tactical diamonds and click-to-strike all ask
+`MapRenderer.Shows` / `ShowsEntity`, the predicate the entity draw asks: what
+he does not see is not named, barred, marked or struck at -- and, since a
+hidden creature is never hovered, never highlighted (the F1 review's C3).
+
 ## Turning it on
 
 | Control | Effect |
@@ -69,31 +121,34 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
 | Dial | Value | Why |
 |---|---|---|
 | `day_sight` | **12** tiles | Josh's Q1: the same range beasts notice him at. At zoom 0.5 that reaches past the screen's sides (7.1 tiles) and nearly to its corners (12.7), so most of the black on screen is ground behind houses and walls; at 0.4 the corners (15.9) show it. |
+| `dark_radius` | **1.5** tiles [DIAL] | Josh's Q2, the new-moon end: the light model's FloorRadius, S1 §4's "the tile they stand on and little else" |
+| `moon_dark_radius` | **4** tiles [DIAL] | Josh's Q2, the full-moon end ("about 4"); tonight's is lerp(1.5, 4, moon) |
 | `memory_level` | 0.45 | the look; Josh's eye sets it at F1's launch |
 | `memory_saturation` | 0.25 | the look; ditto |
 
 ## What it is not (yet)
 
-- **Display only.** Fog never feeds Notice, Combat, Seek or Pursuit. A beast he
-  cannot see still sees him -- by night at 12 to 24 tiles, while he sees 1.5 to 5.
-  That asymmetry is the design ("the night is the enemy"), not a bug.
-- **No night (F2).** F1's rule is the day's at every hour: the sky fraction is
-  pinned to 1. F2 shrinks sight at night to the dark radius (Josh's Q2: 1.5
-  tiles, rising to about 4 under a full moon) plus what is lit, sees lit ground
-  at any distance with a clear line (Q3), shows the enemies in his own fight
-  (Q4), makes every squad an eye, and gates the HUD's five leaks (the
-  overhead bars, the hover label, the corpse marks, the tactical diamonds and
-  click-to-strike; BUG-107).
+- **Display only.** Fog never feeds Notice, Combat, Seek or Pursuit, and its
+  light view never writes the light model. A beast he cannot see still sees
+  him -- by night at 12 to 24 tiles, while he sees 1.5 to 5. That asymmetry
+  is the design ("the night is the enemy"), not a bug. Proved twice: d2world's
+  `TestFogNeverTouchesTheSim` (the light model's state is untouched by a
+  night of fog updates; the plan's one-liner, fog calling `SetPlayer`, goes
+  red) and the playtest `TestFogNeverTouchesTheSim` (fog on and off, one seed,
+  a torch-lit walk at 23:00: every system's world hash agrees but fog's and
+  the ui's).
+- **Fog off is master's frame**, at night with a torch too: one seeded frame
+  at 22:45 and one at noon, 0 of 480,000 pixels differ from master `b84a7241`
+  (`strigoi-harness-runs\wt-fog2\pix-compare.txt`; the control, master's
+  night against the branch's noon, differs in 345,371).
 - **Not saved (F3).** The explored grid is not in the world file: a load, "load
   last save" or a death's reload starts black. F3 adds the `fog` block and the
   world file's version 3.
 - **No raised sight (F4).** Talents, gear, height and towers.
 - **Known small gaps from the F1 review (1 Oct).**
-  - *A hovered hidden creature flashes highlighted for one frame* when it comes
-    into view: `Render` is what clears `highlight` (creature, animated entity,
-    object), a hidden entity is not rendered, and the hover (BUG-107) still
-    reaches hidden entities. F2's hover gate closes it. Animation does not
-    freeze while hidden: it advances in `Advance`, not `Render`.
+  - *A hovered hidden creature flashed highlighted for one frame* when it came
+    into view (the hover reached hidden entities). **Closed in F2:** the hover
+    gate means a hidden creature is never hovered, so never highlighted.
   - *With fog off the DRAW is master's, the harness output is not quite:* the
     `fog` provider is always registered, so the digest carries a `fog` system
     and `strigoi_get_entity` always reports `shown`. Accepted (plan §3.12).
@@ -105,7 +160,25 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
 - **Not on by default (F5).** It flips with the zoom's default, so the
   screenshot-based checks are re-baselined once.
 
-## Cost
+## Cost (F2, at night)
+
+`BenchmarkFogRecomputeAtNight` (the real village, deep night, new moon, his
+torch lit, hearths in a ring 14 tiles out; 1 Oct 2026, the same machine):
+
+| hearths | 1 eye | 6 eyes | 24 eyes |
+|---|---|---|---|
+| 0 (his torch only) | 0.004 ms | 0.004 ms | 0.004 ms |
+| 4 | 0.10 ms | 0.25 ms | 0.53 ms |
+| 16 | 0.27 ms | 0.54 ms | 0.98 ms |
+
+The lit term (Q3, any distance) is a line from every eye to every lit tile:
+24 eyes and 16 fires is over the plan's 0.5 ms frame budget, which F4 (the
+24-eye horizon) must answer. **With his torch lit, every frame of a walk
+recomputes** (the torch's disc moves with him, and its signature is in the
+key); with no torch, fog recomputes only when an eye changes tile, the sky
+moves 1/64, the moon or a lit source changes.
+
+## Cost (F1, by day)
 
 `BenchmarkFogRecompute` (`d2core/d2map/d2mapgen/fog_bench_test.go`, the real
 village; 1 Oct 2026, Intel Core Ultra 7 258V): one recompute with his one eye
@@ -119,4 +192,6 @@ frame is a comparison (`skipped`). For F2/F4's scale: 6 eyes at 12 about
 
 The `fog` provider (docs/harness.md) and `strigoi_get_entity`'s `shown` (false
 only with fog on and the entity on ground he does not see now).
-`playtest/fog_test.go` is the script.
+`playtest/fog_test.go` is the script: `TestFogOfWar` (F1, by day),
+`TestFogAtNight` (F2's acts 5-9) and `TestFogNeverTouchesTheSim` (F2, two
+launches).

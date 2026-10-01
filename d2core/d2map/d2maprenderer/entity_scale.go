@@ -58,7 +58,7 @@ func (mr *MapRenderer) renderEntity(target d2interface.Surface, e d2interface.Ma
 	// Fog of war (F1): nothing is drawn standing on ground he does not see
 	// now -- no creatures or people in remembered ground (ruling 2). Without
 	// fog this returns before reading anything.
-	if !mr.entityShown(e) {
+	if !mr.ShowsEntity(e) {
 		return
 	}
 

@@ -85,8 +85,16 @@ func popTileView(target d2interface.Surface, pushed int) {
 // Shows says whether something standing at world (x, y) is drawn: always
 // without fog; with fog, only on a tile he sees now. It buckets the point to
 // its tile as the render passes bucket entities (int of the world position).
+//
+// IT IS THE ONE VISIBILITY PREDICATE (F2; BUG-107): the entity draw, the
+// overhead bars and the game's enemy-bar list, the hover and talk label and
+// their hit test, the corpse marks, the tactical diamonds and click-to-strike
+// all ask it, so nothing the player cannot see is named, barred, marked or
+// struck at. "He sees it" already holds the night's three ways to be seen:
+// within his reach, lit with a clear line, or an enemy of his own fight (fog's
+// contact eyes, Q4).
 func (mr *MapRenderer) Shows(x, y float64) bool {
-	if mr.fogSampler == nil {
+	if mr == nil || mr.fogSampler == nil {
 		return true
 	}
 
@@ -95,9 +103,9 @@ func (mr *MapRenderer) Shows(x, y float64) bool {
 	return visible
 }
 
-// entityShown is Shows for an entity, read where the passes read it.
-func (mr *MapRenderer) entityShown(e d2interface.MapEntity) bool {
-	if mr.fogSampler == nil {
+// ShowsEntity is Shows for an entity, at its position as the passes read it.
+func (mr *MapRenderer) ShowsEntity(e d2interface.MapEntity) bool {
+	if mr == nil || mr.fogSampler == nil {
 		return true
 	}
 

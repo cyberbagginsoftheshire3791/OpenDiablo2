@@ -846,6 +846,12 @@ func (h *HUD) hoveredEntityWhere(mx, my int, keep func(d2interface.MapEntity) bo
 			continue
 		}
 
+		// Fog of war (F2; BUG-107, and the F1 review's C3): what he does not
+		// see is not hovered, named or talked to -- and so never highlighted.
+		if !h.mapRenderer.ShowsEntity(entity) {
+			continue
+		}
+
 		// The sprite as drawn, at the view's scale (view_scale.go).
 		if spriteUnder(h.mapRenderer, entity, mx, my) {
 			return entity
