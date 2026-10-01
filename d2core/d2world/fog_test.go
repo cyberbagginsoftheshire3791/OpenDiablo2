@@ -38,13 +38,19 @@ func newTestFog(sight TileSight) *Fog {
 	return NewFog(DefaultFogDials(), sight)
 }
 
-// TestFogSeesItsRadius: day sight is Josh's 12 tiles (Q1). A tile whose
-// centre is 11.9 tiles from the eye is visible; one 12.1 away is not, nor
-// explored.
+// TestFogSeesItsRadius: day sight is Josh's 12 tiles (Q1), measured from the
+// centre of his tile to the centre of the other (the review's B1 and B3, 1
+// Oct 2026). He stands at (20.3,20.9), on tile (20,20), so he sees from
+// (20.5,20.5): tile (32,20) is 12.0 off and visible, (32,21) is 12.04 off and
+// unexplored, and so on the west and south; the disc is the 441 tiles whose
+// centre offsets (dx, dy) have dx^2 + dy^2 <= 144.
 //
-// Negative control (1 Oct 2026, strigoi-harness-runs\wt-fog\nc\): make the
-// rule's radius DaySight+1 and this fails, "the tile 12.1 tiles off (8,10) is
-// visible; day sight is 12" (nc8-radius-plus-one.txt).
+// Negative controls (1 Oct 2026, strigoi-harness-runs\wt-fog\nc\): the
+// radius DaySight+1 -- "the tile 12.04 tiles off (32,21) is visible, want
+// unexplored" (nc18-radius-plus-one-v2.txt; nc8 before the snap); the
+// distance measured to the tile's CORNER (the reviewer's m04, the B3 pin) --
+// the same tile, 11.5 off its corner, visible, and (8,20) unexplored
+// (nc19-distance-to-corner.txt).
 func TestFogSeesItsRadius(t *testing.T) {
 	f := newTestFog(&openSight{})
 
@@ -52,25 +58,112 @@ func TestFogSeesItsRadius(t *testing.T) {
 		t.Fatalf("day sight ships at %v; Josh's Q1 is 12", f.Dials().DaySight)
 	}
 
-	// The eye at x 20.6 on row 10: tile 32's centre is 11.9 east, tile 8's
-	// 12.1 west.
-	f.Update(48, 48, []Eye{{ID: "s:1", X: 20.6, Y: 10.5}})
+	f.Update(48, 48, []Eye{{ID: "s:1", X: 20.3, Y: 20.9}})
 
-	if st := f.At(32, 10); st != FogVisible {
-		t.Errorf("the tile 11.9 tiles off (32,10) is %v; day sight is 12", st)
+	for _, c := range []struct {
+		x, y int
+		d    string
+		want FogTile
+	}{
+		{32, 20, "12.0", FogVisible}, {8, 20, "12.0", FogVisible}, {20, 32, "12.0", FogVisible},
+		{32, 21, "12.04", FogUnexplored}, {8, 21, "12.04", FogUnexplored}, {21, 32, "12.04", FogUnexplored},
+		{20, 20, "0 (his own tile)", FogVisible},
+	} {
+		if st := f.At(c.x, c.y); st != c.want {
+			t.Errorf("the tile %s tiles off (%d,%d) is %v, want %v; day sight is 12", c.d, c.x, c.y, st, c.want)
+		}
 	}
 
-	if st := f.At(8, 10); st != FogUnexplored {
-		t.Errorf("the tile 12.1 tiles off (8,10) is %v; day sight is 12", st)
+	if explored, visible := f.Counts(); explored != 441 || visible != 441 {
+		t.Errorf("a 12-tile disc on open ground: %d visible, %d explored; want 441 of each", visible, explored)
+	}
+}
+
+// TestAnEyeSeesFromTheCentreOfItsTile (the review's B1, folding its probe
+// TestRevStaleEyeWithinTile): fog skips every update while he stays on his
+// tile, so what he sees is a function of his tile alone. Entering the tile at
+// its top-left and walking to its bottom-right sees exactly what arriving
+// straight at the bottom-right sees, and the eye is reported at the centre.
+//
+// Negative control (1 Oct 2026): keep the eye at his exact point (no snap)
+// and this fails, "standing at the same point, what he sees depends on where
+// he entered the tile: 66 tiles differ" (nc20-eye-not-snapped.txt).
+func TestAnEyeSeesFromTheCentreOfItsTile(t *testing.T) {
+	a := newTestFog(&openSight{})
+	a.Update(48, 48, []Eye{{ID: "s:1", X: 20.01, Y: 20.01}}) // entered at the top-left
+	a.Update(48, 48, []Eye{{ID: "s:1", X: 20.99, Y: 20.99}}) // walked to the bottom-right, same tile
+
+	b := newTestFog(&openSight{})
+	b.Update(48, 48, []Eye{{ID: "s:1", X: 20.99, Y: 20.99}}) // arrived straight there
+
+	diff := 0
+
+	for ty := 0; ty < 48; ty++ {
+		for tx := 0; tx < 48; tx++ {
+			if a.At(tx, ty) != b.At(tx, ty) {
+				diff++
+			}
+		}
 	}
 
-	if st := f.At(20, 10); st != FogVisible {
-		t.Errorf("the eye's own tile is %v", st)
+	if diff != 0 {
+		t.Fatalf("standing at the same point, what he sees depends on where he entered the tile: %d tiles differ", diff)
 	}
 
-	explored, visible := f.Counts()
-	if explored != visible || visible < 400 || visible > 470 {
-		t.Errorf("a 12-tile disc on open ground: %d visible, %d explored; want ~452 of each", visible, explored)
+	if e := a.Eyes(); len(e) != 1 || e[0].X != 20.5 || e[0].Y != 20.5 {
+		t.Fatalf("the eye is reported at %+v; it sees from the centre of its tile, (20.5,20.5)", e)
+	}
+}
+
+// TestForgetThenTheSameEyeSeesAgain (the review's C1): forget clears every
+// explored tile, and the next update -- with the eye on the same tile, which
+// would otherwise be skipped -- sees again, so the ground under him is drawn.
+//
+// Negative control (1 Oct 2026): drop Forget's dirty mark (the reviewer's
+// m05) and this fails, "after forget and an update: 0 explored, 266 visible"
+// -- the update was skipped, so nothing under him is explored and the
+// renderer draws nothing there (nc21-forget-not-dirty.txt).
+func TestForgetThenTheSameEyeSeesAgain(t *testing.T) {
+	f := newTestFog(&openSight{})
+	f.Update(48, 48, []Eye{{ID: "s:1", X: 5.5, Y: 5.5}})
+	f.Explore(40.5, 40.5, 2)
+	f.Forget()
+
+	if e, _ := f.Counts(); e != 0 || f.isExplored(40, 40) || f.isExplored(5, 5) {
+		t.Fatalf("after forget %d tiles are explored (40,40 %v, 5,5 %v)", e, f.isExplored(40, 40), f.isExplored(5, 5))
+	}
+
+	f.Update(48, 48, []Eye{{ID: "s:1", X: 5.5, Y: 5.5}})
+
+	if st := f.At(5, 5); st != FogVisible {
+		t.Fatalf("after forget and an update on the same tile, his own tile (5,5) is %v", st)
+	}
+
+	if e, v := f.Counts(); e != v || v < 100 {
+		t.Fatalf("after forget and an update: %d explored, %d visible; the disc again and nothing else", e, v)
+	}
+
+	if f.isExplored(40, 40) {
+		t.Fatal("the forgotten (40,40) came back")
+	}
+}
+
+// TestANewMapSizeIsAFreshGrid (the review's C5, m10): an update on a map of
+// another size starts a fresh, unexplored grid of that size.
+//
+// Negative control (1 Oct 2026): resize only when the grid is empty and this
+// fails, "on a 20x20 map the grid is 48x48" (nc22-no-resize.txt).
+func TestANewMapSizeIsAFreshGrid(t *testing.T) {
+	f := newTestFog(&openSight{})
+	f.Update(48, 48, []Eye{{ID: "s:1", X: 40.5, Y: 40.5}})
+	f.Update(20, 20, []Eye{{ID: "s:1", X: 5.5, Y: 5.5}})
+
+	if w, h := f.Size(); w != 20 || h != 20 {
+		t.Fatalf("on a 20x20 map the grid is %dx%d", w, h)
+	}
+
+	if e, v := f.Counts(); e != v {
+		t.Fatalf("the new map remembers %d tiles it never showed (%d explored, %d visible)", e-v, e, v)
 	}
 }
 

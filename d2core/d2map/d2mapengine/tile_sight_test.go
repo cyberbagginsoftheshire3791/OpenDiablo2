@@ -159,3 +159,92 @@ func TestStructuresAreKeptUntilTheMapIsReset(t *testing.T) {
 		t.Fatalf("a reset map keeps %v", m.Structures())
 	}
 }
+
+// TestACornerReachedByAccumulatedStepsNeedsBothSides (the review's C2,
+// folding its probe): the corner rule holds for every ray from a tile centre
+// that passes exactly through a lattice corner after several steps, not only
+// on exact diagonals -- a post on either tile beside such a corner does not
+// stop the ray. This is where the tie test's epsilon matters: the walk's
+// accumulated tMax values carry float error.
+//
+// Negative control (1 Oct 2026): tieEpsilon 0 (the reviewer's m09) and this
+// fails, "(5.5,5.5)->(0,12) through corner (3,9): one post [3 9] blocks it"
+// (nc23-tie-epsilon-zero.txt).
+func TestACornerReachedByAccumulatedStepsNeedsBothSides(t *testing.T) {
+	checked, fails := 0, 0
+
+	for tx := 0; tx <= 16; tx++ {
+		for ty := 0; ty <= 16; ty++ {
+			dx, dy := float64(tx)-5, float64(ty)-5
+			if dx == 0 || dy == 0 || dx == dy || dx == -dy {
+				continue // axis rays cross no corner; exact diagonals are TestTileSightThroughACorner's
+			}
+
+			sx, sy := 1, 1
+			if dx < 0 {
+				sx = -1
+			}
+
+			if dy < 0 {
+				sy = -1
+			}
+
+			for k := 1; k < 40; k++ {
+				px, py := 5.5+float64(k)/40*dx, 5.5+float64(k)/40*dy
+				if px != float64(int(px)) || py != float64(int(py)) {
+					continue // not a lattice corner
+				}
+
+				bx, by := int(px), int(py) // the tile the ray leaves the corner from
+				if sx > 0 {
+					bx--
+				}
+
+				if sy > 0 {
+					by--
+				}
+
+				for _, post := range [][2]int{{bx + sx, by}, {bx, by + sy}} {
+					if post == [2]int{tx, ty} {
+						continue
+					}
+
+					m := testEngine(20, 20)
+					blockTile(t, m, post[0], post[1], true, true)
+
+					checked++
+
+					if clear, _ := m.TileSightClear(5.5, 5.5, tx, ty); !clear {
+						fails++
+
+						if fails <= 5 {
+							t.Errorf("(5.5,5.5)->(%d,%d) through corner (%v,%v): one post %v blocks it", tx, ty, px, py, post)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if checked < 20 {
+		t.Fatalf("only %d one-post corner cases were found: the sweep tests nothing", checked)
+	}
+
+	t.Logf("%d one-post corner cases, %d blocked", checked, fails)
+}
+
+// TestAnEyeOnABlockingTileStillSees (the review's C5, m13): the eye's own tile
+// is never read -- a man standing in a doorway the map marks opaque still sees
+// out of it.
+//
+// Negative control (1 Oct 2026): read the eye's own tile first (the
+// reviewer's m13) and this fails, "an eye standing on a blocking tile sees
+// nothing: (8,5) is hidden" (nc24-eye-tile-read.txt).
+func TestAnEyeOnABlockingTileStillSees(t *testing.T) {
+	m := testEngine(20, 20)
+	blockTile(t, m, 5, 5, true, true)
+
+	if clear, _ := m.TileSightClear(5.5, 5.5, 8, 5); !clear {
+		t.Fatal("an eye standing on a blocking tile sees nothing: (8,5) is hidden")
+	}
+}

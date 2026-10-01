@@ -85,10 +85,12 @@ func (v *Game) fogOffReason() string {
 		return fogOffClassic
 	case !v.fog.wanted:
 		return fogOffFlag
-	case v.gameClient == nil || v.gameClient.MapEngine == nil || v.gameClient.MapEngine.IsLoading || v.localPlayer == nil:
+	case v.gameClient == nil || v.gameClient.MapEngine == nil || v.gameClient.MapEngine.IsLoading:
 		return fogOffNoMap
-	case len(v.gameClient.Players) != 1:
+	case len(v.gameClient.Players) > 1:
 		return fogOffNetwork
+	case v.localPlayer == nil || len(v.gameClient.Players) == 0:
+		return fogOffNoMap // not joined yet
 	}
 
 	return ""
@@ -98,14 +100,26 @@ func (v *Game) fogOffReason() string {
 // a held turn stops the world clock but not his Move, and the ground he walks
 // onto must open as he walks. The Update itself does nothing unless his tile
 // changed (d2world.Fog.Update), so a frame where he stands still costs a
-// comparison. The renderer is given the fog only once it has seen something,
-// and loses it the frame fog turns off.
+// comparison.
+//
+// THE RENDERER HOLDS THE FOG FROM THE GAME'S FIRST FRAME (the review's B5, 1
+// Oct 2026): CreateGame calls this too, before there is a map or a player
+// ("no_map"), and a fog that has seen nothing answers every tile unexplored,
+// so the first frames of a -fog game are black rather than the whole village
+// drawn unfogged for a frame. "no_map" never takes the fog away; -classic, a
+// network game and fog turned off do, the frame they are seen.
 func (v *Game) fogAdvance() {
 	if v.fog == nil {
 		return
 	}
 
-	if v.fogOffReason() != "" {
+	switch v.fogOffReason() {
+	case "":
+	case fogOffNoMap:
+		v.fogAttach()
+
+		return
+	default:
 		v.fogDetach()
 
 		return
@@ -115,7 +129,11 @@ func (v *Game) fogAdvance() {
 	at := v.localPlayer.Position.World()
 
 	v.fog.fog.Update(size.Width, size.Height, []d2world.Eye{{ID: fogEyeID, X: at.X(), Y: at.Y()}})
+	v.fogAttach()
+}
 
+// fogAttach gives the renderer the fog, once.
+func (v *Game) fogAttach() {
 	if !v.fog.attached && v.mapRenderer != nil {
 		v.mapRenderer.SetFogSampler(v.fog.fog)
 		v.fog.attached = true

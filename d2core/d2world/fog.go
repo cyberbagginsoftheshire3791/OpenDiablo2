@@ -179,11 +179,19 @@ func (f *Fog) Update(w, h int, eyes []Eye) bool {
 		return false
 	}
 
-	f.eyes = append(f.eyes[:0], eyes...)
+	f.eyes = f.eyes[:0]
 	f.eyeKeys = f.eyeKeys[:0]
 
+	// AN EYE SEES FROM THE CENTRE OF ITS TILE (the review's B1, 1 Oct 2026).
+	// Fog is tile-resolution and skips every update while he stays on his
+	// tile, so what he sees must be a function of his tile alone: computed
+	// from his exact point, it was computed from wherever he ENTERED the tile
+	// and kept until he left it -- two walks ending on one spot saw different
+	// ground.
 	for _, e := range eyes {
-		f.eyeKeys = append(f.eyeKeys, eyeKey{e.ID, tileOf(e.X), tileOf(e.Y)})
+		x, y := tileOf(e.X), tileOf(e.Y)
+		f.eyeKeys = append(f.eyeKeys, eyeKey{e.ID, x, y})
+		f.eyes = append(f.eyes, Eye{ID: e.ID, X: float64(x) + 0.5, Y: float64(y) + 0.5})
 	}
 
 	f.recompute()
@@ -297,7 +305,8 @@ func (f *Fog) StructureAt(tx, ty int) (image.Rectangle, bool) {
 }
 
 // sees is THE VISIBILITY RULE (plan §2.3), F1's day form: tile T is visible
-// to eye E when it is E's own tile, or when T's centre is within E's sight
+// to eye E (at the centre of its tile) when it is E's own tile, or when T's
+// centre is within E's sight
 // AND the line to it crosses no blocking tile strictly between (T itself may
 // block: a wall is seen by its face). F2 adds "and within the night's reach,
 // or lit"; by day the night's reach is the sight radius, so the term is true.
@@ -428,7 +437,7 @@ func (f *Fog) Counters() (recomputes, skipped, cellsRead int) {
 	return f.recomputes, f.skipped, f.cellsRead
 }
 
-// Eyes are the eyes of the last recompute.
+// Eyes are the eyes of the last recompute, each at the centre of its tile.
 func (f *Fog) Eyes() []Eye { return append([]Eye(nil), f.eyes...) }
 
 // ClearFrom is whether the line from each of the last recompute's eyes to

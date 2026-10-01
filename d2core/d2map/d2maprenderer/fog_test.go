@@ -146,8 +146,9 @@ const fogMapSize = 8
 // the tile marked, whose floor is style 2 (its own art, so its draw can be
 // told apart), with the camera on the middle.
 type fogFixture struct {
-	mr           *MapRenderer
-	art, special *paintSurface
+	mr                       *MapRenderer
+	art, special             *paintSurface
+	specialWall, specialRoof *paintSurface // the special tile's upper wall (pass 3) and roof (pass 4)
 }
 
 func newFogFixture(t *testing.T, special [2]int) *fogFixture {
@@ -168,18 +169,30 @@ func newFogFixture(t *testing.T, special [2]int) *fogFixture {
 			floor.Prop1 = 1
 			floor.Style = 1
 
+			engine.Tile(x, y).Components.Floors = []d2ds1.Tile{floor}
+
 			if x == special[0] && y == special[1] {
 				floor.Style = 2
-			}
+				engine.Tile(x, y).Components.Floors = []d2ds1.Tile{floor}
 
-			engine.Tile(x, y).Components.Floors = []d2ds1.Tile{floor}
+				var wall, roof d2ds1.Tile
+
+				wall.Style, wall.Type = 2, d2enum.TileLeftWall
+				roof.Style, roof.Type = 2, d2enum.TileRoof
+				engine.Tile(x, y).Components.Walls = []d2ds1.Tile{wall, roof}
+			}
 		}
 	}
 
-	fx := &fogFixture{art: blockArt(160, 80), special: blockArt(160, 80)}
+	fx := &fogFixture{
+		art: blockArt(160, 80), special: blockArt(160, 80),
+		specialWall: blockArt(160, 120), specialRoof: blockArt(160, 60),
+	}
 	fx.mr = &MapRenderer{viewport: newTestViewport(0, 0), mapEngine: engine}
 	fx.mr.setImageCacheRecord(1, 0, 0, 0, fx.art)
 	fx.mr.setImageCacheRecord(2, 0, 0, 0, fx.special)
+	fx.mr.setImageCacheRecord(2, 0, d2enum.TileLeftWall, 0, fx.specialWall)
+	fx.mr.setImageCacheRecord(2, 0, d2enum.TileRoof, 0, fx.specialRoof)
 
 	cx, cy := fx.mr.viewport.WorldToOrtho(fogMapSize/2, fogMapSize/2)
 	moveTestCamera(fx.mr.viewport, cx, cy)
@@ -195,7 +208,7 @@ func (fx *fogFixture) render() *opSurface {
 }
 
 // floorDraws counts the draws of the ordinary floor art and returns the
-// special tile's draws.
+// special tile's floor draws.
 func (fx *fogFixture) floorDraws(o *opSurface) (ordinary int, special []opDraw) {
 	for _, d := range o.draws {
 		switch d.src {
@@ -207,6 +220,23 @@ func (fx *fogFixture) floorDraws(o *opSurface) (ordinary int, special []opDraw) 
 	}
 
 	return ordinary, special
+}
+
+// specialDraws are the special tile's draws by pass: its floor (pass 1), its
+// upper wall (pass 3) and its roof (pass 4).
+func (fx *fogFixture) specialDraws(o *opSurface) (floor, wall, roof []opDraw) {
+	for _, d := range o.draws {
+		switch d.src {
+		case fx.special:
+			floor = append(floor, d)
+		case fx.specialWall:
+			wall = append(wall, d)
+		case fx.specialRoof:
+			roof = append(roof, d)
+		}
+	}
+
+	return floor, wall, roof
 }
 
 // TestNoFogSamplerIsTheUnfoggedDraw: with no fog sampler the four passes make
@@ -262,18 +292,26 @@ func TestNoFogSamplerIsTheUnfoggedDraw(t *testing.T) {
 // TestUnexploredTileIsNotDrawn: an unexplored tile's floor is not drawn and
 // nothing at all is pushed for it; every other floor is.
 //
-// Negative control (1 Oct 2026): make tileDrawn answer true for every tile
+// The tile has a floor (pass 1), an upper wall (pass 3) and a roof (pass 4),
+// so a pass that forgets the skip is caught (the review's B4).
+//
+// Negative controls (1 Oct 2026): make tileDrawn answer true for every tile
 // and this fails, "the unexplored tile (3,3) was drawn 1 time(s)"
-// (nc12-unexplored-drawn.txt).
+// (nc12-unexplored-drawn.txt); drop only pass 3's skip (the reviewer's m06),
+// "... floor 0, upper wall 1, roof 0" (nc25-walls-on-unexplored.txt); only
+// pass 4's (m07), "... floor 0, upper wall 0, roof 1"
+// (nc26-roofs-on-unexplored.txt).
 func TestUnexploredTileIsNotDrawn(t *testing.T) {
 	fx := newFogFixture(t, [2]int{3, 3})
 	fx.mr.SetFogSampler(&fakeFog{hidden: map[[2]int]bool{{3, 3}: true}})
 
 	o := fx.render()
 
-	ordinary, special := fx.floorDraws(o)
-	if len(special) != 0 {
-		t.Fatalf("the unexplored tile (3,3) was drawn %d time(s)", len(special))
+	ordinary, _ := fx.floorDraws(o)
+
+	if floor, wall, roof := fx.specialDraws(o); len(floor)+len(wall)+len(roof) != 0 {
+		t.Fatalf("the unexplored tile (3,3) was drawn: floor %d, upper wall %d, roof %d time(s); nothing of it is drawn",
+			len(floor), len(wall), len(roof))
 	}
 
 	if ordinary != fogMapSize*fogMapSize-1 {
@@ -310,18 +348,20 @@ func TestRememberedTileIsGreyedByMin(t *testing.T) {
 
 		o := fx.render()
 
-		_, special := fx.floorDraws(o)
-		if len(special) != 1 {
-			t.Fatalf("%s the remembered tile was drawn %d times", c.name, len(special))
+		floor, wall, roof := fx.specialDraws(o)
+		if len(floor) != 1 || len(wall) != 1 || len(roof) != 1 {
+			t.Fatalf("%s the remembered tile was drawn floor %d, upper wall %d, roof %d times; want once each",
+				c.name, len(floor), len(wall), len(roof))
 		}
 
-		d := special[0]
-		if d.bright != c.want {
-			t.Errorf("%s the remembered tile is drawn at brightness %v, want %v (min, not product)", c.name, d.bright, c.want)
-		}
+		for _, d := range []opDraw{floor[0], wall[0], roof[0]} {
+			if d.bright != c.want {
+				t.Errorf("%s the remembered tile is drawn at brightness %v, want %v (min, not product)", c.name, d.bright, c.want)
+			}
 
-		if d.sat != 0.25 {
-			t.Errorf("%s the remembered tile is drawn at saturation %v, want 0.25", c.name, d.sat)
+			if d.sat != 0.25 {
+				t.Errorf("%s the remembered tile is drawn at saturation %v, want 0.25", c.name, d.sat)
+			}
 		}
 
 		for _, other := range o.draws {

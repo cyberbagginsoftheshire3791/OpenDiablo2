@@ -16,10 +16,15 @@ answer to Q1: **a squad sees 12 tiles by day**, the range beasts notice him at.
 | **visible** (seen now) | as it always was | drawn |
 
 A tile is **visible** when it is his own tile, or when its centre is within his
-day sight (**12** tiles) of him AND the straight line to it crosses no tile that
+day sight (**12** tiles) of the centre of HIS tile AND the straight line to it crosses no tile that
 blocks sight strictly between -- the tile itself may block: a wall is seen by
 its face, and what stands behind it is not. Seen once, a tile stays **explored**
 for the rest of the game.
+
+**He sees from the centre of his tile** (the review's B1). Fog is tile-sized
+and recomputes only when he steps onto another tile, so what he sees is a
+function of his tile alone; measured from his exact point it depended on where
+he had ENTERED the tile.
 
 The line is `MapEngine.TileSightClear` (`d2core/d2map/d2mapengine/tile_sight.go`):
 a tile-stepped grid walk that asks each tile's centre subtile the map's ONE
@@ -47,6 +52,7 @@ more of the map's black and grey, never more of what he sees.
 | `-fog` | every game this process starts has fog. **Off by default** (F1 is opt-in; F5 turns it on with the zoom's default). |
 | `-classic` | never fog: Diablo II's game has none. |
 | a network game | never fog (more than one player: shared sight has no rule yet). |
+| the first frame | with `-fog` the renderer holds the fog from the game's first frame, before he exists: a fog that has seen nothing is all black, so no frame shows the village unfogged (the review's B5). |
 | the World Editor | never fog: its renderer has no fog sampler. |
 | harness `fog.enabled` | turns this game's fog off or on (not under `-classic`). A load is a new game at `-fog`'s value. |
 
