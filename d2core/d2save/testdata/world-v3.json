@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "build": "save-b3 test",
   "saved_at": "2026-09-28T21:14:05.123Z",
   "map": {
@@ -165,6 +165,7 @@
       {
         "watcher": "0a-wolf",
         "target": "player",
+        "side": "hostile",
         "sees": true,
         "noticed": true,
         "distance": 6.25,
@@ -193,7 +194,28 @@
         "arrived": false
       }
     ],
-    "solves": 3
+    "solves": 3,
+    "rechase_solves": 0
+  },
+  "seek": {
+    "rows": [
+      {
+        "watcher": "0a-wolf",
+        "target": "player",
+        "reason": "living",
+        "until_look_minutes": 0.625,
+        "candidates": 1,
+        "dwell_minutes": 0
+      }
+    ],
+    "stand_ins": [
+      "7f-villager"
+    ],
+    "slots": 1,
+    "looks": 40,
+    "retargets": 0,
+    "holds": 0,
+    "rays": 40
   },
   "corpses": {
     "bodies": [

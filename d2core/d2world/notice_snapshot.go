@@ -39,8 +39,8 @@ type WatchSnapshot struct {
 	Watcher string `json:"watcher"`
 	Target  string `json:"target"`
 
-	// Side is the raid's R2: "hostile" or "living" (WatchSide). An amendment
-	// of version 2's shape, no bump (the milestone's rule). Required: a watch
+	// Side is the raid's R2: "hostile" or "living" (WatchSide). New in
+	// version 3 of the world file (every shape change bumps). Required: a watch
 	// with no side, or one the model does not know, is refused -- read as
 	// either, it would make a wolf a villager or a villager a wolf.
 	Side string `json:"side"`

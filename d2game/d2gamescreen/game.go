@@ -1437,7 +1437,11 @@ func (v *Game) commandWish(args []string) error {
 // fight. And a chase on ANOTHER quarry than the watch's target is started
 // again on the target: Seek moved the watch onto a nearer villager, and the
 // wolf must walk at her, not at the man it no longer wants (N5 in the brief:
-// before R2 an existing chase was left alone whatever its watch named).
+// before R2 an existing chase was left alone whatever its watch named). That
+// restart solves its route at once (Pursuit.Chase), so each retarget costs
+// one A* in the frame Seek made it -- counted by Pursuit as rechase_solves
+// and measured, quarries moving, by BenchmarkSeekRechaseMovingQuarries (the
+// R2 review's B2). Seek's stickiness (its B1) is what keeps that rare.
 func (v *Game) startChasesForTheAware() {
 	if v.notice == nil || v.pursuit == nil {
 		return

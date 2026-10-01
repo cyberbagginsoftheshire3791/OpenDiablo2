@@ -5,13 +5,14 @@ import (
 )
 
 // SeekSnapshot is Seek's state as the world save carries it: the world file's
-// "seek" block (the raid's R2, an amendment of version 2's shape with no bump
-// -- the milestone's rule, docs/m4.6-world-save-notes.md).
+// "seek" block, new in version 3 (the raid's R2; Josh's ruling of 30 Sep:
+// every shape change bumps Version).
 //
 // SAVED: every row -- which watcher, the target it last found its watch on,
-// why, the minutes until its next look (its stagger phase is in there) and how
-// many living were in reach at its last look -- the stand-ins a script named,
-// the stagger phases given out, and the three totals.
+// why, the minutes until its next look (its stagger phase is in there), how
+// many living were in reach at its last look and the minutes left of its
+// dwell (the review's B1) -- the stand-ins a script named, the stagger phases
+// given out, and the four totals.
 //
 // NOT SAVED, and why:
 //   - the dials (RetargetMinutes, StaggerSlots) are DIALS, never saved (trap 7).
@@ -36,6 +37,7 @@ type SeekSnapshot struct {
 
 	Looks     int `json:"looks"`
 	Retargets int `json:"retargets"`
+	Holds     int `json:"holds"`
 	Rays      int `json:"rays"`
 }
 
@@ -54,6 +56,10 @@ type SeekRowSnapshot struct {
 	UntilLook float64 `json:"until_look_minutes"`
 
 	Candidates int `json:"candidates"`
+
+	// Dwell is the world minutes left in which the row keeps the target it
+	// switched to while that target is seen; 0 outside a dwell.
+	Dwell float64 `json:"dwell_minutes"`
 }
 
 // Snapshot is Seek's state now, rows in watcher order. It refuses nothing:
@@ -65,6 +71,7 @@ func (s *Seek) Snapshot() SeekSnapshot {
 		Slots:     s.slots,
 		Looks:     s.looks,
 		Retargets: s.retargets,
+		Holds:     s.holds,
 		Rays:      s.rays,
 	}
 
@@ -76,6 +83,7 @@ func (s *Seek) Snapshot() SeekSnapshot {
 			Reason:     r.reason,
 			UntilLook:  r.untilLook,
 			Candidates: r.candidates,
+			Dwell:      r.dwell,
 		})
 	}
 
@@ -94,7 +102,7 @@ func (s *Seek) Restore(snap SeekSnapshot) error {
 	s.rows = rows
 	s.standIns = append([]string{}, snap.StandIns...)
 	s.slots = snap.Slots
-	s.looks, s.retargets, s.rays = snap.Looks, snap.Retargets, snap.Rays
+	s.looks, s.retargets, s.holds, s.rays = snap.Looks, snap.Retargets, snap.Holds, snap.Rays
 
 	return nil
 }
@@ -128,12 +136,14 @@ func (s *Seek) validate(snap SeekSnapshot) (map[string]*seekRow, error) {
 func seekRowsOf(snap SeekSnapshot) (map[string]*seekRow, error) {
 	if err := b2bCheckNumbers("seek", true,
 		b2bNum{"slots", float64(snap.Slots)}, b2bNum{"looks", float64(snap.Looks)},
-		b2bNum{"retargets", float64(snap.Retargets)}, b2bNum{"rays", float64(snap.Rays)}); err != nil {
+		b2bNum{"retargets", float64(snap.Retargets)}, b2bNum{"holds", float64(snap.Holds)},
+		b2bNum{"rays", float64(snap.Rays)}); err != nil {
 		return nil, err
 	}
 
-	if snap.Retargets > snap.Looks {
-		return nil, fmt.Errorf("d2world: seek: %d retargets in %d looks: a watch is moved only by a look", snap.Retargets, snap.Looks)
+	if snap.Retargets+snap.Holds > snap.Looks {
+		return nil, fmt.Errorf("d2world: seek: %d retargets and %d holds in %d looks: each is one look's outcome",
+			snap.Retargets, snap.Holds, snap.Looks)
 	}
 
 	if len(snap.Rows) > snap.Slots {
@@ -167,11 +177,12 @@ func seekRowsOf(snap SeekSnapshot) (map[string]*seekRow, error) {
 		case r.Target == r.Watcher:
 			return nil, fmt.Errorf("d2world: seek: row %s names itself its target", r.Watcher)
 		case !validSeekReason(r.Reason):
-			return nil, fmt.Errorf("d2world: seek: row %s: reason %q is not pending, living, none or fighting", r.Watcher, r.Reason)
+			return nil, fmt.Errorf("d2world: seek: row %s: reason %q is not pending, living, none, fighting or held", r.Watcher, r.Reason)
 		}
 
 		if err := b2bCheckNumbers("seek row "+r.Watcher, true,
-			b2bNum{"until_look_minutes", r.UntilLook}, b2bNum{"candidates", float64(r.Candidates)}); err != nil {
+			b2bNum{"until_look_minutes", r.UntilLook}, b2bNum{"candidates", float64(r.Candidates)},
+			b2bNum{"dwell_minutes", r.Dwell}); err != nil {
 			return nil, err
 		}
 
@@ -179,12 +190,13 @@ func seekRowsOf(snap SeekSnapshot) (map[string]*seekRow, error) {
 			return nil, fmt.Errorf("d2world: seek: row %s looks in %v minutes: between two steps every row's next look is still to come", r.Watcher, r.UntilLook)
 		}
 
-		if r.Reason == SeekPending && r.Candidates != 0 {
-			return nil, fmt.Errorf("d2world: seek: row %s has not looked and counts %d candidates", r.Watcher, r.Candidates)
+		if r.Reason == SeekPending && (r.Candidates != 0 || r.Dwell != 0) {
+			return nil, fmt.Errorf("d2world: seek: row %s has not looked and counts %d candidates, %v minutes of dwell",
+				r.Watcher, r.Candidates, r.Dwell)
 		}
 
 		last = r.Watcher
-		rows[r.Watcher] = &seekRow{target: r.Target, reason: r.Reason, untilLook: r.UntilLook, candidates: r.Candidates}
+		rows[r.Watcher] = &seekRow{target: r.Target, reason: r.Reason, untilLook: r.UntilLook, candidates: r.Candidates, dwell: r.Dwell}
 	}
 
 	return rows, nil

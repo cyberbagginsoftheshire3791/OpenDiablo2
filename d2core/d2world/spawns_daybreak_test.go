@@ -121,3 +121,62 @@ func TestSpawnsDaybreakLeavesAnAwareGroupAlone(t *testing.T) {
 	require.Contains(t, s.groupIDs(), id, "daylight must not send home a pack that has noticed the player")
 	require.LessOrEqual(t, s.Groups(), before)
 }
+
+// The raid R2 review's C7 (b), decided on default 1 Oct 2026 (Josh can
+// overturn it): daybreak does not send home a pack that sees ANY living
+// quarry -- a villager or his squad's model as much as him -- the same rule
+// that already keeps a pack that noticed him (ruling 3 of 28 Sep: the dead
+// hunt the nearest living, one rule for all). A pack whose only watch is on
+// a villager it sees stays at sunrise; the control is the same villager out
+// of its sight, and the pack goes home.
+func TestSpawnsDaybreakKeepsAPackThatSeesAVillager(t *testing.T) {
+	run := func(villagerOff float64) bool {
+		s, clock, notice, _, target := newTestSpawns(t)
+
+		advanceClockToStage(t, clock, StageNight)
+		s.dials.Chance = 1000
+
+		for i := 0; i < 60 && s.Groups() == 0; i++ {
+			s.Advance(s.dials.CheckMinutes)
+		}
+
+		require.NotZero(t, s.Groups(), "the fixture: a pack")
+		s.dials.Chance = 0
+
+		id := s.groupIDs()[0]
+		g := s.groups[id]
+
+		// He walks far off and the pack forgets him.
+		target.x, target.y = target.x+500, target.y+500
+
+		for i := 0; i < 40; i++ {
+			s.Advance(1.0)
+		}
+
+		require.False(t, s.aware(id), "the fixture: nothing of the pack sees him")
+
+		// Seek's retarget, as the game makes it: the first member's watch
+		// moved onto a villager.
+		mx, my := g.members[0].WatcherAt()
+		villager := &fakeQuarry{id: "v:1", x: mx + 1 + villagerOff, y: my}
+		require.True(t, notice.Retarget(g.members[0].WatcherID(), villager))
+
+		for i := 0; i < 3; i++ {
+			s.Advance(1.0)
+		}
+
+		advanceClockToStage(t, clock, StageDay)
+		s.Advance(0.1)
+
+		for _, have := range s.groupIDs() {
+			if have == id {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	require.True(t, run(0), "a pack that sees a villager is not sent home at daybreak")
+	require.False(t, run(500), "the control: the villager out of its sight, and daylight sends it home")
+}

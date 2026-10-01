@@ -240,6 +240,7 @@ func seekClasses() []b2aClass {
 			"slots":     "S:slots",
 			"looks":     "S:looks",
 			"retargets": "S:retargets",
+			"holds":     "S:holds",
 			"rays":      "S:rays",
 		}},
 		{seekRow{}, map[string]string{
@@ -247,6 +248,7 @@ func seekClasses() []b2aClass {
 			"reason":     "S:rows[0].reason",
 			"untilLook":  "S:rows[0].until_look_minutes",
 			"candidates": "S:rows[0].candidates",
+			"dwell":      "S:rows[0].dwell_minutes",
 		}},
 	}
 }

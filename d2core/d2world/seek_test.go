@@ -203,6 +203,11 @@ func TestSeekAFighterKeepsItsTarget(t *testing.T) {
 	villager := &fakeQuarry{id: "v:9", x: 41, y: 40.4} // 0.4 from m:2; he is 1 off
 	w.quarries = []Quarry{f.target, villager}
 
+	// The fighter's rule alone: no margin (the review's B1 stickiness would
+	// hold him for m:3 too, the villager only 0.6 nearer, and the control
+	// below would prove nothing about the fight).
+	w.seek.dials.SwitchMarginTiles = 0
+
 	// The control, in the same world: m:3 stands where m:2 stands, aware of
 	// him and not yet in the fight (combat has not stepped since).
 	f.add(t, "m:3", 5000, Profile{})

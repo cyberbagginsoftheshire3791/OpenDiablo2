@@ -350,7 +350,7 @@ func TestHisSleepHidesOnlyHim(t *testing.T) {
 	nlCheck(t, math.Abs(slept-240) <= 0.5, "his sleep stopped after %.2f of 240 minutes", slept)
 	nlCheck(t, r1 > r0, "no hostile turned to the villager while he slept (retargets %.0f -> %.0f): his sleep hid her too", r0, r1)
 	nlCheck(t, str(ch, "quarry") == vID, "the monster's chase after the sleep is not on the villager: %v -- the night did not come for her", ch)
-	nlCheck(t, nm == nil || str(nm, "quarry") == vID, "the monster's watch after the sleep is not on the villager: %v", nm)
+	nlCheck(t, nm != nil && str(nm, "quarry") == vID, "the monster's watch after the sleep is not on the villager: %v", nm)
 	nlCheck(t, !flag(t, combatState(s), "fighting"), "he is in a fight after his sleep")
 	nlCheck(t, mustNum(t, metersState(s), "health") >= hp0, "something struck him while he slept (%.0f -> %v)", hp0, metersState(s)["health"])
 }

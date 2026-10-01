@@ -51,12 +51,30 @@ import (
 // sight, which is a straight line anyway; the dead's "reachable" is the
 // region lookup's, and lands with them.
 //
+// A SEEN TARGET IS STICKY (the R2 review's B1, 1 Oct 2026). "The nearest" with
+// no hysteresis turned a hunter between two near-equal quarries on every look
+// (0.4 to 0.8 s of real time at night), and the chase followed it in the same
+// frame. So a watch whose own target is still in reach and in sight keeps it
+// (reason "held") unless the nearest is nearer by SwitchMarginTiles, and for
+// DwellMinutes after a switch it keeps the new target while it is seen at all.
+// A target that is out of sight, out of reach, hidden, protected or dead is
+// no reason to wait: the nearest in sight takes the watch at once.
+//
+// SEEK SOLVES NO ROUTE; EACH RETARGET COSTS ONE PURSUIT SOLVE. Seek itself
+// casts rays only (D-S2 = 0). But the game restarts the chase on a moved
+// watch in the same frame (startChasesForTheAware), and Pursuit.Chase solves
+// at once: one A* per retarget, counted by Pursuit (rechase_solves) and
+// measured, quarries moving, by the benchmark beside this file (the review's
+// B2).
+//
 // THE STAGGER, BUILT FROM THE START (S0's M0.2): each watcher looks every
 // RetargetMinutes on a phase of its own -- the minute cut into StaggerSlots
-// phases, given out round-robin as rows are made -- so a pack that arrives in
-// one frame looks across the minute's night frames, not all in one. At 4x the
-// brief's N and M the unstaggered frame is over budget (3.4 ms); the
-// benchmark beside this file measures both.
+// phases -- so a pack that arrives in one frame looks across the minute's
+// night frames, not all in one. A new row takes the LEAST-LOADED phase of the
+// rows already looking, counted on the absolute frames they fall due (the
+// review's C1: round-robin by creation count bunched two groups made a few
+// frames apart). At 4x the brief's N and M the unstaggered frame is over
+// budget (3.4 ms); the benchmark beside this file measures both.
 //
 // Like every system here it steps on the world clock, never the wall clock,
 // and it iterates in a fixed order: its choices move entities, which are
@@ -80,13 +98,13 @@ type Seek struct {
 
 	rows map[string]*seekRow
 
-	// slots counts the stagger phases given out: row n takes phase
-	// n mod StaggerSlots.
+	// slots counts the stagger phases given out (one per row made).
 	slots int
 
-	// looks counts the looks taken, retargets the watches moved, rays the
-	// sight tests the looks cast.
-	looks, retargets, rays int
+	// looks counts the looks taken, retargets the watches moved, holds the
+	// looks that kept a seen target over a nearer one (the margin or the
+	// dwell), rays the sight tests the looks cast.
+	looks, retargets, holds, rays int
 }
 
 // seekEpsilon is how near zero a row's untilLook may be and still come due:
@@ -108,6 +126,11 @@ type seekRow struct {
 	// candidates is how many living quarries were within reach at the last
 	// look (each cost one ray until the nearest clear one was found).
 	candidates int
+
+	// dwell is the world minutes left in which the row keeps a target it
+	// switched to while that target is seen (DwellMinutes at a switch, then
+	// counting down to zero).
+	dwell float64
 }
 
 // Why a row holds the target it holds.
@@ -123,10 +146,14 @@ const (
 	// SeekFighting is a row whose watcher was a living enemy of a live fight
 	// at its last look: a fighter keeps its target.
 	SeekFighting = "fighting"
+	// SeekHeld is a row that saw a nearer quarry at its last look and kept
+	// its own target, still in reach and in sight: the nearer was not nearer
+	// by the margin, or the row was inside its dwell (the review's B1).
+	SeekHeld = "held"
 )
 
 func validSeekReason(r string) bool {
-	return r == SeekPending || r == SeekLiving || r == SeekNone || r == SeekFighting
+	return r == SeekPending || r == SeekLiving || r == SeekNone || r == SeekFighting || r == SeekHeld
 }
 
 // SeekDials are Seek's numbers. Every one is a [DIAL], and none is saved.
@@ -141,14 +168,27 @@ type SeekDials struct {
 	RetargetMinutes float64
 
 	// StaggerSlots is how many phases a minute of looks is spread across:
-	// 24, the night frames of one world minute, so at most ceil(N/24) of N
-	// watchers look in any night frame.
+	// 24, the night frames of one world minute. Each new row takes the
+	// least-loaded phase, so while the minute's frames are 1/24 minute (the
+	// night) at most ceil(N/24) of N watchers look in any night frame.
 	StaggerSlots int
+
+	// SwitchMarginTiles is how much nearer another quarry must be before a
+	// watch leaves its own target while that target is in reach and in
+	// sight: 1.5, Pursuit's RepathTiles (the review's B1). 0 is the strict
+	// nearest R2 first shipped.
+	SwitchMarginTiles float64
+
+	// DwellMinutes is how long after a switch the row keeps its new target
+	// while it is seen, whatever comes nearer: 2.0, Pursuit's
+	// MinRepathMinutes (the review's B1). 0 is no dwell.
+	DwellMinutes float64
 }
 
-// DefaultSeekDials returns the brief's starting values (§5, D-S1).
+// DefaultSeekDials returns the brief's starting values (§5, D-S1) and the
+// review's stickiness (B1).
 func DefaultSeekDials() SeekDials {
-	return SeekDials{RetargetMinutes: 1.0, StaggerSlots: 24}
+	return SeekDials{RetargetMinutes: 1.0, StaggerSlots: 24, SwitchMarginTiles: 1.5, DwellMinutes: 2.0}
 }
 
 // NewSeek builds the system and registers the "seek" harness provider. It
@@ -198,14 +238,14 @@ func (s *Seek) Advance(worldMinutes float64) {
 		return
 	}
 
-	fresh := s.sync()
-
-	if len(s.rows) == 0 {
+	r := s.dials.RetargetMinutes
+	if r <= 0 || math.IsNaN(r) || math.IsInf(r, 0) {
 		return
 	}
 
-	r := s.dials.RetargetMinutes
-	if r <= 0 || math.IsNaN(r) || math.IsInf(r, 0) {
+	fresh := s.sync(worldMinutes)
+
+	if len(s.rows) == 0 {
 		return
 	}
 
@@ -219,6 +259,10 @@ func (s *Seek) Advance(worldMinutes float64) {
 		// A row made this step does not age in it: its phase counts from here.
 		if !fresh[id] {
 			row.untilLook -= worldMinutes
+
+			if row.dwell > 0 {
+				row.dwell = math.Max(0, row.dwell-worldMinutes)
+			}
 		}
 
 		// The epsilon is the round loop's lesson (BUG-85): a phase of k/24
@@ -241,27 +285,38 @@ func (s *Seek) Advance(worldMinutes float64) {
 }
 
 // sync makes a row for every served watcher that has none -- each given the
-// next stagger phase, in watcher-id order -- and drops the row of every
-// watcher that no longer watches, or is no longer served. It returns the rows
-// it made.
-func (s *Seek) sync() map[string]bool {
+// least-loaded stagger phase, in watcher-id order -- and drops the row of
+// every watcher that no longer watches, or is no longer served. It returns
+// the rows it made. step is the world minutes this Advance is about to age
+// the rows that were already there by.
+func (s *Seek) sync(step float64) map[string]bool {
 	for id := range s.rows {
 		if !s.served(id) {
 			delete(s.rows, id)
 		}
 	}
 
-	var fresh map[string]bool
+	var (
+		fresh map[string]bool
+		load  []int
+	)
 
 	for _, id := range s.notice.watcherIDs() {
 		if _, ok := s.rows[id]; ok || !s.served(id) {
 			continue
 		}
 
+		if load == nil {
+			load = s.phaseLoad(step)
+		}
+
+		k := leastLoaded(load)
+		load[k]++
+
 		row := &seekRow{
 			target:    s.ref(s.notice.watches[id].target),
 			reason:    SeekPending,
-			untilLook: s.phase(s.slots),
+			untilLook: s.phase(k),
 		}
 		s.slots++
 		s.rows[id] = row
@@ -276,15 +331,57 @@ func (s *Seek) sync() map[string]bool {
 	return fresh
 }
 
-// phase is the stagger phase of the n-th row made: the minute cut into
-// StaggerSlots, given out round-robin. Row 0's phase is 0: it looks at once.
-func (s *Seek) phase(n int) float64 {
-	slots := s.dials.StaggerSlots
-	if slots < 1 {
-		slots = 1
+// staggerSlots is the dial, floored at one phase.
+func (s *Seek) staggerSlots() int {
+	if s.dials.StaggerSlots < 1 {
+		return 1
 	}
 
-	return s.dials.RetargetMinutes * float64(n%slots) / float64(slots)
+	return s.dials.StaggerSlots
+}
+
+// phase is the untilLook of stagger phase k: the minute cut into StaggerSlots.
+// Phase 0 looks at once.
+func (s *Seek) phase(k int) float64 {
+	slots := s.staggerSlots()
+
+	return s.dials.RetargetMinutes * float64(k%slots) / float64(slots)
+}
+
+// phaseLoad counts the rows already looking on each phase, as a new row made
+// in this step would count it: an existing row is aged by step before it
+// looks, and a new one is not, so an existing row's phase is its untilLook
+// less step, rounded to the nearest phase (the review's C1: phases are
+// absolute frames, not creation counts).
+func (s *Seek) phaseLoad(step float64) []int {
+	slots := s.staggerSlots()
+	load := make([]int, slots)
+	r := s.dials.RetargetMinutes
+	width := r / float64(slots)
+
+	for _, id := range s.rowIDs() {
+		u := math.Mod(s.rows[id].untilLook-step, r)
+		if u < 0 {
+			u += r
+		}
+
+		load[int(math.Round(u/width))%slots]++
+	}
+
+	return load
+}
+
+// leastLoaded is the phase with the fewest rows, the earliest among equals.
+func leastLoaded(load []int) int {
+	best := 0
+
+	for k := range load {
+		if load[k] < load[best] {
+			best = k
+		}
+	}
+
+	return best
 }
 
 // served reports that Seek chooses for this watcher: a hostile watch that is
@@ -305,7 +402,9 @@ func (s *Seek) served(id string) bool {
 }
 
 // look is one row's look: a fighter keeps its target; otherwise the nearest
-// living quarry the watcher can see within reach takes the watch, and with
+// living quarry the watcher can see within reach takes the watch -- unless
+// the watch's own target is still in reach and in sight and the nearest is
+// not nearer by the margin, or the row is inside its dwell (held) -- and with
 // none in view the watch is kept as it was.
 func (s *Seek) look(id string, row *seekRow, living []Quarry) {
 	w := s.notice.watches[id]
@@ -318,21 +417,76 @@ func (s *Seek) look(id string, row *seekRow, living []Quarry) {
 
 	s.looks++
 
-	chosen, considered := s.nearest(w, living)
-	row.candidates = considered
+	lk := s.nearest(w, living)
+	row.candidates = lk.considered
 
-	if chosen == nil {
+	if lk.chosen == nil {
 		row.target, row.reason = s.ref(w.target), SeekNone
 
 		return
 	}
 
-	if chosen.QuarryID() != w.target.QuarryID() {
-		s.notice.Retarget(id, chosen)
-		s.retargets++
+	if lk.chosen.current {
+		row.target, row.reason = s.ref(lk.chosen.q), SeekLiving
+
+		return
 	}
 
-	row.target, row.reason = s.ref(chosen), SeekLiving
+	if s.keepsOwn(w, row, lk) {
+		s.holds++
+		row.target, row.reason = s.ref(w.target), SeekHeld
+
+		return
+	}
+
+	s.notice.Retarget(id, lk.chosen.q)
+	s.retargets++
+
+	row.dwell = s.dwellDial()
+	row.target, row.reason = s.ref(lk.chosen.q), SeekLiving
+}
+
+// keepsOwn reports that the watch keeps its own target over the nearer chosen:
+// its target is a candidate in reach, the nearer is not nearer by the margin
+// or the row is inside its dwell, and its target is in sight. The sight test
+// is cast only when it decides something (a target nearer than the chosen
+// was cast already, and failed).
+func (s *Seek) keepsOwn(w *watch, row *seekRow, lk seekLook) bool {
+	cur := lk.current
+	if cur == nil {
+		return false
+	}
+
+	if row.dwell <= 0 && lk.chosen.d <= cur.d-s.marginDial() {
+		return false
+	}
+
+	if lk.currentCast {
+		return lk.currentSeen
+	}
+
+	s.rays++
+
+	wx, wy := w.watcher.WatcherAt()
+
+	return s.notice.sight.Clear(wx, wy, cur.x, cur.y)
+}
+
+// marginDial and dwellDial are the stickiness dials, a bad value read as 0.
+func (s *Seek) marginDial() float64 {
+	if m := s.dials.SwitchMarginTiles; m > 0 && !math.IsInf(m, 0) {
+		return m
+	}
+
+	return 0
+}
+
+func (s *Seek) dwellDial() float64 {
+	if d := s.dials.DwellMinutes; d > 0 && !math.IsInf(d, 0) {
+		return d
+	}
+
+	return 0
 }
 
 // seekCandidate is one living quarry as a look weighs it.
@@ -343,13 +497,24 @@ type seekCandidate struct {
 	current bool
 }
 
-// nearest is the nearest quarry w's watcher can see within Notice's reach, or
-// nil, and how many were within reach. Candidates are taken nearest first
-// (the watch's own target first among equals, then by id), and the first
-// clear line ends the search: the nearest in sight is the nearest.
-func (s *Seek) nearest(w *watch, living []Quarry) (Quarry, int) {
+// seekLook is what one look found: the nearest candidate in sight (nil for
+// none), the watch's own target when it is a candidate within reach, whether
+// its line was cast and came out clear, and how many were within reach.
+type seekLook struct {
+	chosen, current          *seekCandidate
+	currentCast, currentSeen bool
+	considered               int
+}
+
+// nearest finds the nearest quarry w's watcher can see within Notice's reach,
+// and how many were within reach. Candidates are taken nearest first (the
+// watch's own target first among equals, then by id), and the first clear
+// line ends the search: the nearest in sight is the nearest.
+func (s *Seek) nearest(w *watch, living []Quarry) seekLook {
+	var lk seekLook
+
 	if !s.notice.Wired() {
-		return nil, 0
+		return lk
 	}
 
 	wid := w.watcher.WatcherID()
@@ -392,29 +557,37 @@ func (s *Seek) nearest(w *watch, living []Quarry) (Quarry, int) {
 		return a.id < b.id
 	})
 
-	considered := 0
+	for i := range cands {
+		c := &cands[i]
 
-	var chosen Quarry
-
-	for _, c := range cands {
 		if _, reach := s.notice.reachAt(c.x, c.y); c.d > reach {
 			continue
 		}
 
-		considered++
+		lk.considered++
 
-		if chosen != nil {
+		if c.current {
+			lk.current = c
+		}
+
+		if lk.chosen != nil {
 			continue
 		}
 
 		s.rays++
 
-		if s.notice.sight.Clear(wx, wy, c.x, c.y) {
-			chosen = c.q
+		clear := s.notice.sight.Clear(wx, wy, c.x, c.y)
+
+		if c.current {
+			lk.currentCast, lk.currentSeen = true, clear
+		}
+
+		if clear {
+			lk.chosen = c
 		}
 	}
 
-	return chosen, considered
+	return lk
 }
 
 // eligible is the four gates every candidate passes but the first (not the
@@ -542,29 +715,36 @@ func (s *Seek) HarnessState() map[string]interface{} {
 			"reason":             row.reason,
 			"until_look_minutes": row.untilLook,
 			"candidates":         row.candidates,
+			"dwell_minutes":      row.dwell,
 		})
 	}
 
 	return map[string]interface{}{
-		"rows":         rows,
-		"stand_ins":    append([]string{}, s.standIns...),
-		"slots":        s.slots,
-		"looks":        s.looks,
-		"retargets":    s.retargets,
-		"rays":         s.rays,
+		"rows":      rows,
+		"stand_ins": append([]string{}, s.standIns...),
+		"slots":     s.slots,
+		"looks":     s.looks,
+		"retargets": s.retargets,
+		"holds":     s.holds,
+		"rays":      s.rays,
+		// Seek's own route solves: always 0, it casts rays only. Each
+		// retarget costs the chase one solve, which Pursuit counts
+		// (rechase_solves).
 		"route_solves": 0,
 		"wired":        s.notice != nil && s.notice.Wired(),
 		"dials": map[string]interface{}{
-			"retarget_minutes": s.dials.RetargetMinutes,
-			"stagger_slots":    s.dials.StaggerSlots,
+			"retarget_minutes":    s.dials.RetargetMinutes,
+			"stagger_slots":       s.dials.StaggerSlots,
+			"switch_margin_tiles": s.dials.SwitchMarginTiles,
+			"dwell_minutes":       s.dials.DwellMinutes,
 		},
 	}
 }
 
-// HarnessSettableFields lists the writes the system allows: its two dials,
+// HarnessSettableFields lists the writes the system allows: its four dials,
 // and the stand-in collection's two verbs.
 func (s *Seek) HarnessSettableFields() []string {
-	return []string{"retarget_minutes", "stagger_slots", "stand_in", "stand_in_remove"}
+	return []string{"dwell_minutes", "retarget_minutes", "stagger_slots", "stand_in", "stand_in_remove", "switch_margin_tiles"}
 }
 
 // HarnessSet applies one write.
@@ -584,6 +764,17 @@ func (s *Seek) HarnessSet(field string, value interface{}) error {
 		}
 
 		s.dials.StaggerSlots = int(v)
+	case "switch_margin_tiles", "dwell_minutes":
+		v, ok := value.(float64)
+		if !ok || !(v >= 0) || math.IsInf(v, 0) {
+			return fmt.Errorf("%s wants a number from 0 up, got %v", field, value)
+		}
+
+		if field == "dwell_minutes" {
+			s.dials.DwellMinutes = v
+		} else {
+			s.dials.SwitchMarginTiles = v
+		}
 	case "stand_in":
 		id, ok := value.(string)
 		if !ok {

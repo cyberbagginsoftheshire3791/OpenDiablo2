@@ -71,11 +71,18 @@ import (
 // Josh plays between bursts, so this is his to know (the raid brief, section
 // 4; the R1 build note).
 //
-// AMENDED BY THE RAID'S R2 (29 Sep 2026), NO BUMP: notice.watches[].side (a
-// watch is hostile or living) and a new top-level block, seek (who the
-// night's hunters choose among the living). A version-2 file from before R2
-// lacks both, and is refused FILE and set aside, as the rule above says.
-const Version = 2
+// VERSION 3 (the raid's R2, 29 Sep 2026, and its review fixes, 1 Oct 2026).
+// The rule above is OVERTURNED by Josh's ruling of 30 Sep: every shape change
+// bumps Version -- saving is a player's since B5, so a file of his is in play.
+// Version 3 adds notice.watches[].side (a watch is hostile or living), a new
+// top-level block, seek (who the night's hunters choose among the living:
+// its rows with their dwell, its stand-ins, phases and four totals), and
+// pursuit.rechase_solves (a retarget's solve, counted). A version-2 file is
+// refused on its version (ErrWorldVersion) and set aside as .v2.unread, never
+// read and never lost; he begins at dawn with his hero, kit and progress (the
+// sidecar), as at every refused load. Version 2's golden file and hash stay
+// as the build that wrote them left them (the R2 review's C4).
+const Version = 3
 
 // ErrWorldVersion is what a file of any version but Version is refused with.
 // The error is a *VersionError naming the version the file holds. Its message
@@ -239,8 +246,8 @@ type World struct {
 	Sidecar json.RawMessage `json:"sidecar"`
 
 	// The world systems, each its B2 snapshot. Seek is the raid's R2 (who
-	// the night's hunters choose among the living), an amendment of version
-	// 2's shape with no bump (the milestone's one bump is R1's; see Version).
+	// the night's hunters choose among the living), new in version 3 (see
+	// Version).
 	Clock   d2world.ClockSnapshot   `json:"clock"`
 	Light   d2world.LightSnapshot   `json:"light"`
 	Squads  d2world.SquadsSnapshot  `json:"squads"`

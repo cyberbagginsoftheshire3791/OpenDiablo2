@@ -245,7 +245,10 @@ func (v *Game) applyTalk(e d2dialogue.Effects) {
 	// hid every quarry from every watch, which was the same thing while he
 	// was the only quarry there was; now the night goes on seeing the
 	// village while he sleeps (Notice.SetHidden hides the player bound by
-	// Notice.SetPlayer, bound here as well as every frame).
+	// Notice.SetPlayer, which advanceWorld binds every frame -- and a sleep is
+	// answered in a talk, so frames have always run first. The R2 review's
+	// C6: a second binding here made each one's control green; one binding,
+	// one control: TestHisSleepHidesOnlyHim goes red without game.go's).
 	if e.Shelter {
 		if v.spawns != nil {
 			v.spawns.SetSheltered(true)
@@ -253,10 +256,6 @@ func (v *Game) applyTalk(e d2dialogue.Effects) {
 		}
 
 		if v.notice != nil {
-			if v.localPlayer != nil {
-				v.notice.SetPlayer(v.localPlayer.ID())
-			}
-
 			v.notice.SetHidden(true)
 			defer v.notice.SetHidden(false)
 		}

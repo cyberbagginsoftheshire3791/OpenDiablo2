@@ -8,15 +8,17 @@ import (
 // B2b, build plan §1).
 //
 // SAVED: every chase -- who hunts, what it hunts, and what its last solve left
-// behind -- and the total solves.
+// behind -- the total solves, and how many of them restarted a chase on
+// another quarry (rechase_solves, version 3: the raid R2 review's B2).
 //
 // NOT SAVED: the dials (derived, like every system's) and the router (the
 // game's wiring). Nor the route itself: the hunter is WALKING it, so it lives
 // in the entity's motion (d2mapentity.Motion), which the load restores before
 // this. A restored chase solves nothing until its own saved clock says so.
 type PursuitSnapshot struct {
-	Chases []ChaseSnapshot `json:"chases"`
-	Solves int             `json:"solves"`
+	Chases        []ChaseSnapshot `json:"chases"`
+	Solves        int             `json:"solves"`
+	RechaseSolves int             `json:"rechase_solves"`
 }
 
 // ChaseSnapshot is one hunter's pursuit of one quarry. The hunter is written
@@ -41,8 +43,9 @@ type ChaseSnapshot struct {
 // quarry must resolve through it now, or the load could not resolve them.
 func (p *Pursuit) Snapshot(r Resolver) (PursuitSnapshot, error) {
 	snap := PursuitSnapshot{
-		Chases: make([]ChaseSnapshot, 0, len(p.chases)),
-		Solves: p.solves,
+		Chases:        make([]ChaseSnapshot, 0, len(p.chases)),
+		Solves:        p.solves,
+		RechaseSolves: p.rechases,
 	}
 
 	if len(p.chases) == 0 {
@@ -99,6 +102,7 @@ func (p *Pursuit) Restore(snap PursuitSnapshot, r Resolver) error {
 
 	p.chases = chases
 	p.solves = snap.Solves
+	p.rechases = snap.RechaseSolves
 
 	return nil
 }
@@ -136,8 +140,13 @@ func (p *Pursuit) b2bValidate(snap PursuitSnapshot, r Resolver) (map[string]*cha
 // b2bBuild is b2bValidate's checks of the snapshot itself, and the chases it
 // would restore: nothing of the pursuit's own state is read or changed.
 func (p *Pursuit) b2bBuild(snap PursuitSnapshot, r Resolver) (map[string]*chase, error) {
-	if err := b2bCheckNumbers("pursuit", true, b2bNum{"solves", float64(snap.Solves)}); err != nil {
+	if err := b2bCheckNumbers("pursuit", true, b2bNum{"solves", float64(snap.Solves)},
+		b2bNum{"rechase_solves", float64(snap.RechaseSolves)}); err != nil {
 		return nil, err
+	}
+
+	if snap.RechaseSolves > snap.Solves {
+		return nil, fmt.Errorf("d2world: pursuit: %d rechase solves of %d solves: each is one of them", snap.RechaseSolves, snap.Solves)
 	}
 
 	chases := make(map[string]*chase, len(snap.Chases))

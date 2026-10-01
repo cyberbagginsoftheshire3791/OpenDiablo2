@@ -1333,23 +1333,36 @@ candidates}`: `row` the spawn row the watcher is of ("" for one a script
 placed), `target` what its watch was on at its last look (`player` for him),
 `reason` `pending` (made, its stagger phase still to come), `living` (the
 watch is on the nearest living it could see within the notice model's own
-reach), `none` (nothing living in sight: the watch was kept) or `fighting` (a
+reach), `none` (nothing living in sight: the watch was kept), `fighting` (a
 living enemy of a live fight, his or the village's: a fighter keeps its
-target); `until_look_minutes` the world minutes to its next look (its phase is
-in it: the minute is cut into `stagger_slots` phases given out round-robin as
-rows are made, so a pack that arrives in one frame looks across the minute's
-night frames); `candidates` how many living were in reach at that look. Beside
-them `stand_ins` (the entity ids a script named living), `slots` (phases given
-out), `looks`, `retargets`, `rays` (sight tests the looks cast),
-`route_solves` (always 0: no A* inside a frame, the raid's S0-2 (a) -- nearest
-is by straight line), `wired`, and `dials {retarget_minutes, stagger_slots}`.
+target) or `held` (since harness 0.14.5, the R2 review's B1: a nearer quarry
+was in sight, and the watch kept its own target, still in reach and in sight,
+because the nearer was not nearer by `switch_margin_tiles` or the row was
+inside its dwell); `until_look_minutes` the world minutes to its next look
+(its phase is in it: the minute is cut into `stagger_slots` phases, each new
+row taking the least-loaded phase of the rows already looking, so a pack that
+arrives in one frame looks across the minute's night frames, and so do two
+packs that arrive a few frames apart); `candidates` how many living were in
+reach at that look; `dwell_minutes` the world minutes left in which a row
+keeps a target it switched to while that target is seen (0 outside one).
+Beside them `stand_ins` (the entity ids a script named living), `slots`
+(phases given out, one per row made), `looks`, `retargets`, `holds` (looks
+that came out `held`), `rays` (sight tests the looks cast), `route_solves`
+(Seek's own: always 0, it casts rays only -- nearest is by straight line, the
+raid's S0-2 (a); **each retarget costs the chase one A* solve in the same
+frame**, which the `pursuit` provider counts as `rechase_solves`), `wired`,
+and `dials {retarget_minutes, stagger_slots, switch_margin_tiles,
+dwell_minutes}`.
 The living it chooses among: him, every deployed squad model, the map's
 villagers (the speakers, protected under S0-1 (a) and so never chosen) and the
-stand-ins -- and always the watch's own target. Settable: `retarget_minutes`
-and `stagger_slots` (dials), and the stand-in collection's two verbs,
+stand-ins -- and always the watch's own target. Settable: `retarget_minutes`,
+`stagger_slots`, `switch_margin_tiles` (1.5) and `dwell_minutes` (2.0) (dials;
+the last two at 0 are R2's strict nearest), and the stand-in collection's two verbs,
 `stand_in` and `stand_in_remove` (an entity id, `strigoi_get_entity`'s `id`),
 until R3b puts the village's members on the map. The world save carries it
-whole as the `seek` block (an amendment of version 2's shape, no bump). Each
+whole as the `seek` block (new in version 3 of the world file). The `pursuit`
+provider reports `rechase_solves` (since 0.14.5): the solves made restarting a
+chase on another quarry -- a retarget's cost -- included in `solves`. Each
 `spawns` notice row gained `side`, and the provider `notice_aware_living` (the
 village's watchers that see something; `notice_aware` is the hostile side's).
 

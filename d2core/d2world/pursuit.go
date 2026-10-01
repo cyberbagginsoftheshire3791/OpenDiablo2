@@ -29,6 +29,12 @@ type Pursuit struct {
 	// script can assert that a chase re-pathed rather than merely arrived --
 	// re-pathing is the behaviour, arriving is only its consequence.
 	solves int
+
+	// rechases counts the solves Chase made replacing a chase on ANOTHER
+	// quarry (the raid R2 review's B2): the cost of a retarget, which Seek
+	// does not pay itself -- the game restarts the chase on the moved watch
+	// in the same frame, and Chase solves at once. Included in solves.
+	rechases int
 }
 
 // PursuitDials are the numbers M4.3a ships with. Every one is a [DIAL].
@@ -153,6 +159,10 @@ func (p *Pursuit) Close() { d2harness.Unregister(p) }
 func (p *Pursuit) Chase(hunter Hunter, quarry Quarry) {
 	if hunter == nil || quarry == nil {
 		return
+	}
+
+	if old, ok := p.chases[hunter.HunterID()]; ok && old.quarry != nil && old.quarry.QuarryID() != quarry.QuarryID() {
+		p.rechases++
 	}
 
 	c := &chase{hunter: hunter, quarry: quarry}
@@ -348,6 +358,7 @@ func (p *Pursuit) HarnessState() map[string]interface{} {
 	return map[string]interface{}{
 		"chases":             len(p.chases),
 		"solves":             p.solves,
+		"rechase_solves":     p.rechases,
 		"chase_list":         list,
 		"repath_tiles":       p.dials.RepathTiles,
 		"arrive_within":      p.dials.ArriveWithin,

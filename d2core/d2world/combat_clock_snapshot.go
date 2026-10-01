@@ -246,8 +246,10 @@ func checkClockFight(f CombatClockFightSnapshot, started int) error {
 // is watching him, a spawn table's watch, until he sees him; a retarget that
 // has not been noticed yet); a living enemy with no watch at all (a harness
 // strigoi_unwatch keeps it in its fight while it is in reach); and any chase,
-// or none (a chase started on an earlier target is never moved, and a
-// watcher that cannot walk has none). The one-fight rule (the review's A1,
+// or none (a chase can lag its watch by a frame -- since the raid's R2 the
+// game restarts a chase on the watch's target once Seek moves the watch, on
+// the next startChasesForTheAware -- and a watcher that cannot walk has
+// none). The one-fight rule (the review's A1,
 // BUG-67) is Combat's own and is not read here: this reads each fight's
 // enemies against the watches alone.
 //

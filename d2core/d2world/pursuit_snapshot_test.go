@@ -68,6 +68,8 @@ func TestPursuitSnapshotEveryFieldIsSeen(t *testing.T) {
 
 	outcomes := b2bSweep(t, sv, want, []b2bMutation{
 		{"pursuit.solves lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.Solves = 0 }},
+		{"pursuit.rechase_solves moved", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.RechaseSolves++ }},
+		{"pursuit.rechase_solves past solves", b2bRefuse, func(_ *testing.T, s *b2bSnap) { s.Pursuit.RechaseSolves = s.Pursuit.Solves + 1 }},
 		{"pursuit.chases lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.Chases = nil }},
 		{"pursuit.a chase lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.Chases = s.Pursuit.Chases[1:] }},
 
@@ -108,10 +110,11 @@ func TestPursuitSnapshotEveryFieldIsSeen(t *testing.T) {
 func b2bPursuitClasses() []b2aClass {
 	return []b2aClass{
 		{Pursuit{}, map[string]string{
-			"dials":  "D: the pursuit dials, the game's numbers; a script's writes are test setup (trap 7)",
-			"router": "W: the map's router",
-			"chases": "S:pursuit.chases",
-			"solves": "S:pursuit.solves",
+			"dials":    "D: the pursuit dials, the game's numbers; a script's writes are test setup (trap 7)",
+			"router":   "W: the map's router",
+			"chases":   "S:pursuit.chases",
+			"solves":   "S:pursuit.solves",
+			"rechases": "S:pursuit.rechase_solves",
 		}},
 		{chase{}, map[string]string{
 			"hunter":         "S:pursuit.chases[0].hunter",
