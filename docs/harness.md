@@ -1147,7 +1147,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.16.4)
+## The tools (37; harness 0.16.5)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1663,7 +1663,17 @@ provider reports `rechase_solves` (since 0.16.1): the solves made restarting a
 chase on another quarry -- a retarget's cost -- included in `solves`; and the
 dial `rechases_per_frame` (1): the game restarts at most that many chases on
 another quarry between two of Pursuit's steps (`Pursuit.Rechase`; the rest
-follow on the frames after). A script's `strigoi_pursue` is never capped. Each
+follow on the frames after). A script's `strigoi_pursue` is never capped.
+**Since 0.16.5** the `pursuit` provider also reports `solves_per_frame` (2,
+the per-frame A* budget: every route Pursuit solves between two of its steps
+-- re-paths, first routes, the world's chase starts and re-chases -- counted
+in solves, never wall time) and `queued` (the chases that owe their first
+route: begun past the budget, the hunter standing until Pursuit serves it on
+a later frame, before any re-path; derived from the chases -- a `chase_list`
+entry with `solves` 0 -- so a resume reports the same). Past the budget a
+re-path waits a frame and the hunter walks its old route; a re-chase is
+deferred as past the cap. A script's `strigoi_pursue` solves at once, but
+its solve counts against the frame's budget. Each
 `spawns` notice row gained `side`, and the provider `notice_aware_living` (the
 village's watchers that see something; `notice_aware` is the hostile side's).
 
@@ -1969,6 +1979,14 @@ the load report says `ended_actions` (BUG-92: a held action this build's art
 no longer fits is ended as it would have ended, not refused), and a held
 action at a point no play can have is refused (BUG-91). And since BUG-94 the
 dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
+**0.16.5 (pursuit-budget, 2 Oct 2026)**: the `pursuit` provider reports
+`solves_per_frame` (the per-frame A* budget, 2) and `queued` (chases owing
+their first route; derived, so in the digest's world part with nothing new
+in the world file). With the budget binding, a burst of chase starts, a long
+step or chases falling due together are served over several frames, so a
+hunter's route can arrive a frame or more later than on 0.16.4: an evening
+kept by 0.16.4 is refused as another harness's. Other branches may bump to
+0.16.5 too; the merge settles the number.
 **0.16.4 (integrate-2, 1 Oct 2026)** is `harness-fixes` and fog of war F3
 (`fog-f3`) merged on master `0ea27076` -- each had bumped 0.16.2 to 0.16.3
 on its own branch, so no one 0.16.3 named both; nothing new in the

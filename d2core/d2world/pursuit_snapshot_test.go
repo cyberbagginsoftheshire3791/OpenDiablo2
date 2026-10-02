@@ -117,6 +117,8 @@ func b2bPursuitClasses() []b2aClass {
 			"rechases":          "S:pursuit.rechase_solves",
 			"rechasedThisFrame": "D: zeroed by every Advance before the frame's chases restart (Pursuit steps before startChasesForTheAware), so never read between frames",
 			"rechasesDeferred":  "D: a benchmark's and a test's count of budget refusals, in no provider and no digest; a resumed game counts from 0",
+			"solvedThisFrame":   "D: the per-frame solve budget's count, zeroed by every Advance before it serves anything, so never read between frames",
+			"queued":            "D: a benchmark's and a test's count of solves the budget left for a later frame, in no provider and no digest; a resumed game counts from 0. The queue itself is derived: a chase that owes its first route is one with no solve (pursuit.chases[].solves 0)",
 		}},
 		{chase{}, map[string]string{
 			"hunter":         "S:pursuit.chases[0].hunter",

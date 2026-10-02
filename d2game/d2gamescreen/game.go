@@ -1668,6 +1668,15 @@ func (v *Game) commandWish(args []string) error {
 // (the first review's B1) is what keeps them rare. A watch whose target is
 // dead by its body is no aware pair (the second review's B1): no chase is
 // started on a corpse.
+//
+// THE PER-FRAME SOLVE BUDGET (2 Oct 2026). Every route Pursuit solves -- the
+// re-paths in Pursuit.Advance above, a chase start and a re-chase here --
+// shares one budget a frame (PursuitDials.SolvesPerFrame, 2), counted in
+// solves, never wall time. Advance keeps RechasesPerFrame of it back for this
+// loop. A start past the budget is a live chase that owes its route (the wolf
+// stands, but the combat status already reads him chased); Advance serves it
+// on a later frame, before any re-path. A re-chase past it is deferred like
+// one past the cap and asked again next frame.
 func (v *Game) startChasesForTheAware() {
 	if v.notice == nil || v.pursuit == nil {
 		return
@@ -1696,7 +1705,8 @@ func (v *Game) startChasesForTheAware() {
 
 		// A chase on another quarry is moved under the frame's re-chase
 		// budget (Pursuit.Rechase, the R2 review B's B2): one A* a frame;
-		// the rest follow on the frames after.
+		// the rest follow on the frames after. Starts and re-chases alike
+		// are held by the per-frame solve budget (SolvesPerFrame).
 		v.pursuit.Rechase(hunter, pair.Target)
 	}
 }

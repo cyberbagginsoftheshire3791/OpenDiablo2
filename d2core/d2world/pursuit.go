@@ -47,6 +47,19 @@ type Pursuit struct {
 	// asked again the next frame). Reported for the benchmark and the tests;
 	// not in the provider, so not saved.
 	rechasesDeferred int
+
+	// solvedThisFrame counts the A* solves (Router.Route calls) since the
+	// last Advance, against SolvesPerFrame (the per-frame solve budget, 2
+	// Oct 2026). Like rechasedThisFrame, Advance zeroes it before it serves
+	// anything, so its value between two frames is never read: not saved.
+	solvedThisFrame int
+
+	// queued counts, over the pursuit's life, each time the budget left a
+	// wanted solve for a later frame: a re-path or a first route Advance
+	// could not serve, and a world chase start (Rechase on a hunter with no
+	// chase) left without its route. Reported for the benchmark and the
+	// tests; not in the provider, so not saved.
+	queued int
 }
 
 // PursuitDials are the numbers M4.3a ships with. Every one is a [DIAL].
@@ -100,6 +113,26 @@ type PursuitDials struct {
 	// old quarry for now; the next frame's startChasesForTheAware asks again,
 	// so the rest follow one a frame. A first chase is never capped. 1.
 	RechasesPerFrame int
+
+	// SolvesPerFrame is the per-frame A* budget (2 Oct 2026): how many
+	// routes Pursuit solves between two Advances, shared by the re-paths
+	// and first routes Advance serves, the world's chase starts and its
+	// re-chases (Rechase). One solve on the village costs 1.5-2.6 ms on the
+	// mean and up to 13-42 ms at worst (the R2 review), against a 2 ms
+	// frame, so a burst -- a pack noticing him at once, the chases begun
+	// together falling due together, a long step making every chase due --
+	// must not land in one frame. It counts SOLVES, never wall time, so
+	// the sim stays deterministic and a resume exact.
+	//
+	// Advance serves the wanted solves oldest first and keeps
+	// RechasesPerFrame of the budget back for the re-chases and starts that
+	// follow it in the frame (Game.startChasesForTheAware runs after it),
+	// so neither side can starve the other: a re-chase finds its unit every
+	// frame, and Advance serves at least one solve every frame. Past the
+	// budget a chase keeps the route it is walking (or stands, if it has
+	// none yet) and is served on a later frame. 0 switches the budget off
+	// (every solve at once, as before). [DIAL] 2.
+	SolvesPerFrame int
 }
 
 // DefaultPursuitDials are the signed §4 starting values.
@@ -110,6 +143,7 @@ func DefaultPursuitDials() PursuitDials {
 		MinRepathMinutes: 2.0,
 		ProgressTiles:    0.5,
 		RechasesPerFrame: 1,
+		SolvesPerFrame:   2,
 	}
 }
 
@@ -196,6 +230,11 @@ func (p *Pursuit) Close() { d2harness.Unregister(p) }
 // One hunter chases one thing: starting a second chase replaces the first,
 // because a creature running at two targets at once is a bug wearing a
 // feature's clothes.
+//
+// A script's chase (Game.Pursue, strigoi_pursue) comes here and is never held
+// by the solve budget: a script that starts a chase reads its route at once.
+// Its solve still counts against the frame's budget, so the world's own
+// solves in that frame shrink by it. The world's chases come through Rechase.
 func (p *Pursuit) Chase(hunter Hunter, quarry Quarry) {
 	if hunter == nil || quarry == nil {
 		return
@@ -218,22 +257,91 @@ func (p *Pursuit) Chase(hunter Hunter, quarry Quarry) {
 // chase keeps its old quarry and Rechase reports false -- the next frame asks
 // again. Anything else (no chase yet, or one on this quarry) is Chase. A
 // script's strigoi_pursue is Chase, never capped.
+//
+// The per-frame solve budget (SolvesPerFrame, 2 Oct 2026) holds it too. A
+// re-chase past the budget is deferred exactly as past the cap: the chase
+// keeps its old quarry and its route, Rechase reports false, and the next
+// frame asks again (Advance keeps RechasesPerFrame of each frame's budget back
+// for it, so it is never starved). A START past the budget -- a hunter with no
+// chase yet -- is begun without its route: the chase is live (ChasersOf names
+// it, so the combat status reads him chased from the frame he is noticed) but
+// owes its first solve, and the hunter stands until Advance serves it, first
+// of everything it serves (see Advance). Such a chase is the one with no solve
+// yet (chase.solves 0), which the world file already carries, so the queue is
+// derived from the saved chases and adds nothing to the file.
 func (p *Pursuit) Rechase(hunter Hunter, quarry Quarry) bool {
 	if hunter == nil || quarry == nil {
 		return false
 	}
 
-	if old, ok := p.chases[hunter.HunterID()]; ok && old.quarry != nil && old.quarry.QuarryID() != quarry.QuarryID() &&
+	old, has := p.chases[hunter.HunterID()]
+
+	if has && old.quarry != nil && old.quarry.QuarryID() != quarry.QuarryID() &&
 		p.dials.RechasesPerFrame > 0 && p.rechasedThisFrame >= p.dials.RechasesPerFrame {
 		p.rechasesDeferred++
 
 		return false
 	}
 
+	if !p.budgetLeft() {
+		if has {
+			p.rechasesDeferred++
+
+			return false
+		}
+
+		// A start: live now, its route owed.
+		p.chases[hunter.HunterID()] = &chase{hunter: hunter, quarry: quarry, fromWatch: true}
+		p.queued++
+
+		return true
+	}
+
 	p.Chase(hunter, quarry)
 	p.chases[hunter.HunterID()].fromWatch = true
 
 	return true
+}
+
+// budgetLeft is whether the frame's solve budget has a solve left.
+func (p *Pursuit) budgetLeft() bool {
+	return p.dials.SolvesPerFrame <= 0 || p.solvedThisFrame < p.dials.SolvesPerFrame
+}
+
+// advanceBudget is how many solves Advance may make itself: the frame's
+// budget less what it keeps back for the re-chases and starts after it
+// (RechasesPerFrame), and never less than one, so the queue always drains.
+// 0 is no limit.
+func (p *Pursuit) advanceBudget() int {
+	b := p.dials.SolvesPerFrame
+	if b <= 0 {
+		return 0
+	}
+
+	keep := p.dials.RechasesPerFrame
+	if keep < 0 {
+		keep = 0
+	}
+
+	if keep > b-1 {
+		keep = b - 1
+	}
+
+	return b - keep
+}
+
+// Queued is how many chases owe their first route now (started past the
+// budget, not yet served). Derived from the chases: a chase with no solve.
+func (p *Pursuit) Queued() int {
+	n := 0
+
+	for _, c := range p.chases {
+		if c.solves == 0 {
+			n++
+		}
+	}
+
+	return n
 }
 
 // Release ends a chase. A provider that reports a collection needs a verb
@@ -348,12 +456,36 @@ func (p *Pursuit) GiveUpOnTheForgotten(n *Notice) []string {
 func (p *Pursuit) Solves() int { return p.solves }
 
 // Advance steps every live chase by the world minutes that just passed.
+//
+// It first finds every chase that wants a solve -- one that owes its first
+// route (begun past the budget: Rechase), and the re-paths M4.3a's rules
+// call for -- and then serves them under the frame's solve budget
+// (SolvesPerFrame less the RechasesPerFrame it keeps back), in a stable
+// order: first routes before re-paths (a hunter with no route stands; one
+// with a stale route is still walking), then the longest since its last solve
+// (sinceSolve: a chase passed over keeps counting while a served one starts
+// again from zero, so the oldest is served first and every wait is bounded),
+// then the hunter id. A chase passed over keeps the route it is walking and
+// is asked about again next frame from its own state, which the world file
+// carries: the queue is derived, never saved.
+//
+// Oldest first, NOT his own chasers first: Pursuit names no player, and a
+// priority class would let one side's re-paths starve the other's; with the
+// budget's numbers a chaser waits a few frames at most (the burst benchmark),
+// which is not visible on a walk.
+//
+// With no budget (SolvesPerFrame 0) every wanted solve is served, which is
+// exactly the old rule: the router is a pure function of two points on a
+// fixed map, so solving after the scan rather than during it changes no route.
 func (p *Pursuit) Advance(worldMinutes float64) {
 	p.rechasedThisFrame = 0
+	p.solvedThisFrame = 0
 
 	if worldMinutes <= 0 || len(p.chases) == 0 {
 		return
 	}
+
+	var want []*chase
 
 	// Iterate in a fixed order. Ranging a map is randomised in Go, and these
 	// solves feed entity positions, which are inside the state digest -- the
@@ -365,21 +497,28 @@ func (p *Pursuit) Advance(worldMinutes float64) {
 		hx, hy := c.hunter.HunterAt()
 		qx, qy := c.quarry.QuarryAt()
 
-		if distance(hx, hy, qx, qy) <= p.dials.ArriveWithin {
-			// Caught up. Stand there; M4.5 decides what happens next.
-			c.arrived = true
+		c.arrived = distance(hx, hy, qx, qy) <= p.dials.ArriveWithin
+
+		// Owed its first route (begun past the budget): served whatever
+		// else is true, even beside its quarry -- the hunter is still walking
+		// whatever it walked before the chase began.
+		if c.solves == 0 {
+			want = append(want, c)
 
 			continue
 		}
 
-		c.arrived = false
+		if c.arrived {
+			// Caught up. Stand there; M4.5 decides what happens next.
+			continue
+		}
 
 		if c.sinceSolve < p.dials.MinRepathMinutes {
 			continue
 		}
 
 		if distance(qx, qy, c.solvedAtX, c.solvedAtY) >= p.dials.RepathTiles {
-			p.solve(c)
+			want = append(want, c)
 
 			continue
 		}
@@ -406,8 +545,30 @@ func (p *Pursuit) Advance(worldMinutes float64) {
 		// close in and bounds the loop, because a hunter that has stopped
 		// making progress stops asking.
 		if c.reachable || distance(hx, hy, qx, qy) < c.solvedDistance-p.dials.ProgressTiles {
-			p.solve(c)
+			want = append(want, c)
 		}
+	}
+
+	// want is in hunter-id order; a stable sort keeps it as the last key.
+	sort.SliceStable(want, func(i, j int) bool {
+		a, b := want[i], want[j]
+		if (a.solves == 0) != (b.solves == 0) {
+			return a.solves == 0
+		}
+
+		return a.sinceSolve > b.sinceSolve
+	})
+
+	limit := p.advanceBudget()
+
+	for i, c := range want {
+		if limit > 0 && i >= limit {
+			p.queued += len(want) - i
+
+			break
+		}
+
+		p.solve(c)
 	}
 }
 
@@ -424,6 +585,7 @@ func (p *Pursuit) solve(c *chase) {
 	c.reachable = reachable
 	c.solves++
 	p.solves++
+	p.solvedThisFrame++
 
 	// A partial route is still worth walking: the bounded search returns the
 	// best approach it managed, which is how "cannot reach you" stays "gets as
@@ -500,6 +662,12 @@ func (p *Pursuit) HarnessState() map[string]interface{} {
 		"arrive_within":      p.dials.ArriveWithin,
 		"min_repath_minutes": p.dials.MinRepathMinutes,
 		"rechases_per_frame": p.dials.RechasesPerFrame,
+
+		// The per-frame solve budget (2 Oct 2026): the dial, and how many
+		// chases owe their first route now (derived from the chases, so a
+		// resume reports the same).
+		"solves_per_frame": p.dials.SolvesPerFrame,
+		"queued":           p.Queued(),
 	}
 }
 

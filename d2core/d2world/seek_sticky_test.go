@@ -396,12 +396,13 @@ func TestAWatchOnTheDeadIsNoAwarePair(t *testing.T) {
 // on her within eight frames. The control: the budget off (0), and all eight
 // solve in the one frame (the review measured 8; worst solve 42 ms).
 func TestRechaseIsCappedAFrame(t *testing.T) {
-	run := func(perFrame int) (inTheLongFrame, framesToAll int) {
+	run := func(perFrame, solvesPerFrame int) (inTheLongFrame, framesToAll int) {
 		w := newSeekWorld(t, nil, nil)
 		p, _ := newTestPursuit(true)
 		t.Cleanup(p.Close)
 
 		p.dials.RechasesPerFrame = perFrame
+		p.dials.SolvesPerFrame = solvesPerFrame
 		him := &fakeQuarry{id: "p:1", x: 10}
 		w.quarries = []Quarry{him}
 
@@ -459,11 +460,14 @@ func TestRechaseIsCappedAFrame(t *testing.T) {
 		return inTheLongFrame, framesToAll
 	}
 
-	in, after := run(DefaultPursuitDials().RechasesPerFrame)
+	in, after := run(DefaultPursuitDials().RechasesPerFrame, DefaultPursuitDials().SolvesPerFrame)
 	require.Equal(t, 1, in, "one re-chase solve in the long step's frame")
 	require.Equal(t, 7, after, "and the other seven one a frame after")
 
-	in, after = run(0)
+	// The control: no re-chase cap and no solve budget (the per-frame solve
+	// budget, 2 Oct 2026, would hold them too: its own tests are in
+	// pursuit_budget_test.go).
+	in, after = run(0, 0)
 	require.Equal(t, 8, in, "the control: no budget, all eight solve in the one frame")
 	require.Zero(t, after)
 }
