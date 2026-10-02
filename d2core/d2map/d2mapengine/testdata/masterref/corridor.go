@@ -1,4 +1,8 @@
-package d2mapengine
+package masterref
+
+import (
+	"container/heap"
+)
 
 // The corridor: a route too long for one bounded subtile search.
 //
@@ -123,123 +127,45 @@ func (m *MapEngine) coarseStep(a, b, goal subTile) bool {
 	return true
 }
 
-// tileEdges is one tile's cached lines (searchScratch.edges).
-type tileEdges struct {
-	stamp uint32
-	known uint8
-	open  uint8
-}
-
-// edgeOf is the direction bit of an orthogonal step: E, W, S, N.
-func edgeOf(dx, dy int) uint8 {
-	switch {
-	case dx > 0:
-		return 1
-	case dx < 0:
-		return 2
-	case dy > 0:
-		return 4
-	}
-
-	return 8
-}
-
-// lineOpen is MapEngine.lineOpen remembered for the corridor search in hand
-// (BUG-115): a diagonal step walks four lines and every tile is asked about by
-// up to eight neighbours, so the same line was walked again and again -- the
-// tile search's whole cost. The line from a to b is a pure function of the
-// map, so remembering it within one search changes no corridor. The goal's
-// own line (skipLast) is walked fresh, as it differs.
-func (s *searchScratch) lineOpen(m *MapEngine, a, b subTile, skipLast bool) bool {
-	if skipLast {
-		return m.lineOpen(a, b, true)
-	}
-
-	e := &s.edges[a.y*s.tileWidth+a.x]
-	if e.stamp != s.tileStamp {
-		*e = tileEdges{stamp: s.tileStamp}
-	}
-
-	bit := edgeOf(b.x-a.x, b.y-a.y)
-	if e.known&bit == 0 {
-		e.known |= bit
-
-		if m.lineOpen(a, b, false) {
-			e.open |= bit
-		}
-	}
-
-	return e.open&bit != 0
-}
-
-// coarseStep is MapEngine.coarseStep over the remembered lines.
-func (s *searchScratch) coarseStep(m *MapEngine, a, b, goal subTile) bool {
-	if a.x == b.x || a.y == b.y {
-		return s.lineOpen(m, a, b, b == goal)
-	}
-
-	for _, via := range [2]subTile{{b.x, a.y}, {a.x, b.y}} {
-		if !s.lineOpen(m, a, via, false) || !s.lineOpen(m, via, b, b == goal) {
-			return false
-		}
-	}
-
-	return true
-}
-
 // coarsePath is the tile-level A*: the corridor's tiles from start to goal
 // inclusive, or nil when there is none within the budget.
 func (m *MapEngine) coarsePath(start, goal subTile) []subTile {
-	s := m.acquireScratch()
-	defer m.releaseScratch(s)
-
-	return s.coarsePath(m, start, goal)
-}
-
-// coarsePath is the tile-level A* in the scratch's tile grid (BUG-115: it kept
-// two maps keyed by the subTile struct and a container/heap of pointers; the
-// same search, the same total order, so the same corridor --
-// TestCoarsePathMatchesTheReference).
-func (s *searchScratch) coarsePath(m *MapEngine, start, goal subTile) []subTile {
 	if m.tileCoordinateToIndex(goal.x, goal.y) < 0 || m.tileCoordinateToIndex(start.x, start.y) < 0 {
 		return nil
 	}
 
-	s.beginTiles()
-	s.coarseRuns++
+	cameFrom := make(map[subTile]subTile)
+	bestCost := map[subTile]int{start: 0}
 
-	stamp, width := s.tileStamp, s.tileWidth
-	s.tileCells[start.y*width+start.x] = searchCell{stamp: stamp, cost: 0, step: noStep}
+	open := &nodeQueue{{x: start.x, y: start.y, g: 0, h: octileDistance(start.x, start.y, goal.x, goal.y)}}
+	heap.Init(open)
 
-	open := s.open[:0]
-	open.push(node(start.x, start.y, 0, octileDistance(start.x, start.y, goal.x, goal.y)))
+	for expanded := 0; open.Len() > 0 && expanded < maxCoarseExpanded; {
+		current, ok := heap.Pop(open).(*pathNode)
+		if !ok {
+			return nil
+		}
 
-	defer func() { s.open = open }()
+		here := subTile{current.x, current.y}
 
-	for expanded := 0; len(open) > 0 && expanded < maxCoarseExpanded; {
-		current := open.pop()
-
-		here := subTile{int(current.x), int(current.y)}
-		g := int(current.g)
-
-		if c := s.tileCells[here.y*width+here.x]; c.stamp == stamp && g > int(c.cost) {
+		if cost, seen := bestCost[here]; seen && current.g > cost {
 			continue
 		}
 
 		if here == goal {
-			return s.chain(start, goal)
+			return chain(cameFrom, start, goal)
 		}
 
 		expanded++
 
-		for k, offset := range neighbourOffsets {
+		for _, offset := range neighbourOffsets {
 			next := subTile{here.x + offset.x, here.y + offset.y}
 
 			if m.tileCoordinateToIndex(next.x, next.y) < 0 {
 				continue
 			}
 
-			if !s.coarseStep(m, here, next, goal) {
+			if !m.coarseStep(here, next, goal) {
 				continue
 			}
 
@@ -248,72 +174,69 @@ func (s *searchScratch) coarsePath(m *MapEngine, start, goal subTile) []subTile 
 				step = costDiagonal
 			}
 
-			cost := g + step
-
-			c := &s.tileCells[next.y*width+next.x]
-			if c.stamp == stamp && cost >= int(c.cost) {
+			cost := current.g + step
+			if prev, seen := bestCost[next]; seen && cost >= prev {
 				continue
 			}
 
-			*c = searchCell{stamp: stamp, cost: int32(cost), step: uint8(k)}
+			bestCost[next] = cost
+			cameFrom[next] = here
 
-			open.push(node(next.x, next.y, cost, octileDistance(next.x, next.y, goal.x, goal.y)))
+			heap.Push(open, &pathNode{x: next.x, y: next.y, g: cost, h: octileDistance(next.x, next.y, goal.x, goal.y)})
 		}
 	}
 
 	return nil
 }
 
-// chain walks the tile grid's steps back from goal to start and returns
-// start..goal.
-func (s *searchScratch) chain(start, goal subTile) []subTile {
-	if start == goal {
-		return []subTile{goal}
+// chain walks came-from links back from goal to start and returns start..goal.
+func chain(cameFrom map[subTile]subTile, start, goal subTile) []subTile {
+	reversed := []subTile{goal}
+
+	for node := goal; node != start; {
+		prev, ok := cameFrom[node]
+		if !ok {
+			return nil
+		}
+
+		reversed = append(reversed, prev)
+		node = prev
 	}
 
-	tail := s.walk(s.tileCells, s.tileStamp, s.tileWidth, start, goal)
-	if tail == nil {
-		return nil
+	out := make([]subTile, len(reversed))
+	for i, node := range reversed {
+		out[len(reversed)-1-i] = node
 	}
 
-	return append([]subTile{start}, tail...)
+	return out
 }
 
 // corridorRoute is the long way round: a coarse corridor, walked leg by leg
 // with the ordinary search. It returns the joined subtile steps (the first
 // step after from through goal) and true only when every leg arrived.
 func (m *MapEngine) corridorRoute(from, goal subTile) ([]subTile, bool) {
-	s := m.acquireScratch()
-	defer m.releaseScratch(s)
-
-	steps, ok, _ := s.corridorRoute(m, from, goal)
-
-	return steps, ok
-}
-
-// corridorRoute is corridorRoute in the scratch, also counting the leg
-// searches it ran.
-func (s *searchScratch) corridorRoute(m *MapEngine, from, goal subTile) (steps []subTile, ok bool, legs int) {
 	// Off the map on the negative side: integer division would fold -3 onto
 	// tile 0, so refuse here rather than route to the wrong tile.
 	if from.x < 0 || from.y < 0 || goal.x < 0 || goal.y < 0 {
-		return nil, false, 0
+		return nil, false
 	}
 
 	// A blocked goal can never be reached exactly; the last leg would only
 	// burn its budget finding that out again.
 	if m.blockedAt(goal.x, goal.y) {
-		return nil, false, 0
+		return nil, false
 	}
 
-	tiles := s.coarsePath(m, tileOf(from), tileOf(goal))
+	tiles := m.coarsePath(tileOf(from), tileOf(goal))
 
 	// A corridor of one leg or less is a walk the ordinary search would have
 	// finished well inside its budget had the fine route existed -- its only
 	// leg would BE the search that just failed. Nothing to gain.
 	if len(tiles)-1 <= corridorLeg {
-		return nil, false, 0
+		return nil, false
 	}
+
+	var steps []subTile
 
 	spent := 0
 
@@ -330,17 +253,16 @@ func (s *searchScratch) corridorRoute(m *MapEngine, from, goal subTile) (steps [
 			target = goal
 		}
 
-		leg := s.search(m, here, target)
-		legs++
+		leg := m.search(here, target)
 
 		spent += leg.expanded
 		if !leg.exact || spent > maxCorridorExpanded {
-			return nil, false, legs
+			return nil, false
 		}
 
-		steps = append(steps, leg.steps...)
+		steps = append(steps, leg.route(here)...)
 		here, at = target, next
 	}
 
-	return steps, len(steps) > 0, legs
+	return steps, len(steps) > 0
 }

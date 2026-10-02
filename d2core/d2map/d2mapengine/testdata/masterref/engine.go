@@ -1,11 +1,10 @@
-package d2mapengine
+package masterref
 
 import (
 	"fmt"
 	"image"
 	"math/rand"
 	"strings"
-	"sync"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2records"
 
@@ -59,9 +58,6 @@ type MapEngine struct {
 	towers         []image.Rectangle
 	towerSight     []float64
 	authoredRegion *authoredRegion
-	// village is an authored map's households, hotar and watch posts (the
-	// raid's R3a, village.go); empty on a generated map.
-	village AuthoredVillage
 
 	// Which authored bits line of sight obeys. Set explicitly in
 	// CreateMapEngine rather than left to the zero value, because the zero
@@ -70,14 +66,6 @@ type MapEngine struct {
 	// MapEngine.sightBlocked in pathfind.go for the measurements behind all
 	// three.
 	sightRule SightRule
-
-	// scratch is the A*'s reusable working memory (scratch.go, BUG-115): a
-	// dense per-map grid in place of a map per search. Taken under scratchMu
-	// for one search or one RouteQuery and given back after; a caller that
-	// finds it taken (another goroutine) works in a fresh one. Never part of
-	// the map's state: no route depends on what it held before.
-	scratchMu sync.Mutex
-	scratch   *searchScratch
 
 	// https://github.com/OpenDiablo2/OpenDiablo2/issues/789
 	IsLoading bool // (temp) Whether we have processed the GenerateMapPacket(only for remote client)
@@ -181,7 +169,6 @@ func (m *MapEngine) resetState(width, height int) {
 	m.towers = nil
 	m.towerSight = nil
 	m.authoredRegion = nil
-	m.village = AuthoredVillage{}
 }
 
 func (m *MapEngine) addDT1(fileName string) {

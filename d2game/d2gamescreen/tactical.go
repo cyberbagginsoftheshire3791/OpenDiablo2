@@ -6,6 +6,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
@@ -209,6 +210,15 @@ func (v *Game) tacticalRoute(selfID string, fx, fy, tx, ty float64) (path [][2]f
 		return taken[[2]int{int(math.Floor(tileX)), int(math.Floor(tileY))}]
 	}
 
+	// One query for every candidate, as mapRouter.Route (BUG-115): a tile
+	// proven out of reach is skipped, which routeExact would have refused.
+	var q *d2mapengine.RouteQuery
+
+	if r.engine != nil {
+		q = r.engine.NewRouteQuery(d2vector.NewPositionTile(fx, fy))
+		defer q.Close()
+	}
+
 	for _, n := range unblockedNeighbours(fx, fy, tx, ty, blocked) {
 		gx, gy := tx+n[0], ty+n[1]
 
@@ -217,7 +227,11 @@ func (v *Game) tacticalRoute(selfID string, fx, fy, tx, ty float64) (path [][2]f
 			return nil, 0, true
 		}
 
-		route, reachable := r.routeExact(fx, fy, gx, gy)
+		if q == nil || q.ProvenUnreachable(d2vector.NewPositionTile(gx, gy), int(math.Floor(gx)), int(math.Floor(gy))) {
+			continue
+		}
+
+		route, reachable := routeIn(q, gx, gy)
 		if !reachable {
 			continue
 		}

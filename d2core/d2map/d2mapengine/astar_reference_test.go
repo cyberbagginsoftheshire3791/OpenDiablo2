@@ -8,6 +8,64 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// pathNode is one entry in the reference searches' open set.
+type pathNode struct {
+	x, y int
+	g, h int
+}
+
+// nodeQueue is the reference searches' container/heap of *pathNode (the
+// production searches' was until BUG-115; they now use openSet, the same
+// order on values).
+type nodeQueue []*pathNode
+
+func (q nodeQueue) Len() int { return len(q) }
+
+// Less is a TOTAL order, and that is the point. Ordering on f alone leaves
+// equal-f nodes to be separated by whatever the heap happens to do with them,
+// which is stable within a process but not something to rely on across builds.
+// Falling through f -> h -> y -> x leaves no ties at all: two distinct nodes
+// can never compare equal, because no two share a coordinate pair.
+func (q nodeQueue) Less(i, j int) bool {
+	a, b := q[i], q[j]
+
+	if af, bf := a.g+a.h, b.g+b.h; af != bf {
+		return af < bf
+	}
+
+	if a.h != b.h {
+		return a.h < b.h
+	}
+
+	if a.y != b.y {
+		return a.y < b.y
+	}
+
+	return a.x < b.x
+}
+
+func (q nodeQueue) Swap(i, j int) { q[i], q[j] = q[j], q[i] }
+
+func (q *nodeQueue) Push(x interface{}) { *q = append(*q, x.(*pathNode)) }
+
+func (q *nodeQueue) Pop() interface{} {
+	old := *q
+	n := len(old)
+	item := old[n-1]
+	old[n-1] = nil
+	*q = old[:n-1]
+
+	return item
+}
+
+// blockedAtReference is blockedAt as it stood before BUG-115: through
+// SubTileAt and GetSubTileFlags' lookup table.
+func (m *MapEngine) blockedAtReference(x, y int) bool {
+	flags := m.SubTileAt(x, y)
+
+	return flags == nil || flags.BlockWalk
+}
+
 // THE REFERENCE SEARCH (2 Oct 2026). searchReference is search() exactly as it
 // stood before the per-frame A* budget's burst made it cheaper -- two maps
 // keyed by the subTile struct, container/heap over *pathNode -- kept here so
@@ -59,15 +117,15 @@ func (m *MapEngine) searchReference(start, goal subTile) referenceResult {
 		for _, offset := range neighbourOffsets {
 			next := subTile{current.x + offset.x, current.y + offset.y}
 
-			if m.blockedAt(next.x, next.y) {
+			if m.blockedAtReference(next.x, next.y) {
 				continue
 			}
 
 			step := costOrthogonal
 
 			if offset.x != 0 && offset.y != 0 {
-				if m.blockedAt(current.x+offset.x, current.y) ||
-					m.blockedAt(current.x, current.y+offset.y) {
+				if m.blockedAtReference(current.x+offset.x, current.y) ||
+					m.blockedAtReference(current.x, current.y+offset.y) {
 					continue
 				}
 

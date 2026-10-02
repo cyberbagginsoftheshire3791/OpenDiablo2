@@ -1778,13 +1778,33 @@ var routeNeighbours = [8][2]float64{
 // M4.5 ask 8, its own burst as signed. ArriveWithin moves with it: a diagonal
 // stop sits at 1.414, and against the old 1.0 it would never report arrived
 // and would re-solve on the re-path cadence forever.
+//
+// ONE QUERY FOR ALL NINE ATTEMPTS (BUG-115, 2 Oct 2026). Each attempt was a
+// PathFind of its own -- a search to its 4,000-node cap and the corridor --
+// so a quarry in a sealed yard cost nine of each under one unit of the solve
+// budget. The attempts now share a d2mapengine.RouteQuery from the hunter's
+// subtile: a candidate the query has PROVEN cannot be reached (a sealed
+// region, or outside a start region a dry search enumerated) is skipped, and
+// a goal proven sealed spares its corridor. A proof is a fact of the map, so
+// the route returned is the one the nine searches returned
+// (TestARouteQueryAnswersAsTheReferenceDoes holds the loop to the old one);
+// the sealed yard now costs two searches and no corridor.
 func (r mapRouter) Route(fromX, fromY, toX, toY float64) ([][2]float64, bool) {
 	if r.engine == nil {
 		return nil, false
 	}
 
+	q := r.engine.NewRouteQuery(d2vector.NewPositionTile(fromX, fromY))
+	defer q.Close()
+
 	for _, n := range unblockedNeighbours(fromX, fromY, toX, toY, r.blockedTile) {
-		beside, ok := r.routeExact(fromX, fromY, toX+n[0], toY+n[1])
+		gx, gy := toX+n[0], toY+n[1]
+
+		if q.ProvenUnreachable(d2vector.NewPositionTile(gx, gy), int(math.Floor(gx)), int(math.Floor(gy))) {
+			continue // routeExact would come back not reaching
+		}
+
+		beside, ok := routeIn(q, gx, gy)
 		if ok {
 			return beside, true
 		}
@@ -1793,7 +1813,7 @@ func (r mapRouter) Route(fromX, fromY, toX, toY float64) ([][2]float64, bool) {
 	// Nothing beside the quarry can be reached -- it is in a doorway, or
 	// walled in. Standing on its own tile is then the best available answer
 	// and is what every build before this one did everywhere.
-	path, reachable := r.routeExact(fromX, fromY, toX, toY)
+	path, reachable := routeIn(q, toX, toY)
 	if reachable {
 		return path, true
 	}
@@ -1890,10 +1910,16 @@ func (r mapRouter) blockedTile(tileX, tileY float64) bool {
 
 // routeExact asks for a route to precisely the given point.
 func (r mapRouter) routeExact(fromX, fromY, toX, toY float64) ([][2]float64, bool) {
-	path := r.engine.PathFind(
-		d2vector.NewPositionTile(fromX, fromY),
-		d2vector.NewPositionTile(toX, toY),
-	)
+	q := r.engine.NewRouteQuery(d2vector.NewPositionTile(fromX, fromY))
+	defer q.Close()
+
+	return routeIn(q, toX, toY)
+}
+
+// routeIn is routeExact from a query's start (the same PathFind, the same
+// conversion, the same reachable).
+func routeIn(q *d2mapengine.RouteQuery, toX, toY float64) ([][2]float64, bool) {
+	path := q.PathFind(d2vector.NewPositionTile(toX, toY))
 
 	out := make([][2]float64, 0, len(path))
 
