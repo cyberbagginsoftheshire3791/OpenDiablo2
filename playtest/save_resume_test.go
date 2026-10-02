@@ -31,9 +31,11 @@ import (
 // "stops at that point then resumes at that point" only if it does so with a
 // pack after him, and every dusk, night and dawn save measured is hunted.
 // Act 7 is B3's (the save verb and its refusals), run first in a process of
-// its own (saveVerbActs, below). Act 8 is rule 4 (a save mid-walk, B4b). The
-// omit sweep of act 9 is TestSaveResumeNegatives (B4b, opt-in; B6's to
-// finish).
+// its own (saveVerbActs, below). Act 8 is rule 4 (a save mid-walk, B4b). Act
+// 9 is the omit sweep (M4.6 B6; omitSweep, save_resume_negatives_test.go):
+// every block of the world file dropped in turn from T's file, each resume
+// diverging or refused with its reason -- run last, on this evening, so the
+// suite builds the evening once.
 //
 //	1  Seed 99, stepped, the default game. A night that fills every block:
 //	   the kit (the default loadout); a fight by day, a dog slain and LEFT
@@ -131,6 +133,10 @@ import (
 //	   moment resumes exactly, runs on the same, and each slain lies where
 //	   the saved game's lies. (A death saved at its frame is
 //	   TestSaveResumeMidAction's: a village fight, which he is not in.)
+//	9  THE OMIT SWEEP (M4.6 B6), after 6i: the untouched file resumes S_T
+//	   (the control of the controls), then every block of d2save.Blocks is
+//	   omitted, and emptied, in turn: each resume diverges where the block
+//	   lives or is refused with the block's own rule.
 //
 // THE COMPARISON (BUG-58 fixed, 29 Sep 2026): the digest's resume_digest is
 // every part a resumed game must reproduce -- not sim (the harness's clock)
@@ -1571,6 +1577,9 @@ func eveningActs4to6(t *testing.T, ev evening) {
 
 	// --- 6i (the B4b review fixes): a save in the death window --------------
 	deathWindowAct6i(t, s, ev)
+
+	// --- 9 (M4.6 B6): the omit sweep, every block dropped in turn ------------
+	omitSweep(t, s, ev)
 }
 
 // actThree puts his files back as act 3 left them -- his .od2 and sidecar two

@@ -1,9 +1,11 @@
 package d2gamescreen
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2harness"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 )
 
@@ -16,7 +18,8 @@ import (
 //
 // It answers three seams: d2world.Kits (the resolver reads his weapon, his
 // mail and his shield), d2player.KitHolder (the panel and the torch key), and
-// the harness through the "ui" provider.
+// the harness through the "ui" provider (the panel's rows) and, since M4.6 B6,
+// the "kit" provider (the kit itself; BUG-113).
 
 // itemCatalogPath is the shipped item table.
 const itemCatalogPath = "/data/strigoi/items.json"
@@ -27,6 +30,8 @@ func (v *Game) bindKit() {
 	if v.items == nil {
 		return
 	}
+
+	d2harness.Register(kitProvider{v}) // M4.6 B6, BUG-113
 
 	v.kitPath = d2items.SidecarPath(v.gameClient.SaveFilePath)
 
@@ -300,3 +305,41 @@ func (v *Game) eatFromPack(i int) error {
 
 // eatSlack is how much of a piece may overflow the food meter [DIAL].
 const eatSlack = 5.0
+
+// kitProvider is the "kit" harness system (M4.6 B6; BUG-113): what he
+// carries -- the loadout, every worn slot and the pack, each item as the
+// sidecar writes it (item, make, condition, count, points, burn_left) --
+// read-only, and all of it in the state digest's world part.
+//
+// Before it the digest held no kit at all: the ui provider's kit_rows are the
+// panel's rows, built only while the panel is open, so a game resumed with
+// another kit than the saved one -- an emptied pack, a lost blade -- compared
+// equal (the omit sweep's "empty sidecar.kit.pack" row, measured 2 Oct 2026:
+// resumed the saved moment). The off-hand torch's burn_left is the live
+// kit's: zero while his torch burns in the light model's carried source (D1),
+// which a resume zeroes the same way.
+type kitProvider struct{ v *Game }
+
+func (p kitProvider) HarnessName() string { return "kit" }
+
+func (p kitProvider) HarnessState() map[string]interface{} {
+	if p.v.kit == nil {
+		return map[string]interface{}{"bound": false, "choosing_loadout": p.v.choosingLoadout}
+	}
+
+	state := map[string]interface{}{}
+
+	data, err := json.Marshal(p.v.kit)
+	if err == nil {
+		err = json.Unmarshal(data, &state)
+	}
+
+	if err != nil {
+		return map[string]interface{}{"bound": true, "error": err.Error()}
+	}
+
+	state["bound"] = true
+	state["choosing_loadout"] = p.v.choosingLoadout
+
+	return state
+}

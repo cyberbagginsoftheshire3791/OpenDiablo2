@@ -4,51 +4,65 @@ package playtest
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
 )
 
-// TestSaveResumeNegatives is the build plan's section 4 act 9 -- B6's sweep --
-// as far as B4b takes it (29 Sep 2026): every block B4b loads, dropped from a
-// hunted night's world file, must make the load diverge from the saved moment
-// (S_R0 != S_T) or refuse the file. "A block whose omission doesn't diverge
-// is a hole in observability, not a pass."
+// THE OMIT SWEEP (the build plan's section 4 act 9; M4.6 B6, 2 Oct 2026):
+// every top-level block of the world file, dropped in turn from the hunted
+// night's file at T, and the file resumed. Each must make the load either
+// DIVERGE from the saved moment (S_R0 != S_T, in the part or system the block
+// lives in) or REFUSE the file with the right reason (the load report's code
+// and, for a refusal of the file itself, d2save's rule). "A block whose
+// omission doesn't diverge is a hole in observability, not a pass."
 //
-// Two ways to drop a block, and both are run:
-//   - OMITTED, as strigoi_save_game{omit} writes it: the block's key gone.
-//     d2save.Decode refuses a missing block (a missing block is never an
-//     empty system), so every omission is refused at step 1 -- FILE -- and he
-//     begins at dawn: divergent, but by the file's own refusal, which proves
-//     the file needs the block and not that the load restores it.
-//   - EMPTIED: the block present and its content taken out (no entities, no
-//     bodies, no groups, no watches, no chases, no arrivals, no deployed
-//     squad). A file World.Check still takes resumes, and the load must then
-//     restore the emptiness: a load that ignored the block would resume the
-//     saved moment anyway and this act would go red. That is the half with
-//     teeth; the omitted half is the plan's.
+// The rows come from d2save.Blocks, so a block added to the file cannot be
+// forgotten: every block gets an OMITTED row (its key gone, as
+// strigoi_save_game{omit} writes it) by construction, and
+// TestTheOmitSweepCoversEveryBlock fails while any block has no EMPTIED row
+// (its content taken out, or for the one block a quiet evening leaves empty,
+// filled). The two halves prove different things (the B4b review's C6,
+// BUG-83):
 //
-// THE OMITTED HALF IS GREEN BY DESIGN, whatever the load does (the B4b review,
-// its C6; BUG-83 in the fixes): Decode refuses every missing block before
-// the load's own steps run, so no change to B4b's load could turn one of
-// those rows red. They pin Decode's rule, not the load. Read the emptied half
-// as this test's evidence that each block is RESTORED; the omitted half only
-// that a file without it is never resumed.
+//   - OMITTED: d2save.Decode refuses a missing block before the load's own
+//     steps run (block-missing; version's is a VERSION refusal), so these rows
+//     pin Decode's rule and the game's refusal path -- code, rule, set aside,
+//     dawn -- not the load's restore.
+//   - EMPTIED: the file differs from T's in that block alone. A load is
+//     deterministic, so if it never read the block the emptied file would
+//     resume exactly as the untouched one does -- S_T, which the control of
+//     the controls shows first. Divergence therefore proves the load READS the
+//     block; where the file's own checks refuse the emptied block, the row
+//     names the rule that does.
 //
-// And two more of the brief's: two entities' ids swapped (refused, or
-// divergent), and the untouched file -- the control of the controls, which
-// must resume the saved moment exactly.
+// One block is TOLERATED by design, and its row says so and holds it: build is
+// informational (World.Build: a load does not refuse another build's file of
+// the same version), so emptying it resumes T exactly. Omitting it is still
+// refused. Should a load ever start to read it, the row goes red and is
+// re-decided.
 //
-// OPT-IN: it runs against a hunted night a green TestSaveResume kept
-// (STRIGOI_SAVE_RESUME_FROM=<dir>, the evening's hero files at T and S_T),
-// and is skipped without one. Whether it joins the suite with its own acts
-// 1-3 (about two minutes more) is B6's to decide.
+// THE SWEEP RUNS IN THE SUITE as TestSaveResume's act 9, on the evening acts
+// 1-3 built, in the session acts 4-6i used: the evening is built once per
+// suite run, not per block, and one game at a time is loaded, so it is safe
+// under the suite's -parallel. Each load is a game start (about 1.3 s on the
+// laptop alone), each with the harness's 90 s wait.
+//
+// TestSaveResumeNegatives is the same sweep against an evening a green
+// TestSaveResume kept (STRIGOI_SAVE_RESUME_FROM), for the controls: a minute,
+// not four.
 func TestSaveResumeNegatives(t *testing.T) {
 	from := os.Getenv("STRIGOI_SAVE_RESUME_FROM")
 	if from == "" {
-		t.Skip("opt-in: set STRIGOI_SAVE_RESUME_FROM to an evening a green TestSaveResume kept")
+		t.Skip("the omit sweep runs in the suite as TestSaveResume's act 9; set STRIGOI_SAVE_RESUME_FROM " +
+			"to an evening a green TestSaveResume kept to run it alone")
 	}
 
 	ev := keptEvening(t, from)
@@ -57,90 +71,380 @@ func TestSaveResumeNegatives(t *testing.T) {
 	s.call("strigoi_pause", map[string]any{})
 	eveningHarness(t, s, ev) // a stale evening is refused, not compared (BUG-93)
 
-	type variant struct {
-		name   string
-		edit   func(file map[string]any)
-		resume bool // the file must still be one the load resumes (emptied, not refused)
+	omitSweep(t, s, ev)
+}
+
+// sweepWant is what a row's resume must show.
+type sweepWant int
+
+const (
+	// wantDiverge: the file resumes, and is not the saved moment -- in one of
+	// the row's moves when it names any.
+	wantDiverge sweepWant = iota
+	// wantRefused: the load refuses the file with the row's code (and rule).
+	wantRefused
+	// wantSame: the block is not read, by design (the row's why); the file
+	// resumes the saved moment exactly.
+	wantSame
+)
+
+// sweepRow is one variant of T's file: a block dropped one way.
+type sweepRow struct {
+	block string // the top-level block (d2save.Blocks) the row drops
+	name  string
+	edit  func(t *testing.T, file map[string]any)
+	want  sweepWant
+
+	// code and rule: wantRefused's load report refused and rule (rule ""
+	// for a refusal that is not d2save's -- a system's Validate, BLOCK).
+	code, rule string
+
+	// moves: wantDiverge's -- at least one of these ("part X", "system Y")
+	// differs from S_T. Empty: any divergence will do.
+	moves []string
+
+	// why: wantSame's reason the block is not read.
+	why string
+}
+
+// omitRows are the omitted half: one per block of d2save.Blocks, built from
+// it, so no block can lack one.
+func omitRows() []sweepRow {
+	rows := make([]sweepRow, 0, len(d2save.Blocks))
+
+	for _, b := range d2save.Blocks {
+		block := b
+		r := sweepRow{
+			block: block, name: "omit " + block, want: wantRefused,
+			code: "FILE", rule: d2save.ReasonBlockMissing,
+			edit: func(_ *testing.T, file map[string]any) { delete(file, block) },
+		}
+
+		// Decode reads the version before any block: a file without one is
+		// of no version this build reads (a *VersionError, "absent").
+		if block == "version" {
+			r.code, r.rule = "VERSION", d2save.ReasonVersion
+		}
+
+		rows = append(rows, r)
 	}
 
-	omit := func(block string) func(map[string]any) {
-		return func(file map[string]any) { delete(file, block) }
+	return rows
+}
+
+// emptyRows are the emptied half (and two of the B4b brief's own variants,
+// under entities). TestTheOmitSweepCoversEveryBlock holds every block to at
+// least one. Each was measured on the hunted evening (2 Oct 2026; the notes'
+// "B6") before its expectation was written, and each expectation is the
+// block's own: a refusal names the rule that guards that block, a divergence
+// the part or system the block restores.
+func emptyRows() []sweepRow {
+	set := func(block, field string, v any) func(*testing.T, map[string]any) {
+		return func(t *testing.T, file map[string]any) { blockOf(t, file, block)[field] = v }
 	}
 
-	variants := []variant{
-		{"omit entities", omit("entities"), false},
-		{"omit bodies", omit("bodies"), false},
-		{"omit spawns", omit("spawns"), false},
-		{"omit spawner", omit("spawner"), false},
-		{"omit notice", omit("notice"), false},
-		{"omit pursuit", omit("pursuit"), false},
-		{"omit squads", omit("squads"), false},
-		// Fog of war F3 (version 4). This evening is played without -fog, so
-		// its grid is empty and an emptied block would be the same file: the
-		// emptied half for fog is TestFogIsKept's act 5, on a fogged day.
-		{"omit fog", omit("fog"), false},
-		{"empty bodies", func(file map[string]any) { file["bodies"] = []any{} }, true},
-		{"empty spawns.groups", func(file map[string]any) { sub(file, "spawns")["groups"] = []any{} }, true},
-		{"empty spawner.arrival", func(file map[string]any) { sub(file, "spawner")["arrival"] = json.Number("0") }, true},
-		{"empty notice.watches", func(file map[string]any) { sub(file, "notice")["watches"] = []any{} }, true},
-		{"empty pursuit.chases", func(file map[string]any) { sub(file, "pursuit")["chases"] = []any{} }, true},
-		{"empty squads-deployed", func(file map[string]any) {
-			sq := sub(file, "squads")
+	return []sweepRow{
+		{block: "version", name: "empty version (0)", edit: func(_ *testing.T, f map[string]any) { f["version"] = json.Number("0") },
+			want: wantRefused, code: "VERSION", rule: d2save.ReasonVersion},
+		{block: "build", name: "empty build", edit: func(_ *testing.T, f map[string]any) { f["build"] = "" },
+			want: wantSame, why: "informational: a load does not refuse another build's file of the same version (World.Build)"},
+		{block: "saved_at", name: "empty saved_at", edit: func(_ *testing.T, f map[string]any) { f["saved_at"] = "" },
+			want: wantRefused, code: "FILE", rule: d2save.ReasonGeneration},
+		{block: "map", name: "empty map", edit: func(_ *testing.T, f map[string]any) {
+			f["map"] = map[string]any{"path": "", "sha": "", "generated": false}
+		}, want: wantRefused, code: "FILE", rule: d2save.ReasonMap},
+		{block: "seed", name: "empty seed (0)", edit: func(_ *testing.T, f map[string]any) { f["seed"] = "0" },
+			want: wantRefused, code: "FILE", rule: d2save.ReasonRNGStream},
+		{block: "rng", name: "empty rng.world (no draws)", edit: func(t *testing.T, f map[string]any) {
+			blockOf(t, blockOf(t, f, "rng"), "world")["draws"] = json.Number("0")
+		}, want: wantDiverge, moves: []string{"part rng"}},
+		{block: "rng", name: "empty rng.uuid (no bytes)", edit: func(t *testing.T, f map[string]any) {
+			blockOf(t, blockOf(t, f, "rng"), "uuid")["bytes"] = json.Number("0")
+		}, want: wantDiverge, moves: []string{"system uuid"}},
+		{block: "hero", name: "empty hero (facing, wind, run)", edit: func(t *testing.T, f map[string]any) {
+			h := blockOf(t, f, "hero")
+			h["facing"], h["stamina"], h["run"] = json.Number("0"), json.Number("0"), false
+		}, want: wantDiverge, moves: []string{"part entities"}},
+		// The sidecar is one block of five documents, each bound by its own
+		// code (bindKit, bindProgress, bindStanding, bindLand, bindJournal), so
+		// each is emptied on its own. The kit's row was the sweep's first find:
+		// no provider reported the kit, and it resumed the saved moment
+		// (BUG-113; the "kit" provider since).
+		{block: "sidecar", name: "empty sidecar.kit.pack", edit: func(t *testing.T, f map[string]any) {
+			blockOf(t, blockOf(t, f, "sidecar"), "kit")["pack"] = []any{}
+		}, want: wantDiverge, moves: []string{"system kit"}},
+		{block: "sidecar", name: "empty sidecar.progress (xp, talents)", edit: func(t *testing.T, f map[string]any) {
+			p := blockOf(t, blockOf(t, f, "sidecar"), "progress")
+			p["xp"], p["talents"] = json.Number("0"), []any{}
+		}, want: wantDiverge, moves: []string{"system progress"}},
+		{block: "sidecar", name: "empty sidecar.village (rep, flags)", edit: func(t *testing.T, f map[string]any) {
+			v := blockOf(t, blockOf(t, f, "sidecar"), "village")
+			v["rep"], v["flags"] = json.Number("0"), []any{}
+		}, want: wantDiverge, moves: []string{"system village"}},
+		{block: "sidecar", name: "empty sidecar.land (gathered)", edit: func(t *testing.T, f map[string]any) {
+			blockOf(t, blockOf(t, f, "sidecar"), "land")["gathered"] = json.Number("0")
+		}, want: wantDiverge, moves: []string{"system village"}},
+		{block: "sidecar", name: "empty sidecar.journal (written)", edit: func(t *testing.T, f map[string]any) {
+			blockOf(t, blockOf(t, f, "sidecar"), "journal")["written"] = map[string]any{}
+		}, want: wantDiverge, moves: []string{"system journal"}},
+		{block: "clock", name: "empty clock (elapsed 0)", edit: set("clock", "elapsed", json.Number("0")),
+			want: wantDiverge, moves: []string{"system clock"}},
+		{block: "light", name: "empty light.sources", edit: set("light", "sources", []any{}),
+			want: wantDiverge, moves: []string{"system light"}},
+		{block: "squads", name: "empty squads-deployed", edit: func(t *testing.T, f map[string]any) {
+			sq := blockOf(t, f, "squads")
 			sq["squads"] = asList(sq["squads"])[:1]
 			sq["selected"] = "s:1"
-		}, true},
-		{"empty entities (non-native)", func(file map[string]any) {
+		}, want: wantDiverge, moves: []string{"system meters"}},
+		{block: "spawns", name: "empty spawns.groups", edit: set("spawns", "groups", []any{}),
+			want: wantDiverge, moves: []string{"system spawns"}},
+		{block: "spawner", name: "empty spawner.arrival", edit: set("spawner", "arrival", json.Number("0")),
+			want: wantDiverge, moves: []string{"system scene"}},
+		{block: "notice", name: "empty notice.watches", edit: set("notice", "watches", []any{}),
+			want: wantDiverge, moves: []string{"system spawns"}},
+		{block: "pursuit", name: "empty pursuit.chases", edit: set("pursuit", "chases", []any{}),
+			want: wantDiverge, moves: []string{"system pursuit"}},
+		{block: "seek", name: "empty seek.rows", edit: set("seek", "rows", []any{}),
+			want: wantDiverge, moves: []string{"system seek"}},
+		{block: "corpses", name: "empty corpses", edit: func(t *testing.T, f map[string]any) {
+			c := blockOf(t, f, "corpses")
+			c["bodies"], c["risen_as"], c["walker"], c["last"] = []any{}, map[string]any{}, map[string]any{}, map[string]any{}
+		}, want: wantDiverge, moves: []string{"system corpses"}},
+		{block: "rising", name: "empty rising (pressure and counts)", edit: func(t *testing.T, f map[string]any) {
+			r := blockOf(t, f, "rising")
+			for _, k := range []string{"pressure_accrued", "last_band", "rolls", "risen", "stood_again", "wandered"} {
+				r[k] = json.Number("0")
+			}
+		}, want: wantDiverge, moves: []string{"system rising"}},
+		// Every count of his fights taken back to none -- next_id with them:
+		// combat's Validate holds it one past the fights started (measured:
+		// counts zeroed under next_id 3 are refused BLOCK).
+		{block: "combat", name: "empty combat (its counts)", edit: func(t *testing.T, f map[string]any) {
+			c := blockOf(t, f, "combat")
+			for k, v := range c {
+				if _, isNum := v.(json.Number); isNum {
+					c[k] = json.Number("0")
+				}
+			}
+			c["next_id"] = json.Number("1")
+		}, want: wantDiverge, moves: []string{"system combat"}},
+		{block: "bodies", name: "empty bodies", edit: func(_ *testing.T, f map[string]any) { f["bodies"] = []any{} },
+			want: wantDiverge, moves: []string{"system combat"}},
+		{block: "entities", name: "empty entities (non-native)", edit: func(t *testing.T, f map[string]any) {
 			kept := []any{}
-			for _, raw := range asList(file["entities"]) {
-				if e, _ := raw.(map[string]any); flag(t, e, "native") {
+			for _, raw := range asList(f["entities"]) {
+				if e, _ := raw.(map[string]any); e["native"] == true {
 					kept = append(kept, e)
 				}
 			}
-			file["entities"] = kept
-		}, false},
-		{"swap two entities' ids", swapTwoEntities(t), false},
+			f["entities"] = kept
+		}, want: wantRefused, code: "FILE", rule: d2save.ReasonBodyOrphan},
+		{block: "entities", name: "swap two entities' ids", edit: swapTwoEntities,
+			want: wantRefused, code: "FILE", rule: d2save.ReasonMemberPlace},
+		{block: "scene", name: "empty scene (watch stood, field dead)", edit: func(t *testing.T, f map[string]any) {
+			sc := blockOf(t, f, "scene")
+			sc["watch_stood"], sc["field_dead"] = json.Number("0"), []any{}
+		}, want: wantDiverge, moves: []string{"system scene"}},
+		// The hunted evening is played without -fog, so its grid is empty and
+		// an emptied block would be T's file: the row FILLS it instead -- every
+		// tile of the file's own map explored -- which the load must restore
+		// (and the digest see). Emptying a grid he had is TestFogIsKept's act 5.
+		{block: "fog", name: "fill fog (every tile explored)", edit: fillFog,
+			want: wantDiverge, moves: []string{"system fog"}},
 	}
+}
+
+// villageSide is the authored village's side in tiles (TestFogIsKept act 2
+// holds the fog grid to it).
+const villageSide = 48
+
+// fillFog gives T's file a fog grid with every tile of its map explored.
+func fillFog(t *testing.T, file map[string]any) {
+	t.Helper()
+
+	grid := bytes.Repeat([]byte{0xff}, villageSide*villageSide/8)
+	file["fog"] = map[string]any{
+		"map": str(blockOf(t, file, "map"), "sha"), "w": json.Number(fmt.Sprint(villageSide)),
+		"h": json.Number(fmt.Sprint(villageSide)), "explored": base64.StdEncoding.EncodeToString(grid),
+	}
+}
+
+// sweepRows is every row: the omitted half, then the emptied.
+func sweepRows() []sweepRow {
+	return append(omitRows(), emptyRows()...)
+}
+
+// omitSweep is act 9: the control of the controls, then every row, each
+// judged; every row is run and every failure reported.
+func omitSweep(t *testing.T, s *session, ev evening) {
+	t.Helper()
+
+	began := time.Now()
 
 	// THE CONTROL OF THE CONTROLS: the untouched file resumes S_T exactly.
 	sT := negLoad(t, s, ev, "the untouched file", ev.fileT)
 	if sT.Resume != ev.sT.Resume {
-		sameWorld(t, "negatives' control (the untouched file)", ev.sT, sT)
+		sameWorld(t, "act 9's control (the untouched file)", ev.sT, sT)
 	}
 
-	t.Logf("control PASS: the untouched file resumes S_T (%.12s)", sT.Resume)
+	t.Logf("act 9 control PASS: the untouched file resumes S_T (%.12s)", sT.Resume)
 
-	for _, v := range variants {
+	rows := sweepRows()
+	failed := 0
+	dawnSeen := false
+
+	for _, r := range rows {
 		file := decodeNumbers(t, ev.fileT)
-		v.edit(file)
+		r.edit(t, file)
 
 		data, err := json.MarshalIndent(file, "", "  ")
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		snap := negLoad(t, s, ev, v.name, append(data, '\n'))
+		at := time.Now()
+		snap := negLoad(t, s, ev, r.name, append(data, '\n'))
 		load := sub(s.call("strigoi_get_game_info", map[string]any{}), "load")
 
-		switch {
-		case v.resume && !flag(t, load, "resumed"):
-			t.Fatalf("%s: an emptied block the file's checks take must RESUME (the load's restore is what is on trial): %v", v.name, load)
-		case snap.Resume == ev.sT.Resume:
-			t.Fatalf("%s: the load resumed the saved moment with the block dropped -- a hole: nothing observes what it restores", v.name)
+		seen, err := judgeRow(r, load, ev.sT, snap)
+		if err != nil {
+			failed++
+
+			t.Errorf("act 9, %s: %v", r.name, err)
+
+			continue
 		}
 
-		t.Logf("%s PASS: %s", v.name, divergence(t, ev.sT, snap, load))
+		t.Logf("act 9, %s PASS (%.1f s): %s", r.name, time.Since(at).Seconds(), seen)
+
+		// THE J1 REVIEW'S B6, on the path that does not resume (BUG-114): a
+		// refused file falls back to dawn, and the dawn is a new clock's. Said
+		// once per sweep, as measured; not asserted -- which day a fall back
+		// should wake on is Josh's to rule.
+		if r.want == wantRefused && !dawnSeen {
+			dawnSeen = true
+			pages := stringsOf(journalState(s)["pages"])
+			t.Logf("act 9 (J1 review B6, BUG-114): fallen back to dawn, the clock reads %s %s; his journal's pages are %v",
+				str(clockState(s), "date"), str(clockState(s), "time_of_day"), pages)
+		}
 	}
+
+	if failed == 0 {
+		t.Logf("act 9 PASS: %d rows over %d blocks, every one diverged, refused with its reason, or is the one tolerated by design (%.0f s)",
+			len(rows), len(d2save.Blocks), time.Since(began).Seconds())
+	}
+}
+
+// judgeRow is a row's verdict on what its load did: what was seen, or why it
+// is not what the row wants. It reads nothing but its arguments, so
+// TestTheSweepJudge can hand it every wrong outcome.
+func judgeRow(r sweepRow, load map[string]any, want, got worldSnap) (string, error) {
+	resumed, _ := load["resumed"].(bool)
+	refused, _ := load["refused"].(string)
+	rule, _ := load["rule"].(string)
+	reason, _ := load["reason"].(string)
+	moved := diffOf(want, got)
+
+	switch r.want {
+	case wantRefused:
+		switch {
+		case resumed || refused == "":
+			return "", fmt.Errorf("resumed (%s); want it refused %s (%s)", seenMoves(moved), r.code, r.rule)
+		case refused != r.code || rule != r.rule:
+			return "", fmt.Errorf("refused %s (rule %q: %s); want %s (rule %q)", refused, rule, cut(reason), r.code, r.rule)
+		case got.Resume == want.Resume:
+			return "", fmt.Errorf("refused %s, and yet the game is the saved moment: the fall back to dawn did not happen", refused)
+		}
+
+		return fmt.Sprintf("refused %s (%s: %s), fell back to dawn", refused, rule, cut(reason)), nil
+
+	case wantDiverge:
+		switch {
+		case !resumed:
+			return "", fmt.Errorf("refused %s (rule %q: %s); this emptied block is one the file's checks take, and the load must "+
+				"resume it -- its restore is what is on trial", refused, rule, cut(reason))
+		case got.Resume == want.Resume:
+			return "", fmt.Errorf("the load resumed the saved moment with the block dropped -- a hole: nothing observes what it restores")
+		case len(r.moves) > 0 && !anyOf(moved, r.moves):
+			return "", fmt.Errorf("diverged, but not where the block lives: %s; want one of %s", seenMoves(moved), strings.Join(r.moves, ", "))
+		}
+
+		return seenMoves(moved), nil
+
+	case wantSame:
+		switch {
+		case !resumed:
+			return "", fmt.Errorf("refused %s (rule %q: %s); the block is tolerated by design (%s) -- re-decide the row", refused, rule, cut(reason), r.why)
+		case got.Resume != want.Resume:
+			return "", fmt.Errorf("%s; the block is tolerated by design (%s), and now a load reads it -- re-decide the row", seenMoves(moved), r.why)
+		}
+
+		return "resumed the saved moment, as designed: " + r.why, nil
+	}
+
+	return "", fmt.Errorf("a row with no expectation")
+}
+
+// diffOf is where got differs from want: the digest's parts, then its systems.
+func diffOf(want, got worldSnap) []string {
+	var why []string
+
+	for _, p := range []string{"world", "entities", "rng", "systems"} {
+		if want.Parts[p] != got.Parts[p] {
+			why = append(why, "part "+p)
+		}
+	}
+
+	for _, n := range keysOfSnap(want.Systems, got.Systems) {
+		if want.Systems[n] != got.Systems[n] {
+			why = append(why, "system "+n)
+		}
+	}
+
+	return why
+}
+
+func seenMoves(moved []string) string {
+	if len(moved) == 0 {
+		return "resumed the saved moment"
+	}
+
+	return "resumed and diverged: " + strings.Join(moved, ", ")
+}
+
+func anyOf(have, want []string) bool {
+	for _, w := range want {
+		for _, h := range have {
+			if h == w {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // negLoad puts his act-3 files beside the world file given, starts him, sets
 // the evening's dials, and returns the world as it resumed (or the dawn he
 // fell back to).
+//
+// It clears what an earlier save in this home left beside his files first:
+// the previous world save (.bak) is what a TORN refusal resumes in its place
+// (the M4.6 B5 review, A2), so in TestSaveResume's home -- where act 5 saved
+// again -- a row the file's pairing refuses would have resumed T's own file
+// from the .bak, and read as a hole.
 func negLoad(t *testing.T, s *session, ev evening, name string, world []byte) worldSnap {
 	t.Helper()
 
 	if flag(t, s.call("strigoi_get_game_info", map[string]any{}), "in_game") {
 		s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
 		awaitMenu(t, s)
+	}
+
+	for _, left := range []string{ev.save + ".world.json.bak", ev.save + ".strigoi.json.preload"} {
+		if err := os.Remove(left); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("%s: clearing %s: %v", name, left, err)
+		}
 	}
 
 	actThree(t, ev, world)
@@ -164,21 +468,19 @@ func divergence(t *testing.T, want, got worldSnap, load map[string]any) string {
 		return "refused " + r + " (" + cut(str(load, "reason")) + "), fell back to dawn"
 	}
 
-	var why []string
+	return seenMoves(diffOf(want, got))
+}
 
-	for _, p := range []string{"world", "entities", "rng", "systems"} {
-		if want.Parts[p] != got.Parts[p] {
-			why = append(why, "part "+p)
-		}
+// blockOf is file[name] as an object, or the test fails.
+func blockOf(t *testing.T, file map[string]any, name string) map[string]any {
+	t.Helper()
+
+	b, ok := file[name].(map[string]any)
+	if !ok {
+		t.Fatalf("the world file's %q is not an object: %T", name, file[name])
 	}
 
-	for _, n := range keysOfSnap(want.Systems, got.Systems) {
-		if want.Systems[n] != got.Systems[n] {
-			why = append(why, "system "+n)
-		}
-	}
-
-	return "resumed and diverged: " + strings.Join(why, ", ")
+	return b
 }
 
 // decodeNumbers is a world file as a map with every number kept as written
@@ -201,30 +503,160 @@ func decodeNumbers(t *testing.T, data []byte) map[string]any {
 // entity list alone -- every record naming them (a pack's members, a watch, a
 // chase, a body, a squad) still names each by his own -- and re-sorts the
 // list, as a load would have to read it.
-func swapTwoEntities(t *testing.T) func(file map[string]any) {
-	return func(file map[string]any) {
-		var picked []map[string]any
+func swapTwoEntities(t *testing.T, file map[string]any) {
+	t.Helper()
 
-		for _, raw := range asList(file["entities"]) {
-			if e, _ := raw.(map[string]any); !flag(t, e, "native") && len(picked) < 2 {
-				picked = append(picked, e)
+	var picked []map[string]any
+
+	for _, raw := range asList(file["entities"]) {
+		if e, _ := raw.(map[string]any); e["native"] != true && len(picked) < 2 {
+			picked = append(picked, e)
+		}
+	}
+
+	if len(picked) < 2 {
+		t.Fatalf("the file has fewer than two entities the map does not build")
+	}
+
+	picked[0]["id"], picked[1]["id"] = picked[1]["id"], picked[0]["id"]
+
+	list := asList(file["entities"])
+	sort.Slice(list, func(i, j int) bool {
+		a, _ := list[i].(map[string]any)
+		b, _ := list[j].(map[string]any)
+
+		return str(a, "id") < str(b, "id")
+	})
+
+	file["entities"] = list
+}
+
+// TestTheOmitSweepCoversEveryBlock holds the sweep to the file (no game):
+// every block of d2save.Blocks has its omitted row and at least one emptied
+// row, no row names a block the file does not have, no two rows share a name,
+// and every row says what it wants. A block added to the file without a row
+// is red here before any game runs.
+func TestTheOmitSweepCoversEveryBlock(t *testing.T) {
+	if err := sweepCovers(d2save.Blocks, omitRows(), emptyRows()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("PASS: %d blocks, %d omitted rows, %d emptied rows", len(d2save.Blocks), len(omitRows()), len(emptyRows()))
+}
+
+// sweepCovers is TestTheOmitSweepCoversEveryBlock's rule, apart from the
+// tables, so its own test can hand it tables with holes.
+func sweepCovers(blocks []string, omitted, emptied []sweepRow) error {
+	isBlock := map[string]bool{}
+	for _, b := range blocks {
+		isBlock[b] = true
+	}
+
+	omits, empties, names := map[string]int{}, map[string]int{}, map[string]bool{}
+
+	for i, rows := range [][]sweepRow{omitted, emptied} {
+		for _, r := range rows {
+			switch {
+			case !isBlock[r.block]:
+				return fmt.Errorf("row %q drops %q, which is not a block of the world file (%s)", r.name, r.block, strings.Join(blocks, ", "))
+			case names[r.name]:
+				return fmt.Errorf("two rows are named %q", r.name)
+			case r.edit == nil:
+				return fmt.Errorf("row %q edits nothing", r.name)
+			case r.want == wantRefused && r.code == "":
+				return fmt.Errorf("row %q wants a refusal and names no code", r.name)
+			case r.want == wantSame && r.why == "":
+				return fmt.Errorf("row %q is tolerated and says not why", r.name)
+			case i == 0 && r.want != wantRefused:
+				return fmt.Errorf("omitted row %q must want a refusal: a missing block is never an empty system", r.name)
+			}
+
+			names[r.name] = true
+
+			if i == 0 {
+				omits[r.block]++
+			} else {
+				empties[r.block]++
 			}
 		}
+	}
 
-		if len(picked) < 2 {
-			t.Fatalf("the file has fewer than two entities the map does not build")
+	for _, b := range blocks {
+		switch {
+		case omits[b] != 1:
+			return fmt.Errorf("block %q has %d omitted rows; want 1", b, omits[b])
+		case empties[b] == 0:
+			return fmt.Errorf("block %q has no emptied row: the sweep would not know whether a load reads it", b)
 		}
+	}
 
-		picked[0]["id"], picked[1]["id"] = picked[1]["id"], picked[0]["id"]
+	return nil
+}
 
-		list := asList(file["entities"])
-		sort.Slice(list, func(i, j int) bool {
-			a, _ := list[i].(map[string]any)
-			b, _ := list[j].(map[string]any)
+// TestTheSweepJudge hands the coverage rule and the judge every wrong outcome
+// (no game): each must be named, and the right outcomes passed.
+func TestTheSweepJudge(t *testing.T) {
+	sT := worldSnap{Resume: "T", Parts: map[string]string{"rng": "r", "systems": "s"}, Systems: map[string]string{"light": "l", "seek": "k"}}
+	dark := worldSnap{Resume: "D", Parts: map[string]string{"rng": "r", "systems": "s2"}, Systems: map[string]string{"light": "l2", "seek": "k"}}
 
-			return str(a, "id") < str(b, "id")
-		})
+	resumed := map[string]any{"resumed": true}
+	refused := func(code, rule string) map[string]any {
+		return map[string]any{"resumed": false, "refused": code, "rule": rule, "reason": "why"}
+	}
 
-		file["entities"] = list
+	diverge := sweepRow{name: "d", want: wantDiverge, moves: []string{"system light"}}
+	refuse := sweepRow{name: "r", want: wantRefused, code: "FILE", rule: "map"}
+	same := sweepRow{name: "s", want: wantSame, why: "informational"}
+
+	for _, c := range []struct {
+		name  string
+		row   sweepRow
+		load  map[string]any
+		got   worldSnap
+		wrong bool
+	}{
+		{"diverged where the block lives", diverge, resumed, dark, false},
+		{"A HOLE: resumed the saved moment", diverge, resumed, sT, true},
+		{"diverged elsewhere only", sweepRow{name: "d", want: wantDiverge, moves: []string{"system seek"}}, resumed, dark, true},
+		{"refused where a resume was wanted", diverge, refused("FILE", "map"), dark, true},
+		{"refused with its code and rule", refuse, refused("FILE", "map"), dark, false},
+		{"refused with another rule", refuse, refused("FILE", "rng-stream"), dark, true},
+		{"refused with another code", refuse, refused("BLOCK", "map"), dark, true},
+		{"resumed where a refusal was wanted", refuse, resumed, dark, true},
+		{"refused, yet the saved moment", refuse, refused("FILE", "map"), sT, true},
+		{"tolerated, as designed", same, resumed, sT, false},
+		{"tolerated, and now read", same, resumed, dark, true},
+		{"tolerated, and now refused", same, refused("FILE", "x"), dark, true},
+	} {
+		seen, err := judgeRow(c.row, c.load, sT, c.got)
+		if (err != nil) != c.wrong {
+			t.Errorf("%s: judged %q / %v; want wrong=%v", c.name, seen, err, c.wrong)
+		}
+	}
+
+	edit := func(*testing.T, map[string]any) {}
+	blocks := []string{"a", "b"}
+	full := []sweepRow{{block: "a", name: "omit a", edit: edit, code: "FILE", want: wantRefused}, {block: "b", name: "omit b", edit: edit, code: "FILE", want: wantRefused}}
+	empties := []sweepRow{{block: "a", name: "empty a", edit: edit}, {block: "b", name: "empty b", edit: edit}}
+
+	if err := sweepCovers(blocks, full, empties); err != nil {
+		t.Errorf("a whole table: %v", err)
+	}
+
+	for _, c := range []struct {
+		name             string
+		omitted, emptied []sweepRow
+	}{
+		{"a block with no emptied row", full, empties[:1]},
+		{"a block with no omitted row", full[:1], empties},
+		{"a row of a block the file lacks", full, append(append([]sweepRow{}, empties...), sweepRow{block: "z", name: "empty z", edit: edit})},
+		{"two rows of one name", full, append(append([]sweepRow{}, empties...), sweepRow{block: "a", name: "empty a", edit: edit})},
+		{"a refusal with no code", full, append(append([]sweepRow{}, empties...), sweepRow{block: "a", name: "r", edit: edit, want: wantRefused})},
+		{"a tolerated row with no why", full, append(append([]sweepRow{}, empties...), sweepRow{block: "a", name: "t", edit: edit, want: wantSame})},
+		{"an omitted row that does not want a refusal", []sweepRow{full[0], {block: "b", name: "omit b", edit: edit}}, empties},
+	} {
+		if err := sweepCovers(blocks, c.omitted, c.emptied); err == nil {
+			t.Errorf("%s: the coverage rule took it", c.name)
+		}
 	}
 }
