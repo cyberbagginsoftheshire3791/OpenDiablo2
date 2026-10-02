@@ -210,7 +210,10 @@ it two ways:
    one tile's centre to another's the walk depends only on the offset,
    replays each offset's recorded reads from every eye. Same answer and the
    same cell count, to the bit (`TestFogsGridWalksTheMapsLines`, day and
-   night, 24 eyes, 40 steps).
+   night, 24 eyes, 40 steps). The rays sit in a table of one slot an offset
+   for a grid up to 256 x 256 and in a map beyond it, and an eye standing off
+   the grid (a model on the map's last row) is answered by the map's own walk
+   (`TestTheRecordedWalkOnAnyGrid`).
 
 `BenchmarkFogRaisedSight` and the re-run F1/F2 benchmarks
 (`d2mapgen/fog_bench_test.go`; 2 Oct 2026, Intel Core Ultra 7 258V; the real
@@ -320,7 +323,14 @@ stands.
 - **Fog off is master's frame**, at night with a torch too: one seeded frame
   at 22:45 and one at noon, 0 of 480,000 pixels differ from master `b84a7241`
   (`strigoi-harness-runs\wt-fog2\pix-compare.txt`; the control, master's
-  night against the branch's noon, differs in 345,371).
+  night against the branch's noon, differs in 345,371). **Again at F4** (2
+  Oct 2026, master `d65e3a1c`, fog off, zoom 0.5, seed 1462, standing at noon
+  and at 22:45 with his torch lit): on master's `village.tmj` 0 of 480,000
+  pixels differ, both frames; on F4's own village only the new tower's art
+  differs -- 10,203 pixels at noon and 8,249 at night, all inside
+  (202..279, 279..466), where the tower stands on screen; the control,
+  master's noon against the branch's night, 479,581
+  (`strigoi-harness-runs\wt-fog4\pix-compare.txt`).
 
 - **Known small gaps from the F1 review (1 Oct).**
   - *A hovered hidden creature flashed highlighted for one frame* when it came
@@ -339,6 +349,8 @@ stands.
   screenshot-based checks are re-baselined once.
 
 ## Cost (F2, at night)
+
+*As measured at F2; F4 answered the over-budget rows (Raised sight, "The cost, answered").*
 
 `BenchmarkFogRecomputeAtNight` (the real village, deep night, new moon, his
 torch lit, hearths in a ring 14 tiles out; 1 Oct 2026, the same machine):
@@ -360,6 +372,8 @@ every one). With no torch, fog recomputes only when an eye changes tile, the
 sky moves 1/64 or a band, the moon or a lit source changes.
 
 ## Cost (F1, by day)
+
+*As measured at F1; F4 answered the over-budget rows (Raised sight, "The cost, answered").*
 
 `BenchmarkFogRecompute` (`d2core/d2map/d2mapgen/fog_bench_test.go`, the real
 village; 1 Oct 2026, Intel Core Ultra 7 258V): one recompute with his one eye

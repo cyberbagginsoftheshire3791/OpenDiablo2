@@ -3,6 +3,8 @@ package d2world
 import (
 	"image"
 	"testing"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2geom"
 )
 
 // FOG OF WAR F4, RAISED SIGHT (fog.go; Josh's ruling 4, 1 Oct 2026: talents,
@@ -232,5 +234,90 @@ func TestALineIsWalkedOnceATile(t *testing.T) {
 	walked := sight.calls - first
 	if walked == 0 || walked >= first {
 		t.Fatalf("his step walked %d lines (the first recompute %d): his own again, not the tower's", walked, first)
+	}
+}
+
+// pillarSight is a map whose every seventh tile on both axes blocks, walked
+// by the map's own d2geom walk; with opaque it also says its tiles
+// (OpaqueTiles), so fog replays its recorded walk on its own grid.
+type pillarSight struct{ w, h int }
+
+func (p pillarSight) TileBlocksSight(tx, ty int) bool {
+	return tx < 0 || ty < 0 || tx >= p.w || ty >= p.h || (tx%7 == 3 && ty%7 == 3)
+}
+
+func (p pillarSight) TileSightClear(fx, fy float64, tx, ty int) (bool, int) {
+	return d2geom.TileLineClear(fx, fy, tx, ty, p.TileBlocksSight)
+}
+
+// walkOnly is pillarSight without TileBlocksSight: fog walks the map's lines.
+type walkOnly struct{ p pillarSight }
+
+func (o walkOnly) TileSightClear(fx, fy float64, tx, ty int) (bool, int) {
+	return o.p.TileSightClear(fx, fy, tx, ty)
+}
+
+// TestTheRecordedWalkOnAnyGrid (F4's cost answer, its edges): fog's recorded
+// walk sees what the map's own walk sees on a grid too large for the ray
+// table (600 x 600: rays kept in a map), and an eye standing off the grid's
+// last row -- whose offsets the table cannot hold -- is answered by the map's
+// walk rather than panicking.
+//
+// Negative control (2 Oct 2026, strigoi-harness-runs\wt-fog4\nc\): drop the
+// off-grid fallback (lineClear's f.in(ex, ey)) and this panics, "index out of
+// range" (nc-off-grid-eye.txt).
+func TestTheRecordedWalkOnAnyGrid(t *testing.T) {
+	p := pillarSight{600, 600}
+	eyes := []Eye{{ID: "s:1", X: 100.5, Y: 200.5}, {ID: "s:2/m", X: 300.5, Y: 600.4}}
+
+	grid, walked := NewFog(DefaultFogDials(), p), NewFog(DefaultFogDials(), walkOnly{p})
+	grid.Update(600, 600, eyes)
+	walked.Update(600, 600, eyes)
+
+	if grid.rays != nil || grid.rayMap == nil {
+		t.Fatalf("a 600 x 600 grid keeps its rays in a table of %d; want the map", len(grid.rays))
+	}
+
+	for ty := 180; ty < 600; ty++ {
+		for tx := 80; tx < 320; tx++ {
+			if a, b := grid.At(tx, ty), walked.At(tx, ty); a != b {
+				t.Fatalf("tile (%d,%d) is %v to the recorded walk and %v to the map's", tx, ty, a, b)
+			}
+		}
+	}
+
+	_, ga := grid.Counts()
+	_, gb := walked.Counts()
+	_, _, ca := grid.Counters()
+	_, _, cb := walked.Counters()
+
+	if ga != gb || ca != cb || ga < 300 {
+		t.Fatalf("visible %d / %d, cells %d / %d; one walk, one answer", ga, gb, ca, cb)
+	}
+
+	if st := grid.At(300, 599); st != FogVisible {
+		t.Fatalf("the tile beside the off-grid eye, (300,599), is %v", st)
+	}
+
+	// The table's own path: a 48 x 48 grid, an eye standing off its last row
+	// and seeing 60 -- to row 0, 48 rows up, an offset the table cannot hold.
+	small := pillarSight{48, 48}
+	off := []Eye{{ID: "s:1", X: 20.5, Y: 48.3}}
+	far := DefaultFogDials()
+	far.DaySight = 60
+	grid, walked = NewFog(far, small), NewFog(far, walkOnly{small})
+	grid.Update(48, 48, off)
+	walked.Update(48, 48, off)
+
+	if grid.rays == nil {
+		t.Fatal("a 48 x 48 grid keeps no ray table")
+	}
+
+	for ty := 0; ty < 48; ty++ {
+		for tx := 0; tx < 48; tx++ {
+			if a, b := grid.At(tx, ty), walked.At(tx, ty); a != b {
+				t.Fatalf("48 x 48, the eye off its last row: tile (%d,%d) is %v to fog and %v to the map's walk", tx, ty, a, b)
+			}
+		}
 	}
 }

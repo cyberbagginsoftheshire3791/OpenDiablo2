@@ -251,6 +251,7 @@ type Fog struct {
 	// (2w-1) x (2h-1) offsets.
 	opaque []bool
 	rays   [][]rayRead
+	rayMap map[int32][]rayRead // a grid too large for the table: rays by offset
 
 	// structures are the map's footprints, clipped to the grid: a structure
 	// with any tile seen is seen whole, and remembered whole (wholeStructures).
@@ -441,8 +442,20 @@ func (f *Fog) readOpacity() {
 		}
 	}
 
-	f.rays = make([][]rayRead, (2*f.w-1)*(2*f.h-1))
+	// The table of rays, one slot an offset, for a grid of up to 256 x 256
+	// (6 MB of empty slots at most); a larger one keeps its rays in a map.
+	f.rays, f.rayMap = nil, nil
+
+	if n := (2*f.w - 1) * (2*f.h - 1); n <= maxRayTable {
+		f.rays = make([][]rayRead, n)
+	} else {
+		f.rayMap = make(map[int32][]rayRead)
+	}
 }
+
+// maxRayTable is the most offsets fog keeps in a table rather than a map:
+// (2*256-1)^2, a 256 x 256 grid's.
+const maxRayTable = 511 * 511
 
 // rayRead is one read of the tile walk (d2geom.TileLineReads) from a tile's
 // centre, relative to the eye's tile: one tile (x1, y1), or at a corner the
@@ -459,7 +472,12 @@ type rayRead struct {
 // eye against its own grid.
 func (f *Fog) rayTo(dx, dy int) []rayRead {
 	i := (dy+f.h-1)*(2*f.w-1) + dx + f.w - 1
-	if r := f.rays[i]; r != nil {
+
+	if f.rays != nil {
+		if r := f.rays[i]; r != nil {
+			return r
+		}
+	} else if r, ok := f.rayMap[int32(i)]; ok {
 		return r
 	}
 
@@ -470,7 +488,11 @@ func (f *Fog) rayTo(dx, dy int) []rayRead {
 		return false
 	})
 
-	f.rays[i] = r
+	if f.rays != nil {
+		f.rays[i] = r
+	} else {
+		f.rayMap[int32(i)] = r
+	}
 
 	return r
 }
@@ -919,8 +941,10 @@ func (f *Fog) lineClear(i, tx, ty int) bool {
 		cells int
 	)
 
-	if f.opaque != nil {
-		clear, cells = f.gridLineClear(tileOf(e.X), tileOf(e.Y), tx, ty)
+	// The recorded walk needs the eye on the grid (an eye may stand off its
+	// last row); off it, the map's own walk answers.
+	if ex, ey := tileOf(e.X), tileOf(e.Y); f.opaque != nil && f.in(ex, ey) {
+		clear, cells = f.gridLineClear(ex, ey, tx, ty)
 	} else {
 		clear, cells = f.sight.TileSightClear(e.X, e.Y, tx, ty)
 	}

@@ -225,7 +225,14 @@ func TestFogOfWar(t *testing.T) {
 
 	grey := s.frame(t, "fog-2-grey")
 
-	memory := lowestProbe(t, s, 6.5, 9, 0.5, func(p map[string]any) bool { return str(p, "state") == "explored" })
+	// The tile must be what is drawn at its centre: since fog of war F4 the
+	// gate's tower holds houses in sight that his walk left behind, and a
+	// VISIBLE house standing in front of a remembered tile draws its art over
+	// it in colour. So no tile of a visible structure may stand within five
+	// tiles in front of it (lower on screen; a house's art is ~11 rows tall).
+	memory := lowestProbe(t, s, 6.5, 9, 0.5, func(p map[string]any) bool {
+		return str(p, "state") == "explored" && !visibleStructureInFront(s, int(num(p, "x")), int(num(p, "y")), 5)
+	})
 	if memory == nil {
 		t.Fatal("no remembered tile 6.5..9 off is on screen with day sight 5")
 	}
@@ -250,7 +257,20 @@ func TestFogOfWar(t *testing.T) {
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	// --- act 3: a villager ----------------------------------------------------
+	// Since fog of war F4 the gate's tower sees the villagers about the green;
+	// from where his walk ends the one beyond them may be within his sight.
+	// So, if no villager is past his sight and the tower's, he walks on to the
+	// north-east green, then the south yards, and looks again.
 	handle, dist := farVillager(t, s, daySight+0.5)
+	for _, spot := range [][2]float64{{33.5, 20.5}, {16.5, 33.5}} {
+		if handle != "" {
+			break
+		}
+
+		fogWalkTo(t, s, spot[0], spot[1])
+		handle, dist = farVillager(t, s, daySight+0.5)
+	}
+
 	if handle == "" {
 		t.Fatalf("no villager is more than %.1f tiles from him and out of the tower's sight", daySight+0.5)
 	}
@@ -548,6 +568,25 @@ func farVillager(t *testing.T, s *session, d float64) (string, float64) {
 	}
 
 	return "", 0
+}
+
+// visibleStructureInFront is whether a tile of a structure that is visible
+// now stands within r tiles in front of (x, y) -- toward +x and +y, lower on
+// screen, where its art would stand over (x, y)'s centre (fog of war F4).
+func visibleStructureInFront(s *session, x, y, r int) bool {
+	for dy := 0; dy <= r; dy++ {
+		for dx := 0; dx <= r; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+
+			if p := probeAt(s, x+dx, y+dy); p["structure"] != nil && str(p, "state") == "visible" {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // rememberedNear is the tile nearest (x, y), within r, that is explored and

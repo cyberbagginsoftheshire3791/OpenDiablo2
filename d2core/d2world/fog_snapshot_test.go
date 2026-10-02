@@ -108,6 +108,7 @@ func b2aFogClasses() []b2aClass {
 		"linesHit":      "D: this process's cost counter, never the world's",
 		"opaque":        "D: the map's opacity (F4), read from the map at the next recompute",
 		"rays":          "D: the tile walk recorded per offset (F4), recorded again from the walk",
+		"rayMap":        "D: the same rays for a grid too large for the table (F4)",
 	}}}
 }
 

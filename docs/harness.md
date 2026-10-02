@@ -1028,6 +1028,15 @@ this doc fails until it agrees.
   Night Eyes taken through the talent panel widens his dark radius 1.5 -> 2.5
   and an unlit tile 2-2.5 off is seen; act 16, Josh's frame: the tower at
   night, its beacon lit, from four tiles up the road (`fog-f4-tower-night-beacon`).
+  F4 moved four of the earlier acts, because the gate's tower (6 tiles from
+  the start) now sees ground they had assumed unseen: `TestFogOfWar` act 2
+  and `TestFogIsKept` acts 1, 4 and 5 witness remembered ground with the tile
+  nearest the start that neither he nor the tower sees (`rememberedNear`; the
+  start tile itself is the tower's now); act 2's grey look skips a tile with a
+  visible structure's tile within five in front of it (a house the tower holds
+  drew its colour over the remembered tile's centre:
+  `visibleStructureInFront`); act 3's far villager is one out of the tower's
+  sight too; and `TestFogAtNight` act 8 counts squad eyes, the tower aside.
 * `seek_test.go` — the fifty-fourth (merged 1 Oct after the combat status's, integrate-1oct; the fiftieth on its own branch), the raid milestone's R2 (29 Sep 2026): who the
   night's hunters choose among the living. First run 29 Sep by the R2 build
   (Josh's approval of 19:17): red twice on the script's own setup, fixed
