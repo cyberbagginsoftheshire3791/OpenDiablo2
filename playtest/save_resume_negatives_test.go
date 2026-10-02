@@ -19,8 +19,8 @@ import (
 // THE OMIT SWEEP (the build plan's section 4 act 9; M4.6 B6, 2 Oct 2026):
 // every top-level block of the world file, dropped in turn from the hunted
 // night's file at T, and the file resumed. Each must make the load either
-// DIVERGE from the saved moment (S_R0 != S_T, in the part or system the block
-// lives in) or REFUSE the file with the right reason (the load report's code
+// DIVERGE from the saved moment (S_R0 != S_T, where the block shows: the part
+// or system of the digest that reports it) or REFUSE the file with the right reason (the load report's code
 // and, for a refusal of the file itself, d2save's rule). "A block whose
 // omission doesn't diverge is a hole in observability, not a pass."
 //
@@ -105,6 +105,17 @@ type sweepRow struct {
 
 	// why: wantSame's reason the block is not read.
 	why string
+
+	// twin, when set, is a second edit of T's file the row is judged
+	// AGAINST instead of S_T (the B6 review's M7): a field whose effect is
+	// spent on the first frame -- scene.last_stage, watch_clock_set -- shows
+	// only as a difference between two files that differ in it alone, at a
+	// moment where it matters. The twin must resume.
+	twin func(t *testing.T, file map[string]any)
+
+	// check, when set, runs after a row that passed: an assertion of its own
+	// on the resumed game (the fog grid, bit for bit).
+	check func(t *testing.T, s *session, file map[string]any) error
 }
 
 // omitRows are the omitted half: one per block of d2save.Blocks, built from
@@ -137,7 +148,7 @@ func omitRows() []sweepRow {
 // least one. Each was measured on the hunted evening (2 Oct 2026; the notes'
 // "B6") before its expectation was written, and each expectation is the
 // block's own: a refusal names the rule that guards that block, a divergence
-// the part or system the block restores.
+// where the block shows (the part or system of the digest that reports it).
 func emptyRows() []sweepRow {
 	set := func(block, field string, v any) func(*testing.T, map[string]any) {
 		return func(t *testing.T, file map[string]any) { blockOf(t, file, block)[field] = v }
@@ -246,32 +257,164 @@ func emptyRows() []sweepRow {
 			sc["watch_stood"], sc["field_dead"] = json.Number("0"), []any{}
 		}, want: wantDiverge, moves: []string{"system scene"}},
 		// The hunted evening is played without -fog, so its grid is empty and
-		// an emptied block would be T's file: the row FILLS it instead -- every
-		// tile of the file's own map explored -- which the load must restore
-		// (and the digest see). Emptying a grid he had is TestFogIsKept's act 5.
-		{block: "fog", name: "fill fog (every tile explored)", edit: fillFog,
-			want: wantDiverge, moves: []string{"system fog"}},
+		// an emptied block would be T's file: the row FILLS it instead -- with
+		// an UNEVEN pattern (a corner block and a scatter), and the resumed
+		// grid must be the file's bit for bit (the B6 review's B1: an
+		// all-explored grid is its own mirror, so a load that laid the tiles
+		// out reversed passed). Emptying a grid he had is TestFogIsKept's act 5.
+		{block: "fog", name: "fill fog (a corner block and a scatter)", edit: fillFog,
+			want: wantDiverge, moves: []string{"system fog"}, check: fogGridIsTheFiles},
 	}
+}
+
+// perturbRows are rows that put a value T's evening does not have -- not
+// empty, not the default -- where a load that dropped or defaulted the field
+// would resume the saved moment (the B6 review, A1: every squad's morale is
+// 100 at T and nobody had stood again, so a load that restored 100 and 0 for
+// them passed). Every expectation here was measured before it was written.
+func perturbRows() []sweepRow {
+	squad := func(t *testing.T, f map[string]any, id string) map[string]any {
+		t.Helper()
+
+		for _, raw := range asList(blockOf(t, f, "squads")["squads"]) {
+			if sq, _ := raw.(map[string]any); str(sq, "id") == id {
+				return sq
+			}
+		}
+
+		t.Fatalf("T's file has no squad %s", id)
+
+		return nil
+	}
+
+	// Four world minutes: under watchJumpMinutes (5), so the first frame's
+	// keepWatch credits all of it while he stands the watch at T.
+	const behind = 4.0
+
+	watchBehind := func(set bool) func(*testing.T, map[string]any) {
+		return func(t *testing.T, f map[string]any) {
+			sc := blockOf(t, f, "scene")
+			sc["watch_clock"] = json.Number(fmt.Sprint(mustNumber(t, sc["watch_clock"]) - behind))
+			sc["watch_clock_set"] = set
+		}
+	}
+
+	// 03:15 of day index 2: the dawn after T's night (02:45 is the epoch, and
+	// day index 2 began at elapsed 2715), that dawn not yet paid
+	// (dawn_paid_day 1 at T).
+	const dawnAfterT = 2910.0
+
+	atDawn := func(lastStage string) func(*testing.T, map[string]any) {
+		return func(t *testing.T, f map[string]any) {
+			blockOf(t, f, "clock")["elapsed"] = json.Number(fmt.Sprint(dawnAfterT))
+			sc := blockOf(t, f, "scene")
+			sc["watch_clock"] = json.Number(fmt.Sprint(dawnAfterT))
+			sc["last_stage"] = lastStage
+		}
+	}
+
+	return []sweepRow{
+		{block: "squads", name: "perturb squads: s:2's morale 37", edit: func(t *testing.T, f map[string]any) {
+			squad(t, f, "s:2")["morale"] = json.Number("37")
+		}, want: wantDiverge, moves: []string{"system meters"}},
+		{block: "squads", name: "perturb squads: s:2's man wounded (23 of his health)", edit: func(t *testing.T, f map[string]any) {
+			m, _ := asList(squad(t, f, "s:2")["members"])[0].(map[string]any)
+			m["health"] = json.Number("23")
+		}, want: wantDiverge, moves: []string{"system meters"}},
+		{block: "rising", name: "perturb rising: stood again 3, wandered 2", edit: func(t *testing.T, f map[string]any) {
+			r := blockOf(t, f, "rising")
+			r["stood_again"], r["wandered"] = json.Number("3"), json.Number("2")
+		}, want: wantDiverge, moves: []string{"system rising"}},
+		{block: "scene", name: "perturb scene: the watch clock 4 minutes behind", edit: watchBehind(true),
+			want: wantDiverge, moves: []string{"system village"}},
+		{block: "scene", name: "perturb scene: watch_clock_set, against its twin", edit: watchBehind(true), twin: watchBehind(false),
+			want: wantDiverge, moves: []string{"system village"}},
+		{block: "scene", name: "perturb scene: last_stage night at an unpaid dawn, against dawn", edit: atDawn("night"), twin: atDawn("dawn"),
+			want: wantDiverge, moves: []string{"system progress"}},
+		{block: "combat", name: "perturb combat: the first logged blow's damage", edit: func(t *testing.T, f map[string]any) {
+			b, _ := asList(blockOf(t, f, "combat")["blow_log"])[0].(map[string]any)
+			b["damage"] = json.Number(fmt.Sprint(mustNumber(t, b["damage"]) + 1))
+		}, want: wantDiverge, moves: []string{"system combat"}},
+		{block: "sidecar", name: "perturb sidecar.journal: two entries' order swapped", edit: func(t *testing.T, f map[string]any) {
+			w := blockOf(t, blockOf(t, blockOf(t, f, "sidecar"), "journal"), "written")
+			w["b1_taken"], w["b2_corps"] = w["b2_corps"], w["b1_taken"]
+		}, want: wantDiverge, moves: []string{"system journal"}},
+		{block: "entities", name: "perturb entities: a pack member's motion (target, dir, speed)", edit: func(t *testing.T, f map[string]any) {
+			for _, raw := range asList(f["entities"]) {
+				if e, _ := raw.(map[string]any); e["native"] != true {
+					m := blockOf(t, e, "motion")
+					tg := asList(m["target"])
+					tg[0] = json.Number(fmt.Sprint(mustNumber(t, tg[0]) + 1))
+					m["dir"] = json.Number(fmt.Sprint(mustNumber(t, m["dir"]) + 1))
+					m["speed"] = json.Number(fmt.Sprint(mustNumber(t, m["speed"]) + 1))
+
+					return
+				}
+			}
+
+			t.Fatal("T's file has no entity the map does not build")
+		}, want: wantDiverge, moves: []string{"part entities"}},
+	}
+}
+
+// mustNumber is a json.Number as a float64, or the test fails.
+func mustNumber(t *testing.T, v any) float64 {
+	t.Helper()
+
+	n, ok := v.(json.Number)
+	if !ok {
+		t.Fatalf("not a number: %T %v", v, v)
+	}
+
+	f, err := n.Float64()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return f
 }
 
 // villageSide is the authored village's side in tiles (TestFogIsKept act 2
 // holds the fog grid to it).
 const villageSide = 48
 
-// fillFog gives T's file a fog grid with every tile of its map explored.
+// fillFog gives T's file a fog grid on its own map: a 6 x 6 block in the
+// north corner and every 37th tile besides -- a pattern no reflection or
+// transposition of the grid maps onto itself. Tile (x, y) is bit y*w+x
+// (TestTheGridsLayoutIsPinned).
 func fillFog(t *testing.T, file map[string]any) {
 	t.Helper()
 
-	grid := bytes.Repeat([]byte{0xff}, villageSide*villageSide/8)
+	grid := make([]byte, villageSide*villageSide/8)
+
+	for i := 0; i < villageSide*villageSide; i++ {
+		if x, y := i%villageSide, i/villageSide; (x < 6 && y < 6) || i%37 == 0 {
+			grid[i/8] |= 1 << uint(i%8)
+		}
+	}
+
 	file["fog"] = map[string]any{
 		"map": str(blockOf(t, file, "map"), "sha"), "w": json.Number(fmt.Sprint(villageSide)),
 		"h": json.Number(fmt.Sprint(villageSide)), "explored": base64.StdEncoding.EncodeToString(grid),
 	}
 }
 
-// sweepRows is every row: the omitted half, then the emptied.
+// fogGridIsTheFiles: the resumed game's explored grid is the file's, bit for
+// bit (the fog provider reports it as the file writes it).
+func fogGridIsTheFiles(t *testing.T, s *session, file map[string]any) error {
+	t.Helper()
+
+	want := str(blockOf(t, file, "fog"), "explored")
+	if got := str(fogState(s), "grid"); got != want {
+		return fmt.Errorf("the resumed fog grid is not the file's:\n file %s\n game %s", want, got)
+	}
+
+	return nil
+}
+
+// sweepRows is every row: the omitted half, the emptied, then the perturbed.
 func sweepRows() []sweepRow {
-	return append(omitRows(), emptyRows()...)
+	return append(append(omitRows(), emptyRows()...), perturbRows()...)
 }
 
 // omitSweep is act 9: the control of the controls, then every row, each
@@ -293,45 +436,89 @@ func omitSweep(t *testing.T, s *session, ev evening) {
 	failed := 0
 	dawnSeen := false
 
-	for _, r := range rows {
+	slowest, slowestName := time.Duration(0), ""
+
+	edited := func(edit func(*testing.T, map[string]any)) (map[string]any, []byte) {
 		file := decodeNumbers(t, ev.fileT)
-		r.edit(t, file)
+		edit(t, file)
 
 		data, err := json.MarshalIndent(file, "", "  ")
 		if err != nil {
 			t.Fatal(err)
 		}
 
+		return file, append(data, '\n')
+	}
+
+	for _, r := range rows {
 		at := time.Now()
-		snap := negLoad(t, s, ev, r.name, append(data, '\n'))
+
+		// The row's twin, when it has one, is what it is judged against.
+		against, againstName := ev.sT, "S_T"
+
+		if r.twin != nil {
+			_, twin := edited(r.twin)
+			against, againstName = negLoad(t, s, ev, r.name+" (its twin)", twin), "its twin"
+
+			if tl := sub(s.call("strigoi_get_game_info", map[string]any{}), "load"); !flag(t, tl, "resumed") {
+				failed++
+
+				t.Errorf("act 9, %s: its twin must resume, and was refused %s (%s)", r.name, str(tl, "refused"), cut(str(tl, "reason")))
+
+				continue
+			}
+		}
+
+		file, data := edited(r.edit)
+		snap := negLoad(t, s, ev, r.name, data)
 		load := sub(s.call("strigoi_get_game_info", map[string]any{}), "load")
 
-		seen, err := judgeRow(r, load, ev.sT, snap)
+		seen, err := judgeRow(r, load, against, snap)
+		if err == nil && r.check != nil {
+			err = r.check(t, s, file)
+		}
+
 		if err != nil {
 			failed++
 
-			t.Errorf("act 9, %s: %v", r.name, err)
+			t.Errorf("act 9, %s (against %s): %v", r.name, againstName, err)
 
 			continue
 		}
 
-		t.Logf("act 9, %s PASS (%.1f s): %s", r.name, time.Since(at).Seconds(), seen)
+		took := time.Since(at)
+		if took > slowest {
+			slowest, slowestName = took, r.name
+		}
 
-		// THE J1 REVIEW'S B6, on the path that does not resume (BUG-114): a
-		// refused file falls back to dawn, and the dawn is a new clock's. Said
-		// once per sweep, as measured; not asserted -- which day a fall back
-		// should wake on is Josh's to rule.
+		t.Logf("act 9, %s PASS (%.1f s, against %s): %s", r.name, took.Seconds(), againstName, seen)
+
+		// THE J1 REVIEW'S B6, on the path that does not resume (BUG-114,
+		// Josh's default (a)): a refused file falls back to dawn of the day
+		// after the last day his sidecar's journal knows -- not the epoch.
+		// Asserted once per sweep, on the first refusal.
 		if r.want == wantRefused && !dawnSeen {
 			dawnSeen = true
+			c := clockState(s)
 			pages := stringsOf(journalState(s)["pages"])
-			t.Logf("act 9 (J1 review B6, BUG-114): fallen back to dawn, the clock reads %s %s; his journal's pages are %v",
-				str(clockState(s), "date"), str(clockState(s), "time_of_day"), pages)
+
+			if want := wakeMinutesOf(t, ev.sidecarLeft); mustNum(t, c, "world_minutes") < want || mustNum(t, c, "world_minutes") > want+1 ||
+				str(c, "stage") != "dawn" {
+				failed++
+
+				t.Errorf("act 9 (BUG-114): fallen back, he wakes at %s %s (%v world minutes); want dawn %v minutes in, the day after his journal's last",
+					str(c, "date"), str(c, "time_of_day"), c["world_minutes"], want)
+			} else {
+				t.Logf("act 9 (BUG-114) PASS: fallen back to dawn of %s %s, the day after the last his journal knows; its pages are %v",
+					str(c, "date"), str(c, "time_of_day"), pages)
+			}
 		}
 	}
 
 	if failed == 0 {
-		t.Logf("act 9 PASS: %d rows over %d blocks, every one diverged, refused with its reason, or is the one tolerated by design (%.0f s)",
-			len(rows), len(d2save.Blocks), time.Since(began).Seconds())
+		t.Logf("act 9 PASS: %d rows over %d blocks, every one diverged, refused with its reason, or is the one tolerated by design "+
+			"(%.0f s; the slowest row %.1f s, %s)",
+			len(rows), len(d2save.Blocks), time.Since(began).Seconds(), slowest.Seconds(), slowestName)
 	}
 }
 
@@ -364,9 +551,9 @@ func judgeRow(r sweepRow, load map[string]any, want, got worldSnap) (string, err
 			return "", fmt.Errorf("refused %s (rule %q: %s); this emptied block is one the file's checks take, and the load must "+
 				"resume it -- its restore is what is on trial", refused, rule, cut(reason))
 		case got.Resume == want.Resume:
-			return "", fmt.Errorf("the load resumed the saved moment with the block dropped -- a hole: nothing observes what it restores")
+			return "", fmt.Errorf("the load resumed the saved moment with the block dropped or changed -- a hole: nothing observes what it restores")
 		case len(r.moves) > 0 && !anyOf(moved, r.moves):
-			return "", fmt.Errorf("diverged, but not where the block lives: %s; want one of %s", seenMoves(moved), strings.Join(r.moves, ", "))
+			return "", fmt.Errorf("diverged, but not where the block shows: %s; want one of %s", seenMoves(moved), strings.Join(r.moves, ", "))
 		}
 
 		return seenMoves(moved), nil
@@ -537,11 +724,12 @@ func swapTwoEntities(t *testing.T, file map[string]any) {
 // and every row says what it wants. A block added to the file without a row
 // is red here before any game runs.
 func TestTheOmitSweepCoversEveryBlock(t *testing.T) {
-	if err := sweepCovers(d2save.Blocks, omitRows(), emptyRows()); err != nil {
+	if err := sweepCovers(d2save.Blocks, omitRows(), append(emptyRows(), perturbRows()...)); err != nil {
 		t.Fatal(err)
 	}
 
-	t.Logf("PASS: %d blocks, %d omitted rows, %d emptied rows", len(d2save.Blocks), len(omitRows()), len(emptyRows()))
+	t.Logf("PASS: %d blocks, %d omitted rows, %d emptied rows, %d perturbed rows",
+		len(d2save.Blocks), len(omitRows()), len(emptyRows()), len(perturbRows()))
 }
 
 // sweepCovers is TestTheOmitSweepCoversEveryBlock's rule, apart from the
@@ -615,7 +803,7 @@ func TestTheSweepJudge(t *testing.T) {
 		got   worldSnap
 		wrong bool
 	}{
-		{"diverged where the block lives", diverge, resumed, dark, false},
+		{"diverged where the block shows", diverge, resumed, dark, false},
 		{"A HOLE: resumed the saved moment", diverge, resumed, sT, true},
 		{"diverged elsewhere only", sweepRow{name: "d", want: wantDiverge, moves: []string{"system seek"}}, resumed, dark, true},
 		{"refused where a resume was wanted", diverge, refused("FILE", "map"), dark, true},

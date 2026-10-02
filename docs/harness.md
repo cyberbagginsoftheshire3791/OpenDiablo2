@@ -109,7 +109,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 54 playtest scripts.** That count, the harness version below and the
+**The 55 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -680,6 +680,15 @@ this doc fails until it agrees.
   spawns, spawner, notice, pursuit, squads -- OMITTED (refused `FILE`, he
   begins at dawn) and EMPTIED (it must resume, and diverge), and two
   entities' ids swapped (refused or divergent).
+  **Since M4.6 B6 (2 Oct 2026) the sweep is `TestSaveResume`'s act 9**, in
+  the suite (every block of `d2save.Blocks` omitted and emptied, plus
+  perturbed and twin rows since the B6 review; about 75 s), and
+  `TestSaveResumeNegatives` runs the same sweep against a kept evening. Its
+  companion **`TestSaveResumeFieldSweep`** (`save_resume_fieldsweep_test.go`,
+  OPT-IN like it: `STRIGOI_SAVE_RESUME_FROM`, `FIELD_SWEEP=<prefix>` to
+  narrow): every leaf of T's file perturbed in turn and the resume classed
+  REFUSED, DIVERGED or SAME; every SAME is red unless it is on its allow-list
+  of fields a resume does not show by design (about seven minutes).
   **The B4b review fixes (29 Sep 2026)** changed and added, in the same file:
   act 3's two hours after T are a FOUGHT fight (BUG-77) -- the dials at T turn
   the quick resolve off (`quick_resolve_advantage` 2) and make every blow a
@@ -1262,6 +1271,16 @@ Before it no provider reported the kit at all (the `ui` provider's `kit_rows`
 are the panel's rows, built only while it is open): the omit sweep's emptied
 pack resumed "the saved moment". The off-hand torch's `burn_left` is the live
 kit's -- zero while it burns in the light model's carried source (D1).
+
+**With the B6 review's fixes (BUG-117, 2 Oct 2026)** two providers report
+what the world file restores and they did not: `combat` reports `blow_log`
+(the HUD's log of his last blows: `round`, `attacker`, `target`, `band`,
+`damage`, `reaction`, `killed`), and `journal` reports `written_seq` (each
+entry's sequence number: the order written), `page_seq`, `rungs` (reached),
+`task_rows` (each task's `state`, `seq` and edge memory `mem`) and `seen`
+(where each part was read to) -- all in the digest's world part. A game that
+resumes no world save now wakes at dawn of the day after his journal's
+`last_date` (BUG-114; the clock provider shows it).
 
 **M4.6 B5 (29 Sep 2026) added `save`**, the save as the player meets it,
 registered with the game screen: `autosave` -- the dawn autosave's `state`
@@ -1987,7 +2006,11 @@ absent for a refusal that is not the file's own; and a new provider, `kit`
 (BUG-113: what he carries, in the digest's world part -- the digest held no
 kit before). **The digest's shape moved** (a new system), so every evening
 kept by 0.16.4 is incomparable and refused as another harness's (BUG-93's
-rule); a green `TestSaveResume` keeps a new one. Other branches may bump past 0.16.4
+rule); a green `TestSaveResume` keeps a new one. **The B6 review's fixes
+(same number, the branch unmerged)** add `combat.blow_log` and the journal's
+`written_seq`, `page_seq`, `rungs`, `task_rows` and `seen` to the digest's
+world part (BUG-117): an evening kept by `save-b6` before them compares red
+(its S_T lacks them) and must be kept again. Other branches may bump past 0.16.4
 in parallel; the coordinator settles the number at merge.
 **0.16.4 (integrate-2, 1 Oct 2026)** is `harness-fixes` and fog of war F3
 (`fog-f3`) merged on master `0ea27076` -- each had bumped 0.16.2 to 0.16.3

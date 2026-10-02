@@ -2375,9 +2375,14 @@ func refusedToDawn(t *testing.T, s *session, act, save, code string, seed int, f
 		t.Fatalf("%s: the world file is out of the way (%v)", act, err)
 	}
 
+	// BUG-114: at dawn of the day after the last day his sidecar's journal
+	// knows (the epoch, for a sidecar with no dated page).
 	c := clockState(s)
-	if str(c, "stage") != "dawn" || mustNum(t, c, "world_minutes") > 1 || mustNum(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "health") <= 0 {
-		t.Fatalf("%s: he begins at dawn, alive: %v", act, c)
+	wake := wakeMinutesOf(t, sidecar)
+
+	if m := mustNum(t, c, "world_minutes"); str(c, "stage") != "dawn" || m < wake || m > wake+1 ||
+		mustNum(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "health") <= 0 {
+		t.Fatalf("%s: he begins at dawn, alive, %v world minutes in (the day after his journal's last): %v", act, wake, c)
 	}
 
 	t.Logf("%s PASS: refused %s (%s), set aside as %s; his own sidecar beside it; he begins at dawn", act, code, str(load, "reason"), filepath.Base(aside))
@@ -3153,4 +3158,32 @@ func faceSomewhere(t *testing.T, s *session) {
 	}
 
 	t.Fatalf("walked to a neighbour and back, and he faces direction 0 both ways")
+}
+
+// wakeMinutesOf is where a game that resumes no world save starts his clock
+// (BUG-114): 02:45 of the day after his sidecar journal's last_date, in world
+// minutes since the epoch -- 0 for a sidecar with no dated page.
+func wakeMinutesOf(t *testing.T, sidecar []byte) float64 {
+	t.Helper()
+
+	var doc struct {
+		Journal struct {
+			LastDate string `json:"last_date"`
+		} `json:"journal"`
+	}
+
+	if err := json.Unmarshal(sidecar, &doc); err != nil {
+		t.Fatalf("his sidecar is not JSON: %v", err)
+	}
+
+	if doc.Journal.LastDate == "" {
+		return 0
+	}
+
+	last, err := time.Parse("2006-01-02", doc.Journal.LastDate)
+	if err != nil {
+		t.Fatalf("his journal's last_date %q: %v", doc.Journal.LastDate, err)
+	}
+
+	return float64(int(last.Sub(time.Date(1462, 6, 17, 0, 0, 0, 0, time.UTC)).Hours()/24)+1) * 24 * 60
 }

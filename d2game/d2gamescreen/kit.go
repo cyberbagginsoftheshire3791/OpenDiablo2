@@ -49,6 +49,7 @@ func (v *Game) bindKit() {
 	// deferred FIRST (A9).
 	defer v.bindJournal(extras.Journal)
 	defer v.bindProgress(extras.Progress)
+	defer v.wakeOnTheDayAfterHisJournal(extras.Journal) // BUG-114: runs before bindProgress samples the clock
 	defer v.bindStanding(extras.Village)
 	defer v.bindLand(extras.Land)
 
