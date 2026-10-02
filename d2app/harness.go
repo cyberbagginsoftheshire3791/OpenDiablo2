@@ -301,6 +301,14 @@ func (a *App) harnessStart() {
 	// unfocused game ticking. A hand launch without -harness is unchanged.
 	ebiten.SetInitFocused(false)
 
+	// And the mouse is the script's (BUG-111): he works at the same laptop
+	// while the suite runs, and his real mouse moved the scripted cursor --
+	// hovers read "" and clicks missed. A harnessed game never reads the real
+	// mouse's position, buttons or wheel (ScriptedInputService.OwnMouse).
+	if harness.input != nil {
+		harness.input.OwnMouse()
+	}
+
 	host := *harness.addr
 	if i := strings.LastIndex(host, ":"); i >= 0 {
 		host = host[:i]

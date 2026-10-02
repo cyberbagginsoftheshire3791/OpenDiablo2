@@ -56,6 +56,9 @@ type harnessInputOut struct {
 	CursorX  int    `json:"cursor_x"`
 	CursorY  int    `json:"cursor_y"`
 	Scripted bool   `json:"cursor_scripted"`
+	// MouseOwned: the real mouse is not read at all (BUG-111): true in every
+	// game started with -harness.
+	MouseOwned bool `json:"mouse_owned"`
 }
 
 // harnessWaitFrameAfter blocks until the frame that ran the queued command
@@ -101,6 +104,7 @@ func harnessApplyInput(what string, fn func()) (harnessInputOut, error) {
 	err = harnessOnUpdate(func() {
 		out.CursorX, out.CursorY = harness.input.Cursor()
 		out.Scripted = harness.input.CursorScripted()
+		out.MouseOwned = harness.input.MouseOwned()
 	})
 	if err != nil {
 		return out, err
@@ -196,6 +200,7 @@ func harnessApplyHeldClick(what string, x, y int, button d2enum.MouseButton,
 	err = harnessOnUpdate(func() {
 		out.CursorX, out.CursorY = harness.input.Cursor()
 		out.Scripted = harness.input.CursorScripted()
+		out.MouseOwned = harness.input.MouseOwned()
 	})
 	if err != nil {
 		return out, err
@@ -342,7 +347,7 @@ func (a *App) harnessAddInputTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_move_cursor",
-		Description: "Place the scripted cursor at SCREEN PIXELS x,y. It stays until the real mouse moves (hover highlights, tooltips, and the next strigoi_click without coordinates all see it).",
+		Description: "Place the scripted cursor at SCREEN PIXELS x,y. It stays until a script moves it: a game started with -harness never reads the real mouse (mouse_owned, BUG-111); before any script places it the cursor is parked off the window at -1,-1 (hover highlights, tooltips, and the next strigoi_click without coordinates all see it).",
 		Annotations: harnessAnnMut(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessCursorIn) (*mcp.CallToolResult, harnessInputOut, error) {
 		harnessLogCall("strigoi_move_cursor")
