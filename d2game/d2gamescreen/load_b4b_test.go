@@ -24,7 +24,12 @@ import (
 // a pack (a group on the tables), a wounded survivor and a slain beast lying
 // as a corpse (bodies), a walk in progress, a watch and a chase, and a watch
 // on the VILLAGER (so a record names him by the id the re-key must give
-// back). Every creature is Strigoi's own PNG art, so no MPQs; an NPC cannot be
+// back). THE CHASE IS OF THE VILLAGER since the combat status (Josh, 30 Sep
+// 2026): a hostile chasing HIM is combat, and a save is refused in combat, so
+// no file the game writes holds a chase of him any more -- B4b's was one. The
+// chase of the villager names him by the id the re-key gives back, as the
+// watch does; a file from before this burst holding a chase of him still
+// resumes, and he is in combat after it (combat_status_test.go). Every creature is Strigoi's own PNG art, so no MPQs; an NPC cannot be
 // built without them, and the NPC half -- a deployed squad model -- is the
 // playtest's (TestSaveResume).
 
@@ -135,9 +140,10 @@ func b4bHunt(t *testing.T, v *Game) b4bNight {
 	n.walker.SetPath([]d2vector.Position{d2vector.NewPosition(120, 90), d2vector.NewPosition(130, 95)}, nil)
 	n.villager.(*d2mapentity.Creature).SetPath([]d2vector.Position{d2vector.NewPosition(70, 60)}, nil)
 
-	// A watch and a chase on him; a watch on the villager.
+	// A watch on him; a chase of the villager (the combat status: a chase of
+	// HIM is combat, which refuses the save); a watch on the villager.
 	require.True(t, v.Watch(n.walker, v.localPlayer))
-	require.True(t, v.Pursue(n.walker, v.localPlayer))
+	require.True(t, v.Pursue(n.walker, n.villager))
 	require.True(t, v.Watch(n.wounded, n.villager))
 
 	// The pack: the three as one group on the tables.
@@ -182,8 +188,8 @@ func b4bIDs(v *Game) []string {
 }
 
 // THE ACCEPTANCE TEST IN MINIATURE, ON A HUNTED NIGHT: a pack, a wounded
-// survivor, a corpse, a walk, a watch and a chase on him, a watch on the
-// villager -- saved, loaded into a fresh game whose villager has another id,
+// survivor, a corpse, a walk, a watch on him and a chase of the villager (the
+// combat status: never a chase of him), a watch on the villager -- saved, loaded into a fresh game whose villager has another id,
 // and the loaded game saves the saved moment and, run on, stays the saved
 // game. Every entity the file names is on the map with its saved id and
 // motion; the villager is the SAME entity, re-keyed in place; the bodies are

@@ -10,6 +10,7 @@ const (
 	WorldHeldByTalk    = "talk"        // a conversation is open (T4)
 	WorldHeldByFight   = "fight"       // a paced fight: the clock moves a round at a time (T1)
 	WorldHeldByJournal = "journal"     // he is reading his journal (J1)
+	WorldHeldByClose   = "closing"     // the window's close is settling, then saving (the combat-status review, B1)
 )
 
 // WorldHolder is the game screen's answer to "what holds the world?".

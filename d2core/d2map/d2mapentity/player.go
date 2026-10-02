@@ -335,6 +335,17 @@ func (p *Player) StartAction(mode d2enum.PlayerAnimationMode) error {
 	return nil
 }
 
+// Reacting reports his own hit or block reaction still playing (StartAction's
+// get-hit or block, from Game.Animate: the Janissary integration, 0ba2b4d5).
+// A reaction locks neither his input nor the fight's timing, and it is not in
+// the world file (a load stands him still, rule 4) -- so since the combat
+// status (Josh, 30 Sep 2026) it is one of the things that put him IN COMBAT,
+// and no save can land while it plays (BUG-105). His death is not a reaction:
+// a dead man's save is refused DEAD before combat is asked.
+func (p *Player) Reacting() bool {
+	return p.actionHeld && p.actionMode != d2enum.PlayerAnimationModeDeath
+}
+
 // Selectable returns true if the player is in town.
 func (p *Player) Selectable() bool {
 	// Players are selectable when in town

@@ -368,6 +368,7 @@ var b3TransientKind = map[string]string{
 	"wasFighting":      "refused",
 	"pendingLoad":      "refused",
 	"loadAbandoned":    "refused",
+	"combatGrace":      "refused",
 
 	"loadFailed": "reset:failPendingLoad",
 
@@ -449,6 +450,8 @@ func b3SetNonZero(t *testing.T, v *Game, name string) {
 	switch f.Kind() {
 	case reflect.Bool:
 		f.SetBool(true)
+	case reflect.Float64:
+		f.SetFloat(1)
 	case reflect.String:
 		f.SetString("b3")
 	case reflect.Map:
@@ -537,9 +540,9 @@ var b3PlayerClasses = map[string]string{
 	"isInTown":          "D: set by the client from the region under him",
 	"isRunToggled":      "S:hero.run",
 	"isRunning":         "D: set with the run toggle (the HUD's run button, SetIsRunning); a load sets it from hero.run",
-	"isCasting":         "T: his swing still playing refuses the save (FIGHTING)",
+	"isCasting":         "T: his swing still playing puts him in combat, and COMBAT refuses the save (FIGHTING's until the combat status, 30 Sep 2026)",
 	"castMode":          "D: requested skill pose; StandAt clears it on reconstruction (rule 4)",
-	"actionHeld":        "D: visual reaction only; StandAt normalizes the living hero to idle (rule 4)",
+	"actionHeld":        "T: his hit or block reaction still playing puts him in combat, and COMBAT refuses the save (the combat status closed BUG-105, 30 Sep 2026); his death is DEAD's; StandAt normalizes the living hero to idle (rule 4)",
 	"actionMode":        "D: visual reaction only; StandAt clears it on reconstruction (rule 4)",
 	"corpse":            "D: visual terminal death; dead heroes cannot save and StandAt reconstructs a living pose",
 	"onFinishedCasting": "W: a cast's callback; nil in Strigoi's game",
@@ -614,6 +617,7 @@ var b3ControlsClasses = map[string]string{
 	"forageHolder":           "W: the game screen",
 	"corpseHolder":           "W: the game screen",
 	"journalHolder":          "W: the game screen",
+	"combatHolder":           "W: the game screen (the combat marker's status, 30 Sep 2026)",
 	"squads":                 "W: the squads owner, saved as the squads block",
 	"clock":                  "D: the controls' own seconds for click repeat; only differences are read, and it restarts with the stamps",
 	"wheelAcc":               "D: a fraction of a wheel notch not yet turned; every process starts it at 0",
@@ -671,8 +675,15 @@ func TestPlayerAndControlsFieldsClassified(t *testing.T) {
 	check(b3PlayerClasses, reflect.TypeOf(d2mapentity.Player{}), mapEntity.Type, reflect.TypeOf(d2hero.HeroStatsState{}))
 	check(b3ControlsClasses, reflect.TypeOf(d2player.GameControls{}))
 
-	// The one T: his swing still playing is refused.
+	// The two T: his swing still playing, and his hit or block reaction (BUG-105),
+	// each put him in combat, which the save refuses (the combat status, 30 Sep
+	// 2026: his swing was FIGHTING's before it).
 	v, save := b3SavableGame(t)
 	b3SetField(t, v.localPlayer, "isCasting", true)
-	b3Refused(t, v, SaveRefusedFighting, SaveOptions{To: filepath.Join(filepath.Dir(save), "c.world.json")})
+	b3Refused(t, v, SaveRefusedCombat, SaveOptions{To: filepath.Join(filepath.Dir(save), "c.world.json")})
+
+	v, save = b3SavableGame(t)
+	b3SetField(t, v.localPlayer, "actionHeld", true)
+	b3SetField(t, v.localPlayer, "actionMode", d2enum.PlayerAnimationModeGetHit)
+	b3Refused(t, v, SaveRefusedCombat, SaveOptions{To: filepath.Join(filepath.Dir(save), "r.world.json")})
 }

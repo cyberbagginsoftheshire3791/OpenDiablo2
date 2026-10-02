@@ -133,6 +133,10 @@ func (g *GameControls) HarnessState() map[string]interface{} {
 		"escape_menu": g.escapeMenu.HarnessReport(),
 		"save_notice": g.saveNoticeText(),
 
+		// The combat marker by the health globe (30 Sep 2026): what it last
+		// drew and where -- this process's presentation, like the menu.
+		"combat_marker": g.combatMarkerReport(),
+
 		"world_held_by":     g.worldHeldByReport(),
 		"skill_select_open": g.hud.skillSelectMenu.IsOpen(),
 		"hand_icons":        g.handIconsReport(),
@@ -462,12 +466,13 @@ func splitUIDigest(world map[string]interface{}) (map[string]interface{}, map[st
 		"torch_verbs": world["torch_verbs"], "clock": world["clock"],
 		"talent_cells": withoutKeys(world["talent_cells"], rect...), "journal_notice": world["journal_notice"],
 		"escape_menu": world["escape_menu"], "save_notice": world["save_notice"],
-		"view_scale": world["view_scale"],
+		"combat_marker": world["combat_marker"],
+		"view_scale":    world["view_scale"],
 	}
 
 	for _, key := range []string{
 		"torch_verbs", "clock", "hover_label", "mini_panel_buttons", "run_button",
-		"talent_cells", "journal_notice", "escape_menu", "save_notice", "view_scale",
+		"talent_cells", "journal_notice", "escape_menu", "save_notice", "combat_marker", "view_scale",
 	} {
 		delete(world, key)
 	}

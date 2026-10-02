@@ -1,8 +1,6 @@
 package d2player
 
 import (
-	"fmt"
-
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
@@ -91,39 +89,10 @@ func (h *HUD) loadHands() {
 
 // handArt loads a hand's art from path: nil and no error when there is no
 // file (the letter is drawn), nil and an error when there is one that is not
-// one direction of `frames` frames, each 48x48.
+// one direction of `frames` frames, each 48x48 (iconArt, which the combat
+// marker's art shares).
 func handArt(asset *d2asset.AssetManager, path string, frames int) (d2interface.Animation, error) {
-	if asset == nil {
-		return nil, nil
-	}
-
-	if exists, err := asset.FileExists(path); err != nil || !exists {
-		return nil, nil
-	}
-
-	art, err := asset.LoadAnimation(path, "")
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-
-	if dirs, n := art.GetDirectionCount(), art.GetFrameCount(); dirs != 1 || n != frames {
-		return nil, fmt.Errorf("%s is %d direction(s) of %d frame(s); this hand is 1 of %d (a sheet needs its .png.json)",
-			path, dirs, n, frames)
-	}
-
-	for i := 0; i < frames; i++ {
-		w, height, err := art.GetFrameSize(i)
-		if err != nil {
-			return nil, fmt.Errorf("%s frame %d: %w", path, i, err)
-		}
-
-		if w != skillIconWidth || height != skillIconHeight {
-			return nil, fmt.Errorf("%s frame %d is %dx%d; a hand's frame is %dx%d",
-				path, i, w, height, skillIconWidth, skillIconHeight)
-		}
-	}
-
-	return art, nil
+	return iconArt(asset, path, frames, skillIconWidth, skillIconHeight)
 }
 
 // choose is what the hand draws now: its art and the art's frame when it has

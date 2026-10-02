@@ -27,10 +27,12 @@ import (
 //     does -- the world file, his .od2 and his sidecar, in B3's order and
 //     generation, then the unload. What only holds the screen is ended first
 //     -- a talk, the journal, as a death ends them -- and the moment after a
-//     fight is let settle, frames run until it clears (the B5 review, A1).
-//     ONLY HIS LIVE FIGHT, HIS DEATH OR A NETWORK GAME makes a close leave
-//     without saving what he played (rule 3: "In a fight it leaves without
-//     saving, and you come back to your last save"). A game still starting,
+//     fight is let settle, frames run until it clears (the B5 review, A1) --
+//     since the combat status (30 Sep 2026), the grace after combat's
+//     remainder among them. ONLY COMBAT -- HIS LIVE FIGHT OR A HOSTILE
+//     CHASING HIM -- HIS DEATH OR A NETWORK GAME makes a close leave without
+//     saving what he played (rule 3: "In combat it leaves without saving, and
+//     you come back to your last save"). A game still starting,
 //     or his gear not yet chosen, has played nothing -- the world has not
 //     moved since it opened -- and is left as it is. It never blocks the
 //     close: the save runs under a limit (CloseGame), and every file it
@@ -50,12 +52,16 @@ import (
 // retries on any *SaveRefusal, whatever it names -- a fight, a talk, his last
 // swing still playing, whatever the save refuses in the build this is part of
 // -- and gives up only when the day is over. The codes pick the WORDS a person
-// reads (saveRefusalWords), and the close hook's settle (the one refusal a few
-// frames cure: FIGHTING with no fight of his), nothing else. So a refusal the
+// reads (saveRefusalWords), and the close hook's settle (the refusals a few
+// frames cure: FIGHTING, and COMBAT for its grace, his swing or his reaction --
+// settlesForClose), nothing else. So a refusal the
 // save gains or loses changes no line of the autosave's logic: the merge with
 // save-held (29 Sep 2026) dropped the refusal of a monster's or villager's
 // held action (BUG-87 carries it in the file at its frame), and nothing here
-// changed -- the autosave is simply taken sooner after a fight.
+// changed -- the autosave is simply taken sooner after a fight. The combat
+// status (30 Sep 2026) added COMBAT, and nothing here changed either: a dawn
+// that finds him chased, or in the seconds after a fight, is pending until
+// the first frame he is out of combat, that day.
 
 // The game's callers of the world save (saveRecord.By, the "save" provider).
 const (
@@ -250,13 +256,6 @@ func (v *Game) SaveRefusedNow() string {
 	return ""
 }
 
-// hisFight is whether HIS fight is running (the combat model's encounter): a
-// FIGHTING refusal without one is the moment after a fight, which a moment
-// cures.
-func (v *Game) hisFight() bool {
-	return v.combat != nil && v.combat.Fighting()
-}
-
 // leaveWords is the menu's last line when a save is not made: what EXIT
 // WITHOUT SAVING does (the B5 review, C1 and A2). In a network game leaving
 // keeps his hero and gear and not the night -- there is no "last save" of a
@@ -352,26 +351,42 @@ func (v *Game) refusalWords(r *SaveRefusal) string {
 		}
 	}
 
-	return saveRefusalWords(r.Code, v.hisFight())
+	// The moment after combat (the review of combat-status, B2, 1 Oct 2026;
+	// decided on the coordinator's default, Josh can overturn): only the
+	// grace, his swing or his reaction holds the save -- nothing is after him
+	// -- and under the menu, which pauses the world, that moment never ends.
+	// "You can't save in combat." with no enemy in sight read as a fault; the
+	// words say what to do. (The other option, SAVE AND EXIT settling like the
+	// close, was not taken: the menu's SAVE GAME could not settle the same
+	// way without running frames he does not see, and the two entries would
+	// then answer differently for one moment.)
+	if r.Code == SaveRefusedCombat && v.settlesForClose(r) {
+		return d2player.SaveRefusedCombatMomentWords
+	}
+
+	return saveRefusalWords(r.Code)
 }
 
 // saveRefusalWords is a refusal, by its code, in his words (rule 2: "The menu
-// says so"). hisFight is whether HIS fight is running: a FIGHTING refusal
-// without one is the moment after a fight -- its end not yet applied, its
-// experience or pace not yet taken, his last swing still playing -- which a
-// moment cures. (A monster's or villager's held action -- a blow or a death
-// still playing, BUG-76's refusal -- was one more until the merge with
-// save-held, 29 Sep 2026: BUG-87 carries it in the file at its frame, and the
-// save no longer refuses it. The case is still reached without it; the words
-// stand.) A code this function does not know is "not now" in general words,
-// never a code on the screen.
-func saveRefusalWords(code string, hisFight bool) string {
+// says so").
+//
+//   - COMBAT is "You can't save in combat." (Josh, 30 Sep 2026): his fight,
+//     a hostile after him, his own swing or reaction, or the seconds after.
+//   - FIGHTING is only ever the moment after a fight now -- its end not yet
+//     applied, its experience or pace not yet taken -- which a moment cures:
+//     his fight running and his last swing playing, which FIGHTING said "You
+//     can't save during a fight." for, are COMBAT's since the combat status.
+//     (A monster's or villager's held action -- a blow or a death still
+//     playing, BUG-76's refusal -- was one more until the merge with
+//     save-held, 29 Sep 2026: BUG-87 carries it in the file at its frame.)
+//
+// A code this function does not know is "not now" in general words, never a
+// code on the screen.
+func saveRefusalWords(code string) string {
 	switch code {
+	case SaveRefusedCombat:
+		return d2player.SaveRefusedCombatWords
 	case SaveRefusedFighting:
-		if hisFight {
-			return d2player.SaveRefusedFightWords
-		}
-
 		return d2player.SaveRefusedSettleWords
 	case SaveRefusedTalking:
 		return d2player.SaveRefusedTalkWords
@@ -461,9 +476,9 @@ func (r CloseReport) String() string {
 // (and writes his .od2 and sidecar only when the save did not: the B5
 // review, C2) -- run under limit, so the close never hangs on it. First a
 // talk and the journal are ended and the moment after a fight is let settle
-// (closeNow). A save refused for a reason no moment cures (his fight, his
-// death, a network game) still unloads: he leaves without saving and comes
-// back to his last save.
+// (closeNow). A save refused for a reason no moment cures (combat -- his
+// live fight, or a hostile chasing him -- his death, a network game) still
+// unloads: he leaves without saving and comes back to his last save.
 //
 // The hook runs on its own goroutine while the caller -- the game goroutine,
 // in ebiten's Update or the harness's queue -- waits for it and does nothing
@@ -534,18 +549,21 @@ var cutWrites = d2items.CutWrites
 // nolint:gochecknoglobals // a seam for a unit test, as setAsideWorld is
 var unloadOnClose = func(v *Game) error { return v.OnUnload() }
 
-// The close's settle (the B5 review, A1): the moment after a fight -- FIGHTING
-// with no fight of his: its end not yet applied, its experience or pace not
-// yet taken, his last swing still playing out -- and the close runs frames
-// until it clears, then saves. Those are a frame or two. The eight seconds
-// were sized for a monster's held action (BUG-76's refusal: BUG-87 measured a
-// clock fight's refusal at up to 6.53 s at the shipped round), which the merge
-// with save-held (29 Sep 2026) dropped -- the file carries a held action at
-// its frame. The bound is KEPT: his own swing still refuses, and a settle
-// that ends early costs nothing, while one cut short leaves unsaved. The
-// settle runs up to eight seconds of game time -- and never more than
-// closeSettleBudget of the close's wall time (closeLimit is ten), so the save
-// and the unload always have time left.
+// The close's settle (the B5 review, A1): the moment after a fight -- FIGHTING,
+// its end not yet applied, its experience or pace not yet taken; and, since
+// the combat status (30 Sep 2026), COMBAT for the grace after combat, his last
+// swing or his reaction still playing (settlesForClose) -- and the close runs
+// frames until it clears, then saves. The fight's bookkeeping is a frame or
+// two; the grace is at most combatGraceSeconds (3 s shipped: 180 frames). The
+// eight seconds were sized for a monster's held action (BUG-76's refusal:
+// BUG-87 measured a clock fight's refusal at up to 6.53 s at the shipped
+// round), which the merge with save-held (29 Sep 2026) dropped -- the file
+// carries a held action at its frame. The bound is KEPT, and it covers the
+// grace with room: a settle that ends early costs nothing, while one cut short
+// leaves unsaved. It never waits for a chase, which does not end on its own,
+// or his live fight. The settle runs up to eight seconds of game time -- and
+// never more than closeSettleBudget of the close's wall time (closeLimit is
+// ten), so the save and the unload always have time left.
 const (
 	closeFrameSeconds = 1.0 / 60
 	closeSettleFrames = 8 * 60
@@ -567,10 +585,13 @@ var settleFrame = func(v *Game) error { return v.Advance(closeFrameSeconds) }
 //     anything the world file keeps. Before, a close with the journal open
 //     left without saving and nothing said so.
 //   - THE MOMENT AFTER A FIGHT SETTLES (settleForClose): frames run until the
-//     save is no longer refused for it.
-//   - ONLY HIS LIVE FIGHT, HIS DEATH OR A NETWORK GAME LEAVES UNSAVED what he
-//     played: his own fight (rule 3: "In a fight it leaves without saving,
-//     and you come back to your last save"), his death (a dead hero is never
+//     save is no longer refused for it -- the fight's bookkeeping, his swing
+//     or reaction, and the grace after combat (the combat status, 30 Sep
+//     2026).
+//   - ONLY COMBAT, HIS DEATH OR A NETWORK GAME LEAVES UNSAVED what he played:
+//     combat -- his own fight live, or a hostile chasing him (rule 3,
+//     reworded by the combat status: "In combat it leaves without saving, and
+//     you come back to your last save") -- his death (a dead hero is never
 //     saved), a network game (rule 9). A game not ready to be saved (still
 //     starting) or a loadout not yet chosen is refused too, and loses
 //     nothing: the world has been held, or not yet built, since the game
@@ -621,11 +642,51 @@ func (v *Game) closeNow(rep *CloseReport) {
 	rep.Unloaded = true
 }
 
-// settleForClose runs frames while the save is refused FIGHTING with no fight
-// of his, up to closeSettleFrames and closeSettleBudget, and records how many
-// in rep. It stops at once on any other refusal -- his own fight among them,
-// which a frame may open -- and on none. The escape menu, which pauses the
-// world a fight's end must settle in, is put away first.
+// closeAskWindow is how long a close in combat's question stands: a second
+// close inside it leaves without saving (AskBeforeClose) [DIAL]. Wall time --
+// the close is a person's hand on the window, and the world may be paused
+// under the menu.
+const closeAskWindow = 5 * time.Second
+
+// AskBeforeClose is the window's close in combat (the combat-status review,
+// A2, decided 1 Oct 2026 on the coordinator's default; Josh can overturn): a
+// close that would leave without saving for combat -- his live fight or a
+// hostile chasing him; never the grace, his swing or his reaction, which the
+// close settles and then saves -- asks once. It puts "You are in combat.
+// Close again to leave without saving." up, and answers true: this close is
+// not taken. A second close within closeAskWindow answers false and the close
+// goes on (closeNow: unsaved, and since A1 no part of him written). Any close
+// not in combat answers false at once and clears the question.
+func (v *Game) AskBeforeClose(now time.Time) bool {
+	r := v.saveRefusal()
+	if r == nil || r.Code != SaveRefusedCombat || v.settlesForClose(r) {
+		v.closeAskedAt = time.Time{}
+
+		return false
+	}
+
+	if !v.closeAskedAt.IsZero() && now.Sub(v.closeAskedAt) <= closeAskWindow {
+		return false
+	}
+
+	v.closeAskedAt = now
+
+	if v.gameControls != nil {
+		v.gameControls.SaveNotice(d2player.CloseInCombatWords, closeAskWindow.Seconds())
+	}
+
+	v.Infof("CLOSE asked: %s; a second close within %v leaves without saving", r.Reason, closeAskWindow)
+
+	return true
+}
+
+// settleForClose runs frames while the save is refused for the moment after
+// combat (settlesForClose: FIGHTING, or COMBAT for its grace, his swing or his
+// reaction), up to closeSettleFrames and closeSettleBudget, and records how
+// many in rep. It stops at once on any other refusal -- his own fight live or
+// a hostile chasing him among them, which a frame may begin -- and on none.
+// The escape menu, which pauses the world a fight's end must settle in, is put
+// away first.
 func (v *Game) settleForClose(rep *CloseReport) {
 	began := time.Now()
 
@@ -633,7 +694,7 @@ func (v *Game) settleForClose(rep *CloseReport) {
 
 	for rep.SettleFrames < closeSettleFrames && time.Since(began) < closeSettleBudget {
 		r := v.saveRefusal()
-		if r == nil || r.Code != SaveRefusedFighting || v.hisFight() {
+		if r == nil || !v.settlesForClose(r) {
 			return
 		}
 
@@ -843,6 +904,8 @@ func (p saveProvider) HarnessState() map[string]interface{} {
 
 	ls := v.lastSave
 
+	combatCode, combatDetail := v.CombatReason()
+
 	return map[string]interface{}{
 		"autosave": map[string]interface{}{
 			"state": state, "day": a.Day, "tries": a.Tries,
@@ -860,6 +923,16 @@ func (p saveProvider) HarnessState() map[string]interface{} {
 		"reason_now":    reasonNow,
 		"words_now":     wordsNow,
 		"autosave_dial": !v.autosaveOff,
+
+		// The combat status (30 Sep 2026): whether he is in combat -- so a
+		// save is refused COMBAT and the HUD marks it -- why (fight, chased,
+		// swing, reaction, grace), a word on it, the grace left in seconds of
+		// game time, and the grace's dial.
+		"in_combat":         combatCode != "",
+		"combat_reason":     combatCode,
+		"combat_detail":     combatDetail,
+		"combat_grace_left": v.combatGrace,
+		"combat_grace":      v.combatGraceSeconds,
 	}
 }
 
@@ -880,14 +953,35 @@ func (p saveProvider) HarnessDigest() (world, process map[string]interface{}) {
 	return map[string]interface{}{}, process
 }
 
-// HarnessSettableFields: one dial. autosave false keeps the dawn from saving
+// HarnessSettableFields: two dials. autosave false keeps the dawn from saving
 // by itself, for a script whose subject is a save it makes (TestSaveResume
 // steps past dawn after T and must load T); the shipped game has no way to set
-// it.
-func (p saveProvider) HarnessSettableFields() []string { return []string{"autosave"} }
+// it. combat_grace is the combat status's grace in seconds of game time
+// (DefaultCombatGraceSeconds shipped): 0 ends combat on the frame its last
+// trigger ends -- the controls' "no grace" -- and a script may lengthen it.
+func (p saveProvider) HarnessSettableFields() []string { return []string{"autosave", "combat_grace"} }
 
 func (p saveProvider) HarnessSet(field string, value interface{}) error {
-	if field != "autosave" {
+	switch field {
+	case "autosave":
+	case "combat_grace":
+		seconds, ok := value.(float64)
+		if n, isInt := value.(int); isInt {
+			seconds, ok = float64(n), true
+		}
+
+		if !ok || !(seconds >= 0 && seconds <= 3600) {
+			return fmt.Errorf("combat_grace wants seconds of game time, 0 to 3600, got %v", value)
+		}
+
+		p.v.combatGraceSeconds = seconds
+
+		if p.v.combatGrace > seconds {
+			p.v.combatGrace = seconds
+		}
+
+		return nil
+	default:
 		return fmt.Errorf("save has no settable field %q", field)
 	}
 

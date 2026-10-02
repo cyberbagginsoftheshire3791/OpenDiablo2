@@ -31,9 +31,10 @@ package playtest
 //     file must hold at least one action still playing -- a swing, a blow
 //     taken or a death, saved at its frame and resumed there.
 //
-//	TestSaveResumeWithAFightHeIsNotIn  the hunted night: a monster chasing
-//	                                   him and a clock fight live at T, two
-//	                                   hours on, past the clock fight's end
+//	TestSaveResumeWithAFightHeIsNotIn  the hunted night: a monster watching
+//	                                   him (not yet seeing him: the combat
+//	                                   status) and a clock fight live at T,
+//	                                   two hours on, past the clock fight's end
 //	TestSaveResumeAFightHeIsNotIn      the quick one: two clock fights in
 //	                                   the first dawn, three rounds on, and
 //	                                   the file-edit controls
@@ -115,16 +116,23 @@ const (
 //	    and watered each hour, as the sleeper is).
 //	V1  A zombie1 seven to ten tiles off on a clear line watches him; a
 //	    fallen1 on a fallen1 fifteen tiles off the other way (both 61 HP). T
-//	    is the first frames of the chase with the clock fight live: its
-//	    quarry hurt and alive, its monster alive, the combat-clock stream
-//	    drawn from, and none of it his. The clock fight's two bodies watch
+//	    is the moment before the zombie sees him, with the clock fight live:
+//	    its quarry hurt and alive, its monster alive, the combat-clock stream
+//	    drawn from, and none of it his. THE COMBAT STATUS MOVED T (30 Sep
+//	    2026): it was the first frames of the zombie's chase of him, and a
+//	    hostile chasing him is combat, in which a save is refused. So until T
+//	    the notice radius is two tiles -- the clock fight's monster, a tile
+//	    from its quarry, sees it; the zombie, seven or more off, does not --
+//	    and at T it is the shipped one again (before the save, no frame
+//	    between), so the zombie sees him and gives chase in the frames after
+//	    T, in both games alike. The clock fight's two bodies watch
 //	    and chase nothing but each other (a monster in both fights is the R1
 //	    review's A1, fixed on its own; this script keeps out of it). He
 //	    stands still; the round is the shipped one; the save is never
 //	    refused as a fight (Q5 (a)), nor while a blow's action plays
 //	    (BUG-87): it is made on the first try (scSaveAtT, no retry) and
-//	    moves nothing; S_T; the file is hunted (a watch and a chase on him,
-//	    the entities the map does not build), holds the clock fight in
+//	    moves nothing; S_T; the file is hunted (a watch on him and no chase of
+//	    him, the entities the map does not build), holds the clock fight in
 //	    combat.clock.live, rng.combat_clock = combat.clock.rng, and holds at
 //	    least one action still playing, at its frame (scHeldInFile).
 //	V2  Two hours in ten-minute steps, and on until the clock fight has
@@ -160,6 +168,10 @@ func TestSaveResumeWithAFightHeIsNotIn(t *testing.T) {
 
 	scShippedPace(t, s, "V0")
 
+	// The combat status: the notice radius two tiles until T (V1), the shipped
+	// one after.
+	shippedRadius := mustNum(t, spawnsState(s), "notice_radius")
+
 	// --- V0: to true dark -----------------------------------------------------
 	for i := 0; i < 24 && str(clockState(s), "stage") != "night"; i++ {
 		if e := afhStepWorld(s, 60.0); e != "" {
@@ -183,6 +195,8 @@ func TestSaveResumeWithAFightHeIsNotIn(t *testing.T) {
 	// first run, pt-sc-1); the clock fight a fallen1 on a fallen1 fifteen tiles
 	// off the other way (61 HP each: the fight lasts some six rounds, measured).
 	// The clock fight's monster watches its quarry and nothing else.
+	setField(s, "spawns", "notice_radius", 2.0)
+
 	spot := scClearSpot(t, s, px, py)
 	chaser := spawnNPC(t, s, "zombie1", spot[0], spot[1])
 	chaserID := entityID(t, s, chaser)
@@ -204,9 +218,12 @@ func TestSaveResumeWithAFightHeIsNotIn(t *testing.T) {
 
 	f := afhFightFor(s, quarryID)
 	if f == nil || !scReadyAtT(t, s, chaserID, playerID, quarryID) || flag(t, combatState(s), "fighting") {
-		t.Fatalf("V1: no T in %d frames -- a clock fight live with its quarry hurt, the chaser %s chasing him, no fight of his: fighting %v, chases %v, clock %s",
+		t.Fatalf("V1: no T in %d frames -- a clock fight live with its quarry hurt, the chaser %s watching him and not chasing him, no fight of his: fighting %v, chases %v, clock %s",
 			frames, chaserID, combatState(s)["fighting"], scChases(s), cut(afhClockJSON(t, s)))
 	}
+
+	// The shipped radius again: the zombie will see him in the frames after T.
+	setField(s, "spawns", "notice_radius", shippedRadius)
 
 	// --- V1: the save at T ------------------------------------------------------
 	// Asked once, and made (BUG-87): a blow's action still playing is saved
@@ -291,15 +308,15 @@ func TestSaveResumeWithAFightHeIsNotIn(t *testing.T) {
 		t.Fatalf("V1: version %d, rng.combat_clock %+v, combat.clock.rng %+v", w.Version, w.RNG.CombatClock, w.Combat.Clock.RNG)
 	}
 
-	if hisWatchers == 0 || hisChases == 0 {
-		t.Fatalf("V1: the file is not hunted: %d watch(es) and %d chase(s) on him (%s): %v; %v",
+	if hisWatchers == 0 || hisChases != 0 {
+		t.Fatalf("V1: the file is hunted -- a watch on him -- and holds no chase of him (the combat status: a save is refused while one runs): %d watch(es) and %d chase(s) on him (%s): %v; %v",
 			hisWatchers, hisChases, playerID, listAt(t, file, "notice.watches"), listAt(t, file, "pursuit.chases"))
 	}
 
 	heldT := scHeldInFile(t, "V1", w)
 	t.Logf("V1: T's file holds %d action(s) still playing, each at its frame: %v", len(heldT), heldT)
 
-	t.Logf("V1 PASS: saved at %s (%s) after %d frames, on the first try, with %s chasing him (%d watch(es) and %d chase(s) on him in the file) and the clock fight %s live on %s (round %v, quarry %v of %v); clock next_id %v, combat-clock %+v; the digest unmoved",
+	t.Logf("V1 PASS: saved at %s (%s) after %d frames, on the first try, with %s watching him, not yet seeing him (%d watch(es) and %d chase(s) on him in the file) and the clock fight %s live on %s (round %v, quarry %v of %v); clock next_id %v, combat-clock %+v; the digest unmoved",
 		str(clockState(s), "time_of_day"), str(clockState(s), "stage"), frames, chaserID, hisWatchers, hisChases, fightT, quarryID,
 		f["round"], f["quarry_health"], f["quarry_max_health"], clockAtT["next_id"], w.RNG.CombatClock)
 
@@ -520,8 +537,9 @@ func scCall(s *session, name string, args map[string]any) (map[string]any, strin
 }
 
 // scReadyAtT is T's condition: the clock fight on quarry live and its quarry
-// hurt and alive, the combat-clock stream drawn from, and the chaser chasing
-// him.
+// hurt and alive, the combat-clock stream drawn from, and the chaser watching
+// him and nothing chasing him (it was "the chaser chasing him" until the
+// combat status, 30 Sep 2026, made that moment one no save can be made at).
 func scReadyAtT(t *testing.T, s *session, chaser, player, quarry string) bool {
 	t.Helper()
 
@@ -535,8 +553,16 @@ func scReadyAtT(t *testing.T, s *session, chaser, player, quarry string) bool {
 		return false
 	}
 
+	// The combat status (30 Sep 2026): the chaser watches him and does not
+	// yet chase him -- a chase of him is combat, and T must be savable.
 	for _, raw := range scChases(s) {
-		if c, _ := raw.(map[string]any); str(c, "hunter") == chaser && str(c, "quarry") == player {
+		if c, _ := raw.(map[string]any); str(c, "quarry") == player {
+			return false
+		}
+	}
+
+	for _, raw := range asList(spawnsState(s)["notice_list"]) {
+		if w, _ := raw.(map[string]any); str(w, "watcher") == chaser && str(w, "quarry") == player {
 			return true
 		}
 	}

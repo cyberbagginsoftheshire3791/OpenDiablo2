@@ -38,8 +38,10 @@ type Renderer struct {
 	lastRenderError error
 
 	// onClose is the App's close hook (M4.6 B5): the window's close button and
-	// Alt-F4 call it, then end the loop (SetCloseHandler).
-	onClose func()
+	// Alt-F4 call it, then end the loop (SetCloseHandler) -- unless it answers
+	// false: the close was asked about, not taken (the combat-status review,
+	// A2: a close in combat asks once), and the game plays on.
+	onClose func() bool
 }
 
 // SetCloseHandler hands the window's close to f (M4.6 B5, the build plan's
@@ -48,7 +50,7 @@ type Renderer struct {
 // game's goroutine, and ends (ebiten.Termination, which RunGame returns as a
 // clean exit). Without a handler the window closes as ebiten closes it, with
 // nothing called. Set it before Run.
-func (r *Renderer) SetCloseHandler(f func()) {
+func (r *Renderer) SetCloseHandler(f func() bool) {
 	r.onClose = f
 }
 
@@ -57,9 +59,9 @@ func (r *Renderer) Update() error {
 	// M4.6 B5: the close is the App's first (SetCloseHandler). No frame of the
 	// game advances once the window is closing.
 	if r.onClose != nil && ebiten.IsWindowBeingClosed() {
-		r.onClose()
-
-		return ebiten.Termination
+		if r.onClose() {
+			return ebiten.Termination
+		}
 	}
 
 	if r.updateCallback == nil {

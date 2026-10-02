@@ -5,6 +5,7 @@ package playtest
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,10 +24,12 @@ import (
 //
 //	TestTheMenuSaves             Esc, SAVE GAME: "Game saved.", the three files,
 //	                             the moment unmoved; a relaunch resumes it. In a
-//	                             fight the menu says "You can't save during a
-//	                             fight." and offers EXIT WITHOUT SAVING, which
+//	                             fight the menu says it cannot save and offers EXIT WITHOUT SAVING, which
 //	                             writes no world file, and he comes back to his
 //	                             last save. SAVE AND EXIT GAME saves and leaves.
+//	                             (Since the combat status, 30 Sep 2026, the
+//	                             fight's refusal is COMBAT: "You can't save in
+//	                             combat.")
 //	                             His .od2 read-only: SAVE GAME fails, puts the
 //	                             world file back, and says his last save stands
 //	                             -- which the next load shows is true (A2).
@@ -58,8 +61,10 @@ import (
 
 // The words he reads (d2player's strigoi_strings.go), as he reads them.
 const (
-	b5GameSaved     = "Game saved."
-	b5CantInAFight  = "You can't save during a fight."
+	b5GameSaved = "Game saved."
+	// The combat status (30 Sep 2026) took FIGHTING's "his fight is running"
+	// case: in his fight he is in combat, and the save is refused COMBAT.
+	b5CantInAFight  = "You can't save in combat."
 	b5ExitUnsaved   = "EXIT WITHOUT SAVING"
 	b5SaveAndExit   = "SAVE AND EXIT GAME"
 	b5SaveGame      = "SAVE GAME"
@@ -311,7 +316,7 @@ func TestTheMenuSaves(t *testing.T) {
 		t.Fatal("act 3: a refused SAVE GAME keeps the menu up")
 	}
 
-	if ls := lastSaveOf(s); str(ls, "result") != "refused" || str(ls, "code") != "FIGHTING" || str(ls, "words") != b5CantInAFight {
+	if ls := lastSaveOf(s); str(ls, "result") != "refused" || str(ls, "code") != "COMBAT" || str(ls, "words") != b5CantInAFight {
 		t.Fatalf("act 3: the refused save is recorded with its words: %v", ls)
 	}
 
@@ -578,9 +583,11 @@ func TestTheDawnAutosaveWaitsOutAFight(t *testing.T) {
 	// --- act 1: first light in the fight: PENDING --------------------------
 	frames := b5ToDawn(t, s, "act 1")
 
+	// COMBAT since the combat status (30 Sep 2026): in his fight he is in
+	// combat, and the save's refusal is that (it was FIGHTING's).
 	a := autosaveOf(s)
-	if str(a, "state") != "pending" || str(a, "last_refusal") != "FIGHTING" || num(a, "tries") < 1 {
-		t.Fatalf("act 1: first light in a fight: the autosave is pending on FIGHTING: %v (combat fighting %v)",
+	if str(a, "state") != "pending" || str(a, "last_refusal") != "COMBAT" || num(a, "tries") < 1 {
+		t.Fatalf("act 1: first light in a fight: the autosave is pending on COMBAT: %v (combat fighting %v)",
 			a, combatState(s)["fighting"])
 	}
 
@@ -680,9 +687,11 @@ func TestTheCloseHook(t *testing.T) {
 	out = s.call("strigoi_quit", map[string]any{"confirm": true, "graceful": true})
 	took := time.Since(began)
 
+	// COMBAT since the combat status (30 Sep 2026; it was FIGHTING): rule 3,
+	// "In combat it leaves without saving".
 	closed = sub(out, "close")
-	if flag(t, closed, "saved") || str(closed, "refused") != "FIGHTING" || !flag(t, closed, "unloaded") {
-		t.Fatalf("act 3: closed in a fight, the save is refused and the close goes on: %v", out)
+	if flag(t, closed, "saved") || str(closed, "refused") != "COMBAT" || !flag(t, closed, "unloaded") {
+		t.Fatalf("act 3: closed in a fight, the save is refused COMBAT and the close goes on: %v", out)
 	}
 
 	if took > 5*time.Second {
@@ -791,7 +800,10 @@ func TestTheCloseHook(t *testing.T) {
 	// --- act 6: closed in the moment after a fight ------------------------------
 	// The dog dies (every blow a crit); the fight is over, and the save is
 	// still refused while its end settles -- the dog's death playing out, his
-	// last swing -- which frames cure: the close runs them, then saves.
+	// last swing -- which frames cure: the close runs them, then saves. Since
+	// the combat status (30 Sep 2026) the refusal is COMBAT for the few seconds
+	// after his fight (the grace), which the close waits out (up to 180
+	// frames), and saves.
 	b5Fight(t, s)
 	setField(s, "combat", "forced_band", "crit")
 
@@ -803,17 +815,27 @@ func TestTheCloseHook(t *testing.T) {
 		s.call("strigoi_step", map[string]any{"frames": 1})
 	}
 
-	if st := saveState(s); str(st, "refused_now") != "FIGHTING" {
-		t.Fatalf("act 6: the premise: the fight is over and a save is still refused while it settles: %v", st)
+	st := saveState(s)
+	if str(st, "refused_now") != "COMBAT" || !hasString([]string{"grace", "swing", "reaction"}, str(st, "combat_reason")) {
+		t.Fatalf("act 6: the premise: the fight is over and a save is still refused in the moment after it (COMBAT, its grace): %v", st)
 	}
+
+	reasonAtClose, graceAtClose := str(st, "combat_reason"), mustNum(t, st, "combat_grace_left")
 
 	xpAtClose := mustNum(t, progressState(s), "xp")
 	atClose = mustNum(t, clockState(s), "world_minutes")
 	out = s.call("strigoi_quit", map[string]any{"confirm": true, "graceful": true})
 
+	// The settle waits out what is left: his swing or reaction, if one still
+	// plays, and then the whole grace (180 frames); or, in the grace alone,
+	// its remainder. Never more than the close's bound (480).
 	closed = sub(out, "close")
-	if !flag(t, closed, "saved") || num(closed, "settle_frames") < 1 {
-		t.Fatalf("act 6: closed in the moment after a fight, the close lets it settle and saves: %v", out)
+	settled := num(closed, "settle_frames")
+
+	if !flag(t, closed, "saved") || settled < 1 || settled > 480 ||
+		(reasonAtClose == "grace" && math.Abs(settled-graceAtClose*60) > 1) || (reasonAtClose != "grace" && settled < 180) {
+		t.Fatalf("act 6: closed in the moment after a fight (%s, %.3f s of grace left), the close waits out what is left of it and saves: %v",
+			reasonAtClose, graceAtClose, out)
 	}
 
 	s.stop()
@@ -834,8 +856,8 @@ func TestTheCloseHook(t *testing.T) {
 		t.Fatalf("act 6: the fight's end is kept: xp %v (at the close %v), fighting %v", xp, xpAtClose, combatState(s)["fighting"])
 	}
 
-	t.Logf("act 6 PASS: closed in the moment after a fight: %v settle frames (%v ms), saved (saved_at %s), resumed",
-		closed["settle_frames"], closed["settle_ms"], savedF)
+	t.Logf("act 6 PASS: closed in the moment after a fight (%s): %v settle frames (%v ms), saved (saved_at %s), resumed",
+		reasonAtClose, closed["settle_frames"], closed["settle_ms"], savedF)
 }
 
 func TestTheLoadNotice(t *testing.T) {

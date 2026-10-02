@@ -41,12 +41,39 @@ const closeLimit = 10 * time.Second
 // windowCloseHandled is a renderer that can hand its window's close to the App
 // (the ebiten renderer's SetCloseHandler).
 type windowCloseHandled interface {
-	SetCloseHandler(f func())
+	SetCloseHandler(f func() bool)
 }
 
-// onWindowClose is the window's close button and Alt-F4.
-func (a *App) onWindowClose() {
+// closeAsker is the game in play as the window's close asks it (the
+// combat-status review, A2): d2gamescreen.Game.AskBeforeClose.
+type closeAsker interface {
+	AskBeforeClose(now time.Time) bool
+}
+
+// onWindowClose is the window's close button and Alt-F4. It answers whether
+// the window closes: a close in combat asks once ("You are in combat. Close
+// again to leave without saving."), and a second close within a few seconds
+// leaves without saving (the combat-status review, A2, decided 1 Oct 2026
+// on the coordinator's default; Josh can overturn). Only the window asks: the
+// console's quit and the harness's graceful quit are a decision already.
+func (a *App) onWindowClose() bool {
+	if !a.closed && windowCloseAsks(a.screen.Current(), time.Now()) {
+		a.Infof("CLOSE (the window): asked, in combat; the game plays on")
+
+		return false
+	}
+
 	a.closeTheGame("the window")
+
+	return true
+}
+
+// windowCloseAsks is whether the screen in play asks before the window
+// closes: only a game, and only in combat (closeAsker).
+func windowCloseAsks(screen interface{}, now time.Time) bool {
+	game, ok := screen.(closeAsker)
+
+	return ok && game != nil && game.AskBeforeClose(now)
 }
 
 // closeTheGame is the close hook: the game in play, if there is one, saved as

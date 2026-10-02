@@ -498,7 +498,7 @@ var Register = []Entry{
 	{sym(pkgEntity, "NPC.StartAction"), BucketWire, VerdictLive,
 		"Plays one animation and HOLDS it, then returns the monster to Neutral -- or, for a death, to a Dead that is held for the rest of the run. Called from Game.Animate on every swing, every blow taken and every death. Before it, nothing could make a monster's sprite survive the next tick.", ""},
 	{sym(pkgEntity, "Player.StartAction"), BucketWire, VerdictLive,
-		"Game.Animate plays the Janissary's hit, shield block and death through this visual held-action path. Player.Advance also reaches it when neglect kills him. Death stops his route and finishes in a held corpse; ordinary reactions do not change casting/input/save locks. Swings retain the existing StartCasting path with its requested mode preserved.", ""},
+		"Game.Animate plays the Janissary's hit, shield block and death through this visual held-action path. Player.Advance also reaches it when neglect kills him. Death stops his route and finishes in a held corpse; ordinary reactions do not change casting or input locks -- and since the combat status (30 Sep 2026) a reaction playing puts him in combat, so no save is made during one (Player.Reacting; BUG-105). Swings retain the existing StartCasting path with its requested mode preserved.", ""},
 	{sym(pkgEntity, "NPC.SetAnimationMode"), BucketWire, VerdictLive,
 		"The first exported way to tell a monster to play a mode. Its only caller is NPC.StartAction, which is the honest reading: the row stays because the symbol stays, and it is wire because a real build now reaches it. tools/animcensus measured on 31 Aug that A1, GH, DT and DD all exist for the three codes the spawn tables use.", ""},
 	{sym(pkgEntity, "MapEntityFactory.NewCreature"), BucketWire, VerdictLive,
@@ -875,7 +875,7 @@ var Register = []Entry{
 	// generation, the sidecar's one document, the bestiary id a creature is
 	// saved by.
 	{sym(pkgScreen, "Game.SaveWorld"), BucketWire, VerdictLive,
-		"THE save verb: the world file, then the .od2, then the sidecar, then the death screen's copy re-taken; refused (touching no file) while fighting, talking, reading, choosing, dead or networked. M4.6 B5 gave it the game's callers, each through Game.SaveWorldAs: the escape menu's SAVE GAME and SAVE AND EXIT GAME (Game.SaveFromMenu), the window's close (Game.CloseGame) and the dawn autosave (Game.advanceAutosave); the harness's strigoi_save_game too. If it went dark the player could not save at all. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
+		"THE save verb: the world file, then the .od2, then the sidecar, then the death screen's copy re-taken; refused (touching no file) while in combat (since 30 Sep 2026), fighting, talking, reading, choosing, dead or networked. M4.6 B5 gave it the game's callers, each through Game.SaveWorldAs: the escape menu's SAVE GAME and SAVE AND EXIT GAME (Game.SaveFromMenu), the window's close (Game.CloseGame) and the dawn autosave (Game.advanceAutosave); the harness's strigoi_save_game too. If it went dark the player could not save at all. Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	// M4.6 B5 -- THE SAVE REACHES THE PLAYER (29 Sep 2026). The game's own
 	// callers of the save, and what it tells him. Each is a wire row: if one
 	// went dark the save would be back to the harness's alone -- the hollow
@@ -917,7 +917,7 @@ var Register = []Entry{
 	// went dark its defect would be back, and the playtests' own saves --
 	// strigoi_save_game -- would never show it.
 	{sym(pkgScreen, "Game.settleForClose"), BucketWire, VerdictLive,
-		"The close's settle (A1, BUG-97): frames run while the save is refused FIGHTING with no fight of his, then the close saves. Game.closeNow calls it. If it went dark a close in the second after a fight would leave unsaved again.", ""},
+		"The close's settle (A1, BUG-97): frames run while the save is refused for the moment after a fight -- FIGHTING, and since the combat status (30 Sep 2026) COMBAT for its grace, his swing or his reaction (Game.settlesForClose) -- then the close saves. Game.closeNow calls it. If it went dark a close in the seconds after a fight would leave unsaved again.", ""},
 	{sym(pkgPlayer, "EscapeMenu.Dismiss"), BucketWire, VerdictLive,
 		"Puts the escape menu away for the close's settle (the world is paused under the menu, so a fight's end could not settle behind it). Game.settleForClose calls it.", ""},
 	{sym(pkgScreen, "Game.putBackWorld"), BucketWire, VerdictLive,
@@ -932,6 +932,43 @@ var Register = []Entry{
 		"A save's step 0 (B2, BUG-100): a world file the load refused and could not set aside is set aside before the save writes, never kept as the .bak; still held, the save is not made. SaveWorld calls it.", ""},
 	{sym(pkgItems, "CutWrites"), BucketWire, VerdictLive,
 		"The close's limit (B1, BUG-99): no write begins after it, and the one in flight is let finish, so the close gives up between files. waitForClose calls it through cutWrites.", ""},
+	// THE COMBAT STATUS (Josh, 30 Sep 2026: "you can't save while in combat";
+	// d2gamescreen/combat_status.go, d2player/hud_combat.go). What puts him in
+	// combat, the save's refusal of it, the close's wait for its grace, and
+	// the marker by the health globe. Each is a wire row: if one went dark, a
+	// save would land in combat again (the harness's own save goes through
+	// SaveWorld's refusal too, so a playtest would not show it), or the
+	// marker would never be drawn.
+	{sym(pkgScreen, "Game.CombatReason"), BucketWire, VerdictLive,
+		"Why he is in combat -- his fight, a hostile chasing him, his swing, his hit or block reaction, or the grace after the last -- or nothing. Game.saveRefusal asks it for every save (COMBAT), and Game.InCombat for the HUD's marker. If it went dark the save would be made in combat.", ""},
+	{sym(pkgScreen, "Game.InCombat"), BucketWire, VerdictLive,
+		"The combat status as the HUD asks it (d2player.CombatHolder, set by bindGameControls): the marker over the health globe is drawn while it is true.", ""},
+	{sym(pkgScreen, "Game.advanceCombatStatus"), BucketWire, VerdictLive,
+		"The grace after combat, at the end of every frame (Game.Advance): held full while a trigger is seen, counted down on the screen's live frames, and the log's COMBAT in/out lines. If it went dark the status would end the frame its last trigger did -- a save the moment a fight ended.", ""},
+	{sym(pkgScreen, "Game.settlesForClose"), BucketWire, VerdictLive,
+		"Which refusals the close's settle runs frames to cure (rule 3 reworded): FIGHTING, and COMBAT for its grace, his swing or his reaction -- never his live fight or a chase. Game.settleForClose asks it every settle frame.", ""},
+	// THE COMBAT-STATUS REVIEW'S FIXES (1 Oct 2026; each decided on the
+	// coordinator's default, Josh can overturn).
+	{sym(pkgScreen, "Game.leavesInCombat"), BucketWire, VerdictLive,
+		"A1: a single-player game left in combat (EXIT WITHOUT SAVING, or a close refused COMBAT) writes no part of him -- Game.unloadSavesHero asks it, OnUnload before releaseWorld. If it went dark the unload would write his .od2 and sidecar at the combat moment beside the last save's world file again.", ""},
+	{sym(pkgScreen, "Game.AskBeforeClose"), BucketWire, VerdictLive,
+		"A2: the window's close in combat asks once (\"You are in combat. Close again to leave without saving.\"); a second close within closeAskWindow leaves. App.onWindowClose asks it through windowCloseAsks. If it went dark one click on the X would leave a fight unsaved with no word.", ""},
+	{sym(pkgApp, "windowCloseAsks"), BucketWire, VerdictLive,
+		"A2: whether the screen in play asks before the window closes (only a game, only in combat). App.onWindowClose calls it.", ""},
+	{sym(pkgScreen, "Game.advanceWorldOrHold"), BucketWire, VerdictLive,
+		"B1: the frame's world, or its hold -- under the close's hold (WorldHeldByClose) only the fight's end is applied (applyFightingActivity). Game.Advance calls it every frame. If it went dark nothing in the world would run.", ""},
+	{sym(pkgWorld, "Pursuit.GiveUpOnTheForgotten"), BucketWire, VerdictLive,
+		"BUG-108: a chase ends when its hunter's watch of the same quarry is forgotten (the notice's MemoryMinutes unseen). Game.advanceWorld calls it before startChasesForTheAware. If it went dark a monster that lost him would hunt him -- and keep him in combat, unable to save -- until it died or dawn.", ""},
+	{sym(pkgWorld, "Pursuit.ChasersOf"), BucketWire, VerdictLive,
+		"The hunters chasing one quarry: the combat status asks it every frame whether a hostile is chasing him (Game.combatTrigger). If it went dark being chased would not be combat.", ""},
+	{sym(pkgEntity, "Player.Reacting"), BucketWire, VerdictLive,
+		"His hit or block reaction still playing (not his death): the combat status asks it (Game.combatTrigger), so no save lands mid-flinch -- BUG-105, closed by the combat status.", ""},
+	{sym(pkgPlayer, "GameControls.SetCombatHolder"), BucketWire, VerdictLive,
+		"Hands the HUD the game's combat status (bindGameControls). If it went dark the marker would never be drawn.", ""},
+	{sym(pkgPlayer, "HUD.renderCombatMarker"), BucketWire, VerdictLive,
+		"The marker over the health globe while he is in combat: its art, or a red ! on a dark square until the art lands. The marker's widget draws it every frame.", ""},
+	{sym(pkgPlayer, "HUD.loadCombatMarker"), BucketWire, VerdictLive,
+		"The combat marker's art drops in: data/strigoi/ui/combat.png, one 32x32 frame, drawn in place of the glyph when it is there and fits (HUD.Load).", ""},
 	{sym(pkgSave, "Encode"), BucketWire, VerdictLive,
 		"Writes the world file's bytes, every block in order (omit is the negative controls'). Game.SaveWorld calls it, and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 and measured harness-only until M4.6 B5 (29 Sep 2026); recorded before the row was edited.", ""},
 	{sym(pkgSave, "WriteWorld"), BucketWire, VerdictLive,
