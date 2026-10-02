@@ -2,11 +2,13 @@ package d2gamescreen
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -223,7 +225,7 @@ func TestTheLoadResumesTheSavedMoment(t *testing.T) {
 
 	require.Equal(t, []string{
 		"clock", "natives", "entities", "validated", "health", "squads", "light", "torch", "corpses", "rising",
-		"spawns", "spawner", "notice", "pursuit", "seek", "combat", "bodies", "scene", "hero", "world_rng",
+		"spawns", "spawner", "notice", "pursuit", "seek", "combat", "bodies", "scene", "fog", "hero", "world_rng",
 	}, resumed.loadSteps, "the load order (docs/m4.6-world-save-notes.md; B4b's steps 3 and bodies)")
 
 	// D1: the light model's torch, whole, and the kit's minutes zeroed --
@@ -317,6 +319,14 @@ func TestARefusedLoadRestoresNothing(t *testing.T) {
 		"pursuit: -1 solves":         {LoadRefusedBlock, func(w *d2save.World) { w.Pursuit.Solves = -1 }},
 		"world rng past the cap":     {LoadRefusedBlock, func(w *d2save.World) { w.RNG.World.Draws = d2rand.MaxDraws + 1 }},
 		"scene: no stage":            {LoadRefusedBlock, func(w *d2save.World) { w.Scene.LastStage = "noon" }},
+		// Fog of war F3: a grid that is not this map's -- of another size,
+		// or of the right size explored on another map (the F1 review's C6).
+		"fog: a grid of another size": {LoadRefusedBlock, func(w *d2save.World) {
+			w.Fog = d2world.FogSnapshot{Map: w.Map.SHA, W: 41, H: 40, Explored: base64.StdEncoding.EncodeToString(make([]byte, 205))}
+		}},
+		"fog: this size on another map": {LoadRefusedBlock, func(w *d2save.World) {
+			w.Fog = d2world.FogSnapshot{Map: strings.Repeat("cd", 32), W: 40, H: 40, Explored: base64.StdEncoding.EncodeToString(make([]byte, 200))}
+		}},
 	}
 
 	for name, c := range checks {

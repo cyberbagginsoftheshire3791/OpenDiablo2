@@ -5,8 +5,8 @@ import "math"
 // LIGHT AS HE SEES IT THIS FRAME (fog of war F2, 1 Oct 2026; BUG-110).
 //
 // The light model's carried torch shines from where the player was last told
-// to be (Light.SetPlayer), and SetPlayer runs only inside the game's gated
-// advanceWorld. During a held player turn the world is stopped but his Move
+// to be (Light.SetPlayer), and SetPlayer ran only inside the game's gated
+// advanceWorld (until harness-fixes, 1 Oct: see below). During a held player turn the world is stopped but his Move
 // is a real walk (MapEngine.Advance is not gated), so the torch's light stayed
 // where the turn opened while he walked out of it: BUG-110.
 //
@@ -70,11 +70,20 @@ func (v *LightView) Level(tileX, tileY int) float64 {
 // quantised and never returns Ambient exactly, so "> Ambient()" marks half
 // the night lit (plan §3.2).
 func (v *LightView) Lit(tileX, tileY int) bool {
+	cx, cy := v.carried()
+
+	return v.LitCarriedAt(tileX, tileY, cx, cy)
+}
+
+// LitCarriedAt is Lit with the carried lights shining from (cx, cy): fog asks
+// it with his torch at the centre of his tile (the F3 review's A1), whatever
+// point he stands at and wherever the light model last put him.
+func (v *LightView) LitCarriedAt(tileX, tileY int, cx, cy float64) bool {
 	if v.live {
-		return v.Level(tileX, tileY) > v.skyBand
+		return v.light.levelOver(tileX, tileY, cx, cy, v.ambient) > v.skyBand
 	}
 
-	return v.Level(tileX, tileY) > v.light.quantise(clamp01(v.light.Ambient()))
+	return v.light.levelWith(tileX, tileY, cx, cy) > v.light.quantise(clamp01(v.light.Ambient()))
 }
 
 // SkyBand is the sky as drawn: the quantised ambient a lit tile exceeds.

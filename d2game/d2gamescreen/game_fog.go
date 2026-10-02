@@ -5,6 +5,7 @@ import (
 	"image"
 	"math"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 )
@@ -30,7 +31,13 @@ import (
 //
 // DISPLAY ONLY: nothing here feeds Notice, Combat, Seek or Pursuit.
 //
-// NOT SAVED (F3 saves it): a load is a new game, and starts black.
+// KEPT (F3, 1 Oct 2026): the explored grid is in the world file (its fog
+// block, version 4), keyed on the map it was explored on; a load puts it back
+// and the first frame sees again from where he stands. What he sees now is
+// not saved (derived), and neither are the dials or whether fog is drawn
+// (-fog is the view, as ui.zoom is): a game with fog off saves an empty grid,
+// and a grid loaded into a game with fog off is kept, undrawn, and saved
+// again.
 
 // processGameFog is -fog: whether the games this process starts have fog.
 //
@@ -164,6 +171,9 @@ func (v *Game) fogAdvance() {
 	// for the drawn light. Fog never writes the light model (what the sim
 	// reads): the game tells it where he is, every frame, just before this
 	// (advanceTheMap's lightFollowsHim), so the view and the model agree.
+	// Fog's own question is asked with his torch at the centre of his tile
+	// (LitCarriedAt, the F3 review's A1), so what it explores depends on
+	// neither: a night save resumes to the same grid.
 	if v.fog.view != nil {
 		v.fog.view.SetCarriedAt(at.X(), at.Y())
 	}
@@ -297,6 +307,7 @@ func (p fogProvider) HarnessState() map[string]interface{} {
 	reason := v.fogOffReason()
 
 	reach, dark := f.UnlitReach(), f.DarkRadius()
+	snap := f.Snapshot(fogMapID())
 	eyes := make([]interface{}, 0, 1)
 	contacts := make([]interface{}, 0)
 
@@ -338,7 +349,9 @@ func (p fogProvider) HarnessState() map[string]interface{} {
 		"lit_seen":          f.LitSeen(),
 		"by_light":          v.fog.view != nil,
 		"draws_by":          v.fogDrawsBy(),
-		"saved":             false, // F3
+		"saved":             true, // F3: the explored grid is in the world file
+		"map":               snap.Map,
+		"grid":              snap.Explored,
 	}
 
 	if w > 0 && h > 0 && w <= 64 && h <= 64 {
@@ -367,15 +380,27 @@ func (p fogProvider) HarnessState() map[string]interface{} {
 	return st
 }
 
-// HarnessDigest: fog is not saved in F1 (F3 saves it), so a game resumed from
-// a world save starts black and does not reproduce it -- the whole of it is
-// this process's. Two things are in neither part: `skipped`, which counts
-// frames (boot frames differ from launch to launch, so two launches of one
-// script would disagree), and the probe's `screen` point, presentation that
-// moves while the camera eases onto him (BUG-58's rule).
+// HarnessDigest: the WORLD part is what the world file keeps (F3) -- the
+// explored grid (grid, its base64), the map it was explored on, its size and
+// its count -- so a game resumed from a world save must reproduce it. The
+// rest is this process's: what he sees now (derived, recomputed on the first
+// frame), the eyes, the dials (never saved), the counters, whether fog is
+// drawn. Two things are in neither part: `skipped`, which counts frames (boot
+// frames differ from launch to launch, so two launches of one script would
+// disagree), and the probe's `screen` point, presentation that moves while
+// the camera eases onto him (BUG-58's rule).
 func (p fogProvider) HarnessDigest() (world, process map[string]interface{}) {
 	process = p.HarnessState()
 	delete(process, "skipped")
+
+	world = map[string]interface{}{}
+
+	for _, k := range fogWorldFields {
+		if v, ok := process[k]; ok {
+			world[k] = v
+			delete(process, k)
+		}
+	}
 
 	if probe, ok := process["probe"].(map[string]interface{}); ok {
 		kept := make(map[string]interface{}, len(probe))
@@ -389,7 +414,71 @@ func (p fogProvider) HarnessDigest() (world, process map[string]interface{}) {
 		process["probe"] = kept
 	}
 
-	return map[string]interface{}{}, process
+	return world, process
+}
+
+// fogWorldFields are the provider's fields the world file keeps (F3): the
+// explored grid and what names it. A game with no fog reports none of them.
+var fogWorldFields = []string{"map", "w", "h", "explored", "grid"}
+
+// fogMapID is the map fog's grid is keyed on (the F1 review's C6): the
+// authored map's SHA-256 -- the world file's map.sha, from the same source --
+// and "" for Diablo II's generated Act 1, whose identity is the seed.
+func fogMapID() string {
+	path, sha := d2mapgen.HostMap()
+	if path == "" {
+		return ""
+	}
+
+	return sha
+}
+
+// fogSnapshot is the fog block a save writes: the explored grid on this map,
+// empty for a game with no fog or one that has not looked yet.
+func (v *Game) fogSnapshot() d2world.FogSnapshot {
+	if v.fog == nil {
+		return d2world.FogSnapshot{}
+	}
+
+	return v.fog.fog.Snapshot(fogMapID())
+}
+
+// fogMapSize is the map fog's grid must fit: the engine's, in tiles.
+func (v *Game) fogMapSize() (w, h int) {
+	if v.gameClient == nil || v.gameClient.MapEngine == nil {
+		return 0, 0
+	}
+
+	size := v.gameClient.MapEngine.Size()
+
+	return size.Width, size.Height
+}
+
+// fogValidate is the load's check of the fog block (step 4), and the save's
+// (validateSnapshots): a grid of this map, of its size. A game with no fog
+// takes only a block it could ignore -- an empty one -- and checks the rest
+// as the file's own check does.
+func (v *Game) fogValidate(s d2world.FogSnapshot) error {
+	if v.fog == nil {
+		return s.Check()
+	}
+
+	w, h := v.fogMapSize()
+
+	return v.fog.fog.Validate(s, w, h, fogMapID())
+}
+
+// fogRestore is the load's step 5 for fog: the explored grid put back. Fog
+// recomputes what he sees on the next Update, from where he stands -- the
+// visible set is derived, never saved. A game with no fog restores nothing.
+func (v *Game) fogRestore(s d2world.FogSnapshot) error {
+	if v.fog == nil {
+		return s.Check()
+	}
+
+	w, h := v.fogMapSize()
+
+	return v.fog.fog.Restore(s, w, h, fogMapID())
 }
 
 // HarnessSettableFields are fog's writes: whether it is on (the game's view,

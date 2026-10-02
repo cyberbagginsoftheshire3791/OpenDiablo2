@@ -87,6 +87,9 @@ func b3SavableGame(t *testing.T) (*Game, string) {
 	v.seek.SetQuarries(v.seekQuarries)
 	v.seek.SetResolver(worldResolver{v})
 	v.lastStage = v.worldClock.Stage()
+	// Fog of war F3: every game has a fog, as CreateGame builds it -- off,
+	// as the shipped game is without -fog, so it saves an empty grid.
+	v.fog = newGameFog(mapTileSight{v}, false)
 
 	t.Cleanup(v.releaseWorld)
 
@@ -140,6 +143,12 @@ func TestASavableGameSaves(t *testing.T) {
 // touching no file. Before the fix the file's Check was the save's last word,
 // and a lit torch at no minutes, two carried torches or a source past next_id
 // were written for a load to refuse.
+//
+// The fog probe (the F3 review's C1, 1 Oct 2026): the live game's grid is
+// always of its own map, so only a probe reaches the save's fog check. Take
+// the check out of validateSnapshots (the reviewer's m24) and the probe fails,
+// "fog: a block the load would refuse was written" (strigoi-harness-runs\
+// wt-fog3\nc\ncc1-save-skips-fog.txt).
 func TestTheSaveRunsTheLoadsOwnChecks(t *testing.T) {
 	probes := map[string]func(w *d2save.World){
 		"clock": func(w *d2save.World) { w.Clock.Elapsed = -1 },
@@ -160,6 +169,13 @@ func TestTheSaveRunsTheLoadsOwnChecks(t *testing.T) {
 		"spawner": func(w *d2save.World) { w.Spawner.Arrival = -1 },
 		"notice":  func(w *d2save.World) { w.Notice.Checks = -1 },
 		"pursuit": func(w *d2save.World) { w.Pursuit.Solves = -1 },
+		// Fog F3 (the F3 review's C1): a well-formed grid, keyed on the file's
+		// own map (so the file's check passes), of another size than the map.
+		"fog": func(w *d2save.World) {
+			f := d2world.NewFog(d2world.DefaultFogDials(), nil)
+			f.Update(39, 40, nil)
+			w.Fog = f.Snapshot(w.Map.SHA)
+		},
 	}
 
 	// The review's three light cases, each its own probe.

@@ -64,6 +64,10 @@ var b3ShapeHashes = map[int]string{
 	// Josh's ruling of 30 Sep (every shape change bumps) made it version 3,
 	// over version 2 as master left it (BUG-87's action_at included).
 	3: "1162e8cc002adb8b884d217f696ba8d7599dc3f1e89fafc35b68d4dfa4c8caa9",
+	// Fog of war F3, "kept" (1 Oct 2026): the fog block -- fog.map, fog.w,
+	// fog.h, fog.explored (the explored grid, base64 bits) -- over version 3
+	// as master left it (0ea27076).
+	4: "af2b191baa0f5816e1eaa3f7604d55e3ff9668bc6c8c4a54642689fefc0aa11f",
 }
 
 var b3UpdateGolden = flag.Bool("update-golden", false, "write testdata/world-v<Version>.json from the fixture and print the shape hash")

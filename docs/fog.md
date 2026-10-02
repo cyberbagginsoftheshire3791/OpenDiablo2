@@ -1,4 +1,4 @@
-# Fog of war (F1: black until explored; F2: the night closes it) -- 1 Oct 2026
+# Fog of war (F1: black until explored; F2: the night closes it; F3: kept) -- 1 Oct 2026
 
 **Josh, 1 Oct 2026:** "Since we are zooming out, I think we should add a fog of
 war with similar functionality to how Age of Empires 2 uses. Black until
@@ -80,10 +80,15 @@ the sky fraction in 1/64 steps, the sky AS DRAWN (the ambient's quantised
 band -- the two step at different moments, and the lit set follows the band;
 the F2 review's C1), the moon, the fixed sources exactly, and a CARRIED
 source (his torch) by the TILE it shines from (the review's B4). So a walk
-with his torch lit recomputes once a tile step, not once a frame; between
-steps the lit set is the one computed as he entered the tile -- the drawn
-light follows him exactly, and the seen edge of his own torch can lag it by
-under a tile. Measured over a whole dusk frame by frame
+with his torch lit recomputes once a tile step, not once a frame. **Fog sees
+by his torch from the centre of his tile** (the F3 review's A1): the disc it
+iterates and the "lit" it asks (`LitCarriedAt`) both put the carried source
+there, as his eye is there -- so what his own torch shows him is a function
+of his tile alone. (Keyed by tile but lit from his exact point, the lit set was
+the one computed where he ENTERED the tile, and a game saved mid-tile resumed
+to other ground: 101 vs 110 explored, `TestAMidTileTorchSaveResumesToTheSameGrid`.)
+The drawn light follows him exactly, and the seen edge of his own torch can
+differ from the drawn one by under a tile. Measured over a whole dusk frame by frame
 (`TestDuskKeepsTheLitSetAndItsCost`): 2,241 frames, 79 recomputes, and on
 every frame the tiles fog sees by the lit term are exactly the tiles drawn
 lit.
@@ -161,6 +166,49 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
 | `memory_level` | 0.45 | the look; Josh's eye sets it at F1's launch |
 | `memory_saturation` | 0.25 | the look; ditto |
 
+## Kept (F3)
+
+**The explored grid is saved** (fog of war F3, 1 Oct 2026; the build plan's
+§4 F3 and §3.7). The world file -- **version 4** -- carries a `fog` block:
+
+```json
+"fog": { "map": "<the map's SHA-256>", "w": 48, "h": 48, "explored": "<base64>" }
+```
+
+the grid as bits (row-major, eight tiles a byte, lowest bit first; the
+village's 2,304 tiles are 288 bytes, 384 characters), its size, and **the map
+it was explored on** (the authored map's SHA-256, the file's own `map.sha`).
+A load, "load last save" and a death's reload put it back: the ground he had
+explored is remembered, greyed, and the first frame sees again from where he
+stands.
+
+- **Saved:** the explored grid. **Not saved:** what he sees now (derived --
+  recomputed from his eyes on the first frame), the dials (this build's
+  tuning, never the file's), the counters and the probe (this process's), and
+  whether fog is drawn (`-fog` is the view, as `ui.zoom` is).
+- **Keyed on the map** (the F1 review's C6): a grid of another map -- even of
+  the right size -- is refused, and the file set aside (D5's rule); so is one
+  of another size. A map edit already sets the whole file aside (D5).
+- **Fog off saves an empty grid** (`"map": "", "w": 0, "h": 0, "explored":
+  ""`): a game without `-fog` never looks. A grid loaded into a game without
+  `-fog` is kept, undrawn, and saved again unchanged, so one launch without
+  the switch never throws away the ground he had explored.
+- **His older files:** a version-3 world file is set aside (`.v3.unread`)
+  and he begins at dawn with his hero, kit and progress, as at the last
+  bump. Measured on 1 Oct 2026: his saves folder held no world file, so
+  nothing of his was set aside.
+- **The harness:** the `fog` provider reports `saved` (true), `map` and
+  `grid`; `map`, `w`, `h`, `explored` and `grid` are in the digest's world
+  part, so a resumed game must reproduce them (`TestFogIsKept`, by day and
+  at 23:00 with his torch lit, saved mid-tile).
+- **`-fog` / `fog.enabled` changes the world part of the digest** (the F3
+  review's C3): a fog-off game never explores, so resuming a save with a
+  different `-fog` than the game that saved it gives S_R != S_U by design.
+
+`d2core/d2world/fog_snapshot.go` (`Fog.Snapshot/Validate/Restore`,
+`FogSnapshot.Check`); the world file's notes are
+`docs/m4.6-world-save-notes.md`, "Fog of war F3".
+
 ## What it is not (yet)
 
 - **Display only.** Fog never feeds Notice, Combat, Seek or Pursuit, and its
@@ -171,7 +219,8 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
   night of fog updates; the plan's one-liner, fog calling `SetPlayer`, goes
   red) and the playtest `TestFogNeverTouchesTheSim` (fog on and off, one seed,
   a torch-lit walk at 23:00 and a fight: every system's world hash agrees,
-  fog's and the ui's included, and the ui less its `bars` and `hover_label`
+  the ui's included -- fog's own since F3 differs by design, its explored
+  grid being world state -- and the ui less its `bars` and `hover_label`
   is equal). (fd3c2e6d's docs said the hashes agreed "but fog's and the
   ui's": the test allowed those two to differ and asserted nothing about the
   ui -- the F2 review's C2. Since its B6 the ui's bars, which fog decides,
@@ -180,9 +229,6 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
   at 22:45 and one at noon, 0 of 480,000 pixels differ from master `b84a7241`
   (`strigoi-harness-runs\wt-fog2\pix-compare.txt`; the control, master's
   night against the branch's noon, differs in 345,371).
-- **Not saved (F3).** The explored grid is not in the world file: a load, "load
-  last save" or a death's reload starts black. F3 adds the `fog` block and the
-  world file's version 3.
 - **No raised sight (F4).** Talents, gear, height and towers.
 - **Known small gaps from the F1 review (1 Oct).**
   - *A hovered hidden creature flashed highlighted for one frame* when it came
@@ -192,7 +238,8 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
     `fog` provider is always registered, so the digest carries a `fog` system
     and `strigoi_get_entity` always reports `shown`. Accepted (plan §3.12).
   - *The explored grid is reset only when the map's SIZE changes.* Harmless
-    while every load is a new Game; F3 must key it on the map itself.
+    while every load is a new Game. **Closed in F3:** the saved grid is keyed
+    on the map's SHA, and a grid of another map is refused (below).
   - *No unit test yet* for a harness write being followed by a fog update, or
     for fog running after the map moves him (both need a live player and a
     full frame advance); the playtest covers the outcome, not the order.
@@ -235,5 +282,9 @@ frame is a comparison (`skipped`). For F2/F4's scale: 6 eyes at 12 about
 The `fog` provider (docs/harness.md) and `strigoi_get_entity`'s `shown` (false
 only with fog on and the entity on ground he does not see now).
 `playtest/fog_test.go` is the script: `TestFogOfWar` (F1, by day),
-`TestFogAtNight` (F2's acts 5-9) and `TestFogNeverTouchesTheSim` (F2, two
-launches).
+`TestFogAtNight` (F2's acts 5-9), `TestFogNeverTouchesTheSim` (F2, two
+launches; since F3 fog's own world state is exempt -- with fog off nothing is
+explored -- and required to differ) and `TestFogIsKept` (F3: explore, save,
+resume, the same grid and the same day after; a night act, his torch lit,
+saved mid-tile; the emptied block diverges; a grid of another map is
+refused).

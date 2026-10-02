@@ -29,6 +29,9 @@ func (s *fakeSky) SkyBand() float64     { return s.band }
 
 func (s *fakeSky) LitDiscs(dst []LitDisc) []LitDisc { return append(dst, s.discs...) }
 
+// LitCarriedAt: a fake sky's lit tiles do not move with him.
+func (s *fakeSky) LitCarriedAt(tx, ty int, _, _ float64) bool { return s.Lit(tx, ty) }
+
 func nightFog(sky *fakeSky, sight TileSight) *Fog {
 	f := NewFog(DefaultFogDials(), sight)
 	f.SetLight(sky)

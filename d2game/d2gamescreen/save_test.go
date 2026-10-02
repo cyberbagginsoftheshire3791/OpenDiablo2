@@ -292,7 +292,7 @@ var b3GameClasses = map[string]string{
 
 	"worldClock":     "S:clock",
 	"light":          "S:light",
-	"fog":            "W: fog of war F1 (game_fog.go): display only, and NOT saved until F3 -- a load starts black (docs/fog.md)",
+	"fog":            "S:fog",
 	"mapStepForTest": "W: a unit test's stand-in for the frame's map step (stepTheMap; BUG-110's light test); nil in every game",
 	"squads":         "S:squads",
 	"meters":         "S:squads",

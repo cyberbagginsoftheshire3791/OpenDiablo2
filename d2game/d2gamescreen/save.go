@@ -634,6 +634,8 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 			WatchClock:    v.watchClock,
 			WatchClockSet: v.watchClockSet,
 		},
+		// Fog of war F3: the explored grid, on this map.
+		Fog: v.fogSnapshot(),
 	}
 
 	w.RNG.Rising = w.Rising.RNG
@@ -726,6 +728,11 @@ func (v *Game) validateSnapshots(w *d2save.World, r d2world.Resolver) error {
 	// rule pruneOrEnd keeps at the end of every clock step.
 	if err := d2world.CheckClockWatches(w.Combat, w.Notice, w.Pursuit); err != nil {
 		return refused("combat", err)
+	}
+
+	// Fog of war F3: the explored grid fits the map it was explored on.
+	if err := v.fogValidate(w.Fog); err != nil {
+		return refused("fog", err)
 	}
 
 	return nil

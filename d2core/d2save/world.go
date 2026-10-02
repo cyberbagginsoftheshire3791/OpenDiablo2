@@ -99,7 +99,19 @@ import (
 // read and never lost; he begins at dawn with his hero, kit and progress (the
 // sidecar), as at every refused load. Version 2's golden file and hash stay
 // as the build that wrote them left them (the R2 review's C4).
-const Version = 3
+//
+// VERSION 4 (fog of war F3, "kept", 1 Oct 2026): a new top-level block, fog
+// -- the explored grid (d2world.FogSnapshot: the map it was explored on, its
+// size, and the grid as base64 bits), so the ground he has seen is still
+// remembered after a load. The dials are not saved and what he sees now is
+// not (it is derived: recomputed from his eyes on the first frame). A
+// version-3 file is refused on its version and set aside as .v3.unread, never
+// read and never lost; he begins at dawn with his hero, kit and progress, as
+// at the last bump -- the decided default, no migration, Josh's to overturn
+// (docs/m4.6-world-save-notes.md, "Version 4"). MEASURED, 1 Oct 2026: his
+// %APPDATA%\OpenDiablo2\Saves holds no world file of any version, so none of
+// his is set aside by this bump.
+const Version = 4
 
 // ErrWorldVersion is what a file of any version but Version is refused with.
 // The error is a *VersionError naming the version the file holds. Its message
@@ -210,6 +222,7 @@ const (
 	ReasonSceneFinite   = "scene-finite"
 	ReasonSceneWatch    = "scene-watch"
 	ReasonSceneStage    = "scene-stage"
+	ReasonFog           = "fog" // fog of war F3: a fog block Snapshot could not have written, or of another map than the file's
 
 	// The pairing with the files beside it (B4's step 1).
 	ReasonPairHero   = "pair-hero"   // CheckHeroFile: another hero's .od2
@@ -227,7 +240,7 @@ var Blocks = []string{
 	"version", "build", "saved_at",
 	"map", "seed", "rng", "hero", "sidecar",
 	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit", "seek",
-	"corpses", "rising", "combat", "bodies", "entities", "scene",
+	"corpses", "rising", "combat", "bodies", "entities", "scene", "fog",
 }
 
 // World is the whole file.
@@ -288,6 +301,12 @@ type World struct {
 
 	// Scene is the game screen's own bookkeeping.
 	Scene Scene `json:"scene"`
+
+	// Fog is the explored grid (fog of war F3, new in version 4): every tile
+	// he has seen, on the map it was explored on. Empty (0 x 0) for a game
+	// that never looked -- fog off -- or had not looked yet. Check holds its
+	// map to the file's.
+	Fog d2world.FogSnapshot `json:"fog"`
 }
 
 // Map is the world the game was built from. For an authored map, Path is the
@@ -688,7 +707,28 @@ func (w *World) Check() error {
 		err = w.checkScene()
 	}
 
+	if err == nil {
+		err = w.checkFog()
+	}
+
 	return err
+}
+
+// checkFog (fog of war F3): the fog block is one Fog.Snapshot could have
+// written -- empty, or a grid of exactly its size in canonical base64 -- and a
+// grid that is not empty was explored on the file's own map (the F1 review's
+// C6). Whether it fits the map the load builds is the load's (Fog.Validate);
+// a map that is not the file's is refused before, MAP (D5).
+func (w *World) checkFog() error {
+	if err := w.Fog.Check(); err != nil {
+		return refuse(ReasonFog, "%v", err)
+	}
+
+	if !w.Fog.Empty() && w.Fog.Map != w.Map.SHA {
+		return refuse(ReasonFog, "the fog grid was explored on map %q and the file was saved on map %q", w.Fog.Map, w.Map.SHA)
+	}
+
+	return nil
 }
 
 func (w *World) checkHeader() error {
