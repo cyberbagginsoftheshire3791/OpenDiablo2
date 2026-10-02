@@ -39,11 +39,12 @@ func TestShippedVillageCatalog(t *testing.T) {
 		t.Fatalf("reading the shipped village: %v", err)
 	}
 
-	// The village's one embedded tileset holds 18 tiles, and every one of them
-	// becomes an entry -- including the six floors, which are catalogued for a
-	// Terrain tab that has no tool yet.
-	if c.Len() != 18 {
-		t.Errorf("%d entries, want the village tileset's 18", c.Len())
+	// The village's one embedded tileset holds 19 tiles (the placeholder
+	// watchtower since fog of war F4), and every one of them becomes an entry
+	// -- including the six floors, which are catalogued for a Terrain tab that
+	// has no tool yet.
+	if c.Len() != 19 {
+		t.Errorf("%d entries, want the village tileset's 19", c.Len())
 	}
 
 	// The note the loader throws away. If this stops saying "PLACEHOLDER" the
@@ -73,7 +74,7 @@ func TestShippedVillageCatalog(t *testing.T) {
 		}
 	}
 
-	// Every one of the 18 is placeable: the shipped village loads, so nothing in
+	// Every one of the 19 is placeable: the shipped village loads, so nothing in
 	// its tileset may be greyed out. This is the strongest single assertion in
 	// the file -- it ties the palette's verdict to a map the engine demonstrably
 	// accepts (d2maptiled/village_test.go).
@@ -105,6 +106,8 @@ func TestShippedVillageCatalog(t *testing.T) {
 		"village-placeholder#14": {"Village well", d2maptiled.LayerWall, image.Pt(1, 1), 160, 256, true, false, CategoryProps},
 		"village-placeholder#16": {"Peasant house", d2maptiled.LayerStructure, image.Pt(3, 3), 480, 448, true, true, CategoryBuildings},
 		"village-placeholder#17": {"Burned house (cold ruin)", d2maptiled.LayerStructure, image.Pt(3, 3), 480, 448, true, true, CategoryBuildings},
+		// Fog of war F4: the gate's watchtower, a 1x1 structure (placeholder art).
+		"village-placeholder#18": {"Watchtower", d2maptiled.LayerStructure, image.Pt(1, 1), 160, 400, true, true, CategoryBuildings},
 	}
 
 	for id, w := range want {
@@ -153,7 +156,7 @@ func TestShippedVillageCatalog(t *testing.T) {
 		}
 	}
 
-	// Tab counts: 18 tiles split six ground, and the rest between buildings and
+	// Tab counts: 19 tiles split six ground, and the rest between buildings and
 	// props. Creatures and People have nothing and say why.
 	counts := map[Category]int{}
 	for _, tab := range c.Tabs() {
@@ -173,8 +176,8 @@ func TestShippedVillageCatalog(t *testing.T) {
 			counts[CategoryCreatures], counts[CategoryPeople])
 	}
 
-	if total := counts[CategoryBuildings] + counts[CategoryProps] + counts[CategoryTerrain]; total != 18 {
-		t.Errorf("the tabs hold %d of 18 entries; something is in no tab", total)
+	if total := counts[CategoryBuildings] + counts[CategoryProps] + counts[CategoryTerrain]; total != 19 {
+		t.Errorf("the tabs hold %d of 19 entries; something is in no tab", total)
 	}
 }
 

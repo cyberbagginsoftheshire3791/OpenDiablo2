@@ -41,6 +41,7 @@ const (
 	KillNerve         = "kill_nerve"          // x: nerve a pack loses for a death he dealt
 	NoticeRadius      = "notice_radius"       // +: the radius beasts notice him at
 	LitNerve          = "lit_nerve"           // +: nerve a beast's pack loses to his hit while his torch is lit
+	DarkSight         = "dark_sight"          // +: tiles to his dark radius, what he sees unlit at night (fog of war F4)
 )
 
 // multipliers are the keys that combine by product.
@@ -55,7 +56,7 @@ var knownEffects = map[string]bool{
 	FatigueRate: true, FoodWaterRate: true, MaxHealth: true, ShakenFatigue: true,
 	NoReactionFatigue: true, RiposteDamage: true, BlocksPerRound: true, MoveTiles: true,
 	CritBand: true, Reactions: true, AdvantageBonus: true, TorchBurnRate: true,
-	KillNerve: true, NoticeRadius: true, LitNerve: true,
+	KillNerve: true, NoticeRadius: true, LitNerve: true, DarkSight: true,
 }
 
 // Node is one talent.

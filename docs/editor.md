@@ -226,6 +226,13 @@ where to check it.
 - **There is no walkability-override region and no sight-block region.** Both are
   properties of the tileset TILE (`blocked`, `blocks_sight`), cached per gid and
   layer, not areas. Painting an area impassable means placing tiles that are.
+  So is raised ground (fog of war F4, 2 Oct 2026): `height` (int 0..8) is a
+  FLOOR tile's property, and a tower is a 1x1 structure tile carrying
+  `sight_radius` (int 1..64). The editor reads both as the game does
+  (`parseKindProps`, the same refusals; `TestTheLoaderAndTheValidatorAgree`'s
+  seven new cases), round-trips them untouched, and says them when a tile is
+  clicked ("height 1", "a tower: sees 16"). It cannot add a tile to a tileset
+  (v0), so a new height or tower kind is added in Tiled.
 - **There is no sub-tile collision.** The authored path writes one answer to all
   25 sub-tiles (`d2mapgen/authored.go:316-326`), and Tiled's Tile Collision
   Editor shapes are refused (`tiled.go:458`). The narrowest gap anything can walk

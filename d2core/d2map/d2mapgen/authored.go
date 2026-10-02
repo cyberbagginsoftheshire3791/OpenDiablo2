@@ -309,7 +309,45 @@ func LayAuthoredMap(engine *d2mapengine.MapEngine, m *d2maptiled.Map) {
 	}
 
 	engine.SetStructures(footprints)
+
+	// Fog of war F4, raised sight: the ground's height under every tile, and
+	// every tower (a structure with a sight_radius) with its sight.
+	engine.SetHeights(authoredHeights(m))
+	engine.SetTowers(authoredTowers(m))
 	engine.SetAuthoredRegion(m.SoundEnv, m.DisplayName)
+}
+
+// authoredHeights is the map's ground height per tile, row-major; nil when the
+// whole map is flat (fog of war F4).
+func authoredHeights(m *d2maptiled.Map) []uint8 {
+	var heights []uint8
+
+	for y := 0; y < m.Height; y++ {
+		for x := 0; x < m.Width; x++ {
+			if h := m.HeightAt(x, y); h > 0 {
+				if heights == nil {
+					heights = make([]uint8, m.Width*m.Height)
+				}
+
+				heights[y*m.Width+x] = uint8(h)
+			}
+		}
+	}
+
+	return heights
+}
+
+// authoredTowers are the map's towers (fog of war F4): every structure whose
+// kind carries a sight_radius, its footprint and its sight.
+func authoredTowers(m *d2maptiled.Map) (footprints []image.Rectangle, sight []float64) {
+	for _, s := range m.Structures {
+		if r := m.Kinds[s.Kind].SightRadius; r > 0 {
+			footprints = append(footprints, s.Footprint)
+			sight = append(sight, float64(r))
+		}
+	}
+
+	return footprints, sight
 }
 
 // authoredTile is one engine tile of an authored map: its floor and wall as

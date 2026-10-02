@@ -50,8 +50,8 @@
       "id": "lore", "name": "Lore",
       "nodes": [
         {"id": "night-eyes", "name": "Night Eyes",
-         "text": "Striking out of the dark into light is worth 10 more.",
-         "effects": {"advantage_bonus": 10}},
+         "text": "Striking out of the dark into light is worth 10 more. He sees a tile further in the dark.",
+         "effects": {"advantage_bonus": 10, "dark_sight": 1}},
         {"id": "tallow-and-pitch", "name": "Tallow and Pitch",
          "text": "His torch burns a quarter slower.",
          "effects": {"torch_burn_rate": 0.75}},

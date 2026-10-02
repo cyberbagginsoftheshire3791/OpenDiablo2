@@ -14,7 +14,7 @@
      "weapon": {"hands": 1, "reach": 1, "class": "blunt", "min": 11, "max": 18, "reaction": "none", "vs_mail": 0.5}},
     {"id": "scythe", "name": "Scythe", "kind": "weapon", "slot": "main", "weight_kg": 2.2,
      "weapon": {"hands": 2, "reach": 2, "class": "cut", "min": 13, "max": 24, "reaction": "brace"}},
-    {"id": "composite-bow", "name": "Composite bow", "kind": "weapon", "slot": "main", "weight_kg": 0.9,
+    {"id": "composite-bow", "name": "Composite bow", "kind": "weapon", "slot": "main", "weight_kg": 0.9, "sight": 2,
      "weapon": {"hands": 2, "reach": 6, "class": "thrust", "min": 10, "max": 18, "reaction": "none", "ranged": true}},
     {"id": "arrows", "name": "War arrows", "kind": "tool", "slot": "pack", "weight_kg": 0.05, "stack": 30,
      "tool": {"verb": "shoot"}},

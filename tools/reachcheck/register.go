@@ -123,6 +123,11 @@ const (
 	// document was written first and nothing in the shipped program referred to
 	// it, so the gate could not see the package at all.
 	pkgMapEdit = "d2core/d2mapedit"
+	// pkgGeom and pkgMapTiled joined at fog of war F4 (2 Oct 2026): the tile
+	// walk moved to d2geom so the map and fog's own grid walk one code, and
+	// the authored map's ground height.
+	pkgGeom     = "d2common/d2geom"
+	pkgMapTiled = "d2core/d2map/d2maptiled"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -1515,7 +1520,7 @@ var Register = []Entry{
 	// MapEngine.Advance (Game.fogAdvance), and gives the renderer the sampler
 	// when -fog is on. The verbs and the probe's readers are the harness's.
 	{sym(pkgMapEngine, "MapEngine.TileSightClear"), BucketWire, VerdictLive,
-		"Fog's line of sight, tile-stepped, sharing sightBlocked with checkLos: Game.fogAdvance -> Fog.Update -> recompute -> sees asks it through mapTileSight every recompute.", ""},
+		"Fog's line of sight, tile-stepped, sharing sightBlocked with checkLos: Game.fogAdvance -> Fog.Update -> recompute -> lineClear asks it through mapTileSight (since F4, 2 Oct 2026, only of a sight with no opacity grid: the game's has one, and fog replays the same d2geom walk on it -- the static path stays, and the probe's ClearFrom asks it).", ""},
 	{sym(pkgWorld, "NewFog"), BucketWire, VerdictLive,
 		"CreateGame builds every game's fog (newGameFog), on or off.", ""},
 	{sym(pkgWorld, "DefaultFogDials"), BucketWire, VerdictLive,
@@ -1562,8 +1567,13 @@ var Register = []Entry{
 		"Light.Radius blends by it, and the view passes it to fog.", ""},
 	{sym(pkgWorld, "Fog.SetLight"), BucketWire, VerdictLive,
 		"gameFog.seeByLight, from CreateGame.", ""},
-	{sym(pkgWorld, "Fog.UnlitReach"), BucketWire, VerdictLive,
-		"The night's reach, every recompute (and the provider reports it).", ""},
+	// WHAT THIS ROW SAID BEFORE, recorded per docs/reachability.md: wire /
+	// live, "The night's reach, every recompute (and the provider reports it)."
+	// Since F4 (2 Oct 2026) every eye has its own reach (Fog.sightOf: its own
+	// sight and dark radius), so the recompute no longer asks this one; it is
+	// the provider's top-level unlit_reach, a plain eye's.
+	{sym(pkgWorld, "Fog.UnlitReach"), BucketObserve, VerdictHarnessOnly,
+		"The fog provider's unlit_reach: a plain eye's reach (each eye's own is in eyes[], Fog.EyeSights), a read.", ""},
 	{sym(pkgWorld, "Fog.DarkRadius"), BucketObserve, VerdictHarnessOnly,
 		"The fog provider's tonight_dark: a read of the last recompute's dark radius.", ""},
 	{sym(pkgWorld, "Fog.LitAt"), BucketObserve, VerdictHarnessOnly,
@@ -1592,6 +1602,36 @@ var Register = []Entry{
 		"The load's step 5 (Game.resumeLoad -> fogRestore): the explored grid put back. If it went dark a resumed game would start black -- TestFogIsKept act 4 and TestAFoggedGameIsKept are the instruments.", ""},
 	{sym(pkgWorld, "FogSnapshot.Check"), BucketWire, VerdictLive,
 		"d2save's World.checkFog, from World.Check in every Decode the load's step 1 makes, and Fog.Validate.", ""},
+	// Fog of war F4, "raised sight" (2 Oct 2026; docs/fog.md): every eye's
+	// own sight (base + gear + height; dark + talent), the map's towers as
+	// eyes, the eyes' line caches, and the tile walk moved to d2geom so fog
+	// replays it on its own grid of the map's opacity.
+	{sym(pkgGeom, "TileLineReads"), BucketWire, VerdictLive,
+		"The one tile walk: TileLineClear walks through it, and Fog.rayTo records it once per offset for every recompute's lines (Game.fogAdvance -> Fog.Update -> recompute -> lineClear -> gridLineClear).", ""},
+	{sym(pkgGeom, "TileLineClear"), BucketWire, VerdictLive,
+		"MapEngine.TileSightClear walks it: fog's lines on a sight with no opacity grid, and the probe's clear_from.", ""},
+	{sym(pkgMapEngine, "MapEngine.TileBlocksSight"), BucketWire, VerdictLive,
+		"Fog.readOpacity reads every tile once a map through mapTileSight, at the first recompute of every game with fog on.", ""},
+	{sym(pkgMapEngine, "MapEngine.SetHeights"), BucketWire, VerdictLive,
+		"LayAuthoredMap hands the engine the authored map's ground heights (the churchyard's high ground).", ""},
+	{sym(pkgMapEngine, "MapEngine.HeightAt"), BucketWire, VerdictLive,
+		"Fog.sightOf asks it of every eye's tile through mapTileSight: height raises sight (Q7).", ""},
+	{sym(pkgMapEngine, "MapEngine.SetTowers"), BucketWire, VerdictLive,
+		"LayAuthoredMap hands the engine the authored map's towers (the gate's watchtower).", ""},
+	{sym(pkgMapEngine, "MapEngine.TowerSights"), BucketWire, VerdictLive,
+		"Fog.resize reads them through mapTileSight when it sizes itself to the map: every tower is an eye (Q6).", ""},
+	{sym(pkgMapTiled, "Map.HeightAt"), BucketWire, VerdictLive,
+		"authoredHeights (LayAuthoredMap) reads the ground's height under every tile of the authored map.", ""},
+	{sym(pkgItems, "Kit.Sight"), BucketWire, VerdictLive,
+		"Game.heroSightTerms, every frame with fog on (fogEyes): the bow in his hands raises his sight (Q9).", ""},
+	{sym(pkgMapEdit, "Doc.HeightAt"), BucketWire, VerdictLive,
+		"The World Editor's clicked-tile words (Editor.tileWord): \"height 1\".", ""},
+	{sym(pkgMapEdit, "Doc.TowerSightAt"), BucketWire, VerdictLive,
+		"The World Editor's clicked-tile words (Editor.tileWord): \"a tower: sees 16\".", ""},
+	{sym(pkgWorld, "Fog.EyeSights"), BucketObserve, VerdictHarnessOnly,
+		"The fog provider's eyes[]: each eye's own sight, terms and dark radius, a read.", ""},
+	{sym(pkgWorld, "Fog.LinesCached"), BucketObserve, VerdictHarnessOnly,
+		"The fog provider's lines_cached: a counter read.", ""},
 	{sym(pkgWorld, "FogSnapshot.Empty"), BucketWire, VerdictLive,
 		"FogSnapshot.Check, Fog.Validate/Restore and World.checkFog: an empty block is a fog that never looked.", ""},
 }

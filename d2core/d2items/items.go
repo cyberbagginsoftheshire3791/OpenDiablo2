@@ -90,6 +90,11 @@ type Item struct {
 	Armour *Armour    `json:"armour,omitempty"`
 	Light  *LightSpec `json:"light,omitempty"`
 	Tool   *Tool      `json:"tool,omitempty"`
+
+	// Sight is how much further he sees with it in his hands, in tiles (fog
+	// of war F4; Josh's Q9, decided on its default: the composite bow, +2 --
+	// the hunter's eye). Optional; carried in the pack it gives nothing.
+	Sight float64 `json:"sight,omitempty"`
 }
 
 // Weapon is how a weapon fights. Every number is a [DIAL] (E3 §4 gives the
@@ -220,6 +225,14 @@ func Load(data []byte) (*Catalog, error) {
 func validate(it *Item) error {
 	if it.ID == "" || strings.TrimSpace(it.Name) == "" {
 		return fmt.Errorf("an item needs an id and a name")
+	}
+
+	if it.Sight < 0 || it.Sight > MaxSight {
+		return fmt.Errorf("sight %v is outside 0..%v tiles", it.Sight, MaxSight)
+	}
+
+	if it.Sight != 0 && it.Fits != "main" && it.Fits != "off" {
+		return fmt.Errorf("sight is given only by what is held in a hand; this item fits %q", it.Fits)
 	}
 
 	switch it.Fits {
@@ -384,3 +397,7 @@ func splitStack(entry string) (id string, count int) {
 
 	return id, count
 }
+
+// MaxSight bounds an item's sight (fog of war F4), so a typo of 20 is refused
+// rather than obeyed.
+const MaxSight = 8

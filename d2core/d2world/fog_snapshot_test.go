@@ -100,6 +100,14 @@ func b2aFogClasses() []b2aClass {
 		"recomputes":    "D: this process's cost counter (the digest's process part), never the world's",
 		"skipped":       "D: this process's frame counter, never the world's",
 		"cellsRead":     "D: this process's cost counter, never the world's",
+		"sights":        "D: what each eye saw by at the last recompute (F4), recomputed from the eyes",
+		"towers":        "D: the map's towers as eyes (F4), read from the map when the grid is sized",
+		"heights":       "W: the map's ground heights (F4), the line of sight's own, taken when the grid is sized",
+		"lines":         "D: the eyes' line caches (F4), walked again from the map",
+		"eyeLine":       "D: per-recompute scratch: each eye's line cache",
+		"linesHit":      "D: this process's cost counter, never the world's",
+		"opaque":        "D: the map's opacity (F4), read from the map at the next recompute",
+		"rays":          "D: the tile walk recorded per offset (F4), recorded again from the walk",
 	}}}
 }
 

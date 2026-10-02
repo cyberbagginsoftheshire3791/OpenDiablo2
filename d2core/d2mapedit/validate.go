@@ -655,6 +655,14 @@ func (v *validation) placeKind(gid int, layer string, x, y int) {
 		return
 	}
 
+	// Fog of war F4: height is the ground's (tiled.go's parser.kind).
+	if k.Height != 0 && layer != LayerFloor {
+		v.tile(Problem{Rule: RuleWrongLayer, Kind: k.Name, Msg: fmt.Sprintf(
+			"carries \"height\", a floor tile's property, but is placed on the %s layer; put it on the floor layer", layer)}, x, y)
+
+		return
+	}
+
 	p := Problem{Kind: k.Name, Tile: image.Pt(x, y), HasTile: true}
 	v.checkArtFor(k, layer, p)
 }

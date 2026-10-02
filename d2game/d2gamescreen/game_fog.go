@@ -7,6 +7,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapgen"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maprenderer"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2progress"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2world"
 )
 
@@ -115,6 +116,52 @@ func (s mapTileSight) Structures() []image.Rectangle {
 	return s.v.gameClient.MapEngine.Structures()
 }
 
+// TileBlocksSight is whether a tile stops a line (F4): fog reads the map's
+// answers once into a grid of its own and walks it as the map does.
+func (s mapTileSight) TileBlocksSight(tx, ty int) bool {
+	if s.v.gameClient == nil || s.v.gameClient.MapEngine == nil {
+		return true
+	}
+
+	return s.v.gameClient.MapEngine.TileBlocksSight(tx, ty)
+}
+
+// HeightAt is the ground's height under a tile (F4: an eye on it sees
+// further).
+func (s mapTileSight) HeightAt(tx, ty int) int {
+	if s.v.gameClient == nil || s.v.gameClient.MapEngine == nil {
+		return 0
+	}
+
+	return s.v.gameClient.MapEngine.HeightAt(tx, ty)
+}
+
+// TowerSights are the map's towers (F4): every one is an eye (Q6).
+func (s mapTileSight) TowerSights() (footprints []image.Rectangle, sight []float64) {
+	if s.v.gameClient == nil || s.v.gameClient.MapEngine == nil {
+		return nil, nil
+	}
+
+	return s.v.gameClient.MapEngine.TowerSights()
+}
+
+// heroSightTerms are his raised sight's terms (fog of war F4), read fresh
+// every frame and given by value: the sight the gear in his hands gives (Q9,
+// decided on its default: an equipped composite bow, +2) and the dark radius
+// his talents add (Q8, on its default: Night Eyes, +1). Talents and kit are
+// his: his squads' other models have neither.
+func (v *Game) heroSightTerms() (gear, darkTalent float64) {
+	if v.kit != nil && v.kit.Bound() {
+		gear = v.kit.Sight()
+	}
+
+	if v.progress != nil && v.talents != nil {
+		darkTalent = v.progress.Effect(v.talents, d2progress.DarkSight)
+	}
+
+	return gear, darkTalent
+}
+
 // fogOffReason is why this game draws no fog now, "" when it does.
 func (v *Game) fogOffReason() string {
 	switch {
@@ -187,7 +234,8 @@ func (v *Game) fogAdvance() {
 // squads (F2; Q5: villagers' eyes do not count), and a contact for every
 // enemy still standing in his own fight (Q4).
 func (v *Game) fogEyes(dst []d2world.Eye, px, py float64) []d2world.Eye {
-	dst = append(dst, d2world.Eye{ID: fogEyeID, X: px, Y: py})
+	gear, darkTalent := v.heroSightTerms()
+	dst = append(dst, d2world.Eye{ID: fogEyeID, X: px, Y: py, Gear: gear, DarkTalent: darkTalent})
 
 	entities := v.gameClient.MapEngine.Entities()
 	pos := func(id string) (x, y float64, ok bool) {
@@ -310,18 +358,25 @@ func (p fogProvider) HarnessState() map[string]interface{} {
 	snap := f.Snapshot(fogMapID())
 	eyes := make([]interface{}, 0, 1)
 	contacts := make([]interface{}, 0)
+	towers := 0
 
-	for _, e := range f.Eyes() {
+	for _, e := range f.EyeSights() {
 		if e.Contact {
 			contacts = append(contacts, map[string]interface{}{"id": e.ID, "x": e.X, "y": e.Y})
 
 			continue
 		}
 
+		if e.Tower {
+			towers++
+		}
+
+		// F4: each eye's own sight, its terms, and its dark radius's.
 		eyes = append(eyes, map[string]interface{}{
-			"id": e.ID, "x": e.X, "y": e.Y, "sight": dials.DaySight,
-			"dark": dark, "unlit_reach": reach,
-			"terms": map[string]interface{}{"base": dials.DaySight},
+			"id": e.ID, "x": e.X, "y": e.Y, "tower": e.Tower, "height": e.Height,
+			"sight": e.Sight, "dark": e.Dark, "unlit_reach": e.UnlitReach,
+			"terms":      map[string]interface{}{"base": e.BaseTerm, "gear": e.Gear, "height": e.HeightTerm},
+			"dark_terms": map[string]interface{}{"tonight": dark, "talent": e.DarkTalent},
 		})
 	}
 
@@ -340,6 +395,9 @@ func (p fogProvider) HarnessState() map[string]interface{} {
 		"day_sight":         dials.DaySight,
 		"dark_radius":       dials.DarkRadius,
 		"moon_dark_radius":  dials.MoonDarkRadius,
+		"height_tiles":      dials.HeightTiles,
+		"towers":            towers,
+		"lines_cached":      f.LinesCached(),
 		"memory_level":      dials.MemoryLevel,
 		"memory_saturation": dials.MemorySaturation,
 		"eyes":              eyes,
@@ -485,7 +543,7 @@ func (v *Game) fogRestore(s d2world.FogSnapshot) error {
 // like ui.zoom), its three dials, the three state verbs and the probe.
 func (p fogProvider) HarnessSettableFields() []string {
 	return []string{
-		"enabled", "day_sight", "dark_radius", "moon_dark_radius", "memory_level", "memory_saturation",
+		"enabled", "day_sight", "dark_radius", "moon_dark_radius", "height_tiles", "memory_level", "memory_saturation",
 		"explore", "forget", "reveal_all", "probe",
 	}
 }
@@ -512,7 +570,7 @@ func (p fogProvider) HarnessSet(field string, value interface{}) error {
 		}
 
 		v.fog.wanted = on
-	case "day_sight", "dark_radius", "moon_dark_radius", "memory_level", "memory_saturation":
+	case "day_sight", "dark_radius", "moon_dark_radius", "height_tiles", "memory_level", "memory_saturation":
 		n, ok := value.(float64)
 		if !ok || math.IsNaN(n) {
 			return fmt.Errorf("%s wants a number, got %v", field, value)
@@ -537,6 +595,12 @@ func (p fogProvider) HarnessSet(field string, value interface{}) error {
 			} else {
 				d.MoonDarkRadius = n
 			}
+		case "height_tiles":
+			if n < 0 || n > 16 {
+				return fmt.Errorf("height_tiles %v is outside 0..16 tiles a level", n)
+			}
+
+			d.HeightTiles = n
 		case "memory_level":
 			if n < 0 || n > 1 {
 				return fmt.Errorf("memory_level %v is outside 0..1", n)
