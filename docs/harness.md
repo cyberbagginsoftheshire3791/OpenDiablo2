@@ -1267,19 +1267,25 @@ chasing him; `swing`: his own swing is playing; `reaction`: his hit or block
 reaction is playing; `grace`: none of those, and the grace after the last is
 running; `""` out of combat -- the first that holds, in that order),
 `combat_detail` (a word on it: the encounter, the hunters' ids, or the grace
-left and after what), `combat_grace_left` (seconds of game time) and
+left and after what), `combat_grace_left` (seconds of play -- every live frame, a paced fight's
+held-world frames too; not game time, which those do not advance) and
 `combat_grace` (the dial); all in the digest's process part. A second DIAL:
-`combat_grace` (seconds of game time, 0 to 3600; 3 shipped,
+`combat_grace` (seconds of play, 0 to 3600; 3 shipped,
 `DefaultCombatGraceSeconds`): 0 ends combat on the frame its last trigger
 ends. The `ui`
 provider gained `escape_menu` (`open`, `layout` -- `main` for the entries --,
 `entries`, `selected`, `note`, the line under the entries, and
 `exit_refused`) and `save_notice`, the save's line on the HUD; both are in
 its digest's process part. Since 0.16.0 the `ui` provider also reports
-`combat_marker`: what the marker over the health globe last drew (`"!"`, its
-glyph until art lands; `"art:combat"` with `data/strigoi/ui/combat.png`; `""`
-out of combat), `in_combat`, and its square (`x` 54, `y` 468, `w` and `h` 32)
--- process part, as the menu is.
+`combat_marker`: what the marker over the health globe drew THIS frame
+(`"!"`, its glyph until art lands; `"art:combat"` with
+`data/strigoi/ui/combat.png`; `""` when it drew nothing -- out of combat, or
+its widget not rendered), `in_combat`, and the square it drew in (`x` 54, `y`
+468, `w` and `h` 32 where the HUD puts it; all four 0 when it drew nothing)
+-- process part, as the menu is. **Since 0.16.2** (the combat-status
+review's C2) the square is where it drew and not the constants, and `drew`
+is forgotten at the start of every frame (`HUD.Render`, before the widgets
+draw), so a frame it was not drawn on reports nothing rather than the last.
 
 **M4.6 B1 put every value the world save will carry on a provider before
 anything saves it** (the save plan's rule: observability before
@@ -1939,10 +1945,25 @@ the load report says `ended_actions` (BUG-92: a held action this build's art
 no longer fits is ended as it would have ended, not refused), and a held
 action at a point no play can have is refused (BUG-91). And since BUG-94 the
 dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
+**0.16.2 (integrate-1oct, 1 Oct 2026)** is the combat status, the raid's
+R2 and fog of war F2 merged on master `b84a7241` -- each had bumped 0.16.0
+to 0.16.1 on its own branch, so no one number named the three -- with the
+combat-status review's C items: `combat_grace` and `combat_grace_left` are
+seconds of play, not game time (a paced fight's held-world frames count;
+C1, wording only); `ui.combat_marker` reports the square it drew in this
+frame and `""` on a frame it did not draw (C2); the log's `COMBAT out` line
+says the seconds spent in combat and after the last trigger, not the
+grace's dial (C3). And one behaviour where R2 met the combat status: a
+chase the world started or moved (`Pursuit.Rechase`) ends when its
+hunter's watch forgets, whatever the watch is on now -- Seek moves a watch
+before the re-chase budget moves its chase, and the chase it left on him
+must not outlive the watch (`TestAForgottenWatchEndsTheChaseSeekLeftBehind`).
+An evening kept by any 0.16.1 is refused as another harness's.
 **0.16.0 (the combat status, 30 Sep 2026; branch `combat-status`)**:
 `strigoi_save_game` is refused `COMBAT` while he is in combat -- his fight
 live, a hostile chasing him, his own swing or hit or block reaction playing,
-or the grace after the last of these (3 s of game time) -- which took
+or the grace after the last of these (3 s of play; "game time" until
+0.16.2, but a held world's frames count) -- which took
 `FIGHTING`'s "a fight is running" and "his last swing is still playing";
 the `save` provider's `in_combat`, `combat_reason`, `combat_detail`,
 `combat_grace_left`, `combat_grace` and its second dial `combat_grace`; the

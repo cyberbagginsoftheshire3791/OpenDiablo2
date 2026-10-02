@@ -1,6 +1,7 @@
 package d2gamescreen
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2progress"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
@@ -296,4 +298,41 @@ func TestARemainderUnderTheFloorEndsTheGrace(t *testing.T) {
 	v.combatGrace, v.combatLast = csFrame+1e-6, "his swing is playing"
 	v.advanceCombatStatus(csFrame)
 	require.True(t, v.InCombat())
+}
+
+// THE COMBAT OUT LINE SAYS THE TIME SPENT (integrate-1oct, the combat-status
+// review's C3): two seconds of his swing and a half-second grace log "2.5 s
+// in combat, 0.5 s after" -- the seconds that passed, where the line had
+// printed the grace's dial. THE CONTROL, in the test: a second combat of one
+// second logs its own 1.5 s, so the counts start again at COMBAT in.
+func TestTheCombatOutLineSaysTheTimeSpent(t *testing.T) {
+	v, _ := csGame(t)
+
+	var log bytes.Buffer
+
+	v.Logger = d2util.NewLogger()
+	v.Logger.SetColorEnabled(false)
+	v.Logger.Writer = &log
+	v.combatGraceSeconds = 0.5
+
+	fight := func(frames int) int {
+		b3SetField(t, v.localPlayer, "isCasting", true)
+
+		for i := 0; i < frames; i++ {
+			v.advanceCombatStatus(csFrame)
+		}
+
+		b3SetField(t, v.localPlayer, "isCasting", false)
+
+		return csFramesOut(v, 400)
+	}
+
+	require.InDelta(t, 30, fight(120), 1, "a half-second grace")
+	require.Contains(t, log.String(), "COMBAT out: 2.5 s in combat, 0.5 s after his swing")
+
+	log.Reset()
+	require.InDelta(t, 30, fight(60), 1)
+	require.Contains(t, log.String(), "COMBAT out: 1.5 s in combat, 0.5 s after his swing")
+	require.Zero(t, v.combatSpent)
+	require.Zero(t, v.combatAfter)
 }

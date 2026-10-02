@@ -118,7 +118,8 @@ var harnessDialFields = map[string][]string{
 	"seek":    {"retarget_minutes", "stagger_slots", "switch_margin_tiles", "dwell_minutes"}, // the raid's R2: D-S1, the stagger, and its review's stickiness (B1)
 	// M4.6 B5: the dawn autosave switched off, for a script whose subject is
 	// a save of its own it must load after a dawn (TestSaveResume). The combat
-	// status (30 Sep 2026): its grace, in seconds of game time.
+	// status (30 Sep 2026): its grace, in seconds of play (every live frame,
+	// a held world's too; not the world clock).
 	"save":   {"autosave", "combat_grace"},
 	"spawns": {"chance", "check_minutes", "max_groups", "notice_lit_level", "notice_radius", "rout_at"},
 	// M4.7 step 4's and J1's radii: where the rite and the watching village

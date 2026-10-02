@@ -302,7 +302,8 @@ It is drawn with its top-left corner at (54, 468): centred over the globe
 globe and of the left hand's icon (x 117–165, y 552–600). Art that is there and
 does not fit — another size, more than one frame — is reported in the log
 (`combat marker art refused`) and the glyph is drawn. The harness's `ui` state
-says what it drew: `combat_marker.drew` is `"!"`, `"art:combat"`, or `""` (not
-in combat), with its square (`x`, `y`, `w`, `h`). It is drawn in both games
+says what it drew this frame: `combat_marker.drew` is `"!"`, `"art:combat"`,
+or `""` (nothing drawn), with the square it drew in (`x`, `y`, `w`, `h`; all
+0 when nothing was drawn). It is drawn in both games
 (`-classic` too: the status is the save's, and the save is both games').
 Every file gets its `CREDITS.md` line (§4).

@@ -24,8 +24,10 @@ import (
 // the globes is a KEY (F strikes, L lights, and C opens his character panel):
 // a letter here would read as one more key. Art that is there and does not
 // fit is reported in the log and the glyph drawn. The ui provider's
-// combat_marker says what it last drew ("!", "art:combat", or "" when not in
-// combat) and where. docs/art-spec.md has the path.
+// combat_marker says what it drew THIS frame ("!", "art:combat", or "" when
+// it drew nothing) and where it drew it (integrate-1oct, the combat-status
+// review's C2: it had reported the constant square, and a "drew" left from a
+// frame the widget was not rendered on). docs/art-spec.md has the path.
 //
 // WHERE: centred over the health globe (hpGlobeX 30, 80 wide: its middle is
 // x 70), its foot at y 500, above the globe's stone frame (whose top is at
@@ -70,6 +72,20 @@ type combatMarker struct {
 	label *d2ui.Label
 	art   d2interface.Animation
 	drew  string
+
+	// x, y is the top-left it drew at this frame (zero when it drew nothing).
+	x, y int
+}
+
+// beginCombatMarkerFrame forgets what the marker drew on the last frame.
+// HUD.Render calls it first, every frame: the screen renders before the
+// UIManager renders its widgets (App.render), so a frame the marker's widget
+// is not rendered on -- hidden with its panel group -- reports nothing drawn,
+// where it had reported the last frame it was (the combat-status review's C2).
+func (h *HUD) beginCombatMarkerFrame() {
+	if h.combat != nil {
+		h.combat.drew, h.combat.x, h.combat.y = "", 0, 0
+	}
 }
 
 // loadCombatMarker makes the marker's label and loads its art. The label
@@ -95,7 +111,7 @@ func (h *HUD) renderCombatMarker(x, y int, target d2interface.Surface) {
 		return
 	}
 
-	m.drew = ""
+	m.drew, m.x, m.y = "", 0, 0
 
 	if !h.gameControls.inCombat() {
 		return
@@ -111,7 +127,7 @@ func (h *HUD) renderCombatMarker(x, y int, target d2interface.Surface) {
 		m.art.Render(target)
 		target.Pop()
 
-		m.drew = combatMarkerArt
+		m.drew, m.x, m.y = combatMarkerArt, x, y
 
 		return
 	}
@@ -125,21 +141,23 @@ func (h *HUD) renderCombatMarker(x, y int, target d2interface.Surface) {
 		m.label.Render(target)
 	}
 
-	m.drew = CombatMarkerLetter
+	m.drew, m.x, m.y = CombatMarkerLetter, x, y
 }
 
-// combatMarkerReport is the ui provider's combat_marker: what the marker last
-// drew -- CombatMarkerLetter, "art:combat", or "" (not in combat) -- and its
-// square on the screen.
+// combatMarkerReport is the ui provider's combat_marker: what the marker drew
+// this frame -- CombatMarkerLetter, "art:combat", or "" (nothing) -- and the
+// square it drew it in: where the widget put it, not where the constants say
+// it goes; all four zero when it drew nothing.
 func (g *GameControls) combatMarkerReport() map[string]interface{} {
-	drew := ""
-	if g.hud != nil && g.hud.combat != nil {
-		drew = g.hud.combat.drew
+	drew, x, y, size := "", 0, 0, 0
+	if g.hud != nil && g.hud.combat != nil && g.hud.combat.drew != "" {
+		m := g.hud.combat
+		drew, x, y, size = m.drew, m.x, m.y, combatMarkerSize
 	}
 
 	return map[string]interface{}{
 		"drew": drew, "in_combat": g.inCombat(),
-		"x": combatMarkerX, "y": combatMarkerY, "w": combatMarkerSize, "h": combatMarkerSize,
+		"x": x, "y": y, "w": size, "h": size,
 	}
 }
 

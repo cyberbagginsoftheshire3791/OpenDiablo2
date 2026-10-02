@@ -927,7 +927,7 @@ func (p saveProvider) HarnessState() map[string]interface{} {
 		// The combat status (30 Sep 2026): whether he is in combat -- so a
 		// save is refused COMBAT and the HUD marks it -- why (fight, chased,
 		// swing, reaction, grace), a word on it, the grace left in seconds of
-		// game time, and the grace's dial.
+		// play (every live frame, a held world's too), and the grace's dial.
 		"in_combat":         combatCode != "",
 		"combat_reason":     combatCode,
 		"combat_detail":     combatDetail,
@@ -956,8 +956,9 @@ func (p saveProvider) HarnessDigest() (world, process map[string]interface{}) {
 // HarnessSettableFields: two dials. autosave false keeps the dawn from saving
 // by itself, for a script whose subject is a save it makes (TestSaveResume
 // steps past dawn after T and must load T); the shipped game has no way to set
-// it. combat_grace is the combat status's grace in seconds of game time
-// (DefaultCombatGraceSeconds shipped): 0 ends combat on the frame its last
+// it. combat_grace is the combat status's grace in seconds of play -- every
+// live frame, a held world's too, not game time (DefaultCombatGraceSeconds
+// shipped): 0 ends combat on the frame its last
 // trigger ends -- the controls' "no grace" -- and a script may lengthen it.
 func (p saveProvider) HarnessSettableFields() []string { return []string{"autosave", "combat_grace"} }
 
@@ -971,7 +972,7 @@ func (p saveProvider) HarnessSet(field string, value interface{}) error {
 		}
 
 		if !ok || !(seconds >= 0 && seconds <= 3600) {
-			return fmt.Errorf("combat_grace wants seconds of game time, 0 to 3600, got %v", value)
+			return fmt.Errorf("combat_grace wants seconds of play, 0 to 3600, got %v", value)
 		}
 
 		p.v.combatGraceSeconds = seconds

@@ -253,6 +253,8 @@ var b3GameClasses = map[string]string{
 	// nothing of it is in the file.
 	"combatGrace":        "T: the grace after combat's last trigger, above 0 only while he is in combat (COMBAT refuses)",
 	"combatLast":         "D: the last trigger the combat status saw, for the grace's reason and the log's COMBAT in/out lines; empty from the frame he is out of combat, so at every save the game makes",
+	"combatSpent":        "D: seconds of play since COMBAT in, for the log's COMBAT out line; zeroed at COMBAT out, so 0 at every save the game makes (none is made in combat)",
+	"combatAfter":        "D: seconds of play since combat's last trigger, for the log's COMBAT out line; zeroed at a trigger and at COMBAT out, so 0 at every save the game makes",
 	"combatGraceSeconds": "D: the grace's dial: DefaultCombatGraceSeconds in the shipped game, the harness's save.combat_grace re-applied by a load as every dial is",
 	"pendingLoad":        "T: a world save checked and not yet restored: its first frame restores it before anything else runs, and NOT_READY refuses a save meanwhile (M4.6 B4a)",
 	"loadSteps":          "D: the load's own record of the steps it ran, for the harness's report; a fresh screen's is empty",

@@ -921,6 +921,9 @@ func (h *HUD) nameFor(e d2interface.MapEntity) string {
 
 // Render draws the HUD to the screen
 func (h *HUD) Render(target d2interface.Surface) error {
+	// Before the UIManager renders the marker's widget this frame (C2).
+	h.beginCombatMarkerFrame()
+
 	// M4.7: where the dead lie -- drawn first, so the HUD's own panels cover them.
 	h.renderCorpses(target)
 

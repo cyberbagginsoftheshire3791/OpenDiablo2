@@ -37,10 +37,13 @@ import (
 //     case -- a blow on him as his fight ended -- and is closed by this.
 //
 // AND FOR A GRACE PERIOD AFTER THE LAST OF THESE ENDS: combatGraceSeconds of
-// game time [DIAL] -- DefaultCombatGraceSeconds shipped, the harness's
+// play [DIAL] -- DefaultCombatGraceSeconds shipped, the harness's
 // save.combat_grace. It is counted down at the end of every frame the screen
 // is live (the escape menu pauses it as it pauses the world), on the frame's
-// own seconds, and held full on every frame a trigger is seen.
+// own seconds, and held full on every frame a trigger is seen. SECONDS OF
+// PLAY, NOT GAME TIME (the combat-status review's C1, reworded 1 Oct): a
+// frame a paced fight holds the world on counts too (combatGraceRuns asks
+// only the escape menu), though the world clock stands still on it.
 //
 // WHAT IT DOES:
 //
@@ -71,8 +74,8 @@ const (
 )
 
 // DefaultCombatGraceSeconds is how long he stays in combat after the last of
-// his fight, a chase, his swing and his reaction ends, in seconds of game time
-// [DIAL] (Josh's brief, 30 Sep 2026: "clears a few seconds after"; 3 s). The
+// his fight, a chase, his swing and his reaction ends, in seconds of play
+// (every live frame, a held world's too; not game time) [DIAL] (Josh's brief, 30 Sep 2026: "clears a few seconds after"; 3 s). The
 // harness's save.combat_grace sets it for a script.
 //
 // MEASURED BEFORE IT WAS SET (strigoi-measure-first; the notes' "The combat
@@ -151,8 +154,14 @@ func (v *Game) advanceCombatStatus(elapsed float64) {
 	if code, detail := v.combatTrigger(); code != "" {
 		if v.combatLast == "" && v.combatGrace <= 0 {
 			v.Infof("COMBAT in (%s): %s", code, detail)
+			v.combatSpent = 0
 		}
 
+		if v.combatGraceRuns() {
+			v.combatSpent += elapsed
+		}
+
+		v.combatAfter = 0
 		v.combatLast = detail
 		v.combatGrace = v.combatGraceSeconds
 
@@ -160,15 +169,27 @@ func (v *Game) advanceCombatStatus(elapsed float64) {
 	}
 
 	if v.combatGrace > 0 && v.combatGraceRuns() {
+		v.combatSpent += elapsed
+		v.combatAfter += elapsed
+
 		if v.combatGrace -= elapsed; v.combatGrace <= combatGraceFloor {
 			v.combatGrace = 0
 		}
 	}
 
 	if v.combatGrace <= 0 && v.combatLast != "" {
-		v.Infof("COMBAT out: %.1f s after %s", v.combatGraceSeconds, v.combatLast)
+		v.Info(v.combatOutWords())
 		v.combatLast = ""
+		v.combatSpent, v.combatAfter = 0, 0
 	}
+}
+
+// combatOutWords is the log's COMBAT out line: the seconds of play he spent in
+// combat, from COMBAT in, and of those the seconds after the last trigger (the
+// grace as it ran) -- the time spent, where it had printed the grace's dial
+// (the combat-status review's C3).
+func (v *Game) combatOutWords() string {
+	return fmt.Sprintf("COMBAT out: %.1f s in combat, %.1f s after %s", v.combatSpent, v.combatAfter, v.combatLast)
 }
 
 // combatGraceRuns is whether this frame counts toward the grace: every frame

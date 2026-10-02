@@ -614,13 +614,18 @@ type Game struct {
 
 	// The combat status (Josh, 30 Sep 2026; combat_status.go): combatGrace is
 	// the grace left after the last of his fight, a chase, his swing and his
-	// reaction, in seconds of game time -- COMBAT refuses a save while it
-	// runs; combatLast the last trigger seen, for the grace's reason and the
-	// log's COMBAT in/out lines; combatGraceSeconds the grace's dial
-	// (DefaultCombatGraceSeconds; the harness's save.combat_grace).
+	// reaction, in seconds of play (every live frame, a held world's too) --
+	// COMBAT refuses a save while it runs; combatLast the last trigger seen,
+	// for the grace's reason and the log's COMBAT in/out lines;
+	// combatGraceSeconds the grace's dial (DefaultCombatGraceSeconds; the
+	// harness's save.combat_grace); combatSpent and combatAfter the seconds
+	// of play since COMBAT in and since the last trigger, for the COMBAT out
+	// line (the review's C3).
 	combatGrace        float64
 	combatLast         string
 	combatGraceSeconds float64
+	combatSpent        float64
+	combatAfter        float64
 
 	// saveGeneration is the saved_at of the last world save this hero's
 	// sidecar belongs to: SaveWorld sets it, bindKit reads it from the
