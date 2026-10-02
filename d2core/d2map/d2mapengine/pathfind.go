@@ -24,34 +24,15 @@ import (
 // within the expansion budget, it returns the best partial route toward it
 // rather than nothing -- the old walk-as-far-as-you-can behaviour, kept
 // deliberately as the failure mode.
+//
+// It is a RouteQuery of one question (scratch.go): the same search and the
+// same corridor, with the corridor skipped when the goal is proven unreachable
+// (BUG-115).
 func (m *MapEngine) PathFind(start, dest d2vector.Position) []d2vector.Position {
-	from := subTile{int(math.Floor(start.X())), int(math.Floor(start.Y()))}
-	goal := subTile{int(math.Floor(dest.X())), int(math.Floor(dest.Y()))}
+	q := m.NewRouteQuery(start)
+	defer q.Close()
 
-	if from == goal {
-		return []d2vector.Position{dest}
-	}
-
-	result := m.search(from, goal)
-
-	steps := result.route(from)
-	exact := result.exact
-
-	// The long way round (corridor.go): tried only when the ordinary search
-	// ran out of BUDGET -- not when it proved the goal walled off -- and used
-	// only if the whole corridor arrives. Every route the search above finds
-	// is returned exactly as before.
-	if !exact && result.exhausted {
-		if long, ok := m.corridorRoute(from, goal); ok {
-			steps, exact = long, true
-		}
-	}
-
-	if len(steps) == 0 {
-		return []d2vector.Position{}
-	}
-
-	return waypoints(from, steps, dest, exact)
+	return q.PathFind(dest)
 }
 
 // waypoints turns a subtile-by-subtile route into the corners of that route.

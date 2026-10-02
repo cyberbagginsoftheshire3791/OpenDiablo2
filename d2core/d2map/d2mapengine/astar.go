@@ -56,61 +56,31 @@ var neighbourOffsets = [8]subTile{
 	{-1, -1}, // NW
 }
 
-// pathNode is one entry in the open set.
-type pathNode struct {
-	x, y int
-	g, h int
-}
-
-// nodeQueue is a min-heap of pathNodes.
-type nodeQueue []*pathNode
-
-func (q nodeQueue) Len() int { return len(q) }
-
-// Less is a TOTAL order, and that is the point. Ordering on f alone leaves
-// equal-f nodes to be separated by whatever the heap happens to do with them,
-// which is stable within a process but not something to rely on across builds.
-// Falling through f -> h -> y -> x leaves no ties at all: two distinct nodes
-// can never compare equal, because no two share a coordinate pair.
-func (q nodeQueue) Less(i, j int) bool {
-	a, b := q[i], q[j]
-
-	if af, bf := a.g+a.h, b.g+b.h; af != bf {
-		return af < bf
-	}
-
-	if a.h != b.h {
-		return a.h < b.h
-	}
-
-	if a.y != b.y {
-		return a.y < b.y
-	}
-
-	return a.x < b.x
-}
-
-func (q nodeQueue) Swap(i, j int) { q[i], q[j] = q[j], q[i] }
-
-func (q *nodeQueue) Push(x interface{}) { *q = append(*q, x.(*pathNode)) }
-
-func (q *nodeQueue) Pop() interface{} {
-	old := *q
-	n := len(old)
-	item := old[n-1]
-	old[n-1] = nil
-	*q = old[:n-1]
-
-	return item
-}
-
 // blockedAt reports whether a subtile cannot be walked. Off the map counts as
-// blocked: SubTileAt returns nil there, and the map edge is as impassable as a
+// blocked: there is no tile there, and the map edge is as impassable as a
 // wall.
+//
+// It is SubTileAt(x, y).BlockWalk with the steps written out (BUG-115): the
+// tile by floored division, refused off the map exactly as TileAt refuses it,
+// and the subtile's slot as GetSubTileFlags' lookup table maps it -- row y of
+// the table is the slots 20-5y .. 24-5y. A search asks this up to 24 times a
+// node, and the call chain through SubTileAt, TileAt and the table was about
+// 15% of a search. TestBlockedAtIsSubTileAt holds it to SubTileAt cell for
+// cell, on and off the map.
 func (m *MapEngine) blockedAt(x, y int) bool {
-	flags := m.SubTileAt(x, y)
+	tileX, offsetX := floorDivMod(x, subtilesPerTile)
+	tileY, offsetY := floorDivMod(y, subtilesPerTile)
 
-	return flags == nil || flags.BlockWalk
+	if tileX < 0 || tileX >= m.size.Width || tileY < 0 || tileY >= m.size.Height {
+		return true
+	}
+
+	idx := tileX + tileY*m.size.Width
+	if idx >= len(m.tiles) {
+		return true
+	}
+
+	return m.tiles[idx].SubTiles[(subtilesPerTile-1-offsetY)*subtilesPerTile+offsetX].BlockWalk
 }
 
 // BlockedAt reports whether a subtile cannot be walked, in the same terms the A*
@@ -141,33 +111,15 @@ func abs(v int) int {
 	return v
 }
 
-// searchNode is what the search knows of one subtile it has reached: the
-// cheapest cost found to it so far and the subtile it was reached from (the
-// start's own entry has no predecessor; route never asks for one).
-//
-// ONE MAP, NOT TWO, KEYED BY A PACKED uint64 (2 Oct 2026, the per-frame A*
-// budget's burst). The first search kept bestCost and cameFrom as two maps
-// keyed by the subTile struct: the profile of one budget-exhausting search
-// put 45% of its time in map hashing, lookups and inserts, and 17% in
-// container/heap's interface boxing (a heap allocation for every push). One
-// map of both facts, with a key the runtime hashes on its 8-byte fast path,
-// and a heap of values, change no route: the open set's order is TOTAL
-// (openSet.less, the same keys as nodeQueue.Less), so any correct heap pops
-// the same sequence, and the map is only ever read by key, never ranged.
-// TestSearchMatchesTheReferenceSearch holds it to the first search, route
-// for route.
-type searchNode struct {
-	cost int
-	from subTile
+// openNode is one entry of the open set, as a value: f (g + h) kept so the
+// order needs no addition, and 32-bit fields so an entry is 20 bytes, not a
+// pathNode's 32 (BUG-115).
+type openNode struct {
+	f, h, x, y, g int32
 }
 
-// packSubTile is a subtile as one map key.
-func packSubTile(s subTile) uint64 {
-	return uint64(uint32(int32(s.x)))<<32 | uint64(uint32(int32(s.y)))
-}
-
-// openSet is the search's min-heap of pathNode VALUES, ordered by less.
-type openSet []pathNode
+// openSet is the search's min-heap of openNode VALUES, ordered by less.
+type openSet []openNode
 
 // less is nodeQueue.Less on values: f, then h, then y, then x -- a total order
 // over the entries the search ever holds at once (two entries for one subtile
@@ -175,8 +127,8 @@ type openSet []pathNode
 func (q openSet) less(i, j int) bool {
 	a, b := &q[i], &q[j]
 
-	if af, bf := a.g+a.h, b.g+b.h; af != bf {
-		return af < bf
+	if a.f != b.f {
+		return a.f < b.f
 	}
 
 	if a.h != b.h {
@@ -190,12 +142,22 @@ func (q openSet) less(i, j int) bool {
 	return a.x < b.x
 }
 
-func (q *openSet) push(n pathNode) {
+// node is an open-set entry for subtile (x, y) at cost g with heuristic h.
+func node(x, y, g, h int) openNode {
+	return openNode{f: int32(g + h), h: int32(h), x: int32(x), y: int32(y), g: int32(g)}
+}
+
+// The open set is a 4-ary heap (BUG-115): half the levels of a binary one,
+// and a node's four children share a cache line or two. The order is total,
+// so any correct heap pops the same sequence.
+const heapArity = 4
+
+func (q *openSet) push(n openNode) {
 	*q = append(*q, n)
 	h := *q
 
 	for i := len(h) - 1; i > 0; {
-		parent := (i - 1) / 2
+		parent := (i - 1) / heapArity
 		if !h.less(i, parent) {
 			break
 		}
@@ -205,7 +167,7 @@ func (q *openSet) push(n pathNode) {
 	}
 }
 
-func (q *openSet) pop() pathNode {
+func (q *openSet) pop() openNode {
 	h := *q
 	top := h[0]
 	last := len(h) - 1
@@ -213,14 +175,22 @@ func (q *openSet) pop() pathNode {
 	h = h[:last]
 
 	for i := 0; ; {
-		l := 2*i + 1
-		if l >= len(h) {
+		first := heapArity*i + 1
+		if first >= len(h) {
 			break
 		}
 
-		c := l
-		if r := l + 1; r < len(h) && h.less(r, l) {
-			c = r
+		c := first
+
+		end := first + heapArity
+		if end > len(h) {
+			end = len(h)
+		}
+
+		for k := first + 1; k < end; k++ {
+			if h.less(k, c) {
+				c = k
+			}
 		}
 
 		if !h.less(c, i) {
@@ -236,14 +206,15 @@ func (q *openSet) pop() pathNode {
 	return top
 }
 
-// searchNodesHint sizes the search's map up front: the short re-paths that
-// are most solves fit without growing it, and a long one grows by doubling.
-const searchNodesHint = 256
-
-// searchResult is what one A* run produces: the chain of came-from links, the
-// node the search actually reached, and whether that node is the goal.
+// searchResult is what one A* run produces: the route it found (or its
+// closest approach), the node the search actually reached, and whether that
+// node is the goal.
 type searchResult struct {
-	nodes   map[uint64]searchNode
+	// steps is the route from the first step after the start through
+	// reached, in travel order; nil when reached is the start. Walked out of
+	// the scratch before the search returns (BUG-115), so a result stays
+	// good after the scratch has moved on to another search.
+	steps   []subTile
 	reached subTile
 	exact   bool
 	// expanded is how many nodes this search popped and expanded. It is exposed
@@ -261,13 +232,30 @@ type searchResult struct {
 // search runs the bounded A* and returns the route it found, or the closest
 // approach it managed within the expansion budget.
 func (m *MapEngine) search(start, goal subTile) searchResult {
-	nodes := make(map[uint64]searchNode, searchNodesHint)
-	nodes[packSubTile(start)] = searchNode{cost: 0, from: start}
+	s := m.acquireScratch()
+	defer m.releaseScratch(s)
+
+	return s.search(m, start, goal)
+}
+
+// search is the bounded A* in the scratch's grid (scratch.go). What it knows
+// of a subtile -- the cheapest cost so far and the step that reached it -- is
+// the cell at that subtile's index, stamped with this search; the open set is
+// a heap of values ordered by openSet.less. The start's own cell is written
+// when the start is on the grid; off it (a walker past the edge), nothing
+// ever steps back onto it, because off the map is blocked.
+func (s *searchScratch) search(m *MapEngine, start, goal subTile) searchResult {
+	s.begin()
+
+	if i, ok := s.index(start); ok {
+		s.cells[i] = searchCell{stamp: s.stamp, cost: 0, step: noStep}
+		s.visited = append(s.visited, int32(i))
+	}
 
 	startH := octileDistance(start.x, start.y, goal.x, goal.y)
 
-	open := make(openSet, 0, searchNodesHint)
-	open.push(pathNode{x: start.x, y: start.y, g: 0, h: startH})
+	open := s.open[:0]
+	open.push(node(start.x, start.y, 0, startH))
 
 	closest, closestH := start, startH
 	expanded := 0
@@ -275,94 +263,91 @@ func (m *MapEngine) search(start, goal subTile) searchResult {
 	for len(open) > 0 && expanded < maxExpandedNodes {
 		current := open.pop()
 
-		here := subTile{current.x, current.y}
+		here := subTile{int(current.x), int(current.y)}
+		g := int(current.g)
 
 		// A cheaper route to this node was queued after this entry was; the
 		// stale entry is skipped rather than removed, which is the usual way
 		// to avoid a decrease-key operation.
-		if n, seen := nodes[packSubTile(here)]; seen && current.g > n.cost {
+		if i, ok := s.index(here); ok && s.cells[i].stamp == s.stamp && g > int(s.cells[i].cost) {
 			continue
 		}
 
 		if here == goal {
-			return searchResult{nodes: nodes, reached: here, exact: true, expanded: expanded}
+			s.open = open
+
+			return searchResult{steps: s.walk(s.cells, s.stamp, s.width, start, here), reached: here, exact: true, expanded: expanded}
 		}
 
-		if current.h < closestH {
-			closest, closestH = here, current.h
+		if h := int(current.h); h < closestH {
+			closest, closestH = here, h
 		}
 
 		expanded++
 
-		for _, offset := range neighbourOffsets {
-			next := subTile{current.x + offset.x, current.y + offset.y}
+		// Each neighbour's walk bit once (BUG-115): a diagonal's two
+		// orthogonal neighbours, which the no-corner-cutting rule reads, are
+		// the steps either side of it in the compass order.
+		var walkable [8]bool
+		for k, offset := range neighbourOffsets {
+			walkable[k] = !m.blockedAt(here.x+offset.x, here.y+offset.y)
+		}
 
-			if m.blockedAt(next.x, next.y) {
+		for k, offset := range neighbourOffsets {
+			if !walkable[k] {
 				continue
 			}
 
 			step := costOrthogonal
 
-			if offset.x != 0 && offset.y != 0 {
+			if k&1 == 1 {
 				// No corner cutting: a diagonal needs both of its orthogonal
 				// neighbours open, or the step clips the corner of a wall and
 				// the mover walks through geometry it should have gone around.
-				if m.blockedAt(current.x+offset.x, current.y) ||
-					m.blockedAt(current.x, current.y+offset.y) {
+				if !walkable[k-1] || !walkable[(k+1)&7] {
 					continue
 				}
 
 				step = costDiagonal
 			}
 
-			cost := current.g + step
-			key := packSubTile(next)
+			next := subTile{here.x + offset.x, here.y + offset.y}
+			cost := g + step
 
-			if prev, seen := nodes[key]; seen && cost >= prev.cost {
-				continue
+			// Walkable, so on the map and on the grid.
+			i := next.y*s.width + next.x
+			c := &s.cells[i]
+
+			if c.stamp == s.stamp {
+				if cost >= int(c.cost) {
+					continue
+				}
+			} else {
+				s.visited = append(s.visited, int32(i))
 			}
 
-			nodes[key] = searchNode{cost: cost, from: here}
+			*c = searchCell{stamp: s.stamp, cost: int32(cost), step: uint8(k)}
 
-			open.push(pathNode{
-				x: next.x,
-				y: next.y,
-				g: cost,
-				h: octileDistance(next.x, next.y, goal.x, goal.y),
-			})
+			open.push(node(next.x, next.y, cost, octileDistance(next.x, next.y, goal.x, goal.y)))
 		}
 	}
+
+	s.open = open
 
 	// Either the budget ran out or the goal is walled off. Head for the
 	// closest approach instead of refusing to move.
-	return searchResult{nodes: nodes, reached: closest, exact: false, expanded: expanded, exhausted: len(open) > 0}
+	return searchResult{
+		steps:     s.walk(s.cells, s.stamp, s.width, start, closest),
+		reached:   closest,
+		exact:     false,
+		expanded:  expanded,
+		exhausted: len(open) > 0,
+	}
 }
 
-// route walks the came-from chain back from the reached node and returns the
-// subtiles from the first step after start through to it, in travel order.
-func (r searchResult) route(start subTile) []subTile {
-	if r.reached == start {
-		return nil
-	}
-
-	reversed := make([]subTile, 0, 16)
-
-	for node := r.reached; node != start; {
-		reversed = append(reversed, node)
-
-		n, ok := r.nodes[packSubTile(node)]
-		if !ok {
-			// No chain back to the start. Nothing honest to return.
-			return nil
-		}
-
-		node = n.from
-	}
-
-	forward := make([]subTile, len(reversed))
-	for i, node := range reversed {
-		forward[len(reversed)-1-i] = node
-	}
-
-	return forward
+// route is the subtiles from the first step after start through to the node
+// reached, in travel order (start is the search's own; kept for the tests'
+// symmetry with the reference search).
+func (r searchResult) route(_ subTile) []subTile {
+	return r.steps
 }
