@@ -14,7 +14,11 @@ import (
 // NOT SAVED: the dials (derived, like every system's) and the router (the
 // game's wiring). Nor the route itself: the hunter is WALKING it, so it lives
 // in the entity's motion (d2mapentity.Motion), which the load restores before
-// this. A restored chase solves nothing until its own saved clock says so.
+// this. A restored chase solves nothing until its own saved clock says so --
+// except one saved with no solve yet (solves 0): it was begun past the
+// per-frame solve budget (2 Oct 2026) and owes its first route, which the
+// next Advance serves before any re-path, exactly as in the game that ran on.
+// That is the budget's whole queue: derived from the chases, never saved.
 type PursuitSnapshot struct {
 	Chases        []ChaseSnapshot `json:"chases"`
 	Solves        int             `json:"solves"`
