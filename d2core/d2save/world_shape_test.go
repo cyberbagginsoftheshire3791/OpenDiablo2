@@ -68,6 +68,10 @@ var b3ShapeHashes = map[int]string{
 	// fog.h, fog.explored (the explored grid, base64 bits) -- over version 3
 	// as master left it (0ea27076).
 	4: "af2b191baa0f5816e1eaa3f7604d55e3ff9668bc6c8c4a54642689fefc0aa11f",
+	// The per-frame A* budget's second review, A (2 Oct 2026):
+	// pursuit.chases[].from_watch (omitempty), over version 4 as master left
+	// it (d65e3a1c).
+	5: "747411fc84bff7e1d58678467960787ce97ed24db727641876df8148e960e197",
 }
 
 var b3UpdateGolden = flag.Bool("update-golden", false, "write testdata/world-v<Version>.json from the fixture and print the shape hash")

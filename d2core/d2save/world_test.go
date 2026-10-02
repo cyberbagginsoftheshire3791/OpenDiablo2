@@ -94,7 +94,8 @@ func b3Fixture() *World {
 			{Watcher: wolf, Target: "player", Side: "hostile", Sees: true, Noticed: true, Distance: 6.25, Reach: 9, Checks: 55, Notices: 1},
 		}},
 		Pursuit: d2world.PursuitSnapshot{Solves: 3, Chases: []d2world.ChaseSnapshot{
-			{Hunter: wolf, Quarry: "player", SolvedAtX: 108, SolvedAtY: 122, SolvedDistance: 6.25, SinceSolve: 0.5, Reachable: true, Solves: 3},
+			// Version 5: a world chase (from_watch, written only when true).
+			{Hunter: wolf, Quarry: "player", SolvedAtX: 108, SolvedAtY: 122, SolvedDistance: 6.25, SinceSolve: 0.5, Reachable: true, Solves: 3, FromWatch: true},
 		}},
 		// The raid's R2: the wolf's row, and a stand-in a script named.
 		Seek: d2world.SeekSnapshot{Slots: 1, Looks: 40, Retargets: 0, Rays: 40, StandIns: []string{villager},

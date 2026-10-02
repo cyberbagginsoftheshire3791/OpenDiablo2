@@ -212,6 +212,11 @@ type b2bWorld struct {
 	spawner  *b2bSpawner
 	entities map[string]*b2bEntity
 	ticks    int
+
+	// rechase starts the aware's chases as the game does (Pursuit.Rechase,
+	// under the re-chase cap and the solve budget) rather than by Chase.
+	// pursuit_budget_test.go sets it; every other test runs without.
+	rechase bool
 }
 
 func b2bNewWorld(t *testing.T, seed int64, playerID string) *b2bWorld {
@@ -279,7 +284,17 @@ func (w *b2bWorld) tick() {
 			continue
 		}
 
+		if w.rechase {
+			w.pursuit.Rechase(h, pair.Target)
+
+			continue
+		}
+
 		w.pursuit.Chase(h, pair.Target)
+	}
+
+	if w.rechase {
+		w.pursuit.ServeQueued()
 	}
 }
 

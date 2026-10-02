@@ -1692,7 +1692,20 @@ provider reports `rechase_solves` (since 0.16.1): the solves made restarting a
 chase on another quarry -- a retarget's cost -- included in `solves`; and the
 dial `rechases_per_frame` (1): the game restarts at most that many chases on
 another quarry between two of Pursuit's steps (`Pursuit.Rechase`; the rest
-follow on the frames after). A script's `strigoi_pursue` is never capped. Each
+follow on the frames after). A script's `strigoi_pursue` is never capped.
+**Since 0.16.5** the `pursuit` provider also reports `solves_per_frame` (2,
+the per-frame A* budget: every route Pursuit solves between two of its steps
+-- re-paths, first routes, the world's chase starts and re-chases -- counted
+in solves, never wall time) and `queued` (the chases that owe their first
+route: begun past the budget, the hunter standing until Pursuit serves it on
+a later frame, before any re-path; derived from the chases -- a `chase_list`
+entry with `solves` 0 -- so a resume reports the same). Past the budget a
+re-path waits a frame and the hunter walks its old route; a re-chase is
+deferred as past the cap. A script's `strigoi_pursue` solves at once and is
+outside the budget (the verbs run before the frame's step). What the world's
+starts and re-chases leave of the frame's budget goes to the chases owing
+their first route. A world chase is saved as one (`pursuit.chases[].from_watch`,
+world file version 5). Each
 `spawns` notice row gained `side`, and the provider `notice_aware_living` (the
 village's watchers that see something; `notice_aware` is the hostile side's).
 
@@ -2012,6 +2025,14 @@ rule); a green `TestSaveResume` keeps a new one. **The B6 review's fixes
 world part (BUG-117): an evening kept by `save-b6` before them compares red
 (its S_T lacks them) and must be kept again. Other branches may bump past 0.16.4
 in parallel; the coordinator settles the number at merge.
+**0.16.5 (pursuit-budget, 2 Oct 2026)**: the `pursuit` provider reports
+`solves_per_frame` (the per-frame A* budget, 2) and `queued` (chases owing
+their first route; derived, so in the digest's world part with nothing new
+in the world file). With the budget binding, a burst of chase starts, a long
+step or chases falling due together are served over several frames, so a
+hunter's route can arrive a frame or more later than on 0.16.4: an evening
+kept by 0.16.4 is refused as another harness's. Other branches may bump to
+0.16.5 too; the merge settles the number.
 **0.16.4 (integrate-2, 1 Oct 2026)** is `harness-fixes` and fog of war F3
 (`fog-f3`) merged on master `0ea27076` -- each had bumped 0.16.2 to 0.16.3
 on its own branch, so no one 0.16.3 named both; nothing new in the

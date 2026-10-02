@@ -20,6 +20,10 @@ package d2world
 // re-chase itself: the mean and worst wall time of one restarted chase (its
 // solve) and the most restarted in one frame.
 //
+// Since 2 Oct 2026 each runs with no solve budget (budget0, as before) and
+// with the shipped SolvesPerFrame (budget2), and reports the most solves in a
+// frame; and the frame is the game's order, Pursuit first.
+//
 //	go test ./d2core/d2world -run XXX -bench SeekRechaseMovingQuarries -benchmem -count 3
 
 import (
@@ -89,9 +93,19 @@ type rechaseBenchNight struct {
 	// another quarry; busiest is the most such in one frame.
 	rechaseTimes []time.Duration
 	busiest      int
+
+	// busiestSolves is the most routes solved in one frame (the per-frame
+	// solve budget, 2 Oct 2026: re-paths, first routes and re-chases).
+	busiestSolves int
 }
 
 func newRechaseBenchNight(tb testing.TB, n, mq int, sticky bool) *rechaseBenchNight {
+	return newRechaseBenchNightBudget(tb, n, mq, sticky, DefaultPursuitDials().SolvesPerFrame)
+}
+
+// newRechaseBenchNightBudget is the night with the per-frame solve budget at
+// solvesPerFrame (0: none, as before 2 Oct 2026).
+func newRechaseBenchNightBudget(tb testing.TB, n, mq int, sticky bool, solvesPerFrame int) *rechaseBenchNight {
 	tb.Helper()
 
 	e, m := seekBenchVillage(tb)
@@ -122,7 +136,9 @@ func newRechaseBenchNight(tb testing.TB, n, mq int, sticky bool) *rechaseBenchNi
 	}
 
 	f.seek = NewSeek(f.notice, nil, nil, dials)
-	f.pursuit = NewPursuit(rechaseBenchRouter{e: e}, DefaultPursuitDials())
+	pd := DefaultPursuitDials()
+	pd.SolvesPerFrame = solvesPerFrame
+	f.pursuit = NewPursuit(rechaseBenchRouter{e: e}, pd)
 
 	tb.Cleanup(f.seek.Close)
 	tb.Cleanup(f.pursuit.Close)
@@ -159,15 +175,22 @@ func newRechaseBenchNight(tb testing.TB, n, mq int, sticky bool) *rechaseBenchNi
 }
 
 // step is one night frame in the game's order (advanceWorld).
-func (f *rechaseBenchNight) step() {
+func (f *rechaseBenchNight) step() { f.stepDt(1.0 / 24) }
+
+// stepDt is one frame of dt world minutes in the game's order
+// (advanceWorld): Pursuit, the notice model, Seek, the chases. (Until 2 Oct
+// 2026 Pursuit stepped LAST here -- the same cycle, but a frame then held one
+// frame's re-chases and the next one's re-paths, two budgets' worth.)
+func (f *rechaseBenchNight) stepDt(dt float64) {
 	f.frame++
 
 	for _, q := range f.quarries {
 		q.step(f.frame)
 	}
 
-	const dt = 1.0 / 24
+	s0 := f.pursuit.Solves()
 
+	f.pursuit.Advance(dt)
 	f.notice.Advance(dt)
 	f.seek.Advance(dt)
 
@@ -197,7 +220,11 @@ func (f *rechaseBenchNight) step() {
 		f.busiest = inFrame
 	}
 
-	f.pursuit.Advance(dt)
+	f.pursuit.ServeQueued()
+
+	if n := f.pursuit.Solves() - s0; n > f.busiestSolves {
+		f.busiestSolves = n
+	}
 }
 
 func BenchmarkSeekRechaseMovingQuarries(b *testing.B) {
@@ -206,53 +233,56 @@ func BenchmarkSeekRechaseMovingQuarries(b *testing.B) {
 		{48, 60}, // 2x
 	} {
 		for _, sticky := range []bool{true, false} {
-			name := "sticky"
-			if !sticky {
-				name = "strict"
-			}
-
-			b.Run(fmt.Sprintf("N%d_M%d/%s", c.n, c.m, name), func(b *testing.B) {
-				f := newRechaseBenchNight(b, c.n, c.m, sticky)
-				r0, s0, t0 := f.pursuit.rechases, f.pursuit.Solves(), f.seek.retargets
-				times := make([]time.Duration, 0, b.N)
-				f.rechaseTimes, f.busiest = nil, 0
-
-				b.ResetTimer()
-
-				for i := 0; i < b.N; i++ {
-					start := time.Now()
-					f.step()
-					times = append(times, time.Since(start))
+			for _, budget := range []int{0, DefaultPursuitDials().SolvesPerFrame} {
+				name := "sticky"
+				if !sticky {
+					name = "strict"
 				}
 
-				b.StopTimer()
+				b.Run(fmt.Sprintf("N%d_M%d/%s/budget%d", c.n, c.m, name, budget), func(b *testing.B) {
+					f := newRechaseBenchNightBudget(b, c.n, c.m, sticky, budget)
+					r0, s0, t0 := f.pursuit.rechases, f.pursuit.Solves(), f.seek.retargets
+					times := make([]time.Duration, 0, b.N)
+					f.rechaseTimes, f.busiest, f.busiestSolves = nil, 0, 0
 
-				sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
+					b.ResetTimer()
 
-				minutes := float64(b.N) / 24
-				b.ReportMetric(float64(f.seek.retargets-t0)/minutes, "retargets/min")
-				b.ReportMetric(float64(f.pursuit.rechases-r0)/minutes, "rechase-solves/min")
-				b.ReportMetric(float64(f.pursuit.Solves()-s0)/minutes, "solves/min")
-				b.ReportMetric(float64(times[len(times)*99/100].Nanoseconds()), "p99-frame-ns")
-				b.ReportMetric(float64(times[len(times)-1].Nanoseconds()), "worst-frame-ns")
-
-				// What one retarget costs the frame it is made in.
-				var sum, worst time.Duration
-
-				for _, d := range f.rechaseTimes {
-					sum += d
-					if d > worst {
-						worst = d
+					for i := 0; i < b.N; i++ {
+						start := time.Now()
+						f.step()
+						times = append(times, time.Since(start))
 					}
-				}
 
-				if len(f.rechaseTimes) > 0 {
-					b.ReportMetric(float64(sum.Nanoseconds())/float64(len(f.rechaseTimes)), "rechase-mean-ns")
-				}
+					b.StopTimer()
 
-				b.ReportMetric(float64(worst.Nanoseconds()), "rechase-worst-ns")
-				b.ReportMetric(float64(f.busiest), "rechases-in-busiest-frame")
-			})
+					sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
+
+					minutes := float64(b.N) / 24
+					b.ReportMetric(float64(f.seek.retargets-t0)/minutes, "retargets/min")
+					b.ReportMetric(float64(f.pursuit.rechases-r0)/minutes, "rechase-solves/min")
+					b.ReportMetric(float64(f.pursuit.Solves()-s0)/minutes, "solves/min")
+					b.ReportMetric(float64(times[len(times)*99/100].Nanoseconds()), "p99-frame-ns")
+					b.ReportMetric(float64(times[len(times)-1].Nanoseconds()), "worst-frame-ns")
+
+					// What one retarget costs the frame it is made in.
+					var sum, worst time.Duration
+
+					for _, d := range f.rechaseTimes {
+						sum += d
+						if d > worst {
+							worst = d
+						}
+					}
+
+					if len(f.rechaseTimes) > 0 {
+						b.ReportMetric(float64(sum.Nanoseconds())/float64(len(f.rechaseTimes)), "rechase-mean-ns")
+					}
+
+					b.ReportMetric(float64(worst.Nanoseconds()), "rechase-worst-ns")
+					b.ReportMetric(float64(f.busiest), "rechases-in-busiest-frame")
+					b.ReportMetric(float64(f.busiestSolves), "solves-in-busiest-frame")
+				})
+			}
 		}
 	}
 }

@@ -1,9 +1,5 @@
 package d2mapengine
 
-import (
-	"container/heap"
-)
-
 // A* over the subtile grid. This is the search behind PathFind (M4.3a); the
 // thing that follows the list it produces -- mapEntity.SetPath, Step,
 // nextPath -- is untouched.
@@ -145,12 +141,111 @@ func abs(v int) int {
 	return v
 }
 
+// searchNode is what the search knows of one subtile it has reached: the
+// cheapest cost found to it so far and the subtile it was reached from (the
+// start's own entry has no predecessor; route never asks for one).
+//
+// ONE MAP, NOT TWO, KEYED BY A PACKED uint64 (2 Oct 2026, the per-frame A*
+// budget's burst). The first search kept bestCost and cameFrom as two maps
+// keyed by the subTile struct: the profile of one budget-exhausting search
+// put 45% of its time in map hashing, lookups and inserts, and 17% in
+// container/heap's interface boxing (a heap allocation for every push). One
+// map of both facts, with a key the runtime hashes on its 8-byte fast path,
+// and a heap of values, change no route: the open set's order is TOTAL
+// (openSet.less, the same keys as nodeQueue.Less), so any correct heap pops
+// the same sequence, and the map is only ever read by key, never ranged.
+// TestSearchMatchesTheReferenceSearch holds it to the first search, route
+// for route.
+type searchNode struct {
+	cost int
+	from subTile
+}
+
+// packSubTile is a subtile as one map key.
+func packSubTile(s subTile) uint64 {
+	return uint64(uint32(int32(s.x)))<<32 | uint64(uint32(int32(s.y)))
+}
+
+// openSet is the search's min-heap of pathNode VALUES, ordered by less.
+type openSet []pathNode
+
+// less is nodeQueue.Less on values: f, then h, then y, then x -- a total order
+// over the entries the search ever holds at once (two entries for one subtile
+// differ in g, so in f).
+func (q openSet) less(i, j int) bool {
+	a, b := &q[i], &q[j]
+
+	if af, bf := a.g+a.h, b.g+b.h; af != bf {
+		return af < bf
+	}
+
+	if a.h != b.h {
+		return a.h < b.h
+	}
+
+	if a.y != b.y {
+		return a.y < b.y
+	}
+
+	return a.x < b.x
+}
+
+func (q *openSet) push(n pathNode) {
+	*q = append(*q, n)
+	h := *q
+
+	for i := len(h) - 1; i > 0; {
+		parent := (i - 1) / 2
+		if !h.less(i, parent) {
+			break
+		}
+
+		h[i], h[parent] = h[parent], h[i]
+		i = parent
+	}
+}
+
+func (q *openSet) pop() pathNode {
+	h := *q
+	top := h[0]
+	last := len(h) - 1
+	h[0] = h[last]
+	h = h[:last]
+
+	for i := 0; ; {
+		l := 2*i + 1
+		if l >= len(h) {
+			break
+		}
+
+		c := l
+		if r := l + 1; r < len(h) && h.less(r, l) {
+			c = r
+		}
+
+		if !h.less(c, i) {
+			break
+		}
+
+		h[i], h[c] = h[c], h[i]
+		i = c
+	}
+
+	*q = h
+
+	return top
+}
+
+// searchNodesHint sizes the search's map up front: the short re-paths that
+// are most solves fit without growing it, and a long one grows by doubling.
+const searchNodesHint = 256
+
 // searchResult is what one A* run produces: the chain of came-from links, the
 // node the search actually reached, and whether that node is the goal.
 type searchResult struct {
-	cameFrom map[subTile]subTile
-	reached  subTile
-	exact    bool
+	nodes   map[uint64]searchNode
+	reached subTile
+	exact   bool
 	// expanded is how many nodes this search popped and expanded. It is exposed
 	// so a test can prove that routing toward a blocked/walled goal burns the
 	// whole budget -- the cost mapRouter.Route's blocked-neighbour skip avoids
@@ -166,34 +261,31 @@ type searchResult struct {
 // search runs the bounded A* and returns the route it found, or the closest
 // approach it managed within the expansion budget.
 func (m *MapEngine) search(start, goal subTile) searchResult {
-	cameFrom := make(map[subTile]subTile)
-	bestCost := map[subTile]int{start: 0}
+	nodes := make(map[uint64]searchNode, searchNodesHint)
+	nodes[packSubTile(start)] = searchNode{cost: 0, from: start}
 
 	startH := octileDistance(start.x, start.y, goal.x, goal.y)
 
-	open := &nodeQueue{{x: start.x, y: start.y, g: 0, h: startH}}
-	heap.Init(open)
+	open := make(openSet, 0, searchNodesHint)
+	open.push(pathNode{x: start.x, y: start.y, g: 0, h: startH})
 
 	closest, closestH := start, startH
 	expanded := 0
 
-	for open.Len() > 0 && expanded < maxExpandedNodes {
-		current, ok := heap.Pop(open).(*pathNode)
-		if !ok {
-			break
-		}
+	for len(open) > 0 && expanded < maxExpandedNodes {
+		current := open.pop()
 
 		here := subTile{current.x, current.y}
 
 		// A cheaper route to this node was queued after this entry was; the
 		// stale entry is skipped rather than removed, which is the usual way
 		// to avoid a decrease-key operation.
-		if cost, seen := bestCost[here]; seen && current.g > cost {
+		if n, seen := nodes[packSubTile(here)]; seen && current.g > n.cost {
 			continue
 		}
 
 		if here == goal {
-			return searchResult{cameFrom: cameFrom, reached: here, exact: true, expanded: expanded}
+			return searchResult{nodes: nodes, reached: here, exact: true, expanded: expanded}
 		}
 
 		if current.h < closestH {
@@ -224,14 +316,15 @@ func (m *MapEngine) search(start, goal subTile) searchResult {
 			}
 
 			cost := current.g + step
-			if prev, seen := bestCost[next]; seen && cost >= prev {
+			key := packSubTile(next)
+
+			if prev, seen := nodes[key]; seen && cost >= prev.cost {
 				continue
 			}
 
-			bestCost[next] = cost
-			cameFrom[next] = here
+			nodes[key] = searchNode{cost: cost, from: here}
 
-			heap.Push(open, &pathNode{
+			open.push(pathNode{
 				x: next.x,
 				y: next.y,
 				g: cost,
@@ -242,7 +335,7 @@ func (m *MapEngine) search(start, goal subTile) searchResult {
 
 	// Either the budget ran out or the goal is walled off. Head for the
 	// closest approach instead of refusing to move.
-	return searchResult{cameFrom: cameFrom, reached: closest, exact: false, expanded: expanded, exhausted: open.Len() > 0}
+	return searchResult{nodes: nodes, reached: closest, exact: false, expanded: expanded, exhausted: len(open) > 0}
 }
 
 // route walks the came-from chain back from the reached node and returns the
@@ -257,13 +350,13 @@ func (r searchResult) route(start subTile) []subTile {
 	for node := r.reached; node != start; {
 		reversed = append(reversed, node)
 
-		prev, ok := r.cameFrom[node]
+		n, ok := r.nodes[packSubTile(node)]
 		if !ok {
 			// No chain back to the start. Nothing honest to return.
 			return nil
 		}
 
-		node = prev
+		node = n.from
 	}
 
 	forward := make([]subTile, len(reversed))
