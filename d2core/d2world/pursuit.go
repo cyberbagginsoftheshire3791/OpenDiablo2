@@ -54,6 +54,12 @@ type Pursuit struct {
 	// anything, so its value between two frames is never read: not saved.
 	solvedThisFrame int
 
+	// advancedThisFrame is whether the last Advance stepped the world (its
+	// minutes were more than zero). ServeQueued serves nothing in a frame
+	// whose world stood still -- a held fight's frame -- as Advance does not.
+	// Set by every Advance before anything reads it: not saved.
+	advancedThisFrame bool
+
 	// queued counts, over the pursuit's life, each time the budget left a
 	// wanted solve for a later frame: a re-path or a first route Advance
 	// could not serve, and a world chase start (Rechase on a hunter with no
@@ -124,14 +130,22 @@ type PursuitDials struct {
 	// must not land in one frame. It counts SOLVES, never wall time, so
 	// the sim stays deterministic and a resume exact.
 	//
-	// Advance serves the wanted solves oldest first and keeps
-	// RechasesPerFrame of the budget back for the re-chases and starts that
-	// follow it in the frame (Game.startChasesForTheAware runs after it),
-	// so neither side can starve the other: a re-chase finds its unit every
-	// frame, and Advance serves at least one solve every frame. Past the
-	// budget a chase keeps the route it is walking (or stands, if it has
-	// none yet) and is served on a later frame. 0 switches the budget off
-	// (every solve at once, as before). [DIAL] 2.
+	// Advance serves the wanted solves oldest first and, at a budget of 2
+	// or more, keeps max(1, RechasesPerFrame) of it back (never all of it)
+	// for the re-chases and starts that follow it in the frame
+	// (Game.startChasesForTheAware runs after it), so neither side can
+	// starve the other: a re-chase finds its unit every frame -- with the
+	// re-chase cap switched off (RechasesPerFrame 0) too -- and Advance
+	// serves at least one solve every frame. What the world does not use of
+	// the kept-back share goes to the chases still owing a first route
+	// (ServeQueued, after the world's starts). AT A BUDGET OF 1 THE ONE SLOT
+	// IS SHARED, not split: Advance takes it whenever it wants a solve, and a
+	// re-chase or a start gets it only on a frame Advance did not -- so at 1
+	// a re-chase can wait as long as re-paths keep falling due (the second
+	// review's dial corners). Past the budget a chase keeps the route it is
+	// walking (or stands, if it has none yet) and is served on a later
+	// frame. 0 switches the budget off (every solve at once, as before).
+	// [DIAL] 2.
 	SolvesPerFrame int
 }
 
@@ -196,15 +210,14 @@ type chase struct {
 	// chase follows only under the re-chase budget, so a world chase can stand
 	// on the quarry its watch has just left -- and if the watch then forgets,
 	// that chase must end too, or BUG-108 is back (him "chased" for good, and
-	// the save refused COMBAT). Not in the world file: a chase the load puts
-	// back is read false, as the combat status read every chase, and the
-	// world sets it again on the next frame its hunter's watch is aware of
-	// another quarry (Rechase). A false on load keeps a script's chase of
-	// another quarry standing after a resume exactly as before it
-	// (d2gamescreen TestAHuntedNightResumes holds one); a true would release
-	// it in the resumed run only. Read differently: only a world chase saved
-	// in the frames its re-chase was deferred whose watch then forgets
-	// before it is moved -- it stands after the resume, as before this fix.
+	// the save refused COMBAT). IN THE WORLD FILE since version 5
+	// (pursuit.chases[].from_watch, written only when true; the per-frame
+	// budget's second review, A): until then a load read it false, and a
+	// world chase saved while its re-chase was deferred, whose watch then
+	// forgot, stood in the resumed game and was released in the game that
+	// ran on -- the resume diverged. A script's chase is saved false and
+	// read false, so it stands after a resume exactly as before it
+	// (d2gamescreen TestAHuntedNightResumes holds one).
 	fromWatch bool
 }
 
@@ -231,10 +244,12 @@ func (p *Pursuit) Close() { d2harness.Unregister(p) }
 // because a creature running at two targets at once is a bug wearing a
 // feature's clothes.
 //
-// A script's chase (Game.Pursue, strigoi_pursue) comes here and is never held
-// by the solve budget: a script that starts a chase reads its route at once.
-// Its solve still counts against the frame's budget, so the world's own
-// solves in that frame shrink by it. The world's chases come through Rechase.
+// A script's chase (Game.Pursue, strigoi_pursue) comes here and is OUTSIDE the
+// solve budget: a script that starts a chase reads its route at once. (Its
+// solve is counted in solvedThisFrame, but in the game the harness's verbs run
+// before the frame's Advance, which zeroes the count -- so in the game it never
+// shrinks the world's share; the second review's C.) The world's chases come
+// through Rechase.
 func (p *Pursuit) Chase(hunter Hunter, quarry Quarry) {
 	if hunter == nil || quarry == nil {
 		return
@@ -261,8 +276,8 @@ func (p *Pursuit) Chase(hunter Hunter, quarry Quarry) {
 // The per-frame solve budget (SolvesPerFrame, 2 Oct 2026) holds it too. A
 // re-chase past the budget is deferred exactly as past the cap: the chase
 // keeps its old quarry and its route, Rechase reports false, and the next
-// frame asks again (Advance keeps RechasesPerFrame of each frame's budget back
-// for it, so it is never starved). A START past the budget -- a hunter with no
+// frame asks again (Advance keeps max(1, RechasesPerFrame) of each frame's
+// budget back for it at a budget of 2 or more, so it is never starved). A START past the budget -- a hunter with no
 // chase yet -- is begun without its route: the chase is live (ChasersOf names
 // it, so the combat status reads him chased from the frame he is noticed) but
 // owes its first solve, and the hunter stands until Advance serves it, first
@@ -309,9 +324,11 @@ func (p *Pursuit) budgetLeft() bool {
 }
 
 // advanceBudget is how many solves Advance may make itself: the frame's
-// budget less what it keeps back for the re-chases and starts after it
-// (RechasesPerFrame), and never less than one, so the queue always drains.
-// 0 is no limit.
+// budget less what it keeps back for the re-chases and starts after it --
+// max(1, RechasesPerFrame), so switching the re-chase cap off does not switch
+// the reserve off (the second review's B) -- and never less than one, so the
+// queue always drains. At a budget of 1 the one slot is shared (nothing is
+// kept back; see SolvesPerFrame). 0 is no limit.
 func (p *Pursuit) advanceBudget() int {
 	b := p.dials.SolvesPerFrame
 	if b <= 0 {
@@ -319,8 +336,8 @@ func (p *Pursuit) advanceBudget() int {
 	}
 
 	keep := p.dials.RechasesPerFrame
-	if keep < 0 {
-		keep = 0
+	if keep < 1 {
+		keep = 1
 	}
 
 	if keep > b-1 {
@@ -328,6 +345,44 @@ func (p *Pursuit) advanceBudget() int {
 	}
 
 	return b - keep
+}
+
+// ServeQueued spends what is left of the frame's budget on the chases that
+// still owe their first route, oldest first (as Advance orders them), and
+// returns how many it served. The game calls it once a frame, after the
+// world's starts and re-chases (Game.startChasesForTheAware): the share
+// Advance kept back for them is theirs first, and what they did not use is no
+// longer wasted on a frame with a pack still standing (the second review's C:
+// a pack of 8 is routed in 4 frames, not 7). Re-paths are Advance's alone.
+// Nothing is served in a frame whose world stood still (a held fight's), as
+// Advance serves nothing then.
+func (p *Pursuit) ServeQueued() int {
+	if !p.advancedThisFrame {
+		return 0
+	}
+
+	var owed []*chase
+
+	for _, id := range p.hunterIDs() {
+		if c := p.chases[id]; c.solves == 0 {
+			owed = append(owed, c)
+		}
+	}
+
+	sort.SliceStable(owed, func(i, j int) bool { return owed[i].sinceSolve > owed[j].sinceSolve })
+
+	n := 0
+
+	for _, c := range owed {
+		if !p.budgetLeft() {
+			break
+		}
+
+		p.solve(c)
+		n++
+	}
+
+	return n
 }
 
 // Queued is how many chases owe their first route now (started past the
@@ -480,6 +535,7 @@ func (p *Pursuit) Solves() int { return p.solves }
 func (p *Pursuit) Advance(worldMinutes float64) {
 	p.rechasedThisFrame = 0
 	p.solvedThisFrame = 0
+	p.advancedThisFrame = worldMinutes > 0
 
 	if worldMinutes <= 0 || len(p.chases) == 0 {
 		return

@@ -111,7 +111,21 @@ import (
 // (docs/m4.6-world-save-notes.md, "Version 4"). MEASURED, 1 Oct 2026: his
 // %APPDATA%\OpenDiablo2\Saves holds no world file of any version, so none of
 // his is set aside by this bump.
-const Version = 4
+//
+// VERSION 5 (the per-frame A* budget's second review, A; 2 Oct 2026):
+// pursuit.chases[].from_watch -- a WORLD chase, started or moved by
+// Pursuit.Rechase from a watch, as against a script's -- written only when
+// true. Until now a load read every chase as a script's, so a world chase
+// saved while its re-chase was deferred, whose watch then forgot, stood in the
+// resumed game and was released in the game that ran on (BUG-108's give-up):
+// the resume diverged. A version-4 file is refused on its version and set
+// aside as .v4.unread, never read and never lost; he begins at dawn with his
+// hero, kit and progress, as at every bump -- the decided default, no
+// migration, Josh's to overturn (docs/m4.6-world-save-notes.md, "The second
+// review of the per-frame budget"). MEASURED, 2 Oct 2026: his
+// %APPDATA%\OpenDiablo2\Saves holds no world file of any version, so none of
+// his is set aside by this bump.
+const Version = 5
 
 // ErrWorldVersion is what a file of any version but Version is refused with.
 // The error is a *VersionError naming the version the file holds. Its message

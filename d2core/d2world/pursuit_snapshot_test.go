@@ -2,6 +2,7 @@ package d2world
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -102,6 +103,14 @@ func TestPursuitSnapshotEveryFieldIsSeen(t *testing.T) {
 		}},
 	})
 
+	// from_watch (version 5) is read only when a watch Seek moved forgets
+	// before its chase follows -- a moment the b2b world, which has no Seek,
+	// never makes. fromWatchAfterAForget makes it, through the same Snapshot,
+	// JSON and Restore: the field lost, the resumed world differs.
+	lost := fromWatchAfterAForget(t, true, func(s *PursuitSnapshot) { s.Chases[0].FromWatch = false })
+	outcomes = append(outcomes, b2aOutcome{path: "pursuit.chases[0].from_watch",
+		seen: fmt.Sprint(lost) != fmt.Sprint(fromWatchAfterAForget(t, false, nil))})
+
 	b2aExercised(t, outcomes, b2bPursuitClasses()...)
 }
 
@@ -118,6 +127,7 @@ func b2bPursuitClasses() []b2aClass {
 			"rechasedThisFrame": "D: zeroed by every Advance before the frame's chases restart (Pursuit steps before startChasesForTheAware), so never read between frames",
 			"rechasesDeferred":  "D: a benchmark's and a test's count of budget refusals, in no provider and no digest; a resumed game counts from 0",
 			"solvedThisFrame":   "D: the per-frame solve budget's count, zeroed by every Advance before it serves anything, so never read between frames",
+			"advancedThisFrame": "D: set by every Advance (its minutes above zero) before ServeQueued reads it in the same frame, so never read between frames",
 			"queued":            "D: a benchmark's and a test's count of solves the budget left for a later frame, in no provider and no digest; a resumed game counts from 0. The queue itself is derived: a chase that owes its first route is one with no solve (pursuit.chases[].solves 0)",
 		}},
 		{chase{}, map[string]string{
@@ -130,13 +140,19 @@ func b2bPursuitClasses() []b2aClass {
 			"reachable":      "S:pursuit.chases[0].reachable",
 			"solves":         "S:pursuit.chases[0].solves",
 			"arrived":        "S:pursuit.chases[0].arrived",
-			"fromWatch":      "D: false on load, as the combat status read every chase; the world sets it again the next frame its watch is aware of another quarry (Rechase). Only a world chase saved in the frames a re-chase was deferred, whose watch then forgets before it is moved, is read differently (integrate-1oct)",
+			"fromWatch":      "S:pursuit.chases[0].from_watch",
 		}},
 	}
 }
 
 func TestPursuitSnapshotFieldsClassified(t *testing.T) {
 	a := b2bFilledWorld(t)
+
+	// The b2b world starts its chases as a script does (Chase), and
+	// from_watch is written only when true: one world chase, so the key is
+	// in the snapshot to be classified (version 5).
+	a.pursuit.chases[a.pursuit.hunterIDs()[0]].fromWatch = true
+
 	snap := a.snapshot(t)
 
 	for _, c := range b2bPursuitClasses() {

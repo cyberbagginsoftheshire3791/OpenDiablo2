@@ -1672,8 +1672,11 @@ route: begun past the budget, the hunter standing until Pursuit serves it on
 a later frame, before any re-path; derived from the chases -- a `chase_list`
 entry with `solves` 0 -- so a resume reports the same). Past the budget a
 re-path waits a frame and the hunter walks its old route; a re-chase is
-deferred as past the cap. A script's `strigoi_pursue` solves at once, but
-its solve counts against the frame's budget. Each
+deferred as past the cap. A script's `strigoi_pursue` solves at once and is
+outside the budget (the verbs run before the frame's step). What the world's
+starts and re-chases leave of the frame's budget goes to the chases owing
+their first route. A world chase is saved as one (`pursuit.chases[].from_watch`,
+world file version 5). Each
 `spawns` notice row gained `side`, and the provider `notice_aware_living` (the
 village's watchers that see something; `notice_aware` is the hostile side's).
 

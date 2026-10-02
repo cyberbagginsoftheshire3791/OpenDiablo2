@@ -10,14 +10,17 @@ package d2world
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 // budgetFrame is one frame in the game's order -- Pursuit steps, then the
-// world starts or moves its chases (Game.startChasesForTheAware) -- and returns
-// the routes solved in it.
+// world starts or moves its chases (Game.startChasesForTheAware), then what
+// they left of the budget goes to the chases owing a first route
+// (Pursuit.ServeQueued, at the end of that loop) -- and returns the routes
+// solved in it.
 func budgetFrame(p *Pursuit, dt float64, after func()) int {
 	s0 := p.solves
 
@@ -27,13 +30,17 @@ func budgetFrame(p *Pursuit, dt float64, after func()) int {
 		after()
 	}
 
+	p.ServeQueued()
+
 	return p.solves - s0
 }
 
 // A pack of eight noticing him in one frame: the frame solves the budget's
-// worth and the rest stand, live chases owing their route, served one a frame
-// after (the budget less the re-chase unit it keeps back), oldest first.
-// Control: no budget (SolvesPerFrame 0), all eight in the one frame.
+// worth and the rest stand, live chases owing their route, served two a frame
+// after -- one by Advance, one by ServeQueued from the unit Advance kept back
+// and no re-chase used -- oldest first. Control: no budget (SolvesPerFrame
+// 0), all eight in the one frame. (Before the second review's C the kept-back
+// unit went unused and the six took six frames.)
 func TestABurstOfStartsIsSpreadByTheBudget(t *testing.T) {
 	run := func(solvesPerFrame int) (first, framesToAll, worst int, order []string, hunters []*fakeHunter, p *Pursuit) {
 		p, _ = newTestPursuit(true)
@@ -69,12 +76,17 @@ func TestABurstOfStartsIsSpreadByTheBudget(t *testing.T) {
 				worst = n
 			}
 
+			var now []string
+
 			for _, h := range hunters {
 				if h.routes > 0 && !seen[h.id] {
 					seen[h.id] = true
-					order = append(order, h.id)
+					now = append(now, h.id)
 				}
 			}
+
+			sort.Strings(now) // two a frame: within one frame, by id
+			order = append(order, now...)
 		}
 
 		return first, framesToAll, worst, order, hunters, p
@@ -82,8 +94,8 @@ func TestABurstOfStartsIsSpreadByTheBudget(t *testing.T) {
 
 	first, after, worst, order, hunters, p := run(DefaultPursuitDials().SolvesPerFrame)
 	require.Equal(t, 2, first, "the budget's two in the burst frame")
-	require.Equal(t, 6, after, "the other six one a frame (two less the re-chase unit kept back)")
-	require.Equal(t, 1, worst, "never more than Advance's share in a frame after")
+	require.Equal(t, 3, after, "the other six two a frame")
+	require.Equal(t, 2, worst, "never more than the budget in a frame after")
 	require.Equal(t, []string{"m:0", "m:1", "m:2", "m:3", "m:4", "m:5"}, order,
 		"equal waits are served in hunter order (m:7 and m:6 were started first, in the burst)")
 	require.GreaterOrEqual(t, p.queued, 6)

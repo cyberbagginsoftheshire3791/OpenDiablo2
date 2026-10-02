@@ -105,6 +105,8 @@ func BenchmarkPursuitPackNoticesAtOnce(b *testing.B) {
 						}
 					}
 
+					p.ServeQueued()
+
 					times = append(times, time.Since(start))
 
 					if n := p.Solves() - s0; n > busiest {

@@ -292,6 +292,10 @@ func (w *b2bWorld) tick() {
 
 		w.pursuit.Chase(h, pair.Target)
 	}
+
+	if w.rechase {
+		w.pursuit.ServeQueued()
+	}
 }
 
 // kill is Combat.withdraw and the rising after it: the member stops being

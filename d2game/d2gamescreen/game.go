@@ -1675,8 +1675,10 @@ func (v *Game) commandWish(args []string) error {
 // solves, never wall time. Advance keeps RechasesPerFrame of it back for this
 // loop. A start past the budget is a live chase that owes its route (the wolf
 // stands, but the combat status already reads him chased); Advance serves it
-// on a later frame, before any re-path. A re-chase past it is deferred like
-// one past the cap and asked again next frame.
+// on a later frame, before any re-path -- or at the end of this loop, from
+// whatever of the budget the starts and re-chases left (Pursuit.ServeQueued).
+// A re-chase past it is deferred like one past the cap and asked again next
+// frame.
 func (v *Game) startChasesForTheAware() {
 	if v.notice == nil || v.pursuit == nil {
 		return
@@ -1709,6 +1711,10 @@ func (v *Game) startChasesForTheAware() {
 		// are held by the per-frame solve budget (SolvesPerFrame).
 		v.pursuit.Rechase(hunter, pair.Target)
 	}
+
+	// What the starts and re-chases left of the frame's budget goes to the
+	// chases still owing their first route (the budget's second review, C).
+	v.pursuit.ServeQueued()
 }
 
 // mapRouter adapts the map engine's pathfinder to d2world.Router, so pursuit

@@ -220,6 +220,8 @@ func (f *rechaseBenchNight) stepDt(dt float64) {
 		f.busiest = inFrame
 	}
 
+	f.pursuit.ServeQueued()
+
 	if n := f.pursuit.Solves() - s0; n > f.busiestSolves {
 		f.busiestSolves = n
 	}

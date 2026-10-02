@@ -8,8 +8,10 @@ import (
 // B2b, build plan §1).
 //
 // SAVED: every chase -- who hunts, what it hunts, and what its last solve left
-// behind -- the total solves, and how many of them restarted a chase on
-// another quarry (rechase_solves, version 3: the raid R2 review's B2).
+// behind, and whether the world started it from a watch (from_watch, version
+// 5, written only when true) -- the total solves, and how many of them
+// restarted a chase on another quarry (rechase_solves, version 3: the raid R2
+// review's B2).
 //
 // NOT SAVED: the dials (derived, like every system's) and the router (the
 // game's wiring). Nor the route itself: the hunter is WALKING it, so it lives
@@ -40,6 +42,12 @@ type ChaseSnapshot struct {
 	Reachable bool `json:"reachable"`
 	Solves    int  `json:"solves"`
 	Arrived   bool `json:"arrived"`
+
+	// FromWatch is a WORLD chase: started or moved by Rechase from a watch's
+	// awareness, as against a script's (version 5, the per-frame budget's
+	// second review, A). GiveUpOnTheForgotten reads it. Written only when
+	// true, so a script's chase reads as every chase did before version 5.
+	FromWatch bool `json:"from_watch,omitempty"`
 }
 
 // Snapshot is the chases' state now, in the stable hunter order. r is a
@@ -74,6 +82,7 @@ func (p *Pursuit) Snapshot(r Resolver) (PursuitSnapshot, error) {
 			Reachable:      c.reachable,
 			Solves:         c.solves,
 			Arrived:        c.arrived,
+			FromWatch:      c.fromWatch,
 		}
 
 		if _, err := b2bResolveHunter(r, cs.Hunter); err != nil {
@@ -193,8 +202,7 @@ func (p *Pursuit) b2bBuild(snap PursuitSnapshot, r Resolver) (map[string]*chase,
 			reachable:      cs.Reachable,
 			solves:         cs.Solves,
 			arrived:        cs.Arrived,
-			// fromWatch is not saved (see chase.fromWatch): a restored
-			// chase is read as the combat status shipped every chase.
+			fromWatch:      cs.FromWatch,
 		}
 	}
 
