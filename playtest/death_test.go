@@ -62,6 +62,12 @@ func TestDeath(t *testing.T) {
 		t.Fatal("act 2 control: a living hero has no death screen")
 	}
 
+	// The zoom he chose outlives his death (the zoom review's C2; the F5
+	// review's B2: nothing asserted it once the default moved to 0.5). 0.7
+	// is neither the shipped 0.5 nor the old 1.0.
+	setField(s, "ui", "zoom", 0.7)
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
 	setField(s, "meters", "health", 0.0)
 	s.call("strigoi_step", map[string]any{"frames": 3})
 
@@ -148,6 +154,12 @@ func TestDeath(t *testing.T) {
 
 	if got := mustNum(t, progressState(s), "xp"); got != 0 {
 		t.Fatalf("act 5: the level earned after his last save is gone; he has %.0f experience", got)
+	}
+
+	// Negative control (2 Oct 2026): the review's M5 ("load last save"
+	// starts the next game at 1.0) and this fails (wt-fog5\nc-m5-reload-zoom1.txt).
+	if got := mustNum(t, uiState(s), "view_scale"); got != 0.7 {
+		t.Fatalf("act 5: he died at zoom 0.7 and stood up again at %v -- the reload keeps the view he chose", got)
 	}
 
 	// And the reload is still Strigoi's game: none of the ten Diablo II tables

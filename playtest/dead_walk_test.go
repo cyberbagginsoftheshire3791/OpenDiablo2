@@ -4,6 +4,7 @@ package playtest
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -610,6 +611,11 @@ func hoverOn(t *testing.T, s *session, id string) string {
 	e := s.call("strigoi_get_entity", map[string]any{"handle": handle})
 	walkWithin(t, s, num(e, "x"), num(e, "y"), 3)
 
+	// Fog is on by default since F5 (2 Oct 2026): a man 3 tiles off in the
+	// dark is hidden unless lit, and a hidden man has no hover -- so the hover
+	// below is evidence only once he is shown (the fog plan's §3.11).
+	mustBeShown(t, s, handle, "hoverOn "+id)
+
 	sx, sy := screenOf(t, s, handle)
 	if sx < 0 || sy < 0 || sx >= 800 || sy >= 600 {
 		t.Fatalf("hoverOn %s: off the screen at %d,%d (%v)", id, sx, sy, e)
@@ -619,6 +625,41 @@ func hoverOn(t *testing.T, s *session, id string) string {
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	return str(uiState(s), "hover_label")
+}
+
+// mustBeShown fails unless fog of war is on and the entity is shown (fog has
+// not hidden it): what the HUD draws for an entity -- its hover, its bar or
+// the lack of one -- says nothing about the HUD while fog is hiding him, and
+// nothing about fog while fog is off. F5 (2 Oct 2026): the shipped game has
+// fog, and these scripts run it.
+func mustBeShown(t *testing.T, s *session, handle, what string) {
+	t.Helper()
+
+	f := fogState(s)
+
+	// -classic (STRIGOI_PLAYTEST_GAME=classic, the F5 review's C3) has no
+	// fog: the HUD's answer is evidence there as it always was.
+	if !flag(t, f, "enabled") && str(f, "off_reason") == "classic" {
+		t.Logf("%s: -classic, no fog", what)
+
+		return
+	}
+
+	e := s.call("strigoi_get_entity", map[string]any{"handle": handle})
+	p := s.call("strigoi_get_player", map[string]any{})
+	dist := math.Hypot(num(e, "x")-num(p, "x"), num(e, "y")-num(p, "y"))
+	desc := fmt.Sprintf("%s %.1f tiles off: shown %v; fog enabled %v (off_reason %q), dark radius tonight %v, his torch %q",
+		handle, dist, e["shown"], f["enabled"], str(f, "off_reason"), f["tonight_dark"], str(lightState(s), "carried_source"))
+
+	if !flag(t, f, "enabled") {
+		t.Fatalf("%s: fog is off, so this does not test the shipped game: %s", what, desc)
+	}
+
+	if shown, ok := e["shown"].(bool); !ok || !shown {
+		t.Fatalf("%s: he is hidden by fog, so the HUD's answer for him is not evidence: %s", what, desc)
+	}
+
+	t.Logf("%s: %s", what, desc)
 }
 
 // walkWithin walks him to within near tiles of a point, in waited slices (he

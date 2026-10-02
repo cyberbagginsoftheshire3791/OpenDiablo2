@@ -3,6 +3,7 @@
 package playtest
 
 import (
+	"fmt"
 	"image"
 	"math"
 	"strings"
@@ -266,9 +267,16 @@ func TestSquadsOnScreen(t *testing.T) {
 	// the sheet and calls OnPlayerMove. If the sheet does not close, the
 	// clicks above never reached the branch the no-walk assertions are about
 	// and those assertions proved nothing.
-	ctlX := int(px) - squadEmptyGroundDX
-	if ctlX < squadEmptyGroundDX {
-		ctlX = int(px) + squadEmptyGroundDX
+	// F5 (2 Oct 2026): the offset is the 1.0 view's 220 px at the view's
+	// scale, and the side is chosen by the 1.0 view's rule (left unless that
+	// would land within 220 px of the edge), so the walk ends on the same
+	// ground at every zoom -- the daylight contrast frame below is taken
+	// where it ends, on the road by the well.
+	emptyDX := int(squadEmptyGroundDX * viewScale(t, s))
+	ctlX := int(px) - emptyDX
+
+	if int(px)-squadEmptyGroundDX < squadEmptyGroundDX {
+		ctlX = int(px) + emptyDX
 	}
 
 	s.call("strigoi_click", map[string]any{"x": ctlX, "y": int(py), "button": "left"})
@@ -382,6 +390,11 @@ func TestSquadsOnScreen(t *testing.T) {
 			str(c, "stage"), str(c, "time_of_day"))
 	}
 
+	// F5 (2 Oct 2026): at the shipped view (0.5) he stands where the 1.0
+	// view's walk put him, on the road by the well, and the strip above his
+	// bar is the road: L 99.1 against the fill's 63.3, 35.7 (at 1.0, 97.1).
+	// On GRASS the fill's luminance is the grass's -- a difference of 3-7 at
+	// either zoom -- so the bar's edge is its pale rim there (act 10).
 	dayBar := barFor(t, uiState(s), str(player, "id"), false)
 	dayFrame := s.frame(t, "squads-day")
 	_, dayBg := assertBarContrast(t, "daylight", dayFrame, dayBar, contrastFloor)
@@ -504,6 +517,19 @@ func TestSquadsOnScreen(t *testing.T) {
 		t.Fatalf("act 7: the field did not clear -- %.0f group(s) still live: %v", got, spawnsState(s)["group_list"])
 	}
 
+	// FOG OFF FOR THIS ACT (F5, 2 Oct 2026): night one's arrivals stand out
+	// in the dark, past his torchless sight, and fog hides a hidden man's bar
+	// (BUG-107's fix) -- so with fog on the bars would rise by the ones he
+	// happens to see. This act's subject is the bar GATE (keyed on the spawn
+	// row); fog's hiding of bars is TestFogAtNight's act 9.
+	// Under -classic (the F5 review's C3) there is no fog to turn off, and
+	// the provider refuses turning it on.
+	fogWas := flag(t, fogState(s), "enabled")
+	if fogWas {
+		setField(s, "fog", "enabled", false)
+		s.call("strigoi_step", map[string]any{"frames": 2})
+	}
+
 	enemyBefore := enemyBars(t, uiState(s))
 
 	// The chance dial is raised rather than a spawn verb being called: there
@@ -543,6 +569,11 @@ func TestSquadsOnScreen(t *testing.T) {
 	t.Logf("act 7: %v arrived with %d member(s) and every one got a bar (enemy bars %d -> %d)",
 		rows, members, enemyBefore, enemyBefore+members)
 
+	if fogWas {
+		setField(s, "fog", "enabled", true) // the shipped game again
+		s.call("strigoi_step", map[string]any{"frames": 2})
+	}
+
 	// --- ACT 8: a script can HOLD a mouse button (BUG-7's instrument half) -----
 	//
 	// WHAT THIS ACT CLAIMS, AND WHAT IT DOES NOT. Until 19 Sep 2026 no playtest
@@ -566,7 +597,12 @@ func TestSquadsOnScreen(t *testing.T) {
 
 	player = s.call("strigoi_get_player", map[string]any{})
 	holdScreenX, holdScreenY := pair(player, "screen")
-	holdX, holdY := int(holdScreenX)+90, int(holdScreenY)
+	// +90 px (and the tap's -60 below) are the 1.0 view's, at the view's
+	// scale (F5, 2 Oct 2026), so acts 8 and 9 run on the ground they always
+	// have. Unscaled at 0.5 they ended him elsewhere, and there act 9's held
+	// guard did not hold at either zoom (BUG-120).
+	act8Scale := viewScale(t, s)
+	holdX, holdY := int(holdScreenX+90*act8Scale), int(holdScreenY)
 	holdFromX, holdFromY := mustNum(t, player, "x"), mustNum(t, player, "y")
 
 	out := s.call("strigoi_click", map[string]any{
@@ -594,7 +630,7 @@ func TestSquadsOnScreen(t *testing.T) {
 	// asserted through its effect: an ordinary tap still orders a walk.
 	restX, restY := mustNum(t, moved, "x"), mustNum(t, moved, "y")
 
-	s.call("strigoi_click", map[string]any{"x": holdX, "y": holdY - 60, "button": "left"})
+	s.call("strigoi_click", map[string]any{"x": holdX, "y": holdY - int(60*act8Scale), "button": "left"})
 	s.call("strigoi_step", map[string]any{"frames": 30})
 
 	again := s.call("strigoi_get_player", map[string]any{})
@@ -670,6 +706,10 @@ func TestSquadsOnScreen(t *testing.T) {
 		t.Fatalf("act 9: the held click on the model did not select its squad, got %q", got)
 	}
 
+	after9 := s.call("strigoi_get_entity", map[string]any{"handle": handleFor(t, s, s9entity)})
+	t.Logf("act 9: the hero at %.2f,%.2f; the model at %.2f,%.2f (screen %.0f,%.0f) for the hold and %.2f,%.2f (screen %v) after; view scale %v",
+		h9x, h9y, mustNum(t, s9info, "x"), mustNum(t, s9info, "y"), s9sx, s9sy, num(after9, "x"), num(after9, "y"), after9["screen"], viewScale(t, s))
+
 	assertNoWalk(t, "act 9 (held)", s.call("strigoi_get_player", map[string]any{}), h9x, h9y)
 
 	s.call("strigoi_set_system_field", map[string]any{
@@ -679,6 +719,26 @@ func TestSquadsOnScreen(t *testing.T) {
 	s.call("strigoi_step", map[string]any{"frames": 10})
 
 	t.Logf("act 9 PASS: a 40-frame held click on a second squad's model selected it and walked nobody")
+
+	// --- ACT 10: the bar's rim on GRASS, by day (BUG-119) ---------------------
+	// Last, because it walks him: no act after it runs on other ground. The
+	// field is cleared first so the night's arrivals do not take him into a
+	// fight on the way to morning.
+	setField(s, "spawns", "chance", 0)
+
+	for _, g := range asList(spawnsState(s)["group_list"]) {
+		if row, ok := g.(map[string]any); ok {
+			setField(s, "spawns", "despawn", str(row, "group"))
+		}
+	}
+
+	stepToStage(s, "day")
+
+	if c := clockState(s); str(c, "stage") != "day" {
+		t.Fatalf("act 10: wanted the next day, got stage %s at %s", str(c, "stage"), str(c, "time_of_day"))
+	}
+
+	assertRimOnGrass(t, s, str(player, "id"), contrastFloor)
 }
 
 // enemyBars counts the overhead bars the "ui" provider marks as an enemy's.
@@ -700,6 +760,22 @@ func enemyBars(t *testing.T, ui map[string]any) int {
 
 func uiState(s *session) map[string]any {
 	return sub(s.call("strigoi_get_system_state", map[string]any{"system": "ui"}), "state")
+}
+
+// viewScale is the scale the map is drawn at now (ui.view_scale): 0.5 in the
+// shipped game since F5 (2 Oct 2026), 1.0 under -classic. A script that aims
+// at a world point from a screen point multiplies its pixel offsets by it --
+// one tile in x is (+80, +40) x scale on screen, one tile in y (-80, +40) x
+// scale -- so it aims at the same ground at every zoom.
+func viewScale(t *testing.T, s *session) float64 {
+	t.Helper()
+
+	sc := mustNum(t, uiState(s), "view_scale")
+	if sc <= 0 {
+		t.Fatalf("ui.view_scale is %v", sc)
+	}
+
+	return sc
 }
 
 func clockState(s *session) map[string]any {
@@ -773,6 +849,54 @@ func objList(t *testing.T, m map[string]any, key string) []map[string]any {
 type bar struct {
 	x, y, w, h int
 	fill       float64
+}
+
+// assertRimOnGrass is ACT 10 (BUG-119, fixed 2 Oct 2026, decision (a) of
+// the F5 review, keeping Josh's 26 Sep "deeper crimson" fill): on daylight
+// GRASS the fill (L 63) is the ground's own luminance, so the bar's edge is
+// its 1 px pale rim. He is walked to the first ground near him where the
+// FILL fails D5's floor -- the case the rim exists for -- and the rim's row
+// (2 px above the bar) must clear the floor against the same strip the fill
+// is judged by.
+//
+// Negative control (2 Oct 2026): the rim not drawn and this fails, the rim's
+// row reading the grass (wt-fog5\nc-n-no-rim.txt).
+func assertRimOnGrass(t *testing.T, s *session, id string, floor float64) {
+	t.Helper()
+
+	p := s.call("strigoi_get_player", map[string]any{})
+	ox, oy := mustNum(t, p, "x"), mustNum(t, p, "y")
+
+	tried := []string{}
+
+	for _, d := range [][2]float64{{-1.4, 1.4}, {-2, 2}, {2, -2}, {-3, 0}, {0, 3}, {3, 0}, {0, -3}, {-2, -2}, {2, 2}, {-4, 4}, {4, -4}} {
+		s.call("strigoi_move_player_to", map[string]any{"x": ox + d[0], "y": oy + d[1], "wait": true, "max_ticks": 600})
+		s.call("strigoi_step", map[string]any{"frames": 30})
+
+		b := barFor(t, uiState(s), id, false)
+		img := s.frame(t, "squads-day-grass")
+		bg := stripLum(img, b.x, b.y-10, b.w, 6)
+		fill := lumAt(img, b.x+b.w/4, b.y+b.h/2)
+
+		if math.Abs(fill-bg) >= floor {
+			tried = append(tried, fmt.Sprintf("%+.1f,%+.1f: fill %.1f bg %.1f", d[0], d[1], fill, bg))
+
+			continue
+		}
+
+		rim := stripLum(img, b.x, b.y-2, b.w, 1)
+		t.Logf("act 10: on ground where the fill reads %.1f against L %.1f (%.1f, under D5's %.1f), the rim reads %.1f: %.1f",
+			fill, bg, math.Abs(fill-bg), floor, rim, math.Abs(rim-bg))
+
+		if math.Abs(rim-bg) < floor {
+			t.Fatalf("act 10: on grass the bar's rim (L %.1f) differs from its surroundings (L %.1f) by only %.1f, "+
+				"below the D5 floor %.1f -- the bar has no legible edge here (BUG-119)", rim, bg, math.Abs(rim-bg), floor)
+		}
+
+		return
+	}
+
+	t.Fatalf("act 10: found no ground near him where the fill fails D5 -- nothing measured the rim's case: %v", tried)
 }
 
 // barFor returns the overhead bar for an entity id, or fails (or returns nil,

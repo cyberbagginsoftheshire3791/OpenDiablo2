@@ -1553,10 +1553,19 @@ func eveningActs4to6(t *testing.T, ev evening) {
 	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
 	awaitMenu(t, s)
 
-	moved := regexp.MustCompile(`"sha": "[0-9a-f]{64}"`).ReplaceAll(ev.fileT, []byte(`"sha": "`+strings.Repeat("0", 64)+`"`))
-	if bytes.Equal(moved, ev.fileT) {
+	// The map's SHA is replaced EVERYWHERE the file names it: the map block's
+	// sha and, since fog is on by default (F5, 2 Oct 2026), the fog block's
+	// map (the grid is keyed on the map it was explored on, F3). A file
+	// written before a real map edit names the old map in both; changing only
+	// the first makes a file at odds with itself, refused FILE (rule fog)
+	// before the map is ever compared.
+	sha := regexp.MustCompile(`"sha": "([0-9a-f]{64})"`).FindSubmatch(ev.fileT)
+	if sha == nil {
 		t.Fatal("act 6e: the file names no map sha to change (the default game builds the authored village)")
 	}
+
+	moved := bytes.ReplaceAll(ev.fileT, sha[1], []byte(strings.Repeat("0", 64)))
+	t.Logf("act 6e: the map's sha replaced in %d place(s)", bytes.Count(ev.fileT, sha[1]))
 
 	actThree(t, ev, moved)
 

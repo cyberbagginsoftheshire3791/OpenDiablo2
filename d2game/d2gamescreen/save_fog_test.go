@@ -58,7 +58,7 @@ func TestAFoggedGameIsKept(t *testing.T) {
 	require.Equal(t, saved.fog.fog.Rows(), resumed.fog.fog.Rows(), "and both run on as one fog")
 }
 
-// TestAGameWithFogOffSavesAnEmptyGrid: the shipped game without -fog never
+// TestAGameWithFogOffSavesAnEmptyGrid: a game with fog off (-fog=false) never
 // looks, so it saves the empty block (no map, no grid) -- and a grid loaded
 // into a game with fog off is kept, undrawn, and saved again (fog's view is
 // -fog, as the zoom's is ui.zoom; the grid is the world's).

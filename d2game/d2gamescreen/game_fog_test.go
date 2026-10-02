@@ -78,14 +78,18 @@ func TestFogProviderWritesAndRefuses(t *testing.T) {
 }
 
 // TestFogDefaultsAreJoshs: the shipped dials are Q1's 12 tiles and the plan's
-// look (0.45, 0.25), and fog is off unless -fog says otherwise.
+// look (0.45, 0.25), and fog is on unless -fog=false says otherwise (F5, 2 Oct
+// 2026; it was opt-in through F4).
+//
+// Negative control (2 Oct 2026, F5): put processGameFog back to false and
+// this fails, "fog is off by default" (wt-fog5\nc\nc1-fog-default-off.txt).
 func TestFogDefaultsAreJoshs(t *testing.T) {
 	if d := d2world.DefaultFogDials(); d.DaySight != 12 || d.MemoryLevel != 0.45 || d.MemorySaturation != 0.25 {
 		t.Fatalf("fog ships with %+v", d)
 	}
 
-	if processGameFog {
-		t.Fatal("fog is on by default; F1 is opt-in behind -fog")
+	if !processGameFog {
+		t.Fatal("fog is off by default; since F5 the shipped game has it, and -fog=false is the opt-out")
 	}
 }
 
@@ -256,6 +260,6 @@ func TestAFoggedGameIsBlackFromItsFirstFrame(t *testing.T) {
 	off.fogAdvance()
 
 	if off.mapRenderer.HasFog() {
-		t.Fatal("without -fog the renderer holds fog")
+		t.Fatal("with fog off the renderer holds fog")
 	}
 }

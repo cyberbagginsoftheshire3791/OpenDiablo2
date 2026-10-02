@@ -153,7 +153,7 @@ func TestTacticalFight(t *testing.T) {
 	far := moveTiles + 1
 	farSpot := clearSpotAway(t, s, ppx, ppy, far, spot)
 
-	clickTile(s, sx, sy, ppx, ppy, farSpot)
+	clickTile(t, s, sx, sy, ppx, ppy, farSpot)
 	s.call("strigoi_step", map[string]any{"frames": 30})
 
 	c = combatState(s)
@@ -245,7 +245,7 @@ func TestTacticalFight(t *testing.T) {
 	sx, sy = pair(p, "screen")
 	ppx, ppy = num(p, "x"), num(p, "y")
 
-	clickTile(s, sx, sy, ppx, ppy, farSpot)
+	clickTile(t, s, sx, sy, ppx, ppy, farSpot)
 	s.call("strigoi_step", map[string]any{"frames": 30})
 
 	if c = combatState(s); !flag(t, c, "move_spent") {
@@ -258,13 +258,17 @@ func TestTacticalFight(t *testing.T) {
 
 // clickTile clicks a point on the player's lattice (whole tiles from where he
 // stands, which is where the overlay draws its diamonds), from his own screen
-// point: +1 tile x is (+80,+40) px and +1 tile y is (-80,+40) (state.md).
-func clickTile(s *session, sx, sy, px, py float64, tile [2]float64) {
+// point: +1 tile x is (+80,+40) px and +1 tile y is (-80,+40) (state.md), at
+// the view's scale (F5, 2 Oct 2026: the shipped view is 0.5).
+func clickTile(t *testing.T, s *session, sx, sy, px, py float64, tile [2]float64) {
+	t.Helper()
+
 	fx := tile[0] - px
 	fy := tile[1] - py
+	sc := viewScale(t, s)
 
 	s.call("strigoi_click", map[string]any{"button": "left",
-		"x": int(sx + 80*(fx-fy)), "y": int(sy + 40*(fx+fy))})
+		"x": int(sx + 80*sc*(fx-fy)), "y": int(sy + 40*sc*(fx+fy))})
 }
 
 // clearSpotAway is clearSpotAt that will not choose the enemy's bearing.

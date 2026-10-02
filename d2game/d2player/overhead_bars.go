@@ -43,7 +43,16 @@ const (
 	// Act 1's day ground, 36.6 over the village road, ~60 over night, and a
 	// lower-luminance fill only helps the night spread. Measured on the saved
 	// frames 20260924-161034 (Act 1) and 20260924-165104 (village).
+	//
+	// THE RIM, 2 Oct 2026 (BUG-119; the F5 review, decision (a), keeping the
+	// deeper crimson): the fill's L 63 is the village GRASS's luminance (L
+	// ~56-60), so on grass the bar read by hue alone -- 7.0 against D5's floor
+	// of 30 at 0.5, 3.3 at 1.0. A 1 px pale bone rim outside the near-black
+	// frame carries the bar's edge on any ground: L ~185 against grass
+	// (~125) and the road (~85), and the dark frame inside it keeps the edge
+	// against a bright one. TestSquadsOnScreen act 6c measures it on grass.
 	overheadBarFill   = 0x8c1919ff // deep crimson (140,25,25), L=63
+	overheadBarRim    = 0xc8bea5ff // pale bone (200,190,165), L=185, 1px outside the frame
 	overheadBarTrack  = 0x282828ff // dark track (40,40,40)
 	overheadBarFrame  = 0x0a0a0aff // near-black 1px frame
 	overheadBarSelect = 0x7d5a28ff // dim amber (125,90,40), L=85, the selected squad's outline [DIAL]
@@ -179,18 +188,20 @@ func (h *HUD) refreshOverheadBars() {
 }
 
 // renderOverheadBars draws the cached bars: for the selected squad a muted-gold
-// 1px ring, then a near-black frame, the dark track, and the crimson fill
+// 1px ring (outside the rim), then a pale bone 1px rim, a near-black frame,
+// the dark track, and the crimson fill
 // proportion, then the stage-cue marks to the right. No effect pushed (DrawRect
 // ignores it anyway); the bar's LENGTH encodes health, the colour is constant.
 func (h *HUD) renderOverheadBars(target d2interface.Surface) {
 	for _, b := range h.overheadBars {
 		if b.selected {
-			fillRect(target, b.x-2, b.y-2, b.w+4, 1, overheadBarSelect)
-			fillRect(target, b.x-2, b.y+b.h+1, b.w+4, 1, overheadBarSelect)
-			fillRect(target, b.x-2, b.y-2, 1, b.h+4, overheadBarSelect)
-			fillRect(target, b.x+b.w+1, b.y-2, 1, b.h+4, overheadBarSelect)
+			fillRect(target, b.x-3, b.y-3, b.w+6, 1, overheadBarSelect)
+			fillRect(target, b.x-3, b.y+b.h+2, b.w+6, 1, overheadBarSelect)
+			fillRect(target, b.x-3, b.y-3, 1, b.h+6, overheadBarSelect)
+			fillRect(target, b.x+b.w+2, b.y-3, 1, b.h+6, overheadBarSelect)
 		}
 
+		fillRect(target, b.x-2, b.y-2, b.w+4, b.h+4, overheadBarRim)
 		fillRect(target, b.x-1, b.y-1, b.w+2, b.h+2, overheadBarFrame)
 		fillRect(target, b.x, b.y, b.w, b.h, overheadBarTrack)
 		fillRect(target, b.x, b.y, int(float64(b.w)*b.fill), b.h, overheadBarFill)

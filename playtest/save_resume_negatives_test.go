@@ -114,8 +114,10 @@ type sweepRow struct {
 	twin func(t *testing.T, file map[string]any)
 
 	// check, when set, runs after a row that passed: an assertion of its own
-	// on the resumed game (the fog grid, bit for bit).
-	check func(t *testing.T, s *session, file map[string]any) error
+	// on the resumed game (the fog grid, bit for bit). twinFog is the fog
+	// provider's state right after the twin's load (nil for a row with no
+	// twin).
+	check func(t *testing.T, s *session, file, twinFog map[string]any) error
 }
 
 // omitRows are the omitted half: one per block of d2save.Blocks, built from
@@ -256,13 +258,20 @@ func emptyRows() []sweepRow {
 			sc := blockOf(t, f, "scene")
 			sc["watch_stood"], sc["field_dead"] = json.Number("0"), []any{}
 		}, want: wantDiverge, moves: []string{"system scene"}},
-		// The hunted evening is played without -fog, so its grid is empty and
-		// an emptied block would be T's file: the row FILLS it instead -- with
+		// The hunted evening was played without fog until F5 (2 Oct 2026), so its
+		// grid was empty and an emptied block would be T's file: the row FILLS
+		// it instead -- with
 		// an UNEVEN pattern (a corner block and a scatter), and the resumed
 		// grid must be the file's bit for bit (the B6 review's B1: an
 		// all-explored grid is its own mirror, so a load that laid the tiles
 		// out reversed passed). Emptying a grid he had is TestFogIsKept's act 5.
-		{block: "fog", name: "fill fog (a corner block and a scatter)", edit: fillFog,
+		//
+		// Its TWIN is the same file with a grid of the same map and size and
+		// no tile explored (the F5 review's C1): with fog on, a load re-sees
+		// from where he stands, so the twin's resumed grid is exactly what
+		// the first frames see, and the filled file must resume as the fill
+		// OR that, bit for bit. Both are read two frames after their loads.
+		{block: "fog", name: "fill fog (a corner block and a scatter)", edit: fillFog, twin: zeroFog,
 			want: wantDiverge, moves: []string{"system fog"}, check: fogGridIsTheFiles},
 	}
 }
@@ -410,17 +419,132 @@ func fillFog(t *testing.T, file map[string]any) {
 	}
 }
 
+// checkFrames are the frames a row's check, and its twin's reading, are taken
+// after: a load reports before the resumed game's fog has run a frame, so a
+// grid read at once is the file's alone (the zero twin read so, wt-fog5\
+// neg-green-3.txt) or not, by when the game's first frame fell.
+const checkFrames = 2
+
+// zeroFog is fillFog's twin: a grid on T's own map, of the village's size,
+// with no tile explored.
+func zeroFog(t *testing.T, file map[string]any) {
+	t.Helper()
+
+	file["fog"] = map[string]any{
+		"map": str(blockOf(t, file, "map"), "sha"), "w": json.Number(fmt.Sprint(villageSide)),
+		"h": json.Number(fmt.Sprint(villageSide)), "explored": base64.StdEncoding.EncodeToString(make([]byte, villageSide*villageSide/8)),
+	}
+}
+
 // fogGridIsTheFiles: the resumed game's explored grid is the file's, bit for
-// bit (the fog provider reports it as the file writes it).
-func fogGridIsTheFiles(t *testing.T, s *session, file map[string]any) error {
+// bit (the fog provider reports it as the file writes it) -- with fog off.
+//
+// WITH FOG ON (the shipped game since F5, 2 Oct 2026) the resumed game's
+// first frames see again from where he stands (docs/fog.md, "Kept"), so the
+// grid is the file's OR the ground those frames saw -- which is exactly the
+// grid the twin resumed with, its grid explored nowhere (the F5 review's C1: the
+// first form of this check allowed any extra tiles under half the map, and a
+// load that also explored a band of 864 tiles passed it) -- and, by fog's
+// own rule, the whole footprint of any structure one of the file's tiles
+// lies in ("a structure with any tile explored is explored whole",
+// Fog.structuresWhole): the scatter puts tiles in two 3x3 footprints, and
+// their other 16 tiles came explored (wt-fog5\r3-green.txt). The footprints
+// are read from the fog provider's probe, tile by tile. Tile (x, y) is bit
+// y*w+x, as fillFog writes it.
+//
+// Negative controls (2 Oct 2026): a restore that also explores the top 18
+// rows for the filled file alone (the review's M2, narrowed so the sweep's
+// untouched-file control still passes; the wide M2 and M1 are red at that
+// control first) and one that drops the north corner both fail this
+// (wt-fog5\nc-m2b-restore-band-fillonly-2.txt, nc-h-restore-drops-corner-2.txt).
+func fogGridIsTheFiles(t *testing.T, s *session, file, twinFog map[string]any) error {
 	t.Helper()
 
 	want := str(blockOf(t, file, "fog"), "explored")
-	if got := str(fogState(s), "grid"); got != want {
-		return fmt.Errorf("the resumed fog grid is not the file's:\n file %s\n game %s", want, got)
+	f := fogState(s)
+	got := str(f, "grid")
+
+	if !flag(t, f, "enabled") {
+		if got != want {
+			return fmt.Errorf("the resumed fog grid is not the file's:\n file %s\n game %s", want, got)
+		}
+
+		return nil
 	}
 
+	if twinFog == nil {
+		return fmt.Errorf("fog is on and the row has no twin: the ground the load re-sees is not known")
+	}
+
+	wb, err := base64.StdEncoding.DecodeString(want)
+	if err != nil {
+		return fmt.Errorf("the file's fog grid: %v", err)
+	}
+
+	seen := str(twinFog, "grid")
+
+	sb, err := base64.StdEncoding.DecodeString(seen)
+	if err != nil || len(sb) != len(wb) {
+		return fmt.Errorf("the twin's resumed grid (%d bytes, %v) is not the file's shape (%d bytes): %s", len(sb), err, len(wb), seen)
+	}
+
+	expect := make([]byte, len(wb))
+	for i := range wb {
+		expect[i] = wb[i] | sb[i]
+	}
+
+	whole := 0
+
+	for i := 0; i < villageSide*villageSide; i++ {
+		if wb[i/8]>>uint(i%8)&1 == 0 {
+			continue
+		}
+
+		setField(s, "fog", "probe", map[string]any{"x": i % villageSide, "y": i / villageSide})
+
+		r := asList(sub(fogState(s), "probe")["structure"])
+		if len(r) != 4 {
+			continue
+		}
+
+		x0, y0, x1, y1 := r[0].(float64), r[1].(float64), r[2].(float64), r[3].(float64)
+
+		for y := int(y0); y < int(y1); y++ {
+			for x := int(x0); x < int(x1); x++ {
+				if x >= 0 && y >= 0 && x < villageSide && y < villageSide {
+					j := y*villageSide + x
+					if expect[j/8]>>uint(j%8)&1 == 0 {
+						whole++
+					}
+
+					expect[j/8] |= 1 << uint(j%8)
+				}
+			}
+		}
+	}
+
+	if exp := base64.StdEncoding.EncodeToString(expect); got != exp {
+		return fmt.Errorf("the resumed fog grid is not the file's OR what the load re-sees (the twin's):\n file %s\n seen %s\n want %s\n game %s",
+			want, seen, exp, got)
+	}
+
+	t.Logf("the resumed fog grid is the file's (%d tiles) OR the %d the load re-sees OR the %d more of the structures the file's tiles lie in, bit for bit",
+		ones(wb), ones(sb), whole)
+
 	return nil
+}
+
+// ones counts the set bits of a grid.
+func ones(b []byte) int {
+	n := 0
+
+	for _, x := range b {
+		for ; x != 0; x &= x - 1 {
+			n++
+		}
+	}
+
+	return n
 }
 
 // sweepRows is every row: the omitted half, the emptied, then the perturbed.
@@ -467,9 +591,18 @@ func omitSweep(t *testing.T, s *session, ev evening) {
 		// The row's twin, when it has one, is what it is judged against.
 		against, againstName := ev.sT, "S_T"
 
+		var twinFog map[string]any
+
 		if r.twin != nil {
 			_, twin := edited(r.twin)
 			against, againstName = negLoad(t, s, ev, r.name+" (its twin)", twin), "its twin"
+
+			if r.check != nil {
+				// The same two frames the row's own check is read after, so
+				// both grids are read after the same fog updates.
+				s.call("strigoi_step", map[string]any{"frames": checkFrames})
+				twinFog = fogState(s)
+			}
 
 			if tl := sub(s.call("strigoi_get_game_info", map[string]any{}), "load"); !flag(t, tl, "resumed") {
 				failed++
@@ -486,7 +619,8 @@ func omitSweep(t *testing.T, s *session, ev evening) {
 
 		seen, err := judgeRow(r, load, against, snap)
 		if err == nil && r.check != nil {
-			err = r.check(t, s, file)
+			s.call("strigoi_step", map[string]any{"frames": checkFrames})
+			err = r.check(t, s, file, twinFog)
 		}
 
 		if err != nil {

@@ -109,6 +109,61 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
+**THE SHIPPED VIEW IS WHAT THE SUITE TESTS (F5, 2 Oct 2026).** Since F5 the
+game launched with no switches has fog of war on and the camera at 0.5
+(docs/fog.md, docs/camera.md); `-classic` keeps Diablo II's 1.0 and no fog.
+`start(t)` passes no view flags, so **every script runs the shipped view
+unless it says otherwise** -- there is deliberately no blanket pin in the
+launcher: F5's point is that the default is what is tested. The rule, once:
+
+* **A script that tests game LOGIC runs the default** (fog on, 0.5). Nothing
+  to do: on the first run at the new default, before any script changed, 96
+  tests passed, 7 failed and the 3 opt-in skips skipped
+  (`strigoi-harness-runs\wt-fog5\suite-measure-1.txt`).
+* **A script that aims at the world from a screen point** multiplies its
+  pixel offsets by `viewScale(t, s)` (the ui provider's `view_scale`): one
+  tile in x is (+80, +40) x scale on screen, one tile in y (-80, +40) x scale.
+  It then aims at the same ground at every zoom, and a 1.0 sweep
+  (`-Game classic`) still passes.
+* **A script whose SUBJECT is light measured in pixels** launches with
+  `-fog=false` and says why in one line: with fog on, unexplored ground is
+  black and remembered ground grey, so its "far" ratios would measure fog,
+  not the night. Fog's own night is `TestFogAtNight`.
+* **An assertion about what the HUD draws for an entity** (a hover, a bar, the
+  lack of one) first asserts the entity is SHOWN (`mustBeShown`: fog on and
+  `strigoi_get_entity.shown`), or under fog "no bar" is true for the wrong
+  reason (the fog plan's §3.11).
+* **An act whose subject is not fog but which fog would change** turns fog off
+  for that act alone (`fog.enabled`) and back on, saying why
+  (`TestSquadsOnScreen` act 7). No act needed the 1.0 view: every pixel gate
+  holds at 0.5 once it aims at the same ground.
+
+Every script F5 changed, and how:
+
+| Script (file) | Change | Why |
+|---|---|---|
+| `TestStrigoiIsTheGame` (`strigoi_game_test.go`) | asserts the shipped view: no switches -> `view_scale` 0.5 and fog `enabled`; `-classic` -> 1.0, fog off, `off_reason` "classic" | the defaults themselves, end to end |
+| `TestNightIsVisiblyDark` (`night_render_test.go`) | `-fog=false`; `measure` takes the view's scale | its subject is light (plan §3.12) |
+| `TestNightIsVisiblyDarkThroughFog` (`night_render_test.go`, new; the F5 review's B1) | the shipped game's night in pixels: the unlit near band at most x0.25 of noon (x0.156 measured), his torch at least x3 over it (x6.38), the far band no brighter than memory_level of noon | nothing measured the night as fog draws it; red under the review's M7 (a visible tile drawn at brightness 1: x0.771) |
+| `TestDeath` (`death_test.go`; review B2) | zoom 0.7 before he dies; `view_scale` 0.7 after "load last save" | the zoom he chose outlives a death; red under M5 (the reload at 1.0) |
+| `TestWorldEditor` act 7 (`editor_test.go`; review B3) | the editor's P playtest has fog on at 0.5 | P plays the shipped game (decided on its default); red with -fog's default off |
+| `TestPlacedLightLightsWhereItStands` (`night_placed_test.go`) | `-fog=false`; the hearth's screen point and bands at the view's scale (at 0.5 the hearth is on screen) | its subject is light |
+| `TestTacticalFight` (`tactical_test.go`) | `clickTile` at the view's scale | a lattice click from his screen point (act 3's control clicked 6 tiles off at 0.5) |
+| `TestTheHandsStrike` (`hands_test.go`, act 2) | the ground click (-160, -40) at the view's scale | a click inside his Move of 2 (was 3 tiles at 0.5) |
+| `TestUIInventory` (`ui_inventory_test.go`) | the +120,+60 click at the view's scale; still predicts 1.5 tiles | the isometric projection, now through the scale |
+| `TestSquadsOnScreen` (`squads_test.go`) | act 10 (BUG-119's fix, last so it walks no later act elsewhere): by the next day, on ground where the fill fails D5, the bar's pale rim must clear it; act 7's fog toggle and `mustBeShown` skip under `-classic` (review C3); act 3's empty-ground click and act 8's hold and tap at the view's scale, the click's side chosen by the 1.0 view's rule, so every act runs on the ground it always has (act 6's D5 frame on the road: 35.7 at 0.5, 33.8 at 1.0); **act 7 turns fog off for itself** and back on; act 9 logs where the hero and the model stood | act 7's subject is the bar gate; night one's arrivals stand in the dark, and fog hides a hidden man's bar (BUG-107). Grass behind a bar fails D5 at any zoom (BUG-119); act 9's held guard did not hold on the ground act 8 reached unscaled, at either zoom (BUG-120) |
+| `TestSaveResume` (`save_resume_test.go`, act 6e) | the map's SHA replaced everywhere the file names it (the map block and fog's) | a real map edit leaves both naming the old map; changing one only is refused FILE (rule fog) first |
+| `TestSaveResume` act 9 / `TestSaveResumeNegatives` (`save_resume_negatives_test.go`) | the fill-fog row has a TWIN (a grid of the same map and size, nothing explored), and `fogGridIsTheFiles` asserts, two frames after each load, the grid is EXACTLY the file's OR the twin's OR the whole footprints of the structures the file's tiles lie in (read through the fog probe; review C1). Red under a restore that also explores an 864-tile band for the filled file alone (`wt-fog5\nc-m2b-restore-band-fillonly-2.txt`) and one that drops the north corner (`nc-h-restore-drops-corner-2.txt`) | fog on re-sees from where he stands; the first form allowed any extra tiles under half the map, and a load that also explored an 864-tile band passed it |
+| `TestZoomInToTwo`, `TestFogNeverTouchesTheSim` (`fog_test.go`) | `-fog=false` where they meant fog off | fog off is no longer the default |
+| `TestTheDeadWalk` act 6, `TestASlainManRises` act 5 (`dead_walk_test.go`) | `hoverOn` asserts the man is shown before reading the hover | plan §3.12: the hover through fog is what is tested |
+| `TestTheHearth` acts 2 and 4 (`hearth_test.go`) | the risen man shown before "no bar" and the bar; his torch lit for both (review C2) | plan §3.11: else vacuous; by the dark radius alone he was seen only while the moon was past half (3.0 tiles against 3.23) |
+
+Unchanged and still green at the default (plan §3.12's other rows):
+`TestTalk` (by day), `TestTownWalk`, `TestDeterminism` (two launches agree),
+and the screenshot-evidence scripts (`TestAuthoredMap`, `TestCorpses`, the art
+scripts, `TestAFightHeIsNotIn*`, the menu/fonts/words/journal/writings/kit
+screens) -- their evidence frames now show the shipped view.
+
 **The 55 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
@@ -1179,7 +1234,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.16.6)
+## The tools (37; harness 0.16.7)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -2041,6 +2096,13 @@ the load report says `ended_actions` (BUG-92: a held action this build's art
 no longer fits is ended as it would have ended, not refused), and a held
 action at a point no play can have is refused (BUG-91). And since BUG-94 the
 dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
+**0.16.7 (fog of war F5, `fog-f5`, 2 Oct 2026)**: nothing new in the surface;
+the SHIPPED VIEW moved -- a game started with no switches has fog on and the
+camera at 0.5 (`-fog=false`, `-zoom 1` and `-classic` are the ways back). So
+a default launch's digest moved: the fog provider is enabled, explores, and
+saves its grid (the world part), and `ui.view_scale` is 0.5 (the process
+part). An evening kept by 0.16.6 was played without fog and is refused as
+another harness's. The suite's re-baseline is "The shipped view" above.
 **0.16.6 (integrate-3, 2 Oct 2026)** is `save-b6`, `pursuit-budget` and fog of
 war F4 (`fog-f4`) merged on master `d65e3a1c` -- each had bumped 0.16.4 to
 0.16.5 on its own branch, so no one 0.16.5 named the other two; nothing new

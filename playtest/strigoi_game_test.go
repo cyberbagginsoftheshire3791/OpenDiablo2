@@ -30,6 +30,13 @@ func TestStrigoiIsTheGame(t *testing.T) {
 		"hero_name": "Classic", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
 	})
 
+	// THE SHIPPED VIEW (F5, 2 Oct 2026): -classic keeps Diablo II's -- the
+	// close camera (1.0) and no fog -- with no -zoom or -fog given.
+	if v, f := shippedView(classic); v != 1 || flag(t, f, "enabled") || str(f, "off_reason") != "classic" {
+		t.Fatalf("control: -classic starts at zoom %v with fog enabled=%v (off_reason %q); want 1, false, \"classic\"",
+			v, f["enabled"], str(f, "off_reason"))
+	}
+
 	c := sub(classic.call("strigoi_get_system_state", map[string]any{"system": "assets"}), "state")
 	if mpqIn(c, "data/global/tiles") == 0 || mpqIn(c, "data/local/font") == 0 || str(c, "font_set") != "" {
 		t.Fatalf("control: -classic read %.0f Diablo II tile and %.0f font files, font set %q; want some, some, none",
@@ -73,6 +80,16 @@ func TestStrigoiIsTheGame(t *testing.T) {
 
 	if body := str(sub(s.call("strigoi_get_player", map[string]any{}), "state"), "body"); body != "png" {
 		t.Fatalf("the player is drawn by %q, want png", body)
+	}
+
+	// THE SHIPPED VIEW (F5, 2 Oct 2026; Josh's rulings of 1 Oct): with no
+	// switches the camera is at 0.5 and fog of war is on. The control above
+	// is -classic's 1.0 and no fog, read through the same two providers.
+	// Negative control (2 Oct 2026): -fog's default put back to false, this
+	// fails "with no switches fog is enabled=false" (wt-fog5\nc\).
+	if v, f := shippedView(s); v != 0.5 || !flag(t, f, "enabled") {
+		t.Fatalf("with no switches the game starts at zoom %v with fog enabled=%v (off_reason %q); want 0.5 and fog on",
+			v, f["enabled"], str(f, "off_reason"))
 	}
 
 	for _, k := range []string{"i", "i", "t", "t", "h", "h"} {
@@ -309,6 +326,12 @@ func TestStrigoiIsTheGame(t *testing.T) {
 
 	t.Logf("Strigoi, as launched: %.0f MPQ files, %.0f of ours, %.0f string keys asked (%.0f missing)",
 		num(a, "mpq_files"), num(a, "native_files"), num(a, "strings_asked"), num(a, "strings_missing"))
+}
+
+// shippedView is the scale a game is drawn at (ui.view_scale) and its fog
+// provider's state.
+func shippedView(s *session) (float64, map[string]any) {
+	return num(uiState(s), "view_scale"), sub(s.call("strigoi_get_system_state", map[string]any{"system": "fog"}), "state")
 }
 
 // diabloGameTables are the ten Diablo II tables M5.3's tables burst (26 Sep

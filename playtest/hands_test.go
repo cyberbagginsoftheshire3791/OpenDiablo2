@@ -384,7 +384,11 @@ func TestTheHandsStrike(t *testing.T) {
 		t.Fatalf("act 2: the both-spent control needs a fresh turn: %v", combatState(s))
 	}
 
-	clickX, clickY := int(sx-160), int(sy-40)
+	// (-160, -40) px is 1.5 tiles west and 0.5 north at the 1.0 view, a click
+	// inside his Move of 2; at the view's scale since F5 (2 Oct 2026), so it
+	// is the same ground at every zoom.
+	sc := viewScale(t, s)
+	clickX, clickY := int(sx-160*sc), int(sy-40*sc)
 	if clickX < 5 {
 		clickX = 5
 	}

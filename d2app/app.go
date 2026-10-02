@@ -265,11 +265,12 @@ func (a *App) parseArguments() {
 	authoredMap := flag.String("map", "", "the authored Tiled map played on (default "+defaultMap+"; diablo = Diablo II's generated Act 1)")
 	editorFlag := &editorFlagValue{}
 	flag.Var(editorFlag, "editor", "open the World Editor on a map instead of the main menu (default "+defaultMap+"): -editor, -editor <path> or -editor=<path>")
-	zoom := flag.Float64("zoom", 1.0, "the game's view scale, "+
-		"0.4 (zoomed out: everything drawn at 0.4 size, the world's distances unchanged) through 1.0 (the shipped view) to 2.0 (zoomed in); "+
-		"the mouse wheel steps it by 0.1 in a game")
-	fog := flag.Bool("fog", false, "fog of war (F1, by day): ground he has not seen is black, ground he saw and does not see now is greyed "+
-		"and shows no one; off by default, and always off under -classic, in a network game and in the World Editor (docs/fog.md)")
+	zoom := flag.Float64("zoom", defaultZoom, "the game's view scale, "+
+		"0.4 (zoomed out: everything drawn at 0.4 size, the world's distances unchanged) through 1.0 (Diablo II's view, -classic's default) to 2.0 (zoomed in); "+
+		"the mouse wheel steps it by 0.1 in a game; -zoom 1 for the old close view (docs/camera.md)")
+	fog := flag.Bool("fog", defaultFog, "fog of war: ground he has not seen is black, ground he saw and does not see now is greyed "+
+		"and shows no one; on by default -- -fog=false turns it off (with the '=': a bare 'false' after -fog is not read as its value) -- "+
+		"and always off under -classic, in a network game and in the World Editor (docs/fog.md)")
 	serverPort := flag.String("server-port", "6669", "the port a local game's server listens on for other players (0 = any free port, which is how the playtest harness runs several games at once)")
 
 	flag.Usage = func() {
@@ -279,17 +280,29 @@ func (a *App) parseArguments() {
 	a.harnessRegisterFlags() // no-op unless built with -tags harness
 	flag.Parse()
 
+	// A stray word stops the flag parser: "-fog false" is -fog (true) and a
+	// stray "false", and every switch after it was silently dropped -- so
+	// "-fog false -zoom 1" played with fog at 0.5 and "-fog false -classic"
+	// played Strigoi's game with fog (the F5 review's A1). Refused, loudly.
+	if stray := strayArgument(flag.Args(), editorFlag.set && editorFlag.path == ""); stray != "" {
+		fmt.Fprintf(os.Stderr, "%s\n", strayArgumentMessage(stray))
+		os.Exit(2) //nolint:gomnd // flag's own exit code for a bad command line
+	}
+
 	if *a.Options.LogLevel >= d2util.LogLevelUnspecified {
 		*a.Options.LogLevel = d2util.LogLevelDefault
 	}
 
 	// Set before any game exists, so the first world is the chosen one.
 	given := map[string]string{}
+	zoomGiven := false
 
 	flag.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "map", "hero", "fonts", "strings":
 			given[f.Name] = f.Value.String()
+		case "zoom":
+			zoomGiven = true
 		}
 	})
 
@@ -297,7 +310,7 @@ func (a *App) parseArguments() {
 	a.Options.classic = *classic
 
 	d2server.SetPort(*serverPort)
-	d2gamescreen.SetGameZoom(*zoom)
+	d2gamescreen.SetGameZoom(resolveZoom(*classic, zoomGiven, *zoom))
 	d2gamescreen.SetGameFog(*fog)
 
 	d2mapgen.SetAuthoredMap(launch.Map)
@@ -989,6 +1002,28 @@ func (f *editorFlagValue) Set(v string) error {
 	}
 
 	return nil
+}
+
+// strayArgument is the first word the flag parser left unread, or "" when
+// there is none to refuse: the one .tmj path a bare -editor takes ("-editor
+// village.tmj") is not stray. flag.Parse stops at the first word that is not
+// a switch, so anything after a stray word was never read.
+func strayArgument(args []string, editorBare bool) string {
+	if len(args) == 0 {
+		return ""
+	}
+
+	if editorBare && len(args) == 1 && strings.EqualFold(filepath.Ext(args[0]), ".tmj") {
+		return ""
+	}
+
+	return args[0]
+}
+
+// strayArgumentMessage is what a launch with a stray word prints before it
+// exits.
+func strayArgumentMessage(stray string) string {
+	return fmt.Sprintf("unexpected argument %q: flags after it were not read; a switch takes its value with '=' (-fog=false)", stray)
 }
 
 // IsBoolFlag lets "-editor" stand alone. flag checks for this method by
