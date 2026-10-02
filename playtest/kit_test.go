@@ -146,16 +146,58 @@ func TestKit(t *testing.T) {
 		t.Fatal("act 4: the mail must take something off a blow")
 	}
 
-	// The wear is written when the fight closes, and again when he leaves.
+	// The wear is written when the fight closes, and again when he leaves --
+	// but since the combat status (1 Oct 2026; its review's A1, Josh's "you
+	// can't save while in combat") a game left IN COMBAT writes no part of
+	// him: the unload logs "LEAVING in combat" and his .od2 and sidecar stay
+	// as his last save wrote them. The "hold" fight above never closes (he
+	// never strikes), so leaving straight from it saved nothing (14 -> 14 on
+	// the integrated tree). He ends it as a player would: he strikes until
+	// the zombie is dead, then waits out the grace. (Taking the zombie off
+	// the map does not end the fight: strigoi_remove_entity withdraws it from
+	// no encounter, and the fight ran on until he died.)
+	setField(s, "combat", "player_action", "attack")
+
+	for i := 0; i < 300 && flag(t, combatState(s), "fighting"); i++ {
+		s.call("strigoi_step", map[string]any{"frames": 12})
+	}
+
+	if c := combatState(s); flag(t, c, "fighting") || str(c, "ended_reason") != "enemies_dead" {
+		t.Fatalf("act 4: striking, he must kill the zombie and close the fight: fighting %v, ended_reason %q",
+			flag(t, c, "fighting"), str(c, "ended_reason"))
+	}
+
+	for i := 0; i < 600 && flag(t, saveState(s), "in_combat"); i++ {
+		s.call("strigoi_step", map[string]any{"frames": 6})
+	}
+
+	if flag(t, saveState(s), "in_combat") {
+		t.Fatalf("act 4: still in combat 3600 frames after the fight: %v", saveState(s)["combat_reason"])
+	}
+
 	// navigate returns before the screen has unloaded, so the file is polled
-	// rather than read once (measured: a single read beat the write).
+	// rather than read once (measured: a single read beat the write). The
+	// unload rewrites the sidecar, so for a moment it may not exist at all
+	// (the coordinator's measure, 1 Oct): a missing file is waited on like a
+	// stale one.
 	s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
 
-	after := readKit(t, sidecar)
-	for i := 0; i < 50 && after.Worn["body"].Points >= mailBefore; i++ {
+	var after kitFile
+
+	for i := 0; i < 50; i++ {
+		if _, err := os.Stat(sidecar); err == nil {
+			if after = readKit(t, sidecar); after.Worn["body"].Points < mailBefore {
+				break
+			}
+		}
+
 		s.call("strigoi_step", map[string]any{"frames": 6})
-		after = readKit(t, sidecar)
 	}
+
+	if _, err := os.Stat(sidecar); err != nil {
+		t.Fatalf("act 4: no kit file after he left: %v", err)
+	}
+
 	if after.Worn["body"].Points >= mailBefore {
 		t.Fatalf("act 4: the mail's wear must be saved: %d -> %d points", mailBefore, after.Worn["body"].Points)
 	}
