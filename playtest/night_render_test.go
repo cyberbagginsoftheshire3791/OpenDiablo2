@@ -223,6 +223,119 @@ func TestNightIsVisiblyDark(t *testing.T) {
 	}
 }
 
+// TestNightIsVisiblyDarkThroughFog is the night's pixels with fog ON, the
+// shipped game (the F5 review's B1): TestNightIsVisiblyDark measures light
+// with fog off, so nothing measured the night as it is drawn through fog --
+// a fog that drew every visible tile at full brightness at night (the
+// review's M7) passed the whole suite. The near band (2 tiles) is what he
+// sees by the dark radius and his torch: unlit, it falls to about x0.14 of
+// noon as it does with fog off; his torch lifts it several times over. The
+// far band at night is remembered or unexplored ground, which fog draws no
+// brighter than memory_level -- so it is bounded, not compared.
+//
+// Negative control (2 Oct 2026): the review's M7 (under fog a visible tile
+// drawn at brightness 1) and this fails (wt-fog5\nc-m7-visible-fullbright.txt).
+func TestNightIsVisiblyDarkThroughFog(t *testing.T) {
+	const (
+		dawnMinute  = 165.0  // 02:45, the epoch
+		nightMinute = 1275.0 // 21:15, true dark
+
+		nearTiles = 2.0
+		farTiles  = 5.5
+
+		unlitMax  = 0.25 // the unlit near band against noon: ~0.14 measured, fog off and on
+		torchMin  = 3.0  // his torch against the unlit night, near: x7.0 fog off
+		memoryMax = 0.45 // fog's memory_level: remembered ground is never brighter
+	)
+
+	s := start(t) // the shipped game: fog on, 0.5
+
+	s.call("strigoi_pause", map[string]any{})
+	s.call("strigoi_start_game", map[string]any{
+		"hero_name": "Fogged", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
+	})
+
+	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0)
+
+	if f := fogState(s); !flag(t, f, "enabled") {
+		if str(f, "off_reason") == "classic" {
+			s.stop()
+			t.Skip("-classic has no fog; TestNightIsVisiblyDark measures its night")
+		}
+
+		t.Fatalf("the shipped game has fog: %v", f)
+	}
+
+	px, py := pair(s.call("strigoi_get_player", map[string]any{}), "screen")
+	if px == 0 && py == 0 {
+		t.Fatal("no player screen position to measure light around")
+	}
+
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 12*60 - dawnMinute})
+
+	day := s.shot(t, "fog-render-day-noon", px, py, nearTiles, farTiles)
+	t.Logf("day:   %s", day)
+
+	if day.play < 10 {
+		s.stop()
+		t.Skipf("the daylight frame is black (play mean %.1f/255): a black-floor launch (P3 §5.3)", day.play)
+	}
+
+	if !usable(day.near) {
+		t.Fatalf("the daylight near band is too dark to divide by: %s", day)
+	}
+
+	setField(s, "spawns", "chance", 0)
+
+	for _, raw := range asList(spawnsState(s)["group_list"]) {
+		if row, ok := raw.(map[string]any); ok {
+			setField(s, "spawns", "despawn", str(row, "group"))
+		}
+	}
+
+	setField(s, "clock", "moon", 0)
+
+	clock := clockState(s)
+	s.call("strigoi_step_world", map[string]any{
+		"world_minutes": (24*60 - num(clock, "minute_of_day")) + nightMinute + 30,
+	})
+
+	if c := clockState(s); str(c, "stage") != "night" {
+		t.Fatalf("wanted the deep night, got stage %s at %s", str(c, "stage"), str(c, "time_of_day"))
+	}
+
+	night := s.shot(t, "fog-render-night-deep", px, py, nearTiles, farTiles)
+	t.Logf("night: %s", night)
+
+	if night.near < 1 {
+		t.Fatalf("the unlit night's near band is black (%.2f): he sees his dark radius, dim, not gone", night.near)
+	}
+
+	if fall := night.near / day.near; fall > unlitMax {
+		t.Fatalf("through fog the unlit night's near band fell only to x%.3f of noon (%.1f -> %.1f), over x%.2f -- "+
+			"the ground he sees in the dark is drawn as if lit", fall, day.near, night.near, unlitMax)
+	}
+
+	if day.far >= 10 && night.far > memoryMax*day.far {
+		t.Fatalf("through fog the night's far band (remembered or unexplored ground) reads %.1f, over memory_level %.2f "+
+			"of noon's %.1f", night.far, memoryMax, day.far)
+	}
+
+	setField(s, "light", "carried_source", "torch")
+
+	torch := s.shot(t, "fog-render-night-torch", px, py, nearTiles, farTiles)
+	t.Logf("torch: %s", torch)
+
+	if gain := torch.near / night.near; gain < torchMin {
+		t.Fatalf("through fog his torch brightened the near band by only x%.2f (%.1f -> %.1f), under x%.1f",
+			gain, night.near, torch.near, torchMin)
+	}
+
+	t.Logf("through fog: the unlit near band x%.3f of noon, the torch x%.2f, the far band %.1f (noon %.1f)",
+		night.near/day.near, torch.near/night.near, night.far, day.far)
+}
+
 // usable reports whether two daylight regions are bright enough for a ratio
 // against them to mean anything.
 func usable(values ...float64) bool {

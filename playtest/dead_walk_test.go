@@ -636,6 +636,15 @@ func mustBeShown(t *testing.T, s *session, handle, what string) {
 	t.Helper()
 
 	f := fogState(s)
+
+	// -classic (STRIGOI_PLAYTEST_GAME=classic, the F5 review's C3) has no
+	// fog: the HUD's answer is evidence there as it always was.
+	if !flag(t, f, "enabled") && str(f, "off_reason") == "classic" {
+		t.Logf("%s: -classic, no fog", what)
+
+		return
+	}
+
 	e := s.call("strigoi_get_entity", map[string]any{"handle": handle})
 	p := s.call("strigoi_get_player", map[string]any{})
 	dist := math.Hypot(num(e, "x")-num(p, "x"), num(e, "y")-num(p, "y"))

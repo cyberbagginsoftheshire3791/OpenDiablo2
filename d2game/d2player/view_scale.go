@@ -19,15 +19,16 @@ import (
 // At exactly 1.0 d2maprenderer.ScaleLength returns its argument untouched, so
 // every function here is the arithmetic its caller had before the zoom.
 
-// Game zoom range and wheel step. 1.0 is the shipped view and stays the
-// default; 0.4 is the furthest out the wheel, -zoom and the harness go, and
+// Game zoom range and wheel step. 1.0 is the unzoomed view -- the fallback
+// before a renderer exists and for NaN; the shipped game starts at 0.5 since
+// F5 (2 Oct 2026; d2app's -zoom, 1.0 under -classic); 0.4 is the furthest out the wheel, -zoom and the harness go, and
 // 2.0 the furthest in (Josh, 1 Oct 2026, 10:36: "Raise the limit a bit, being
 // able to focus down on things is a helpful thing to those of us who need
 // eyes." -- it was 1.0). [DIAL]
 const (
 	gameZoomMin     = 0.4
 	gameZoomMax     = 2.0
-	gameZoomDefault = 1.0 // the shipped view: no -zoom, no renderer yet, NaN
+	gameZoomDefault = 1.0 // the unzoomed view: no renderer yet, NaN (d2app sets the shipped 0.5)
 	gameZoomStep    = 0.1
 
 	// gameZoomStepsPerUnit is 1/gameZoomStep, the grid nextGameZoom rounds

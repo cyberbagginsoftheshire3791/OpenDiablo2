@@ -3,7 +3,8 @@
 **On by default since F5 (2 Oct 2026),** together with the camera's 0.5
 (docs/camera.md): the game launched with no switches has fog. `-fog=false`
 turns it off (with the `=`: Go's flag package reads a bare `-fog false` as
-`-fog` followed by a stray argument). `-classic`, a network game and the World
+`-fog` followed by a stray argument, which the game refuses -- see the
+table below). `-classic`, a network game and the World
 Editor never have it.
 
 **Josh, 1 Oct 2026:** "Since we are zooming out, I think we should add a fog of
@@ -267,6 +268,8 @@ night with 16 fires is the closest.
 | a network game | never fog (more than one player: shared sight has no rule yet). |
 | the first frame | with fog on the renderer holds the fog from the game's first frame, before he exists: a fog that has seen nothing is all black, so no frame shows the village unfogged (the review's B5). |
 | the World Editor | never fog: its renderer has no fog sampler. |
+| the World Editor's P (playtest) | **the shipped game: fog on and the camera at 0.5**, as a launch with no switches (the F5 review's B3, decided on its default for Josh to overturn; `TestWorldEditor` act 7). `-fog=false` / `-zoom` given to the editor's launch carry into it. |
+| a stray word | refused (the F5 review's A1): `-fog false` (a space, not `=`) leaves "false" unread, and the flag parser stops there, dropping every switch after it. A launch with any word left over prints `unexpected argument "false": flags after it were not read; a switch takes its value with '=' (-fog=false)` and exits 2 -- but for the one `.tmj` path a bare `-editor` takes. |
 | harness `fog.enabled` | turns this game's fog off or on (not under `-classic`). A load is a new game at `-fog`'s value. A script that wants fog off says so at launch (`startGame(t, "-fog=false")`) and why (docs/harness.md, "The shipped view"). |
 
 **With fog off the frame is the frame master drew**: the renderer holds no

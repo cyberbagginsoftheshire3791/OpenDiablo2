@@ -89,7 +89,13 @@ func TestTheHearth(t *testing.T) {
 	untilRisen(t, s)
 
 	// "No bar" is vacuous if fog hides him (fog is on by default since F5,
-	// 2 Oct 2026; the fog plan's §3.11): he must be shown first.
+	// 2 Oct 2026; the fog plan's §3.11): he must be shown first. His torch is
+	// lit for it (the F5 review's C2): the risen man stands ~3 tiles off, and
+	// by the dark radius alone he is seen only while the moon is past half
+	// (3.0 tiles against tonight's 3.23), so a moon table change would have
+	// hidden him. The torch lights him whatever the moon; it is put out after.
+	setField(s, "light", "carried_source", "torch")
+	s.call("strigoi_step", map[string]any{"frames": 4})
 	mustBeShown(t, s, handleFor(t, s, str(bodyNamed(t, s, str(door, "id")), "walks_as")), "act 2 (before the tale)")
 
 	if n := enemyBars(t, uiState(s)); n != 0 {
@@ -110,6 +116,8 @@ func TestTheHearth(t *testing.T) {
 		t.Fatalf("act 2: before the tale %s is called what he was in life, \"A fallen soldier\": hover %q",
 			str(door, "id"), got)
 	}
+
+	setField(s, "light", "carried_source", "")
 
 	throughTheNight(t, s)
 
@@ -143,6 +151,11 @@ func TestTheHearth(t *testing.T) {
 
 	walkNearPoint(t, s, num(door, "x"), num(door, "y"))
 	untilRisen(t, s)
+
+	// Lit, as in act 2, so the moon cannot hide him (the F5 review's C2).
+	setField(s, "light", "carried_source", "torch")
+	s.call("strigoi_step", map[string]any{"frames": 4})
+	mustBeShown(t, s, handleFor(t, s, str(bodyNamed(t, s, str(door, "id")), "walks_as")), "act 4 (after the tale)")
 
 	if n := enemyBars(t, uiState(s)); n < 1 {
 		t.Fatalf("act 4: after the tale the dead carry a bar: %d enemy bars", n)

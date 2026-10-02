@@ -12,7 +12,8 @@ step. Only the camera's scale changes.
 (docs/harness.md, "The shipped view"). A man is about 36 px tall and about ten
 tiles of ground show each way. **`-zoom 1` is the opt-out**, and **`-classic`
 starts at 1.0** (Diablo II's art and UI were drawn for it) unless `-zoom`
-names another. The range and the wheel are unchanged.
+names another. The World Editor's P playtest starts at the shipped 0.5. A
+death's "load last save" keeps the zoom he chose (`TestDeath`, 0.7). The range and the wheel are unchanged.
 
 **1.0 draws exactly what it drew before the zoom** --
 no scale is pushed, no wrapper is made, and every hit test and anchor does the

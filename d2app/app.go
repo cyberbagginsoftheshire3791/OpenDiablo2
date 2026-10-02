@@ -280,6 +280,15 @@ func (a *App) parseArguments() {
 	a.harnessRegisterFlags() // no-op unless built with -tags harness
 	flag.Parse()
 
+	// A stray word stops the flag parser: "-fog false" is -fog (true) and a
+	// stray "false", and every switch after it was silently dropped -- so
+	// "-fog false -zoom 1" played with fog at 0.5 and "-fog false -classic"
+	// played Strigoi's game with fog (the F5 review's A1). Refused, loudly.
+	if stray := strayArgument(flag.Args(), editorFlag.set && editorFlag.path == ""); stray != "" {
+		fmt.Fprintf(os.Stderr, "%s\n", strayArgumentMessage(stray))
+		os.Exit(2) //nolint:gomnd // flag's own exit code for a bad command line
+	}
+
 	if *a.Options.LogLevel >= d2util.LogLevelUnspecified {
 		*a.Options.LogLevel = d2util.LogLevelDefault
 	}
@@ -993,6 +1002,28 @@ func (f *editorFlagValue) Set(v string) error {
 	}
 
 	return nil
+}
+
+// strayArgument is the first word the flag parser left unread, or "" when
+// there is none to refuse: the one .tmj path a bare -editor takes ("-editor
+// village.tmj") is not stray. flag.Parse stops at the first word that is not
+// a switch, so anything after a stray word was never read.
+func strayArgument(args []string, editorBare bool) string {
+	if len(args) == 0 {
+		return ""
+	}
+
+	if editorBare && len(args) == 1 && strings.EqualFold(filepath.Ext(args[0]), ".tmj") {
+		return ""
+	}
+
+	return args[0]
+}
+
+// strayArgumentMessage is what a launch with a stray word prints before it
+// exits.
+func strayArgumentMessage(stray string) string {
+	return fmt.Sprintf("unexpected argument %q: flags after it were not read; a switch takes its value with '=' (-fog=false)", stray)
 }
 
 // IsBoolFlag lets "-editor" stand alone. flag checks for this method by

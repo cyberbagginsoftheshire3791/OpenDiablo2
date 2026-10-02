@@ -375,6 +375,17 @@ func TestWorldEditor(t *testing.T) {
 		t.Fatalf("act 7: the playtest is played by %q, not the throwaway hero", name)
 	}
 
+	// P PLAYS THE SHIPPED GAME (the F5 review's B3, decided on its default
+	// for Josh to overturn): fog on and the camera at 0.5, as a launch with
+	// no switches. Negative control (2 Oct 2026): -fog's default put back to
+	// false and this fails (wt-fog5\nc-a2-editor-fog-off.txt).
+	s.call("strigoi_step", map[string]any{"frames": 30})
+
+	if f, v := fogState(s), mustNum(t, uiState(s), "view_scale"); !flag(t, f, "enabled") || v != 0.5 {
+		t.Fatalf("act 7: P plays the shipped game -- fog on, zoom 0.5; it has fog enabled=%v (off_reason %q) at zoom %v",
+			f["enabled"], str(f, "off_reason"), v)
+	}
+
 	heroDir := str(info, "playtest_save_dir")
 	home, err := testHome(t)
 	if err != nil {
