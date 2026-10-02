@@ -1,4 +1,10 @@
-# Fog of war (F1: black until explored; F2: the night closes it; F3: kept; F4: raised sight) -- 1-2 Oct 2026
+# Fog of war (F1: black until explored; F2: the night closes it; F3: kept; F4: raised sight; F5: on by default) -- 1-2 Oct 2026
+
+**On by default since F5 (2 Oct 2026),** together with the camera's 0.5
+(docs/camera.md): the game launched with no switches has fog. `-fog=false`
+turns it off (with the `=`: Go's flag package reads a bare `-fog false` as
+`-fog` followed by a stray argument). `-classic`, a network game and the World
+Editor never have it.
 
 **Josh, 1 Oct 2026:** "Since we are zooming out, I think we should add a fog of
 war with similar functionality to how Age of Empires 2 uses. Black until
@@ -256,12 +262,12 @@ night with 16 fires is the closest.
 
 | Control | Effect |
 |---|---|
-| `-fog` | every game this process starts has fog. **Off by default** (F1 is opt-in; F5 turns it on with the zoom's default). |
+| `-fog` | every game this process starts has fog. **On by default since F5** (2 Oct 2026; F1-F4 were opt-in behind it); `-fog=false` is the opt-out. |
 | `-classic` | never fog: Diablo II's game has none. |
 | a network game | never fog (more than one player: shared sight has no rule yet). |
-| the first frame | with `-fog` the renderer holds the fog from the game's first frame, before he exists: a fog that has seen nothing is all black, so no frame shows the village unfogged (the review's B5). |
+| the first frame | with fog on the renderer holds the fog from the game's first frame, before he exists: a fog that has seen nothing is all black, so no frame shows the village unfogged (the review's B5). |
 | the World Editor | never fog: its renderer has no fog sampler. |
-| harness `fog.enabled` | turns this game's fog off or on (not under `-classic`). A load is a new game at `-fog`'s value. |
+| harness `fog.enabled` | turns this game's fog off or on (not under `-classic`). A load is a new game at `-fog`'s value. A script that wants fog off says so at launch (`startGame(t, "-fog=false")`) and why (docs/harness.md, "The shipped view"). |
 
 **With fog off the frame is the frame master drew**: the renderer holds no
 `FogSampler`, and a nil sampler is the unfogged draw call for call
@@ -306,9 +312,9 @@ stands.
   the right size -- is refused, and the file set aside (D5's rule); so is one
   of another size. A map edit already sets the whole file aside (D5).
 - **Fog off saves an empty grid** (`"map": "", "w": 0, "h": 0, "explored":
-  ""`): a game without `-fog` never looks. A grid loaded into a game without
-  `-fog` is kept, undrawn, and saved again unchanged, so one launch without
-  the switch never throws away the ground he had explored.
+  ""`): a game with fog off (`-fog=false`) never looks. A grid loaded into a
+  game with fog off is kept, undrawn, and saved again unchanged, so one
+  launch with fog off never throws away the ground he had explored.
 - **His older files:** a version-3 world file is set aside (`.v3.unread`)
   and he begins at dawn with his hero, kit and progress, as at the last
   bump. Measured on 1 Oct 2026: his saves folder held no world file, so
@@ -366,8 +372,9 @@ stands.
   - *No unit test yet* for a harness write being followed by a fog update, or
     for fog running after the map moves him (both need a live player and a
     full frame advance); the playtest covers the outcome, not the order.
-- **Not on by default (F5).** It flips with the zoom's default, so the
-  screenshot-based checks are re-baselined once.
+- **On by default since F5 (2 Oct 2026),** flipped with the zoom's default
+  so the suite's screenshot and screen-point checks were re-baselined once
+  (docs/harness.md, "The shipped view").
 
 ## Cost (F2, at night)
 

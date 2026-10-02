@@ -6,8 +6,10 @@ import "github.com/OpenDiablo2/OpenDiablo2/d2game/d2player"
 // (processGameZoom), because the game's wheel moves it too: -zoom sets it
 // once, clamped to the game's range, and a death's load, "load last save" or a
 // new game then keep the view the player last chose (the zoom review, C2).
-// 1.0 is the shipped view and the default (Josh, 1 Oct 2026: the game zooms
-// out; the art and the world's distances do not change).
+// The shipped view is 0.5 since F5 (2 Oct 2026; Josh, 1 Oct: the game zooms
+// out; the art and the world's distances do not change): d2app's -zoom
+// defaults to it, and to 1.0 under -classic. 1.0 is still the renderer's own
+// unzoomed draw, call for call.
 
 // SetGameZoom sets the zoom new games start at. d2app calls it with -zoom.
 func SetGameZoom(z float64) { d2player.SetGameZoom(z) }

@@ -48,3 +48,33 @@ func TestClassicHelpSaysItIsDiabloIIsRules(t *testing.T) {
 		}
 	}
 }
+
+// TestTheShippedViewIsHalfZoomWithFog (F5, 2 Oct 2026): with no -zoom the
+// game starts at 0.5, and at 1.0 under -classic (Diablo II's art and UI); a
+// -zoom given explicitly wins either way, -zoom 1 being the opt-out; and -fog
+// defaults on (-fog=false is its opt-out; -classic's fence is the game
+// screen's, TestTheClassicFenceKeepsFogOff).
+//
+// Negative controls (2 Oct 2026): defaultZoom back to 1.0 and the first case
+// fails; resolveZoom ignoring -classic and the second fails; defaultFog false
+// and the last check fails (wt-fog5\nc\).
+func TestTheShippedViewIsHalfZoomWithFog(t *testing.T) {
+	for name, c := range map[string]struct {
+		classic, given bool
+		zoom, want     float64
+	}{
+		"no switches: Strigoi's 0.5":     {false, false, defaultZoom, 0.5},
+		"-classic: Diablo II's 1.0":      {true, false, defaultZoom, 1},
+		"-zoom 1: the opt-out":           {false, true, 1, 1},
+		"-classic -zoom 0.5: given wins": {true, true, 0.5, 0.5},
+		"-zoom 0.8":                      {false, true, 0.8, 0.8},
+	} {
+		if got := resolveZoom(c.classic, c.given, c.zoom); got != c.want {
+			t.Errorf("%s: zoom %v, want %v", name, got, c.want)
+		}
+	}
+
+	if !defaultFog {
+		t.Error("-fog defaults off; since F5 the shipped game has fog (-fog=false is the opt-out)")
+	}
+}

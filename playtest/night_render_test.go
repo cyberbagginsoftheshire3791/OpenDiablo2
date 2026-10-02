@@ -38,7 +38,12 @@ func TestNightIsVisiblyDark(t *testing.T) {
 		farTiles  = 5.5 // outside a 5-tile torch entirely
 	)
 
-	s := start(t)
+	// FOG OFF, THE SHIPPED CAMERA (F5, 2 Oct 2026). This script's subject is
+	// light: with fog on, ground he has not explored is black and remembered
+	// ground greyed, so its "far" ratios would measure fog, not the night
+	// (fog's own night is TestFogAtNight). The zoom is the shipped 0.5, and
+	// the tile buckets are measured at the view's scale.
+	s := startGame(t, "-fog=false")
 
 	s.call("strigoi_pause", map[string]any{})
 
@@ -251,13 +256,14 @@ func (f frameLight) String() string {
 func (s *session) shot(t *testing.T, name string, px, py, nearTiles, farTiles float64) frameLight {
 	t.Helper()
 
-	return measure(name, s.frame(t, name), px, py, nearTiles, farTiles)
+	return measure(name, s.frame(t, name), px, py, nearTiles, farTiles, viewScale(t, s))
 }
 
 // measure walks the play area and sorts each sampled pixel by how far its
 // tile is from the player, using the engine's own screen-to-world step: one
-// tile in x is (+80, +40) screen pixels, one tile in y is (-80, +40).
-func measure(name string, img image.Image, px, py, nearTiles, farTiles float64) frameLight {
+// tile in x is (+80, +40) screen pixels, one tile in y is (-80, +40), each
+// times the view's scale (F5: 0.5 in the shipped game).
+func measure(name string, img image.Image, px, py, nearTiles, farTiles, scale float64) frameLight {
 	const (
 		top    = 40  // below the top edge
 		bottom = 470 // above the HUD
@@ -281,8 +287,8 @@ func measure(name string, img image.Image, px, py, nearTiles, farTiles float64) 
 			f.playPix++
 
 			// screen delta -> tile delta (invert the isometric step)
-			dx := (float64(x) - px) / tilePixelX
-			dy := (float64(y) - py) / tilePixelY
+			dx := (float64(x) - px) / (tilePixelX * scale)
+			dy := (float64(y) - py) / (tilePixelY * scale)
 			tx := (dy + dx) / two
 			ty := (dy - dx) / two
 			dist := math.Hypot(tx, ty)

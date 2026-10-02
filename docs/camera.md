@@ -6,7 +6,15 @@ five does not fill the 800x600 screen. Nothing in the world is resized or moved
 -- a torch still lights 5 tiles, a wolf still notices at 12, a step is still a
 step. Only the camera's scale changes.
 
-**The default is 1.0, and 1.0 draws exactly what it drew before the zoom** --
+**The shipped view is 0.5 since F5 (2 Oct 2026)** -- the rulings' "about
+0.5 on today's 800x600", flipped together with fog of war's default
+(docs/fog.md) so the suite's screen-point checks were re-baselined once
+(docs/harness.md, "The shipped view"). A man is about 36 px tall and about ten
+tiles of ground show each way. **`-zoom 1` is the opt-out**, and **`-classic`
+starts at 1.0** (Diablo II's art and UI were drawn for it) unless `-zoom`
+names another. The range and the wheel are unchanged.
+
+**1.0 draws exactly what it drew before the zoom** --
 no scale is pushed, no wrapper is made, and every hit test and anchor does the
 arithmetic it did (pinned by `TestRenderEntityAtScale1IsTheUnscaledDraw`,
 `TestDrawTileArtAtScale1IsTheUnscaledDraw`, `TestSpriteHitRectAt1IsTheHoverLoopsRect`,
@@ -29,7 +37,7 @@ at every scale (`SetScale` moves no camera).
 
 | Control | Effect |
 |---|---|
-| `-zoom <float>` | the scale every game starts at, clamped to 0.4..2.0 (default 1.0). A load is a new game and starts at it too. |
+| `-zoom <float>` | the scale every game starts at, clamped to 0.4..2.0 (default **0.5** since F5; **1.0 under `-classic`** unless `-zoom` is given; `-zoom 1` is the old close view). A load is a new game and starts at it too. |
 | mouse wheel (in a game) | one notch is 0.1, toward the player zooms out, away zooms in, clamped to 0.4..2.0. About the middle of the screen: the camera stays on the hero. A touchpad's fractional scrolls are summed and step once per whole unit (ten scrolls of 0.1 are one notch). Not while the death screen, a talk, the journal, the escape menu, the help overlay, the loadout choice or the skill-select menu is up, nor over the kit or the talent panel -- wherever a click is refused. |
 | the zoom a new game starts at | `-zoom`'s value until the wheel or the harness moves the view; then the view the player chose, so a death's load, "load last save" and a new game keep his zoom. Process-wide (`d2player.GameZoom`), never in the world file. |
 | harness `ui.zoom` | settable: a number in 0.4..2.0 (refused, not clamped, outside it), set as the wheel sets it -- including the zoom the next game starts at. Classified not-a-dial in `harnessNotDials`: a load does not re-apply it; it carries over because the next game starts at it. |
@@ -105,13 +113,12 @@ open at 5 tiles when the player can see 10 is a design question, not a zoom bug.
 
 ## Known gaps
 
-- **Enemies show in the dark when zoomed out (BUG-107, OPEN, owner: fog of war
-  F2).** The overhead bars, hover label, corpse marks and the tactical and
-  click hit tests ask no light. At 1.0 the screen is about the torch's 5 tiles;
-  at 0.4 it reaches about 9 x 13 tiles from the hero, inside the 12-tile notice
-  band, so a bar floats over a wolf the dark hides. Deliberately not fixed here:
-  gating them on light changes frames at 1.0, and F2's one visibility predicate
-  owns it.
+- **Enemies show in the dark when zoomed out (BUG-107, FIXED by fog of war
+  F2, and in the shipped game since F5 made fog the default).** The overhead
+  bars, hover label, corpse marks and the tactical and click hit tests ask fog's
+  one predicate, `MapRenderer.Shows`. With `-fog=false` they still ask no
+  light: at 0.4 the screen reaches about 9 x 13 tiles from the hero, inside the
+  12-tile notice band, so a bar can float over a wolf the dark hides.
 - **Moving sprites can drift by about a pixel at any scale but 1.0** (the
   review's C3). Every translation is a whole pixel: the tile anchor is floored
   by the viewport and the entity's offsets are rounded once by the wrapper, so
@@ -125,7 +132,10 @@ open at 5 tiles when the player can see 10 is a design question, not a zoom bug.
 ## Verifying on screen
 
 Software-surface tests measure the painted pixels (`entity_scale_test.go`,
-`draw_scale_test.go`); a real look is still owed: launch with `-zoom 0.5` and
+`draw_scale_test.go`). Since F5 the whole playtest suite runs at the shipped
+0.5 (docs/harness.md, "The shipped view"), and the default launch's frames
+are F5's evidence (`strigoi-harness-runs\wt-fog5\shots\`). The real look
+the zoom burst owed was: launch with `-zoom 0.5` and
 check the hero, villagers and a creature stand on their feet at half size, the
 bars sit just above their heads, hovering and clicking a monster and a squad
 model hit the half-size sprite, and at night the torch's lit ground is the same

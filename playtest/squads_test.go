@@ -266,9 +266,16 @@ func TestSquadsOnScreen(t *testing.T) {
 	// the sheet and calls OnPlayerMove. If the sheet does not close, the
 	// clicks above never reached the branch the no-walk assertions are about
 	// and those assertions proved nothing.
-	ctlX := int(px) - squadEmptyGroundDX
-	if ctlX < squadEmptyGroundDX {
-		ctlX = int(px) + squadEmptyGroundDX
+	// F5 (2 Oct 2026): the offset is the 1.0 view's 220 px at the view's
+	// scale, and the side is chosen by the 1.0 view's rule (left unless that
+	// would land within 220 px of the edge), so the walk ends on the same
+	// ground at every zoom -- the daylight contrast frame below is taken
+	// where it ends, on the road by the well.
+	emptyDX := int(squadEmptyGroundDX * viewScale(t, s))
+	ctlX := int(px) - emptyDX
+
+	if int(px)-squadEmptyGroundDX < squadEmptyGroundDX {
+		ctlX = int(px) + emptyDX
 	}
 
 	s.call("strigoi_click", map[string]any{"x": ctlX, "y": int(py), "button": "left"})
@@ -382,6 +389,11 @@ func TestSquadsOnScreen(t *testing.T) {
 			str(c, "stage"), str(c, "time_of_day"))
 	}
 
+	// F5 (2 Oct 2026): at the shipped view (0.5) he stands where the 1.0
+	// view's walk put him, on the road by the well, and the strip above his
+	// bar is the road: L 99.1 against the fill's 63.3, 35.7 (at 1.0, 97.1).
+	// On GRASS the fill's luminance is the grass's -- a difference of 3-7 at
+	// either zoom -- which D5's gate has never been asked (BUG-119, Josh's).
 	dayBar := barFor(t, uiState(s), str(player, "id"), false)
 	dayFrame := s.frame(t, "squads-day")
 	_, dayBg := assertBarContrast(t, "daylight", dayFrame, dayBar, contrastFloor)
@@ -504,6 +516,14 @@ func TestSquadsOnScreen(t *testing.T) {
 		t.Fatalf("act 7: the field did not clear -- %.0f group(s) still live: %v", got, spawnsState(s)["group_list"])
 	}
 
+	// FOG OFF FOR THIS ACT (F5, 2 Oct 2026): night one's arrivals stand out
+	// in the dark, past his torchless sight, and fog hides a hidden man's bar
+	// (BUG-107's fix) -- so with fog on the bars would rise by the ones he
+	// happens to see. This act's subject is the bar GATE (keyed on the spawn
+	// row); fog's hiding of bars is TestFogAtNight's act 9.
+	setField(s, "fog", "enabled", false)
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
 	enemyBefore := enemyBars(t, uiState(s))
 
 	// The chance dial is raised rather than a spawn verb being called: there
@@ -543,6 +563,9 @@ func TestSquadsOnScreen(t *testing.T) {
 	t.Logf("act 7: %v arrived with %d member(s) and every one got a bar (enemy bars %d -> %d)",
 		rows, members, enemyBefore, enemyBefore+members)
 
+	setField(s, "fog", "enabled", true) // the shipped game again
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
 	// --- ACT 8: a script can HOLD a mouse button (BUG-7's instrument half) -----
 	//
 	// WHAT THIS ACT CLAIMS, AND WHAT IT DOES NOT. Until 19 Sep 2026 no playtest
@@ -566,7 +589,12 @@ func TestSquadsOnScreen(t *testing.T) {
 
 	player = s.call("strigoi_get_player", map[string]any{})
 	holdScreenX, holdScreenY := pair(player, "screen")
-	holdX, holdY := int(holdScreenX)+90, int(holdScreenY)
+	// +90 px (and the tap's -60 below) are the 1.0 view's, at the view's
+	// scale (F5, 2 Oct 2026), so acts 8 and 9 run on the ground they always
+	// have. Unscaled at 0.5 they ended him elsewhere, and there act 9's held
+	// guard did not hold at either zoom (BUG-120).
+	act8Scale := viewScale(t, s)
+	holdX, holdY := int(holdScreenX+90*act8Scale), int(holdScreenY)
 	holdFromX, holdFromY := mustNum(t, player, "x"), mustNum(t, player, "y")
 
 	out := s.call("strigoi_click", map[string]any{
@@ -594,7 +622,7 @@ func TestSquadsOnScreen(t *testing.T) {
 	// asserted through its effect: an ordinary tap still orders a walk.
 	restX, restY := mustNum(t, moved, "x"), mustNum(t, moved, "y")
 
-	s.call("strigoi_click", map[string]any{"x": holdX, "y": holdY - 60, "button": "left"})
+	s.call("strigoi_click", map[string]any{"x": holdX, "y": holdY - int(60*act8Scale), "button": "left"})
 	s.call("strigoi_step", map[string]any{"frames": 30})
 
 	again := s.call("strigoi_get_player", map[string]any{})
@@ -670,6 +698,10 @@ func TestSquadsOnScreen(t *testing.T) {
 		t.Fatalf("act 9: the held click on the model did not select its squad, got %q", got)
 	}
 
+	after9 := s.call("strigoi_get_entity", map[string]any{"handle": handleFor(t, s, s9entity)})
+	t.Logf("act 9: the hero at %.2f,%.2f; the model at %.2f,%.2f (screen %.0f,%.0f) for the hold and %.2f,%.2f (screen %v) after; view scale %v",
+		h9x, h9y, mustNum(t, s9info, "x"), mustNum(t, s9info, "y"), s9sx, s9sy, num(after9, "x"), num(after9, "y"), after9["screen"], viewScale(t, s))
+
 	assertNoWalk(t, "act 9 (held)", s.call("strigoi_get_player", map[string]any{}), h9x, h9y)
 
 	s.call("strigoi_set_system_field", map[string]any{
@@ -700,6 +732,22 @@ func enemyBars(t *testing.T, ui map[string]any) int {
 
 func uiState(s *session) map[string]any {
 	return sub(s.call("strigoi_get_system_state", map[string]any{"system": "ui"}), "state")
+}
+
+// viewScale is the scale the map is drawn at now (ui.view_scale): 0.5 in the
+// shipped game since F5 (2 Oct 2026), 1.0 under -classic. A script that aims
+// at a world point from a screen point multiplies its pixel offsets by it --
+// one tile in x is (+80, +40) x scale on screen, one tile in y (-80, +40) x
+// scale -- so it aims at the same ground at every zoom.
+func viewScale(t *testing.T, s *session) float64 {
+	t.Helper()
+
+	sc := mustNum(t, uiState(s), "view_scale")
+	if sc <= 0 {
+		t.Fatalf("ui.view_scale is %v", sc)
+	}
+
+	return sc
 }
 
 func clockState(s *session) map[string]any {

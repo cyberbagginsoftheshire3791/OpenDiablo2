@@ -23,10 +23,11 @@ import (
 // bars, the hover and talk label and hit test, the corpse marks, the tactical
 // diamonds, click-to-strike) ask one predicate, MapRenderer.Shows (BUG-107).
 //
-// OPT-IN. -fog turns it on for every game this process starts; it is off by
-// default, off under -classic (Diablo II's game), off in a network game (more
-// than one player: shared sight has no rule yet), and the World Editor never
-// has it (its renderer gets no sampler). With fog off the renderer holds no
+// ON BY DEFAULT since F5 (2 Oct 2026; it was opt-in behind -fog for F1-F4).
+// -fog=false turns it off for every game this process starts; it is always
+// off under -classic (Diablo II's game), off in a network game (more than one
+// player: shared sight has no rule yet), and the World Editor never has it
+// (its renderer gets no sampler). With fog off the renderer holds no
 // FogSampler, and a nil sampler is the unfogged draw, call for call
 // (d2maprenderer/fog.go).
 //
@@ -41,11 +42,14 @@ import (
 // again.
 
 // processGameFog is -fog: whether the games this process starts have fog.
+// True is the shipped game (F5); d2app sets it from -fog, whose default is
+// the same.
 //
 // nolint:gochecknoglobals // one value per process, set from the command line
-var processGameFog bool
+var processGameFog = true
 
-// SetGameFog sets whether new games have fog. d2app calls it with -fog.
+// SetGameFog sets whether new games have fog. d2app calls it with -fog
+// (default true; -fog=false is the opt-out).
 func SetGameFog(on bool) { processGameFog = on }
 
 // fogEyeID is the player's eye: squad s:1's model. Every other model of his
@@ -58,7 +62,7 @@ const fogFightPrefix = "fight/"
 
 // Why fog is off, as the provider reports it.
 const (
-	fogOffFlag    = "off"     // -fog not given (or the harness turned it off)
+	fogOffFlag    = "off"     // -fog=false (or the harness turned it off)
 	fogOffClassic = "classic" // -classic: Diablo II's game has no fog
 	fogOffNetwork = "network" // more than one player
 	fogOffNoMap   = "no_map"  // the map or the player is not there yet

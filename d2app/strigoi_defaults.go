@@ -68,3 +68,31 @@ func resolveLaunch(classic bool, given map[string]string) launchChoice {
 		Strings: pick("strings", defaultStrings),
 	}
 }
+
+// THE SHIPPED VIEW (F5, 2 Oct 2026): fog of war on and the camera at 0.5.
+// Josh's rulings of 1 Oct (claude/rulings-2026-10-01-camera-scale-and-fog.md):
+// the game zooms out to about half size on today's 800x600 so a squad does not
+// fill the screen -- the art and the world's distances unchanged -- and fog
+// flips on together with the zoom, so the suite's screenshot checks are
+// re-baselined once. The opt-outs are the flags' own: -fog=false and -zoom 1.
+// -classic is Diablo II's game and keeps Diablo II's view: zoom 1.0 unless
+// -zoom names one (fog is off there whatever -fog says: the game screen's own
+// fence, as in a network game and the World Editor).
+const (
+	defaultZoom = 0.5  // Strigoi's view: a man ~36 px tall, ~10 tiles each way on screen
+	classicZoom = 1.0  // Diablo II's view, for its own art and UI
+	defaultFog  = true // Strigoi's game: black until explored
+)
+
+// resolveZoom is the zoom a launch starts at: -zoom when it was given, else
+// Strigoi's 0.5, or 1.0 under -classic.
+func resolveZoom(classic, given bool, zoom float64) float64 {
+	switch {
+	case given:
+		return zoom
+	case classic:
+		return classicZoom
+	default:
+		return defaultZoom
+	}
+}

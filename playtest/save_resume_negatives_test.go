@@ -256,8 +256,9 @@ func emptyRows() []sweepRow {
 			sc := blockOf(t, f, "scene")
 			sc["watch_stood"], sc["field_dead"] = json.Number("0"), []any{}
 		}, want: wantDiverge, moves: []string{"system scene"}},
-		// The hunted evening is played without -fog, so its grid is empty and
-		// an emptied block would be T's file: the row FILLS it instead -- with
+		// The hunted evening was played without fog until F5 (2 Oct 2026), so its
+		// grid was empty and an emptied block would be T's file: the row FILLS
+		// it instead -- with
 		// an UNEVEN pattern (a corner block and a scatter), and the resumed
 		// grid must be the file's bit for bit (the B6 review's B1: an
 		// all-explored grid is its own mirror, so a load that laid the tiles
@@ -411,14 +412,68 @@ func fillFog(t *testing.T, file map[string]any) {
 }
 
 // fogGridIsTheFiles: the resumed game's explored grid is the file's, bit for
-// bit (the fog provider reports it as the file writes it).
+// bit (the fog provider reports it as the file writes it) -- with fog off.
+//
+// WITH FOG ON (the shipped game since F5, 2 Oct 2026) the resumed game's
+// first frames see again from where he stands (docs/fog.md, "Kept"), so the
+// grid is the file's PLUS the ground he has seen since: every tile the file
+// explored must be explored -- tile (x, y) is bit y*w+x, as fillFog writes
+// it, so a grid laid out reversed or transposed loses the scatter -- and the
+// tiles beyond the file's must be fewer than half the ground the file had
+// not explored, so a load that explored everything (or inverted the grid)
+// fails too. (Every extra tile cannot be required to be seen NOW: he walks
+// in the frames before the check, and ground he saw on the way stays
+// explored.)
 func fogGridIsTheFiles(t *testing.T, s *session, file map[string]any) error {
 	t.Helper()
 
 	want := str(blockOf(t, file, "fog"), "explored")
-	if got := str(fogState(s), "grid"); got != want {
-		return fmt.Errorf("the resumed fog grid is not the file's:\n file %s\n game %s", want, got)
+	f := fogState(s)
+	got := str(f, "grid")
+
+	if !flag(t, f, "enabled") {
+		if got != want {
+			return fmt.Errorf("the resumed fog grid is not the file's:\n file %s\n game %s", want, got)
+		}
+
+		return nil
 	}
+
+	wb, err := base64.StdEncoding.DecodeString(want)
+	if err != nil {
+		return fmt.Errorf("the file's fog grid: %v", err)
+	}
+
+	gb, err := base64.StdEncoding.DecodeString(got)
+	if err != nil || len(gb) != len(wb) {
+		return fmt.Errorf("the resumed fog grid (%d bytes, %v) is not the file's shape (%d bytes):\n file %s\n game %s", len(gb), err, len(wb), want, got)
+	}
+
+	kept, added, open := 0, 0, 0
+
+	for i := 0; i < villageSide*villageSide; i++ {
+		x, y := i%villageSide, i/villageSide
+		inFile, inGame := wb[i/8]>>uint(i%8)&1 == 1, gb[i/8]>>uint(i%8)&1 == 1
+
+		switch {
+		case inFile && !inGame:
+			return fmt.Errorf("tile %d,%d is explored in the file and not in the resumed game:\n file %s\n game %s", x, y, want, got)
+		case inFile:
+			kept++
+		case inGame:
+			added++
+			open++
+		default:
+			open++
+		}
+	}
+
+	if added*2 >= open {
+		return fmt.Errorf("the resumed game explored %d of the %d tiles the file had not -- half or more: the load did not lay down the file's grid:\n file %s\n game %s",
+			added, open, want, got)
+	}
+
+	t.Logf("the resumed fog grid: the file's %d explored tiles kept, %d of the other %d explored since the load", kept, added, open)
 
 	return nil
 }

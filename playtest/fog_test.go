@@ -641,7 +641,10 @@ func walkNearFog(t *testing.T, s *session, handle string, r float64) {
 // 1.0 and this fails, "ui.zoom: zoom 2 is outside the game's range 0.4..1"
 // (strigoi-harness-runs\wt-fog\nc\ncp1-zoom-max-back-at-1.txt).
 func TestZoomInToTwo(t *testing.T) {
-	s := startGame(t)
+	// Fog off explicitly since F5 (2 Oct 2026: fog is the default): this
+	// script's subject and evidence frame are the zoom-in alone. It starts
+	// at the shipped 0.5, so the camera is checked from 0.5 to 2.0.
+	s := startGame(t, "-fog=false")
 
 	s.call("strigoi_pause", map[string]any{})
 	s.call("strigoi_start_game", map[string]any{
@@ -651,9 +654,10 @@ func TestZoomInToTwo(t *testing.T) {
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	if flag(t, fogState(s), "enabled") {
-		t.Fatal("fog is on without -fog")
+		t.Fatal("fog is on under -fog=false")
 	}
 
+	z1 := mustNum(t, uiState(s), "view_scale")
 	x1, y1 := playerScreen(t, s)
 
 	setField(s, "ui", "zoom", 2.0)
@@ -664,7 +668,7 @@ func TestZoomInToTwo(t *testing.T) {
 	}
 
 	x2, y2 := playerScreen(t, s)
-	t.Logf("his feet on screen: (%d,%d) at 1.0, (%d,%d) at 2.0", x1, y1, x2, y2)
+	t.Logf("his feet on screen: (%d,%d) at %v, (%d,%d) at 2.0", x1, y1, z1, x2, y2)
 
 	if abs(x2-x1) > 3 || abs(y2-y1) > 3 {
 		t.Fatalf("zoomed in to 2.0 he moved on screen from (%d,%d) to (%d,%d); the camera stays on him", x1, y1, x2, y2)
@@ -1151,9 +1155,9 @@ type nightRun struct {
 func nightDigest(t *testing.T, fog bool) nightRun {
 	t.Helper()
 
-	args := []string{"-zoom", "0.5"}
+	args := []string{"-zoom", "0.5", "-fog=false"} // fog is the default since F5: off is said
 	if fog {
-		args = append(args, "-fog")
+		args = []string{"-zoom", "0.5", "-fog"}
 	}
 
 	s := startGame(t, args...)

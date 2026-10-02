@@ -59,7 +59,13 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 		quiet     = 1.25 // a band this close to the unlit night is untouched
 	)
 
-	s := start(t)
+	// FOG OFF, THE SHIPPED CAMERA (F5, 2 Oct 2026). This script's subject is
+	// light: with fog on, the "beyond" band would be remembered (grey) or
+	// unexplored (black) ground, and "dim, not gone" would measure fog
+	// (fog's lit ground at night is TestFogAtNight's act 7). The zoom is the
+	// shipped 0.5: the hearth's screen point and the bands are at the view's
+	// scale, and at 0.5 the hearth's own ground is on screen.
+	s := startGame(t, "-fog=false")
 
 	s.call("strigoi_pause", map[string]any{})
 
@@ -80,9 +86,11 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 
 	// The hearth's screen point, by the engine's own isometric step: one tile
 	// in x is (+80, +40) screen pixels, one tile in y is (-80, +40). It lands
-	// off screen, which is fine — measure only needs a centre to sort by.
-	hx := px + tilePixelX*((hearthX-tx)-(hearthY-ty))
-	hy := py + tilePixelY*((hearthX-tx)+(hearthY-ty))
+	// off screen at the 1.0 view and on it at the shipped 0.5, which is fine
+	// either way — measure only needs a centre to sort by.
+	sc := viewScale(t, s)
+	hx := px + tilePixelX*sc*((hearthX-tx)-(hearthY-ty))
+	hy := py + tilePixelY*sc*((hearthX-tx)+(hearthY-ty))
 
 	t.Logf("player: tile (%.0f, %.0f) at screen (%.0f, %.0f) · hearth: tile (%.0f, %.0f) at screen (%.0f, %.0f)",
 		tx, ty, px, py, hearthX, hearthY, hx, hy)
@@ -90,7 +98,7 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 	// --- the daylight control (the black-floor instrument, P3 §5.3) ------
 	s.call("strigoi_step_world", map[string]any{"world_minutes": 12*60 - dawnMinute})
 
-	day := measure("day/player", s.frame(t, "placed-day-noon"), px, py, playerBand, noBand)
+	day := measure("day/player", s.frame(t, "placed-day-noon"), px, py, playerBand, noBand, sc)
 	t.Logf("day:    %s", day)
 
 	if day.play < 10 {
@@ -120,8 +128,8 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 	floor := num(light, "player_level")
 
 	darkImg := s.frame(t, "placed-night-unlit")
-	darkP := measure("unlit/player", darkImg, px, py, playerBand, noBand)
-	darkH := measure("unlit/hearth", darkImg, hx, hy, hearthBand, beyondBand)
+	darkP := measure("unlit/player", darkImg, px, py, playerBand, noBand, sc)
+	darkH := measure("unlit/hearth", darkImg, hx, hy, hearthBand, beyondBand, sc)
 
 	t.Logf("unlit:  %s", darkP)
 	t.Logf("unlit:  %s", darkH)
@@ -186,8 +194,8 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 	// 2. THE PIXELS: the same claim, measured on screen in ratios against
 	//    the unlit night, so nothing depends on a monitor or a palette.
 	litImg := s.frame(t, "placed-night-hearth")
-	litP := measure("hearth/player", litImg, px, py, playerBand, noBand)
-	litH := measure("hearth/hearth", litImg, hx, hy, hearthBand, beyondBand)
+	litP := measure("hearth/player", litImg, px, py, playerBand, noBand, sc)
+	litH := measure("hearth/hearth", litImg, hx, hy, hearthBand, beyondBand, sc)
 
 	t.Logf("lit:    %s", litP)
 	t.Logf("lit:    %s", litH)
@@ -240,7 +248,7 @@ func TestPlacedLightLightsWhereItStands(t *testing.T) {
 		t.Fatalf("with every fire out the player's tile is at %.3f, want the night floor %.3f", got, floor)
 	}
 
-	dead := measure("out/hearth", s.frame(t, "placed-night-doused"), hx, hy, hearthBand, beyondBand)
+	dead := measure("out/hearth", s.frame(t, "placed-night-doused"), hx, hy, hearthBand, beyondBand, sc)
 	t.Logf("out:    %s", dead)
 
 	if drift := math.Abs(dead.near-darkH.near) / darkH.near; drift > 0.25 {

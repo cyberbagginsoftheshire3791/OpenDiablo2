@@ -413,13 +413,13 @@ func CreateGame(
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
 
-	// Fog of war (F1, -fog; off by default). With -fog the renderer holds it
+	// Fog of war (-fog; on by default since F5). With fog on the renderer holds it
 	// from the first frame (black until he has seen something); with fog off
 	// it draws as it did before fog.
 	game.fog = newGameFog(mapTileSight{game}, processGameFog)
 	// F2: the night closes it.
 	game.fog.seeByLight(game.light)
-	game.fogAdvance() // with -fog the renderer holds the (empty, all-black) fog from the first frame
+	game.fogAdvance() // with fog on the renderer holds the (empty, all-black) fog from the first frame
 	d2harness.Register(fogProvider{game})
 
 	// The game zoom (-zoom; 1.0 does nothing). The light is per tile, in world
@@ -690,7 +690,7 @@ type Game struct {
 	// tests only. Nil in every game.
 	mapStepForTest func(elapsed float64)
 
-	fog          *gameFog // fog of war F1 (game_fog.go); always made, drawn only with -fog
+	fog          *gameFog // fog of war F1 (game_fog.go); always made, drawn only with fog on (the default; -fog=false)
 	squads       *d2world.Squads
 	meters       *d2world.Meters
 	metersBodied bool

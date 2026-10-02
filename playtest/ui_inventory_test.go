@@ -119,7 +119,10 @@ func TestUIInventory(t *testing.T) {
 	// 6. a scripted click on open ground walks the player through the normal
 	//    controls. One world tile east is (+80, +40) screen pixels from the
 	//    player (the isometric projection), so the +120,+60 px click below is
-	//    exactly 1.5 tiles east; east is clear at seed 1462.
+	//    exactly 1.5 tiles east; east is clear at seed 1462. Those are the 1.0
+	//    view's pixels: since F5 (2 Oct 2026) the shipped view is 0.5, and the
+	//    click is +120,+60 at the view's scale -- the same 1.5 tiles, through
+	//    ScreenToWorld's division by the scale.
 	before := s.call("strigoi_get_player", map[string]any{})
 	sx, sy := pair(before, "screen")
 	fromX, fromY := num(before, "x"), num(before, "y")
@@ -128,7 +131,10 @@ func TestUIInventory(t *testing.T) {
 		t.Fatal("get_player: no screen position")
 	}
 
-	cursor := s.call("strigoi_move_cursor", map[string]any{"x": int(sx) + 120, "y": int(sy) + 60})
+	sc := viewScale(t, s)
+	clickDX, clickDY := int(120*sc), int(60*sc)
+
+	cursor := s.call("strigoi_move_cursor", map[string]any{"x": int(sx) + clickDX, "y": int(sy) + clickDY})
 	if cursor["cursor_scripted"] != true {
 		t.Fatalf("move_cursor: want a scripted cursor, got %v", cursor)
 	}
@@ -139,7 +145,7 @@ func TestUIInventory(t *testing.T) {
 		t.Fatalf("move_cursor: a -harness game owns the mouse (BUG-111), got %v", cursor)
 	}
 
-	s.call("strigoi_click", map[string]any{"x": int(sx) + 120, "y": int(sy) + 60, "button": "left"})
+	s.call("strigoi_click", map[string]any{"x": int(sx) + clickDX, "y": int(sy) + clickDY, "button": "left"})
 	s.call("strigoi_step", map[string]any{"frames": 180})
 
 	after := s.call("strigoi_get_player", map[string]any{})
@@ -200,13 +206,13 @@ func TestUIInventory(t *testing.T) {
 	// any scale error over ~23%. The assertion this replaced -- "moved at least
 	// 0.5 tiles, mostly east" -- accepted every one of them.
 	off := math.Hypot(dx-wantDX, dy-wantDY)
-	t.Logf("click walk: moved %.2f, %.2f tiles; +120,+60 px predicts %.2f, %.2f (off by %.3f)",
-		dx, dy, wantDX, wantDY, off)
+	t.Logf("click walk at view scale %v: moved %.2f, %.2f tiles; +%d,+%d px predicts %.2f, %.2f (off by %.3f)",
+		sc, dx, dy, clickDX, clickDY, wantDX, wantDY, off)
 
 	if off > tolTiles {
-		t.Fatalf("a +120,+60 px click must land %.2f,%.2f tiles away (the isometric projection); "+
+		t.Fatalf("a +%d,+%d px click at view scale %v must land %.2f,%.2f tiles away (the isometric projection); "+
 			"the player moved %.2f,%.2f, which is %.3f tiles off, past the %.2f budget",
-			wantDX, wantDY, dx, dy, off, tolTiles)
+			clickDX, clickDY, sc, wantDX, wantDY, dx, dy, off, tolTiles)
 	}
 
 	// 7. type_text reaches the input chars poll without disturbing the game

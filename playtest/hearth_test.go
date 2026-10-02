@@ -88,6 +88,10 @@ func TestTheHearth(t *testing.T) {
 	walkNearPoint(t, s, num(door, "x"), num(door, "y"))
 	untilRisen(t, s)
 
+	// "No bar" is vacuous if fog hides him (fog is on by default since F5,
+	// 2 Oct 2026; the fog plan's §3.11): he must be shown first.
+	mustBeShown(t, s, handleFor(t, s, str(bodyNamed(t, s, str(door, "id")), "walks_as")), "act 2 (before the tale)")
+
 	if n := enemyBars(t, uiState(s)); n != 0 {
 		t.Fatalf("act 2: before the tale the dead carry no bar: %d enemy bars", n)
 	}
