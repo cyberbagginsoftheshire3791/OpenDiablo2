@@ -38,6 +38,25 @@ type Panel interface {
 // own clock, between two click-and-hold actions (move or cast).
 const mouseBtnActionsThreshold = 0.25
 
+// heldSelectSlop is how far, in screen pixels on either axis, the cursor may
+// stray from where a squad select was pressed before the hold stops being
+// that select (BUG-120; a hand on a mouse is not still to the pixel).
+const heldSelectSlop = 4
+
+// heldSelectStands reports whether a held left button is still the squad
+// select its press made: the press selected (latched) and the cursor (x, y)
+// is within heldSelectSlop of the press point on both axes. A drag further
+// off is a walk, as in Diablo II (BUG-120, decision A of its review).
+func heldSelectStands(latched bool, pressX, pressY, x, y int) bool {
+	if !latched {
+		return false
+	}
+
+	dx, dy := x-pressX, y-pressY
+
+	return dx >= -heldSelectSlop && dx <= heldSelectSlop && dy >= -heldSelectSlop && dy <= heldSelectSlop
+}
+
 // repeatDue reports whether a held-button action may fire again: the first
 // action always fires (last starts at -threshold), later ones wait the
 // threshold. now and last are readings of the controls' accumulated clock.
@@ -314,9 +333,13 @@ type GameControls struct {
 	isSinglePlayer         bool
 
 	// heldOnSquad is set when a left press selects a squad (its model was
-	// under the cursor) and cleared by the next left press or release: the
-	// hold that press begins is a select for as long as it lasts (BUG-120).
+	// under the cursor) and cleared by the next left press or release; the
+	// press's screen point is kept for every left press. The hold that
+	// press begins is a select for as long as the cursor stays where it was
+	// pressed (heldSelectStands, BUG-120).
 	heldOnSquad bool
+	heldPressX  int
+	heldPressY  int
 
 	// combat and light are M4.4c-2a's seam into d2player, threaded the way
 	// clock was for M4.4a and squads for c-1. The key handlers are the only
@@ -656,15 +679,26 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 		// paused held click never made repeatDue true, so nothing reached
 		// this line -- BUG-7.)
 		//
-		// AND A HOLD THAT BEGAN AS A SELECT STAYS ONE (BUG-120, 2 Oct 2026).
-		// The hit test alone re-asks "is a model under the cursor?" on every
-		// repeat, and the scene can slide under a still cursor: press-and-hold
-		// on a model while he is still walking, and the camera follows him, so
-		// by the first repeat (0.25 s) the model has moved off the cursor and
-		// the hold walked him to the ground there. heldOnSquad latches the
-		// press's select for the whole hold. Asserted by act 9b (the hold on
-		// a model while he walks); with the latch disabled it re-routes him.
-		if g.heldOnSquad || g.squadAtScreen(event.X(), event.Y()) != "" {
+		// AND A HOLD THAT BEGAN AS A SELECT STAYS ONE WHILE THE CURSOR STAYS
+		// (BUG-120, 2 Oct 2026). The hit test alone re-asks "is a model under
+		// the cursor?" on every repeat, and the scene can slide under a still
+		// cursor: press-and-hold on a model while he is still walking, and the
+		// camera follows him, so by the first repeat (0.25 s) the model has
+		// moved off the cursor and the hold walked him to the ground there.
+		// heldSelectStands latches the press's select while the cursor is
+		// within heldSelectSlop of the press point; a cursor the player DRAGS
+		// off the model walks, as in Diablo II (the review's decision A, a
+		// default Josh may overturn). Asserted by act 9b (a still cursor on a
+		// model while he walks: with the latch disabled it re-routes him) and
+		// TestHeldSelectStands (the drag, which no script can make: the
+		// harness holds a button at one point).
+		//
+		// The hit test is still half of the guard: a hold begun on ground
+		// whose cursor the sliding scene puts over a model does not re-target
+		// him onto it, and a select dragged within the model stays one.
+		// Asserted by act 9c; without this half he is re-routed onto it.
+		if heldSelectStands(g.heldOnSquad, g.heldPressX, g.heldPressY, event.X(), event.Y()) ||
+			g.squadAtScreen(event.X(), event.Y()) != "" {
 			return true
 		}
 
@@ -749,10 +783,11 @@ func (g *GameControls) OnMouseButtonUp(event d2interface.MouseEvent) bool {
 func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	mx, my := event.X(), event.Y()
 
-	// A new left press begins a new hold; only the squad select below marks
-	// it as one (BUG-120).
+	// A new left press begins a new hold, at this point; only the squad
+	// select below marks it as a select (BUG-120).
 	if event.Button() == d2enum.MouseButtonLeft {
 		g.heldOnSquad = false
+		g.heldPressX, g.heldPressY = mx, my
 	}
 
 	if g.dead() {
