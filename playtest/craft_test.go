@@ -126,7 +126,7 @@ func TestCraft(t *testing.T) {
 		s.call("strigoi_step", map[string]any{"frames": 6})
 	}
 
-	blocked, absorbed := fightForBlows(t, s)
+	blocked, absorbed, _ := fightForBlows(t, s)
 
 	// Finish it: he fights back until it is over. Nothing is made in a fight.
 	setField(s, "combat", "player_action", "attack")

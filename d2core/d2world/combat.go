@@ -1733,6 +1733,115 @@ func (c *Combat) onlyTheDead(enemies []Combatant) bool {
 	return true
 }
 
+// Remove takes one entity the world took away without a death -- off the map
+// by hand (strigoi_remove_entity) -- out of every fight it is in, his and the
+// village's, and out of the world's attention: its watch and its chase,
+// withdraw's both halves, the pairing a death uses (reachedZero) and a
+// despawn uses (Spawns.Despawn). Seek's row goes with the watch (Seek.sync).
+// It reports how many fights it left (BUG-112).
+//
+// Before it, a removal unwatched and released and left the fight alone: the
+// fight's row kept a Combatant whose entity was off the map but whose
+// position still read, so it stayed "in reach" and struck him round after
+// round -- TestKit, 1 Oct: rounds 33 to 67 against a removed zombie, until
+// he died.
+//
+// A REMOVED ENEMY LEAVES NO ROW. It did not die (no corpse, no kill, no
+// nerve lost: a pack keeps its nerve for a member taken away) and it did not
+// break, so it is not kept as dead, routed or broke; its row and its place in
+// the order go, as a risen man's old row goes when he stands again
+// (rejoinOne). A fight with nothing left in it ends "disengaged" -- nothing
+// alive is engaged, and nobody won.
+//
+// A CLOCK FIGHT'S QUARRY taken away ends that fight the way its death does,
+// without the body: every watch on it is let go (quarryDead's
+// releaseWatchesOn) and the fight ends "disengaged". He is never a quarry
+// here: a player cannot be removed.
+func (c *Combat) Remove(id string) int {
+	if id == "" {
+		return 0
+	}
+
+	n := 0
+
+	if c.removeOne(id) {
+		n++
+	}
+
+	for i, e := range c.clockFights {
+		left := false
+		c.clockFights[i] = c.withClock(e, func() { left = c.removeOne(id) })
+
+		if left {
+			n++
+		}
+	}
+
+	c.dropEndedClock()
+
+	c.withdraw(id)
+
+	return n
+}
+
+// removeOne is Remove for the encounter on the struct.
+func (c *Combat) removeOne(id string) bool {
+	e := c.encounter
+	if e == nil {
+		return false
+	}
+
+	if e.driver == driverClock && e.target != nil && e.target.QuarryID() == id {
+		c.clockBook.released += c.releaseWatchesOn(id)
+		c.end("disengaged")
+
+		return true
+	}
+
+	in := false
+	kept := e.enemies[:0]
+
+	for _, en := range e.enemies {
+		if en != nil && en.WatcherID() == id {
+			in = true
+
+			continue
+		}
+
+		kept = append(kept, en)
+	}
+
+	e.enemies = kept
+
+	if !in {
+		return false
+	}
+
+	order := e.enemyOrder[:0]
+
+	for _, x := range e.enemyOrder {
+		if x != id {
+			order = append(order, x)
+		}
+	}
+
+	e.enemyOrder = order
+
+	delete(e.dead, id)
+	delete(e.routed, id)
+	delete(e.broke, id)
+
+	for _, en := range e.enemies {
+		if en != nil && c.stillIn(e, en.WatcherID()) {
+			return true
+		}
+	}
+
+	c.end("disengaged")
+
+	return true
+}
+
 // BreakOff is first light (M4.7 step 3; R2 §2A, "the dead break off at first
 // light"): every enemy leave accepts takes no further part, and a fight left
 // with nothing in it ends "dawn". A beast in the same fight fights on. It

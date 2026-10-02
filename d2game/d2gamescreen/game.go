@@ -2272,6 +2272,28 @@ func (v *Game) Unwatch(watcherID string) bool {
 	return v.notice.Unwatch(watcherID)
 }
 
+// TakeOutOfTheWorld is the world's half of an entity taken off the map
+// without a death -- strigoi_remove_entity today (BUG-112): its watch and its
+// chase end (the pairing a death and a despawn use) and it leaves every fight
+// it is in, his and the village's (Combat.Remove). It reports how many fights
+// it left and whether a watch and a chase ended. The map and the body are the
+// caller's: it took the entity off the map.
+func (v *Game) TakeOutOfTheWorld(id string) (fights int, unwatched, released bool) {
+	if v.notice != nil {
+		unwatched = v.notice.Unwatch(id)
+	}
+
+	if v.pursuit != nil {
+		released = v.pursuit.Release(id)
+	}
+
+	if v.combat != nil {
+		fights = v.combat.Remove(id)
+	}
+
+	return fights, unwatched, released
+}
+
 // WatchAs is Watch on a named side (the raid's R2): "hostile", as Watch is,
 // or "living" -- a villager on watch, noticed and reported like any watch and
 // never a chase or a fight. For the harness (strigoi_watch side:living) until

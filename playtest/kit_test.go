@@ -137,7 +137,7 @@ func TestKit(t *testing.T) {
 	// --- 4: shield and mail in a fight ----------------------------------------
 	mailBefore := kit.Worn["body"].Points
 
-	blocked, absorbed := fightForBlows(t, s)
+	blocked, absorbed, _ := fightForBlows(t, s)
 	if blocked == 0 {
 		t.Fatal("act 4: over a forced-crit fight the shield must turn at least one blow")
 	}
@@ -154,8 +154,9 @@ func TestKit(t *testing.T) {
 	// never strikes), so leaving straight from it saved nothing (14 -> 14 on
 	// the integrated tree). He ends it as a player would: he strikes until
 	// the zombie is dead, then waits out the grace. (Taking the zombie off
-	// the map does not end the fight: strigoi_remove_entity withdraws it from
-	// no encounter, and the fight ran on until he died.)
+	// the map did not end the fight until BUG-112, 1 Oct: the fight ran on
+	// until he died. It does now -- TestKitTorchAndBladeControl's act 2 --
+	// but here he ends it as a player would.)
 	setField(s, "combat", "player_action", "attack")
 
 	for i := 0; i < 300 && flag(t, combatState(s), "fighting"); i++ {
@@ -228,19 +229,54 @@ func TestKitTorchAndBladeControl(t *testing.T) {
 		t.Fatal("torch-and-blade: L lights the torch in his off-hand")
 	}
 
-	if blocked, _ := fightForBlows(t, s); blocked != 0 {
+	blocked, _, zombie := fightForBlows(t, s)
+	if blocked != 0 {
 		t.Fatalf("torch-and-blade has no shield, and %d blow(s) were blocked", blocked)
 	}
+
+	// --- act 2: the zombie taken off the map leaves his fight (BUG-112) ------
+	// The "hold" fight never closes: he never strikes. On 1 Oct it ran on
+	// against a removed zombie, rounds 33 to 67, until he died. THE CONTROL
+	// is the fight itself, still running before the removal.
+	if !flag(t, combatState(s), "fighting") {
+		t.Fatal("act 2 (control): the hold fight must still be running before the removal")
+	}
+
+	removed := s.call("strigoi_remove_entity", map[string]any{"handle": zombie})
+	if removed["removed"] != true || num(removed, "fights_left") != 1 {
+		t.Fatalf("act 2: the zombie must leave his one fight with the map: %v", removed)
+	}
+
+	if c := combatState(s); flag(t, c, "fighting") || str(c, "ended_reason") != "disengaged" {
+		t.Fatalf("act 2: a fight with nothing left in it is over, disengaged: fighting %v, ended_reason %q",
+			flag(t, c, "fighting"), str(c, "ended_reason"))
+	}
+
+	health := mustNum(t, metersState(s), "health")
+
+	for i := 0; i < 30; i++ {
+		s.call("strigoi_step", map[string]any{"frames": 12})
+
+		if flag(t, combatState(s), "fighting") {
+			t.Fatalf("act 2: a fight opened again %d step(s) after the removal", i+1)
+		}
+	}
+
+	if h := mustNum(t, metersState(s), "health"); h < health {
+		t.Fatalf("act 2: a removed zombie struck him: health %v -> %v", health, h)
+	}
+
+	t.Logf("act 2 PASS: the removed zombie left his fight (%v), ended disengaged; no blow in 360 frames", removed["fights_left"])
 }
 
 // fightForBlows arranges a fight under the policy with every band forced to a
 // crit, lets it run a few world minutes, and counts blocked blows and armour
-// absorption across every round it can see.
-func fightForBlows(t *testing.T, s *session) (blocked, absorbed int) {
+// absorption across every round it can see. It returns the enemy's handle.
+func fightForBlows(t *testing.T, s *session) (blocked, absorbed int, enemy string) {
 	t.Helper()
 
 	p := s.call("strigoi_get_player", map[string]any{})
-	enemy := spawnNPC(t, s, "zombie1", num(p, "x")+1, num(p, "y"))
+	enemy = spawnNPC(t, s, "zombie1", num(p, "x")+1, num(p, "y"))
 	s.call("strigoi_watch", map[string]any{"watcher": enemy, "target": str(p, "handle")})
 
 	setField(s, "combat", "forced_band", "crit")
@@ -277,7 +313,7 @@ func fightForBlows(t *testing.T, s *session) (blocked, absorbed int) {
 
 	setField(s, "combat", "forced_band", "")
 
-	return blocked, absorbed
+	return blocked, absorbed, enemy
 }
 
 type kitFile struct {
