@@ -97,13 +97,28 @@ func markColour(m CorpseMark) uint32 {
 	return corpseMarkShut
 }
 
+// corpseMarksShown are the corpse marks on ground he sees now: fog of war F2
+// (BUG-107) -- no mark where he cannot see the body; all of them without fog.
+func (h *HUD) corpseMarksShown() []CorpseMark {
+	all := h.gameControls.corpseHolder.CorpseMarks()
+	out := all[:0:0]
+
+	for _, m := range all {
+		if h.mapRenderer.Shows(m.X, m.Y) {
+			out = append(out, m)
+		}
+	}
+
+	return out
+}
+
 // renderCorpses draws a mark on every body on screen.
 func (h *HUD) renderCorpses(target d2interface.Surface) {
 	if h.gameControls == nil || h.gameControls.corpseHolder == nil || h.mapRenderer == nil {
 		return
 	}
 
-	for _, m := range h.gameControls.corpseHolder.CorpseMarks() {
+	for _, m := range h.corpseMarksShown() {
 		sx, sy := h.mapRenderer.WorldToScreenF(m.X, m.Y)
 		x, y := int(math.Floor(sx))-corpseMarkW/2, int(math.Floor(sy))-corpseMarkH/2
 

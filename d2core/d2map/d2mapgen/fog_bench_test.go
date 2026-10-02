@@ -84,6 +84,114 @@ func BenchmarkFogRecompute(b *testing.B) {
 	}
 }
 
+// BenchmarkFogRecomputeAtNight (F2): one recompute at deep night (new moon)
+// on the authored village with 1, 6 and 24 eyes and 0, 4 or 16 lit hearths
+// in a ring about the start (14 tiles out), plus his lit torch: the unlit
+// discs shrink to the dark radius, and the lit term (Q3: lit ground at any
+// distance) tries a line from each eye to every lit tile of every source.
+// With a lit torch every frame of a walk recomputes (the torch's disc moves),
+// so this is the cost of a walking frame at night.
+func BenchmarkFogRecomputeAtNight(b *testing.B) {
+	engine, m := villageEngine(b)
+	size := engine.Size()
+
+	for _, hearths := range []int{0, 4, 16} {
+		for _, n := range []int{1, 6, 24} {
+			eyes := make([]d2world.Eye, n)
+			for i := range eyes {
+				a := 2 * math.Pi * float64(i) / float64(n)
+				r := 3.0 * float64(i%3)
+				eyes[i] = d2world.Eye{ID: fmt.Sprintf("e%d", i), X: m.StartX + 0.5 + r*math.Cos(a), Y: m.StartY + 0.5 + r*math.Sin(a)}
+			}
+
+			b.Run(fmt.Sprintf("hearths%d/eyes%d", hearths, n), func(b *testing.B) {
+				clock := d2world.NewClock(d2world.DefaultClockDials()) // the epoch: the night floor
+				defer clock.Close()
+
+				clock.SetMoon(0)
+
+				light := d2world.NewLight(clock, d2world.DefaultLightDials())
+				defer light.Close()
+
+				light.Add(d2world.SourceTorch, true, 0, 0)
+
+				for i := 0; i < hearths; i++ {
+					a := 2 * math.Pi * float64(i) / float64(hearths)
+					light.Add(d2world.SourceHearth, false, m.StartX+0.5+14*math.Cos(a), m.StartY+0.5+14*math.Sin(a))
+				}
+
+				view := d2world.NewLightView(light)
+				view.SetCarriedAt(m.StartX+0.5, m.StartY+0.5)
+
+				dials := d2world.DefaultFogDials()
+				f := d2world.NewFog(dials, engine)
+				f.SetLight(view)
+
+				for i := 0; i < b.N; i++ {
+					f.SetDials(dials)
+					f.Update(size.Width, size.Height, eyes)
+				}
+
+				_, visible := f.Counts()
+				_, _, cells := f.Counters()
+				b.ReportMetric(float64(visible), "visible")
+				b.ReportMetric(float64(f.LitSeen()), "lit_seen")
+				b.ReportMetric(float64(cells)/float64(b.N), "cells/op")
+			})
+		}
+	}
+}
+
+// BenchmarkFogWalkWithATorch (the F2 review's B4): one FRAME of a walk at
+// deep night with his torch lit -- he moves 0.07 tiles a frame (about 4 tiles
+// a second at 60 frames) -- with 0, 4 or 16 hearths about the start. The
+// carried disc is keyed by its tile, so a frame recomputes only when he steps
+// onto another tile (recomputes/op is the share of frames that do).
+func BenchmarkFogWalkWithATorch(b *testing.B) {
+	engine, m := villageEngine(b)
+	size := engine.Size()
+
+	for _, hearths := range []int{0, 4, 16} {
+		b.Run(fmt.Sprintf("hearths%d", hearths), func(b *testing.B) {
+			clock := d2world.NewClock(d2world.DefaultClockDials())
+			defer clock.Close()
+
+			clock.SetMoon(0)
+
+			light := d2world.NewLight(clock, d2world.DefaultLightDials())
+			defer light.Close()
+
+			light.Add(d2world.SourceTorch, true, 0, 0)
+
+			for i := 0; i < hearths; i++ {
+				a := 2 * math.Pi * float64(i) / float64(hearths)
+				light.Add(d2world.SourceHearth, false, m.StartX+0.5+14*math.Cos(a), m.StartY+0.5+14*math.Sin(a))
+			}
+
+			view := d2world.NewLightView(light)
+			f := d2world.NewFog(d2world.DefaultFogDials(), engine)
+			f.SetLight(view)
+
+			r0, _, _ := f.Counters()
+
+			for i := 0; i < b.N; i++ {
+				// Back and forth over 6 tiles east of the start.
+				step := float64(i % 85)
+				if (i/85)%2 == 1 {
+					step = 85 - step
+				}
+
+				x, y := m.StartX+0.5+0.07*step, m.StartY+0.5
+				view.SetCarriedAt(x, y)
+				f.Update(size.Width, size.Height, []d2world.Eye{{ID: "s:1", X: x, Y: y}})
+			}
+
+			r1, _, _ := f.Counters()
+			b.ReportMetric(float64(r1-r0)/float64(b.N), "recomputes/op")
+		})
+	}
+}
+
 // TestFogOnTheVillageSeesHisSurroundings: the fog over the real village from
 // the start, at day sight 12, sees a good share of the 12-tile disc (452
 // tiles) -- the houses hide some -- and the start tile; and somewhere within

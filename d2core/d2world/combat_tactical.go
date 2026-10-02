@@ -533,7 +533,15 @@ type TacticalEnemy struct {
 	Dead     bool
 	Routed   bool
 	Acting   bool
+	// Broke is an enemy that left the fight at first light (the dead
+	// breaking off, M4.7 step 3): the encounter's own third "gone" set.
+	Broke bool
 }
+
+// Gone is the encounter's "takes no further part": dead, routed or broke
+// off (encounter.gone, read through the view). Fog's contacts read it (the
+// F2 review's C3).
+func (t TacticalEnemy) Gone() bool { return t.Dead || t.Routed || t.Broke }
 
 // TacticalView is everything the tactical overlay draws, read in one call so
 // the HUD never assembles a fight out of pieces that could disagree.
@@ -630,6 +638,7 @@ func (c *Combat) tactical() TacticalView {
 			Dead:     e.dead[id],
 			Routed:   e.routed[id],
 			Acting:   acting[id],
+			Broke:    e.broke[id],
 		})
 	}
 

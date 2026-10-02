@@ -240,14 +240,30 @@ func (l *Light) nightFloor() float64 {
 // ambient is the continuous sky, Level is what a tile is drawn at. Radius()
 // is computed from the continuous value, so the dials stay exact.
 func (l *Light) Level(tileX, tileY int) float64 {
-	best := l.Ambient()
+	return l.levelWith(tileX, tileY, l.playerX, l.playerY)
+}
+
+// levelWith is Level with the carried lights shining from (cx, cy): Level's
+// is where the player was last told to be (SetPlayer); a LightView's is where
+// he stands this frame (light_view.go).
+func (l *Light) levelWith(tileX, tileY int, cx, cy float64) float64 {
+	return l.levelOver(tileX, tileY, cx, cy, l.Ambient())
+}
+
+// levelOver is levelWith over a given sky (the ambient, unquantised): a
+// LightView reads the sky once a frame, not once a tile.
+func (l *Light) levelOver(tileX, tileY int, cx, cy, ambient float64) float64 {
+	best := ambient
 
 	for _, s := range l.sources {
 		if !s.Lit {
 			continue
 		}
 
-		x, y := l.at(s)
+		x, y := s.X, s.Y
+		if s.Carried {
+			x, y = cx, cy
+		}
 
 		if c := l.contribution(float64(tileX)+0.5, float64(tileY)+0.5, x, y, s.Radius); c > best {
 			best = c
@@ -277,7 +293,14 @@ func (l *Light) contribution(px, py, sx, sy, radius float64) float64 {
 		return 0
 	}
 
-	dist := math.Hypot(px-sx, py-sy)
+	// Outside the radius first, without the square root: fog of war asks the
+	// level of every tile of every lit source's disc (F2).
+	dx, dy := px-sx, py-sy
+	if dx*dx+dy*dy >= radius*radius {
+		return 0
+	}
+
+	dist := math.Hypot(dx, dy)
 	if dist >= radius {
 		return 0
 	}
@@ -304,7 +327,7 @@ func (l *Light) quantise(v float64) float64 {
 // S1 §4's playtest assertion is written in. It is the larger of what the sky
 // gives and what the brightest light on the player gives.
 func (l *Light) Radius() float64 {
-	r := lerp(l.dials.FloorRadius, l.dials.DayRadius, l.skyFraction())
+	r := lerp(l.dials.FloorRadius, l.dials.DayRadius, l.SkyFraction())
 
 	for _, s := range l.sources {
 		if !s.Lit {
@@ -326,8 +349,9 @@ func (l *Light) Radius() float64 {
 	return r
 }
 
-// skyFraction maps the ambient from the night floor (0) to full day (1).
-func (l *Light) skyFraction() float64 {
+// SkyFraction maps the ambient from the night floor (0) to full day (1). Fog
+// of war's night reach blends by it exactly as Radius does (F2).
+func (l *Light) SkyFraction() float64 {
 	floor := l.nightFloor()
 	if floor >= 1 {
 		return 1

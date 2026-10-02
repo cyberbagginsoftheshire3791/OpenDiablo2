@@ -190,6 +190,12 @@ func (h *HUD) tacticalDiamonds(view d2world.TacticalView, out []tacticalDiamond)
 			continue
 		}
 
+		// Fog of war (F2; BUG-107): one predicate. An enemy of his own fight
+		// is a contact (Q4), so under fog this holds while the fight lasts.
+		if !h.enemyShown(entities, e) {
+			continue
+		}
+
 		color := uint32(tacticalEnemyColor)
 
 		switch {
@@ -203,6 +209,17 @@ func (h *HUD) tacticalDiamonds(view d2world.TacticalView, out []tacticalDiamond)
 	}
 
 	return out
+}
+
+// enemyShown is the fog's one predicate (MapRenderer.Shows) for an enemy of
+// his fight: at its body on the map if it has one, else where the fight has
+// it.
+func (h *HUD) enemyShown(entities map[string]d2interface.MapEntity, e d2world.TacticalEnemy) bool {
+	if ent, ok := entities[e.ID]; ok {
+		return h.mapRenderer.ShowsEntity(ent)
+	}
+
+	return h.mapRenderer.Shows(e.X, e.Y)
 }
 
 // tileBlocked asks the map about the subtile a body standing at (x, y) would
@@ -416,11 +433,22 @@ func (g *GameControls) tacticalEnemyAt(mx, my int) string {
 		return ""
 	}
 
+	return g.enemyUnder(view, mx, my)
+}
+
+// enemyUnder is tacticalEnemyAt's hit test over a fight's view: the living
+// enemy he sees whose diamond or sprite is under the screen point, or "".
+func (g *GameControls) enemyUnder(view d2world.TacticalView, mx, my int) string {
 	wx, wy := g.mapRenderer.ScreenToWorld(mx, my)
 	entities := g.hud.mapEngine.Entities()
 
 	for _, e := range view.Enemies {
 		if e.Dead || e.Routed {
+			continue
+		}
+
+		// Fog of war (F2; BUG-107): nothing he does not see is struck at.
+		if !g.hud.enemyShown(entities, e) {
 			continue
 		}
 

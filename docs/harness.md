@@ -966,7 +966,35 @@ this doc fails until it agrees.
   than 12.5 tiles off has `shown` false on `strigoi_get_entity`; walked to,
   true. Act 5 (on act 1's frame): the house to his right has every footprint
   tile visible (`probe.structure`) and its art is drawn (not black) -- a
-  house seen at all is seen whole. A second function, `TestZoomInToTwo` (the zoom-in, the same day), with
+  house seen at all is seen whole. A third function, `TestFogAtNight` (fog
+  F2, the night closes it, the same day; `-fog -zoom 0.5`, unaided -- the
+  hearth is `light.place_source`, the second squad `meters.squad_add`): act 5,
+  23:00 under a new moon, `tonight_dark` and `unlit_reach` are 1.5, the
+  renderer `draws_by` the light view, and a tile 4 off on a clear line he saw
+  at noon is `explored`; 5b, a full moon makes the reach 4 and a tile 3 off
+  `visible`, a new moon `explored` again; act 6, his torch lit: the tile 4 off
+  is `visible` and `lit`, the tile 6 off `explored` and not lit; act 7, a
+  hearth placed 10.5-13 tiles off with a clear line and on screen (at 0.4 if
+  no such spot is on screen at 0.5): its tile is
+  `visible` (by the lit term: `lit_seen` > 0) and the tile 2.5 out on the same
+  line is not, and on screen the hearth's ground is drawn brighter than the
+  dark between (skipped on a black-floor launch); act 8, `squad_add` there:
+  two `eyes`, the model's tile `visible` (it was not, the control); act 9, a
+  villager on remembered ground (the probe says `explored`, plan §3.11) is not
+  `shown` and the cursor on him names nothing -- and the control, the dark
+  radius opened to 30, names him. (It also finds no `ui.bars` entry for him,
+  but a villager never carries a bar, seen or not, so that half cannot fail;
+  the bars' gate is held by d2player's `TestNoBarOverABodyHeDoesNotSee`.) A
+  fourth, `TestFogNeverTouchesTheSim` (two launches, fog on and off, the same
+  seed: a torch-lit walk at 23:00, then a fight under the shipped tactical layer
+  (`combat.player_control` human) -- a zombie three tiles off set to watch
+  him, 600 frames of it -- with a second zombie
+  standing nine tiles off in the dark): EVERY system's world hash agrees, fog's
+  and the ui's included, every digest part but `process` agrees, the ui state
+  less only `bars` and `hover_label` is equal field for field, and with fog on
+  the fight's enemies were contacts (the control that fog was engaged). Since
+  the F2 review (B6) the ui's `bars` are in the digest's PROCESS part: with fog
+  on, which bars are drawn depends on what he sees. A second function, `TestZoomInToTwo` (the zoom-in, the same day), with
   fog off: `ui.zoom` takes 2.0 and refuses 2.1, `view_scale` reads 2, and his
   feet stay where they were on screen at 1.0 (within 3 px: the camera stays on
   him).
@@ -1806,15 +1834,25 @@ game screen registers it, fog on or off (`d2gamescreen/game_fog.go`):
 `drawn` (the map renderer holds the fog), `w`/`h`, `explored` and `visible`
 (tile counts), `rows` (for a map of at most 64 x 64: one string a row, `0`
 unexplored, `1` explored, `2` visible), `eyes[]` (`id` `s:1`, `x`, `y`,
-`sight`, `terms{base}`), the dials `day_sight` (12), `memory_level` (0.45) and
-`memory_saturation` (0.25), the cost counters `recomputes`, `skipped` (an
+`sight`, `dark`, `unlit_reach`, `terms{base}`; since F2 every model of his
+squads is an eye, `<squad>/<entity>`), the dials `day_sight` (12),
+`dark_radius` (1.5) and `moon_dark_radius` (4) (F2, Josh's Q2: tonight's dark
+radius is lerp(dark, full-moon dark, moon)), `memory_level` (0.45) and
+`memory_saturation` (0.25); since F2 (harness 0.16.1) `tonight_dark`,
+`unlit_reach` (how far unlit ground is seen: the day sight by day, tonight's
+dark radius by night, blended by the sky), `lit_seen` (tiles the last
+recompute saw by the lit term alone -- lit ground past every eye's reach, Q3),
+`contacts[]` (`{id fight/<entity>, x, y}`: the enemies of his own fight, whose
+own tile is shown, Q4), `by_light` (fog sees by the light model) and
+`draws_by` (`view` while fog is drawn: the renderer draws by the light with
+his torch where he stands, BUG-110; `light` otherwise, master's draw); the cost counters `recomputes`, `skipped` (an
 update that found his tile unchanged) and `cells_read`, `saved` (false: F3), and
-`probe` once one is asked -- `{x, y, state, clear_from{s:1}, screen,
-structure}`, the tile's state, whether the line from his eye is clear, where
+`probe` once one is asked -- `{x, y, state, clear_from{<eye>}, lit, screen,
+structure}` (`lit`: brighter than the sky now), the tile's state, whether the line from his eye is clear, where
 its centre is on screen now, and the footprint `[x0, y0, x1, y1]` (Max
 exclusive) of the structure standing on it, if one does (a structure is seen
-whole once any of it is seen). Settable: the three dials (`day_sight` 0..64, the two looks
-0..1) are DIALS; `enabled` (true / false; refused under `-classic`) is the
+whole once any of it is seen). Settable: the five dials (`day_sight`, `dark_radius`,
+`moon_dark_radius` 0..64, the two looks 0..1) are DIALS; `enabled` (true / false; refused under `-classic`) is the
 game's view, like `ui.zoom`; `explore` (`{x, y, r}`: every tile whose centre is
 within r marked explored), `forget` (the explored set cleared; the next update
 re-sees what he sees) and `reveal_all` are verbs; `probe` (`{x, y}`) is a
@@ -1823,7 +1861,10 @@ resumed game does not reproduce it), less `skipped` (a count of frames, which
 differ from launch to launch) and the probe's `screen` (presentation). `strigoi_get_entity` / `get_player` report
 `shown` (presentation, never in the digest): false only with fog drawn and the
 entity on a tile he does not see now (`MapRenderer.Shows`, the test the render
-passes use).
+passes use). Since F2 the HUD asks the same predicate (BUG-107): with fog
+drawn, `ui.hover_label`, `ui.bars`, the corpse marks, the tactical diamonds and
+click-to-strike leave out whatever stands on ground he does not see now (an
+enemy of his own fight is a contact, so it stays shown while the fight lasts).
 
 **`editor`** (World Editor review, 28 Sep 2026) -- while the World Editor is the
 screen (`d2gamescreen/editor_harness.go`; registered at the end of

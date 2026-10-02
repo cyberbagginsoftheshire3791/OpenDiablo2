@@ -480,6 +480,36 @@ func (s *Squads) ModelEntities() []SquadModel {
 	return out
 }
 
+// LivingModelEntities is ModelEntities less the dead: a deployed squad's
+// model at 0 health or below (the squad owns its models' health), and the
+// player's squad's model when his bound body is at 0. Fog of war's eyes (F2
+// review B3): a dead man sees nothing.
+func (s *Squads) LivingModelEntities() []SquadModel {
+	out := []SquadModel{}
+
+	for _, id := range s.squadIDs() {
+		sq := s.squads[id]
+
+		for _, m := range sq.members {
+			if m.entity == "" {
+				continue
+			}
+
+			if sq.extBody != nil {
+				if sq.extBody.CurrentHealth() <= 0 {
+					continue
+				}
+			} else if m.health <= 0 {
+				continue
+			}
+
+			out = append(out, SquadModel{Squad: id, Entity: m.entity})
+		}
+	}
+
+	return out
+}
+
 // Cycle selects the next squad in order after the current selection, wrapping.
 // The cycle key (§4.5) calls it; with one squad it is a no-op.
 func (s *Squads) Cycle() string {

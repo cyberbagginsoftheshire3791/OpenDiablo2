@@ -39,15 +39,17 @@ func (mr *MapRenderer) HasFog() bool {
 }
 
 // tileDrawn is whether a tile is drawn at all: always without fog; with fog,
-// only once explored.
+// once explored -- or while it is visible without being explored, which is a
+// contact's tile (an enemy of his fight on ground he never saw, F2 review B2:
+// shown while the fight lasts, black again after it).
 func (mr *MapRenderer) tileDrawn(tileX, tileY int) bool {
 	if mr.fogSampler == nil {
 		return true
 	}
 
-	explored, _ := mr.fogSampler.FogAt(tileX, tileY)
+	explored, visible := mr.fogSampler.FogAt(tileX, tileY)
 
-	return explored
+	return explored || visible
 }
 
 // pushTileView pushes how a drawn tile looks -- its light, and for remembered
@@ -85,8 +87,16 @@ func popTileView(target d2interface.Surface, pushed int) {
 // Shows says whether something standing at world (x, y) is drawn: always
 // without fog; with fog, only on a tile he sees now. It buckets the point to
 // its tile as the render passes bucket entities (int of the world position).
+//
+// IT IS THE ONE VISIBILITY PREDICATE (F2; BUG-107): the entity draw, the
+// overhead bars and the game's enemy-bar list, the hover and talk label and
+// their hit test, the corpse marks, the tactical diamonds and click-to-strike
+// all ask it, so nothing the player cannot see is named, barred, marked or
+// struck at. "He sees it" already holds the night's three ways to be seen:
+// within his reach, lit with a clear line, or an enemy of his own fight (fog's
+// contact eyes, Q4).
 func (mr *MapRenderer) Shows(x, y float64) bool {
-	if mr.fogSampler == nil {
+	if mr == nil || mr.fogSampler == nil {
 		return true
 	}
 
@@ -95,9 +105,9 @@ func (mr *MapRenderer) Shows(x, y float64) bool {
 	return visible
 }
 
-// entityShown is Shows for an entity, read where the passes read it.
-func (mr *MapRenderer) entityShown(e d2interface.MapEntity) bool {
-	if mr.fogSampler == nil {
+// ShowsEntity is Shows for an entity, at its position as the passes read it.
+func (mr *MapRenderer) ShowsEntity(e d2interface.MapEntity) bool {
+	if mr == nil || mr.fogSampler == nil {
 		return true
 	}
 
