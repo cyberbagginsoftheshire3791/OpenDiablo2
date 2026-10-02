@@ -22,10 +22,12 @@
 //     are refused, as are group and image layers.
 //   - One object layer named "objects" holding exactly one "player_start",
 //     any number of "npc" objects, each npc with a string property "monstat"
-//     naming the monstats record it stands in for, and any number of
-//     "inside" RECTANGLES marking ground the night does not arrive on (the
-//     village within its fence: what comes from the dark is placed outside
-//     every inside area and has to come in by the gate).
+//     naming the monstats record it stands in for (and optionally a string
+//     "household" naming its household), and any number of "inside"
+//     RECTANGLES marking ground the night does not arrive on (the village
+//     within its fence: what comes from the dark is placed outside every
+//     inside area and has to come in by the gate). And the village's own
+//     point objects, "household", "hotar" and "watch_post" (households.go).
 //   - Tilesets EMBEDDED in the map (Tiled: "Embed tileset"). Either kind
 //     works: a single sprite sheet, or a collection of images.
 //   - Floor art exactly 160x80. Wall art 160 wide and at least 80 tall, drawn
@@ -227,6 +229,9 @@ type NPC struct {
 	Monstat string
 	// X, Y in world tiles.
 	X, Y float64
+	// Household is the household the npc belongs to (its "household"
+	// property, the household object's name), "" for none (the raid's R3a).
+	Household string
 }
 
 // Map is a parsed, validated authored map.
@@ -243,6 +248,13 @@ type Map struct {
 	// it gives none): see "Map properties" above.
 	SoundEnv    int
 	DisplayName string
+	// The village's own objects (the raid's R3a; households.go): its
+	// households in file order, its boundary (HasHotar false for none) and its
+	// watch posts in file order.
+	Households []Household
+	Hotar      image.Point
+	HasHotar   bool
+	Posts      []Post
 }
 
 // IsInside reports whether tile x, y lies in any inside area.
@@ -542,6 +554,13 @@ type parser struct {
 	kinds  map[kindKey]int
 	images map[string]*image.RGBA // decoded source images by resolved path
 	out    *Map
+
+	// The village's objects (households.go): the object ids a refusal made
+	// after the whole layer is read names, and the walls buildings' labels.
+	householdIDs []int
+	npcIDs       []int
+	hotarID      int
+	wallLabels   []int
 }
 
 func (p *parser) tilesets() error {
@@ -1008,7 +1027,7 @@ func (p *parser) objectLayer(l *tmjLayer) error {
 			starts++
 			p.out.StartX, p.out.StartY = x, y
 		case "npc":
-			monstat, err := npcMonstat(o)
+			monstat, household, err := npcProperties(o)
 			if err != nil {
 				return err
 			}
@@ -1017,7 +1036,8 @@ func (p *parser) objectLayer(l *tmjLayer) error {
 				return err
 			}
 
-			p.out.NPCs = append(p.out.NPCs, NPC{Monstat: monstat, X: x, Y: y})
+			p.out.NPCs = append(p.out.NPCs, NPC{Monstat: monstat, X: x, Y: y, Household: household})
+			p.npcIDs = append(p.npcIDs, o.ID)
 		case "inside":
 			r, err := p.insideArea(o)
 			if err != nil {
@@ -1025,10 +1045,22 @@ func (p *parser) objectLayer(l *tmjLayer) error {
 			}
 
 			p.out.Inside = append(p.out.Inside, r)
+		case "household":
+			if err := p.household(o, x, y); err != nil {
+				return err
+			}
+		case "hotar":
+			if err := p.hotar(o, x, y); err != nil {
+				return err
+			}
+		case "watch_post":
+			if err := p.watchPost(o, x, y); err != nil {
+				return err
+			}
 		case "":
-			return fmt.Errorf("object %d (%q) has no class; set it to player_start, npc or inside", o.ID, o.Name)
+			return fmt.Errorf("object %d (%q) has no class; set it to %s", o.ID, o.Name, ObjectClassesOr)
 		default:
-			return fmt.Errorf("object %d has class %q; the game reads player_start, npc and inside", o.ID, kind)
+			return fmt.Errorf("object %d has class %q; the game reads %s", o.ID, kind, ObjectClassesAnd)
 		}
 	}
 
@@ -1036,8 +1068,15 @@ func (p *parser) objectLayer(l *tmjLayer) error {
 		return fmt.Errorf("the objects layer holds %d player_start objects, want exactly 1", starts)
 	}
 
-	return nil
+	return p.village()
 }
+
+// ObjectClassesOr and ObjectClassesAnd name the point-object classes the game
+// reads, as its refusals say them (the World Editor says the same words).
+const (
+	ObjectClassesOr  = "player_start, npc, inside, household, hotar or watch_post"
+	ObjectClassesAnd = "player_start, npc, inside, household, hotar and watch_post"
+)
 
 // structure reads a structure tile object: its tile's footprint laid back
 // from the object's position, which Tiled puts at the bottom corner of the
@@ -1144,25 +1183,36 @@ func (p *parser) insideArea(o *tmjObject) (image.Rectangle, error) {
 	return r, nil
 }
 
-func npcMonstat(o *tmjObject) (string, error) {
-	monstat := ""
-
+// npcProperties reads an npc's "monstat" (required) and "household" (optional,
+// the raid's R3a: the household object's name; checked against the map's
+// households once the whole layer is read).
+func npcProperties(o *tmjObject) (monstat, household string, err error) {
 	for _, prop := range o.Properties {
-		if prop.Name != "monstat" {
-			return "", fmt.Errorf("npc (object %d): unknown property %q; an npc takes \"monstat\"", o.ID, prop.Name)
-		}
+		switch prop.Name {
+		case "monstat":
+			if prop.Type != "string" || json.Unmarshal(prop.Value, &monstat) != nil {
+				return "", "", fmt.Errorf("npc (object %d): monstat must be a string", o.ID)
+			}
+		case "household":
+			if prop.Type != "string" || json.Unmarshal(prop.Value, &household) != nil {
+				return "", "", fmt.Errorf("npc (object %d): household must be a string", o.ID)
+			}
 
-		if prop.Type != "string" || json.Unmarshal(prop.Value, &monstat) != nil {
-			return "", fmt.Errorf("npc (object %d): monstat must be a string", o.ID)
+			household = strings.TrimSpace(household)
+			if household == "" {
+				return "", "", fmt.Errorf("npc (object %d): household is empty; name a household or remove the property", o.ID)
+			}
+		default:
+			return "", "", fmt.Errorf("npc (object %d): unknown property %q; an npc takes \"monstat\" and \"household\"", o.ID, prop.Name)
 		}
 	}
 
 	monstat = strings.TrimSpace(monstat)
 	if monstat == "" {
-		return "", fmt.Errorf("npc (object %d) has no monstat property naming who stands here", o.ID)
+		return "", "", fmt.Errorf("npc (object %d) has no monstat property naming who stands here", o.ID)
 	}
 
-	return monstat, nil
+	return monstat, household, nil
 }
 
 // standable refuses a person placed off the map or on a tile nobody can stand

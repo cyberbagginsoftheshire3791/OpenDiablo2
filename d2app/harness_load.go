@@ -155,6 +155,9 @@ var harnessNotDials = map[string][]string{
 		"activity", "consume", "fatigue", "food", "health", "stamina", "water",
 		"selected", "squad", "squad_add", "squad_remove",
 	},
+	// the raid's R3a: state -- each house's stock (the file's households
+	// block), restored by the load, never re-applied.
+	"households": {"incense", "stakes"},
 	// a verb: experience granted (the sidecar's progress).
 	"progress": {"grant_xp"},
 	// a verb: a chase released.

@@ -124,6 +124,8 @@ func b3Fixture() *World {
 		// 0-2, 5-7 and 14 explored -- 0xE7 0x40, the last byte's top bit
 		// (past tile 14) zero.
 		Fog: d2world.FogSnapshot{Map: strings.Repeat("ab", 32), W: 5, H: 3, Explored: "50A="},
+		// The raid's R3a (version 6): two houses, one run down.
+		Households: d2world.HouseholdsSnapshot{Houses: []d2world.HouseSnapshot{{ID: "h:1", Incense: 3, Stakes: 2}, {ID: "h:2", Incense: 0, Stakes: 1}}},
 	}
 }
 
@@ -463,6 +465,12 @@ func TestCheckRefusesWhatNoLoadCouldRestore(t *testing.T) {
 		"a fog grid past any map":          {ReasonFog, func(w *World) { w.Fog.W = 5000 }},
 		"an empty fog grid naming a map":   {ReasonFog, func(w *World) { w.Fog.W, w.Fog.H, w.Fog.Explored = 0, 0, "" }},
 		"an empty fog grid holding a grid": {ReasonFog, func(w *World) { w.Fog.W, w.Fog.H, w.Fog.Map = 0, 0, "" }},
+
+		// The raid's R3a: the households block is Snapshot's.
+		"a house out of order":      {ReasonHouseholds, func(w *World) { w.Households.Houses[0].ID = "h:2" }},
+		"a house of no id":          {ReasonHouseholds, func(w *World) { w.Households.Houses[1].ID = "" }},
+		"a house's incense below 0": {ReasonHouseholds, func(w *World) { w.Households.Houses[0].Incense = -1 }},
+		"a house's stakes past 99":  {ReasonHouseholds, func(w *World) { w.Households.Houses[1].Stakes = 100 }},
 	}
 
 	for name, tc := range cases {
@@ -552,6 +560,8 @@ func TestAFieldTheFileLacksIsRefused(t *testing.T) {
 		"entities[0].motion.action_at.frame", "entities[0].motion.action_at.elapsed",
 		// Fog of war F3: a grid with no map would key on its size alone.
 		"fog.map", "fog.explored", "fog.w",
+		// The raid's R3a: a house's stock missing would read as none.
+		"households.houses", "households.houses[0].incense", "households.houses[1].stakes", "households.houses[0].id",
 	} {
 		cut := b3Cut(t, data, path)
 

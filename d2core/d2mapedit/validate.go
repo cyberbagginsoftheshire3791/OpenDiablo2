@@ -673,6 +673,8 @@ func (v *validation) objects() {
 	starts := 0
 	ids := map[int]bool{}
 
+	var vc villageCheck
+
 	for _, o := range v.doc.m.objects {
 		if ids[o.ID] {
 			v.add(Problem{Rule: RuleDuplicateID, Object: o.ID, Msg: "two objects share this id"})
@@ -713,20 +715,30 @@ func (v *validation) objects() {
 			}
 
 			v.standable("npc "+o.Monstat, o)
+			vc.npcs = append(vc.npcs, o)
 		case ClassInside:
 			v.inside(o)
+		case ClassHousehold:
+			v.household(o, &vc)
+		case ClassHotar:
+			v.hotar(o, &vc)
+		case ClassWatchPost:
+			v.watchPost(o)
 		case "":
 			v.add(Problem{Rule: RuleObjectClass, Object: o.ID,
-				Msg: fmt.Sprintf("object %q has no class; set it to player_start, npc or inside", o.Name)})
+				Msg: fmt.Sprintf("object %q has no class; set it to %s", o.Name, d2maptiled.ObjectClassesOr)})
 		default:
 			v.add(Problem{Rule: RuleObjectClass, Object: o.ID,
-				Msg: fmt.Sprintf("has class %q; the game reads player_start, npc and inside", o.Class)})
+				Msg: fmt.Sprintf("has class %q; the game reads %s", o.Class, d2maptiled.ObjectClassesAnd)})
 		}
 	}
 
 	if starts != 1 {
 		v.add(Problem{Rule: RuleStart, Msg: fmt.Sprintf("the objects layer holds %d player_start objects, want exactly 1", starts)})
 	}
+
+	// The raid's R3a: the loader's village pass, once the whole layer is read.
+	v.village(&vc)
 }
 
 // standable is tiled.go:1103-1114: a person off the map or on a tile nobody can

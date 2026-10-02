@@ -479,7 +479,7 @@ func (v *Game) saveRefusal() *SaveRefusal {
 		return refuse(SaveRefusedNotReady, saveReasonNoKit)
 	case v.worldClock == nil || v.light == nil || v.squads == nil || v.spawns == nil || v.spawner == nil ||
 		v.notice == nil || v.pursuit == nil || v.corpses == nil || v.rising == nil || v.combat == nil ||
-		v.seek == nil:
+		v.seek == nil || v.households == nil:
 		return refuse(SaveRefusedNotReady, "the world's systems are not all built")
 	}
 
@@ -636,6 +636,8 @@ func (v *Game) worldFile() (*d2save.World, json.RawMessage, error) {
 		},
 		// Fog of war F3: the explored grid, on this map.
 		Fog: v.fogSnapshot(),
+		// The raid's R3a: every house's stock.
+		Households: v.households.Snapshot(),
 	}
 
 	w.RNG.Rising = w.Rising.RNG
@@ -733,6 +735,11 @@ func (v *Game) validateSnapshots(w *d2save.World, r d2world.Resolver) error {
 	// Fog of war F3: the explored grid fits the map it was explored on.
 	if err := v.fogValidate(w.Fog); err != nil {
 		return refused("fog", err)
+	}
+
+	// The raid's R3a: one stock per household this map places.
+	if err := v.households.Validate(w.Households); err != nil {
+		return refused("households", err)
 	}
 
 	return nil

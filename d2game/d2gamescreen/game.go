@@ -409,6 +409,19 @@ func CreateGame(
 	game.seek.SetQuarries(game.seekQuarries)
 	game.seek.SetResolver(worldResolver{game})
 
+	// The raid's R3a: the village's households, from the map (the tenth
+	// system; a generated map places none). Before the load's step 4, which
+	// validates its block. The map format bounds the stock as the system does,
+	// so a map the parser took is never refused here.
+	households, err := d2world.NewHouseholds(villagePlaces(gameClient.MapEngine.Village()))
+	if err != nil {
+		game.releaseWorld()
+
+		return nil, fmt.Errorf("the map's households: %w", err)
+	}
+
+	game.households = households
+
 	// The renderer asks the light model how lit each tile is; it knows the
 	// model only as a LightSampler, so d2maprenderer imports no world code.
 	game.mapRenderer.SetLightSampler(game.light)
@@ -510,6 +523,10 @@ func (v *Game) releaseWorld() {
 
 	if v.seek != nil {
 		v.seek.Close()
+	}
+
+	if v.households != nil {
+		v.households.Close()
 	}
 }
 
@@ -702,6 +719,10 @@ type Game struct {
 	// seek is who the night's hunters choose among the living (the raid's
 	// R2): the nearest quarry a beast or a man can see, not always him.
 	seek *d2world.Seek
+
+	// households is the village's houses (the raid's R3a): each household's
+	// door, roles, speakers and stock, the hotar and the watch posts.
+	households *d2world.Households
 
 	// wasFighting and activityBeforeFight are how "fighting is labour" is
 	// applied and then taken back. S1 §5's Food row signs the DRAIN --

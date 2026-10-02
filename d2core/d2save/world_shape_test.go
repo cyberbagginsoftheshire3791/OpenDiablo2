@@ -72,6 +72,10 @@ var b3ShapeHashes = map[int]string{
 	// pursuit.chases[].from_watch (omitempty), over version 4 as master left
 	// it (d65e3a1c).
 	5: "747411fc84bff7e1d58678467960787ce97ed24db727641876df8148e960e197",
+	// The raid's R3a (2 Oct 2026): the households block -- households.houses[]
+	// .id, .incense, .stakes (every house's stock) -- over version 5 as master
+	// left it (05ba3666).
+	6: "f0d14a614e2b85547208b4a955b66bc92b421909303d37627d85f57e4d7783b4",
 }
 
 var b3UpdateGolden = flag.Bool("update-golden", false, "write testdata/world-v<Version>.json from the fixture and print the shape hash")

@@ -273,6 +273,15 @@ func emptyRows() []sweepRow {
 		// OR that, bit for bit. Both are read two frames after their loads.
 		{block: "fog", name: "fill fog (a corner block and a scatter)", edit: fillFog, twin: zeroFog,
 			want: wantDiverge, moves: []string{"system fog"}, check: fogGridIsTheFiles},
+		// The raid's R3a (version 6): every house's stock taken to none. The
+		// village's houses are the map's; their stock is the file's alone, and
+		// the households provider reports it.
+		{block: "households", name: "empty households (every house's stock 0)", edit: func(t *testing.T, f map[string]any) {
+			for _, raw := range asList(blockOf(t, f, "households")["houses"]) {
+				h, _ := raw.(map[string]any)
+				h["incense"], h["stakes"] = json.Number("0"), json.Number("0")
+			}
+		}, want: wantDiverge, moves: []string{"system households"}},
 	}
 }
 
@@ -355,6 +364,12 @@ func perturbRows() []sweepRow {
 				c["from_watch"] = true
 			}
 		}, want: wantDiverge, moves: []string{"system pursuit"}},
+		// The raid's R3a: one house's stock moved, the others as T had them.
+		{block: "households", name: "perturb households: the last house's incense 1, stakes 5", edit: func(t *testing.T, f map[string]any) {
+			houses := asList(blockOf(t, f, "households")["houses"])
+			h, _ := houses[len(houses)-1].(map[string]any)
+			h["incense"], h["stakes"] = json.Number("1"), json.Number("5")
+		}, want: wantDiverge, moves: []string{"system households"}},
 		{block: "sidecar", name: "perturb sidecar.journal: two entries' order swapped", edit: func(t *testing.T, f map[string]any) {
 			w := blockOf(t, blockOf(t, blockOf(t, f, "sidecar"), "journal"), "written")
 			w["b1_taken"], w["b2_corps"] = w["b2_corps"], w["b1_taken"]

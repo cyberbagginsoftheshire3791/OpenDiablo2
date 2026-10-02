@@ -184,6 +184,82 @@ func TestTheLoaderAndTheValidatorAgree(t *testing.T) {
 		{"a tile object that is not a structure", func(m tmj, _ art) { m.object(3)["gid"] = 1 }, RuleFootprint},
 		{"a tile object with a class the game does not read", func(m tmj, _ art) { m.object(3)["type"] = "house" }, RuleObjectClass},
 		{"a structure whose tile is in no tileset", func(m tmj, _ art) { m.object(3)["gid"] = 99 }, RuleUnknownTile},
+
+		// ---- the village's objects (the raid's R3a; d2maptiled/households.go) ----
+		{"a household with no name", func(m tmj, _ art) { withVillage(m); m.object(9)["name"] = "" }, RuleHousehold},
+		{"a household member who is no role", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["properties"].([]any)[0] = tmj{"name": "members", "type": "string", "value": "man,dog"}
+		}, RuleHousehold},
+		{"a household with an unknown property", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["properties"] = append(m.object(9)["properties"].([]any), tmj{"name": "garlic", "type": "int", "value": 1})
+		}, RuleHousehold},
+		{"household incense past the stock", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["properties"].([]any)[1] = tmj{"name": "incense", "type": "int", "value": 100}
+		}, RuleHousehold},
+		{"a household on a blocked tile", func(m tmj, _ art) { withVillage(m); m.setTile(LayerWalls, 1, 3, 2) }, RuleStandable},
+		{"a household door beside no building", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["x"] = 0.5 * tileH
+		}, RuleHousehold},
+		{"a household door beside a fence", func(m tmj, _ art) {
+			// The fixture's wall is blocked and seen through: a fence.
+			withVillage(m)
+			m.setTile(LayerWalls, 0, 2, 2)
+			m.object(9)["x"] = 0.5 * tileH
+		}, RuleHousehold},
+		{"two households of one building", func(m tmj, _ art) {
+			withVillage(m)
+			m.addObject(tmj{"id": 12, "name": "another", "type": ClassHousehold, "x": 2.5 * tileH, "y": 1.5 * tileH,
+				"width": 0, "height": 0, "rotation": 0, "visible": true, "point": true})
+			m["nextobjectid"] = 13
+		}, RuleHousehold},
+		{"two households on one door tile", func(m tmj, _ art) {
+			withVillage(m)
+			m.addObject(tmj{"id": 12, "name": "another", "type": ClassHousehold, "x": 1.5 * tileH, "y": 3.5 * tileH,
+				"width": 0, "height": 0, "rotation": 0, "visible": true, "point": true})
+			m["nextobjectid"] = 13
+		}, RuleHousehold},
+		{"two churches", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["properties"].([]any)[3] = tmj{"name": "church", "type": "bool", "value": true}
+			m.addObject(tmj{"id": 12, "name": "another", "type": ClassHousehold, "x": 2.5 * tileH, "y": 1.5 * tileH,
+				"width": 0, "height": 0, "rotation": 0, "visible": true, "point": true,
+				"properties": []any{tmj{"name": "church", "type": "bool", "value": true}}})
+			m["nextobjectid"] = 13
+		}, RuleHousehold},
+		{"a hotar inside the village", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(10)["x"], m.object(10)["y"] = 1.5*tileH, 1.5*tileH
+		}, RuleHotar},
+		{"two hotars", func(m tmj, _ art) {
+			withVillage(m)
+			m.addObject(tmj{"id": 12, "name": "another", "type": ClassHotar, "x": 3.5 * tileH, "y": 0.5 * tileH,
+				"width": 0, "height": 0, "rotation": 0, "visible": true, "point": true})
+			m["nextobjectid"] = 13
+		}, RuleHotar},
+		{"a hotar with a property", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(10)["properties"] = []any{tmj{"name": "post", "type": "string", "value": "gate"}}
+		}, RuleObjectProps},
+		{"a watch post of another post", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(11)["properties"] = []any{tmj{"name": "post", "type": "string", "value": "tower"}}
+		}, RuleWatchPost},
+		{"a watch post with an unknown property", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(11)["properties"] = append(m.object(11)["properties"].([]any), tmj{"name": "men", "type": "int", "value": 2})
+		}, RuleWatchPost},
+		{"an npc of a household the map does not have", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(4)["properties"].([]any)[1] = tmj{"name": "household", "type": "string", "value": "the mill"}
+		}, RuleNPC},
+		{"an npc whose household is a number", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(4)["properties"].([]any)[1] = tmj{"name": "household", "type": "int", "value": 1}
+		}, RuleNPC},
 	}
 
 	// THE BASELINE. If the fixture itself were refused, every case below would
@@ -334,6 +410,25 @@ var refusals = map[string]string{
 	"two player_starts":                                 "holds 2 player_start objects",
 	"two structures on one tile":                        "overlaps another structure",
 	"wall art too tall":                                 "wall art is 160x513",
+
+	// The raid's R3a (d2maptiled/households.go), measured 2 Oct 2026.
+	"a household with no name":                    "household (object 9) has no name",
+	"a household member who is no role":           "members names \"dog\", which is not a role",
+	"a household with an unknown property":        "unknown property \"garlic\"; a household takes",
+	"household incense past the stock":            "incense must be an int from 0 to 99",
+	"a household on a blocked tile":               "household home (object 9) stands on tile 1,3",
+	"a household door beside no building":         "its door tile 0,3 is beside no building",
+	"a household door beside a fence":             "its door tile 0,3 is beside no building",
+	"two households of one building":              "household \"another\" (object 12) keeps the building household \"home\" keeps",
+	"two households on one door tile":             "household \"another\" (object 12) stands on household \"home\"'s door tile 1,3",
+	"two churches":                                "is a second church; household \"home\" is the church",
+	"a hotar inside the village":                  "hotar (object 10) at tile 1,1 is inside the village",
+	"two hotars":                                  "hotar (object 12) is a second hotar",
+	"a hotar with a property":                     "hotar (object 10) takes no properties",
+	"a watch post of another post":                "watch_post (object 11) has post \"tower\"",
+	"a watch post with an unknown property":       "unknown property \"men\"; a watch_post takes \"post\"",
+	"an npc of a household the map does not have": "npc warriv1 (object 4) names household \"the mill\"",
+	"an npc whose household is a number":          "npc (object 4): household must be a string",
 }
 
 // The shipped village must validate CLEAN, or "place a house" starts from a red
@@ -792,5 +887,84 @@ func TestTheEditorKeepsHeightAndSight(t *testing.T) {
 
 	if r := v.TowerSightAt(25, 34); r != 16 {
 		t.Errorf("the gate's tower (25,34) sees %d; want 16", r)
+	}
+}
+
+// withVillage gives the fixture one of each of the village's objects (the
+// raid's R3a): household "home" at its house's door (1,3, beside the house's
+// footprint at 2,3), a hotar at 3,1 outside the yard, a gate post at 0,3, and
+// the npc a member of "home". The map is one the game takes
+// (TestTheVillagesObjectsValidateClean).
+func withVillage(m tmj) {
+	point := func(id int, class, name string, x, y float64, props ...tmj) tmj {
+		o := tmj{"id": id, "name": name, "type": class, "x": x * tileH, "y": y * tileH,
+			"width": 0, "height": 0, "rotation": 0, "visible": true, "point": true}
+		if len(props) > 0 {
+			list := make([]any, len(props))
+			for i, p := range props {
+				list[i] = p
+			}
+
+			o["properties"] = list
+		}
+
+		return o
+	}
+
+	m.addObject(point(9, ClassHousehold, "home", 1.5, 3.5,
+		tmj{"name": "members", "type": "string", "value": "man,woman,child"},
+		tmj{"name": "incense", "type": "int", "value": 3},
+		tmj{"name": "stakes", "type": "int", "value": 2},
+		tmj{"name": "church", "type": "bool", "value": false}))
+	m.addObject(point(10, ClassHotar, "the boundary", 3.5, 1.5))
+	m.addObject(point(11, ClassWatchPost, "the gate", 0.5, 3.5, tmj{"name": "post", "type": "string", "value": "gate"}))
+	m["nextobjectid"] = 12
+
+	npc := m.object(4)
+	npc["properties"] = append(npc["properties"].([]any), tmj{"name": "household", "type": "string", "value": "home"})
+}
+
+// TestTheVillagesObjectsValidateClean: the fixture with one of each of the
+// village's objects is a map the loader takes and the validator does not
+// complain about, the editor reads what the loader reads, and it round-trips
+// byte for byte -- the baseline every village case above breaks one thing of.
+func TestTheVillagesObjectsValidateClean(t *testing.T) {
+	t.Parallel()
+
+	m, files := fixture(t)
+	withVillage(m)
+	data := m.bytes(t)
+
+	parsed, err := d2maptiled.Parse(data, "", files.loader())
+	if err != nil {
+		t.Fatalf("the loader refuses the village fixture: %v", err)
+	}
+
+	d, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if problems := d.Validate(files.size()); len(problems) > 0 {
+		t.Fatalf("the validator complains about the village fixture: %v", problems)
+	}
+
+	h, _ := d.Object(9)
+	if len(parsed.Households) != 1 || h.Class != ClassHousehold || h.Incense != parsed.Households[0].Incense ||
+		h.Stakes != parsed.Households[0].Stakes || strings.Join(h.Members, ",") != strings.Join(parsed.Households[0].Members, ",") {
+		t.Errorf("editor %+v, loader %+v", h, parsed.Households)
+	}
+
+	if p, _ := d.Object(11); p.Post != d2maptiled.PostGate || len(parsed.Posts) != 1 || parsed.Posts[0].Post != d2maptiled.PostGate {
+		t.Errorf("the post: editor %q, loader %+v", p.Post, parsed.Posts)
+	}
+
+	if n, _ := d.Object(4); n.Household != "home" || parsed.NPCs[0].Household != "home" {
+		t.Errorf("the npc's household: editor %q, loader %q", n.Household, parsed.NPCs[0].Household)
+	}
+
+	out, err := d.Bytes()
+	if err != nil || string(out) != string(data) {
+		t.Fatalf("an untouched village fixture does not round-trip (err %v)", err)
 	}
 }

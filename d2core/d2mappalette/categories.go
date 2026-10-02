@@ -150,14 +150,18 @@ const (
 	// startChasesForTheAware (game.go:1283) only walks pairs the notice model
 	// already holds.
 	WhyNoCreatures = "A map cannot place a creature: the loader's object switch takes only " +
-		"player_start, npc and inside, and refuses anything else (d2maptiled/tiled.go:963). " +
+		"player_start, npc, inside and the village's household, hotar and watch_post, and refuses anything " +
+		"else (d2maptiled/tiled.go's objectLayer). " +
 		"The deeper reason is that gameSpawner.Spawn is the only place in a shipped build that " +
 		"wraps a creature in the chaser adapter (d2gamescreen/game.go:1740) for the spawn tables " +
 		"to register with the awareness model (d2world/spawns.go:899) -- the other two chaser " +
 		"constructions are reached only from //go:build harness code -- so an authored creature " +
 		"would stand inert for ever, noticing nothing and chasing nobody."
 
-	// WhyNoPeople is the People tab's reason.
+	// WhyNoPeople is the People tab's reason. (The raid's R3a, 2 Oct 2026: an
+	// npc also takes an optional "household", and the map reads household,
+	// hotar and watch_post objects -- d2maptiled/households.go; the tab that
+	// places them is R3c's.)
 	//
 	// An npc object takes ONE property and it is a string: npcMonstat
 	// (tiled.go:1079-1098) refuses any other name and refuses a non-string. The
@@ -170,8 +174,9 @@ const (
 	// (d2core/d2dialogue/dialogue.go:13-16). Placing a new person is therefore
 	// not a map edit: it needs a stand-in sprite chosen, a monstats row that
 	// exists, and a role and lines in data/strigoi/dialogue.json.
-	WhyNoPeople = "An npc object accepts exactly one property, the string \"monstat\" " +
-		"(d2maptiled/tiled.go:1079-1098), which names a monstats.txt row. The four speakers in the " +
+	WhyNoPeople = "An npc object accepts the string \"monstat\" (d2maptiled/tiled.go's npcProperties), which " +
+		"names a monstats.txt row, and since the raid's R3a an optional \"household\"; the village's " +
+		"household, hotar and watch_post objects are placed by the People tab in R3c, not yet. The four speakers in the " +
 		"village are Diablo II stand-ins -- warriv1, kashya, charsi, akara -- because S1 section 8.1 " +
 		"keeps every villager's name a placeholder by standing decision, so the speakers are ROLES " +
 		"each drawn by a stand-in sprite (d2core/d2dialogue/dialogue.go:13-16). Adding a person " +

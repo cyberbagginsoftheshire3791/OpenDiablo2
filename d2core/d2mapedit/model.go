@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	"math"
-	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maptiled"
 )
@@ -152,6 +151,15 @@ type Object struct {
 	W, H float64
 	// Monstat is an npc's monstats record (tiled.go:1079-1098).
 	Monstat string
+	// Household is the household an npc names, "" for none (the raid's R3a;
+	// d2maptiled's NPC.Household).
+	Household string
+	// Members, Incense, Stakes and Church are a household's properties, and
+	// Post a watch post's (the raid's R3a; d2maptiled/households.go).
+	Members         []string
+	Incense, Stakes int
+	Church          bool
+	Post            string
 	// Footprint is a structure's footprint in whole tiles, Max exclusive,
 	// laid back from its bottom corner (tiled.go:1013-1014).
 	Footprint image.Rectangle
@@ -162,7 +170,10 @@ type Object struct {
 	Point    bool
 
 	monstatErr error
-	props      []any
+	// propErr is what the loader would say about a household's or a watch
+	// post's properties, or nil (the raid's R3a).
+	propErr error
+	props   []any
 }
 
 // IsStructure reports whether the object is a tile object, which is the only
@@ -525,7 +536,11 @@ func (m *model) deriveObjects(tree *jsonObject) {
 				obj.Footprint = footprintAt(k.Footprint, obj.X, obj.Y)
 			}
 		case obj.Class == ClassNPC:
-			obj.Monstat, obj.monstatErr = npcMonstat(obj.props)
+			obj.Monstat, obj.Household, obj.monstatErr = npcProperties(obj.props)
+		case obj.Class == ClassHousehold:
+			obj.propErr = householdProperties(&obj)
+		case obj.Class == ClassWatchPost:
+			obj.Post, obj.propErr = postProperty(obj.props)
 		case obj.Class == ClassInside:
 			obj.Rect = insideRect(obj.X, obj.Y, obj.W, obj.H)
 		}
@@ -567,39 +582,6 @@ func insideRect(x, y, w, h float64) image.Rectangle {
 		int(math.Floor(x)), int(math.Floor(y)),
 		int(math.Ceil(x+w)), int(math.Ceil(y+h)),
 	)
-}
-
-// npcMonstat is the loader's own npcMonstat (tiled.go:1079-1098).
-func npcMonstat(props []any) (string, error) {
-	monstat := ""
-
-	for _, raw := range props {
-		p, ok := asObject(raw)
-		if !ok {
-			return "", errors.New("a property is not a JSON object")
-		}
-
-		name := fieldString(p, "name")
-		if name != "monstat" {
-			return "", fmt.Errorf("unknown property %q; an npc takes \"monstat\"", name)
-		}
-
-		value, _ := p.Get("value")
-
-		s, isString := asString(value)
-		if fieldString(p, "type") != "string" || !isString {
-			return "", errors.New("monstat must be a string")
-		}
-
-		monstat = s
-	}
-
-	monstat = strings.TrimSpace(monstat)
-	if monstat == "" {
-		return "", errors.New("no monstat property naming who stands here")
-	}
-
-	return monstat, nil
 }
 
 func (m *model) deriveProperties(tree *jsonObject) {
