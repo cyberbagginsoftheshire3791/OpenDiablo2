@@ -29,6 +29,24 @@ type Pursuit struct {
 	// script can assert that a chase re-pathed rather than merely arrived --
 	// re-pathing is the behaviour, arriving is only its consequence.
 	solves int
+
+	// rechases counts the solves Chase made replacing a chase on ANOTHER
+	// quarry (the raid R2 review's B2): the cost of a retarget, which Seek
+	// does not pay itself -- the game restarts the chase on the moved watch
+	// in the same frame, and Chase solves at once. Included in solves.
+	rechases int
+
+	// rechasedThisFrame counts the rechases since the last Advance, against
+	// RechasesPerFrame (the R2 review B's B2). Advance zeroes it before the
+	// frame's chases are started again (Game.advanceWorld steps Pursuit
+	// before startChasesForTheAware), so its value between two frames is
+	// never read: not saved.
+	rechasedThisFrame int
+
+	// rechasesDeferred counts the Rechase calls the budget turned away (each
+	// asked again the next frame). Reported for the benchmark and the tests;
+	// not in the provider, so not saved.
+	rechasesDeferred int
 }
 
 // PursuitDials are the numbers M4.3a ships with. Every one is a [DIAL].
@@ -73,6 +91,15 @@ type PursuitDials struct {
 	// what stops one that has genuinely run out of options from asking
 	// forever.
 	ProgressTiles float64
+
+	// RechasesPerFrame caps the chases Rechase restarts on ANOTHER quarry
+	// between two Advances (the R2 review B's B2): each costs an A* at once (mean
+	// 1.5-3.0 ms on the village, worst 13-42 ms), and a long step -- a
+	// sleep's or a labour's hour -- lets every Seek row look in ONE frame,
+	// so a pack could retarget whole in it. Past the cap a chase keeps its
+	// old quarry for now; the next frame's startChasesForTheAware asks again,
+	// so the rest follow one a frame. A first chase is never capped. 1.
+	RechasesPerFrame int
 }
 
 // DefaultPursuitDials are the signed §4 starting values.
@@ -82,6 +109,7 @@ func DefaultPursuitDials() PursuitDials {
 		ArriveWithin:     1.5,
 		MinRepathMinutes: 2.0,
 		ProgressTiles:    0.5,
+		RechasesPerFrame: 1,
 	}
 }
 
@@ -126,6 +154,24 @@ type chase struct {
 	reachable  bool
 	solves     int
 	arrived    bool
+
+	// fromWatch marks a chase the world started or moved from a watch's
+	// awareness (Rechase, Game.startChasesForTheAware), as against a script's
+	// strigoi_pursue (Chase alone). GiveUpOnTheForgotten reads it
+	// (integrate-1oct): R2's Seek moves a WATCH onto another quarry and the
+	// chase follows only under the re-chase budget, so a world chase can stand
+	// on the quarry its watch has just left -- and if the watch then forgets,
+	// that chase must end too, or BUG-108 is back (him "chased" for good, and
+	// the save refused COMBAT). Not in the world file: a chase the load puts
+	// back is read false, as the combat status read every chase, and the
+	// world sets it again on the next frame its hunter's watch is aware of
+	// another quarry (Rechase). A false on load keeps a script's chase of
+	// another quarry standing after a resume exactly as before it
+	// (d2gamescreen TestAHuntedNightResumes holds one); a true would release
+	// it in the resumed run only. Read differently: only a world chase saved
+	// in the frames its re-chase was deferred whose watch then forgets
+	// before it is moved -- it stands after the resume, as before this fix.
+	fromWatch bool
 }
 
 // NewPursuit builds the system and registers it as a harness provider.
@@ -155,9 +201,39 @@ func (p *Pursuit) Chase(hunter Hunter, quarry Quarry) {
 		return
 	}
 
+	if old, ok := p.chases[hunter.HunterID()]; ok && old.quarry != nil && old.quarry.QuarryID() != quarry.QuarryID() {
+		p.rechasedThisFrame++
+		p.rechases++
+	}
+
 	c := &chase{hunter: hunter, quarry: quarry}
 	p.chases[hunter.HunterID()] = c
 	p.solve(c)
+}
+
+// Rechase is Chase under the frame's re-chase budget (RechasesPerFrame; the
+// R2 review B's B2): the game's way to move a chase onto the quarry Seek moved
+// its watch to (Game.startChasesForTheAware). A chase on another quarry is
+// restarted only while the budget since the last Advance lasts; past it the
+// chase keeps its old quarry and Rechase reports false -- the next frame asks
+// again. Anything else (no chase yet, or one on this quarry) is Chase. A
+// script's strigoi_pursue is Chase, never capped.
+func (p *Pursuit) Rechase(hunter Hunter, quarry Quarry) bool {
+	if hunter == nil || quarry == nil {
+		return false
+	}
+
+	if old, ok := p.chases[hunter.HunterID()]; ok && old.quarry != nil && old.quarry.QuarryID() != quarry.QuarryID() &&
+		p.dials.RechasesPerFrame > 0 && p.rechasedThisFrame >= p.dials.RechasesPerFrame {
+		p.rechasesDeferred++
+
+		return false
+	}
+
+	p.Chase(hunter, quarry)
+	p.chases[hunter.HunterID()].fromWatch = true
+
+	return true
 }
 
 // Release ends a chase. A provider that reports a collection needs a verb
@@ -182,6 +258,19 @@ func (p *Pursuit) Chasing(hunterID string) bool {
 	_, ok := p.chases[hunterID]
 
 	return ok
+}
+
+// ChasingWhom is the quarry a hunter's chase is on, and whether it has one
+// (the raid's R2). The caller that turns awareness into pursuit asks it every
+// tick: a watch Seek moved onto a nearer villager must move the chase too, or
+// the wolf would keep walking at the man it no longer wants.
+func (p *Pursuit) ChasingWhom(hunterID string) (string, bool) {
+	c, ok := p.chases[hunterID]
+	if !ok || c.quarry == nil {
+		return "", ok
+	}
+
+	return c.quarry.QuarryID(), true
 }
 
 // Count is how many chases are live.
@@ -219,9 +308,17 @@ func (p *Pursuit) ChasersOf(quarryID string) []string {
 // losing sight", and the watch's minutes unseen stop counting once it
 // forgets, so a longer give-up would need a second clock in the world file
 // for no designed difference. A chase with no watch behind it (the harness's
-// strigoi_pursue), or a watch of another quarry, is left alone. A hunter that
-// sees its quarry again notices it again, and the next frame's
-// startChasesForTheAware chases again.
+// strigoi_pursue), or a script's chase of another quarry than its watch's, is
+// left alone. A hunter that sees its quarry again notices it again, and the
+// next frame's startChasesForTheAware chases again.
+//
+// With the raid's R2 (integrate-1oct): a WORLD chase (fromWatch: started or
+// moved by Rechase) ends when its hunter's watch forgets, whatever quarry the
+// watch is on now. Seek can move the watch from him to a villager while the
+// re-chase budget (RechasesPerFrame) keeps the chase on him for a frame or
+// more; a watch that then forgets the villager is behind no chase of anyone,
+// and the chase of him it left must end with it. A world chase whose watch is
+// still aware of another quarry stands: startChasesForTheAware moves it.
 func (p *Pursuit) GiveUpOnTheForgotten(n *Notice) []string {
 	if n == nil {
 		return nil
@@ -235,7 +332,7 @@ func (p *Pursuit) GiveUpOnTheForgotten(n *Notice) []string {
 			continue
 		}
 
-		if w.target.QuarryID() != p.chases[id].quarry.QuarryID() {
+		if c := p.chases[id]; !c.fromWatch && w.target.QuarryID() != c.quarry.QuarryID() {
 			continue
 		}
 
@@ -252,6 +349,8 @@ func (p *Pursuit) Solves() int { return p.solves }
 
 // Advance steps every live chase by the world minutes that just passed.
 func (p *Pursuit) Advance(worldMinutes float64) {
+	p.rechasedThisFrame = 0
+
 	if worldMinutes <= 0 || len(p.chases) == 0 {
 		return
 	}
@@ -395,10 +494,12 @@ func (p *Pursuit) HarnessState() map[string]interface{} {
 	return map[string]interface{}{
 		"chases":             len(p.chases),
 		"solves":             p.solves,
+		"rechase_solves":     p.rechases,
 		"chase_list":         list,
 		"repath_tiles":       p.dials.RepathTiles,
 		"arrive_within":      p.dials.ArriveWithin,
 		"min_repath_minutes": p.dials.MinRepathMinutes,
+		"rechases_per_frame": p.dials.RechasesPerFrame,
 	}
 }
 

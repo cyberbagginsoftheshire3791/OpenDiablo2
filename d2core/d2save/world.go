@@ -87,7 +87,19 @@ import (
 // has made -- set aside, never read with a field at zero and never lost, but
 // his to know before it ships. The golden file and its shape hash stood
 // through the merge (B5 changed no shape).
-const Version = 2
+//
+// VERSION 3 (the raid's R2, 29 Sep 2026, and its review fixes, 1 Oct 2026).
+// Josh's ruling of 30 Sep: every shape change bumps Version from here on --
+// saving is a player's since B5, so a file of his is in play.
+// Version 3 adds notice.watches[].side (a watch is hostile or living), a new
+// top-level block, seek (who the night's hunters choose among the living:
+// its rows with their dwell, its stand-ins, phases and four totals), and
+// pursuit.rechase_solves (a retarget's solve, counted). A version-2 file is
+// refused on its version (ErrWorldVersion) and set aside as .v2.unread, never
+// read and never lost; he begins at dawn with his hero, kit and progress (the
+// sidecar), as at every refused load. Version 2's golden file and hash stay
+// as the build that wrote them left them (the R2 review's C4).
+const Version = 3
 
 // ErrWorldVersion is what a file of any version but Version is refused with.
 // The error is a *VersionError naming the version the file holds. Its message
@@ -214,7 +226,7 @@ const (
 var Blocks = []string{
 	"version", "build", "saved_at",
 	"map", "seed", "rng", "hero", "sidecar",
-	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit",
+	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit", "seek",
 	"corpses", "rising", "combat", "bodies", "entities", "scene",
 }
 
@@ -250,7 +262,9 @@ type World struct {
 	// over whatever the sidecar file holds.
 	Sidecar json.RawMessage `json:"sidecar"`
 
-	// The world systems, each its B2 snapshot.
+	// The world systems, each its B2 snapshot. Seek is the raid's R2 (who
+	// the night's hunters choose among the living), new in version 3 (see
+	// Version).
 	Clock   d2world.ClockSnapshot   `json:"clock"`
 	Light   d2world.LightSnapshot   `json:"light"`
 	Squads  d2world.SquadsSnapshot  `json:"squads"`
@@ -258,6 +272,7 @@ type World struct {
 	Spawner Spawner                 `json:"spawner"`
 	Notice  d2world.NoticeSnapshot  `json:"notice"`
 	Pursuit d2world.PursuitSnapshot `json:"pursuit"`
+	Seek    d2world.SeekSnapshot    `json:"seek"`
 	Corpses d2world.CorpsesSnapshot `json:"corpses"`
 	Rising  d2world.RisingSnapshot  `json:"rising"`
 	Combat  d2world.CombatSnapshot  `json:"combat"`

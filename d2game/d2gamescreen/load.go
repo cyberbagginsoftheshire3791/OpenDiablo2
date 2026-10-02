@@ -690,6 +690,8 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 		{"spawner", v.spawner.validate(SpawnerSnapshot{Arrival: w.Spawner.Arrival})},
 		{"notice", v.notice.Validate(w.Notice, r)},
 		{"pursuit", v.pursuit.Validate(w.Pursuit, r)},
+		// The raid's R2: Seek's rows and stand-ins, which resolve nothing.
+		{"seek", v.seek.Validate(w.Seek)},
 		{"combat", v.combat.Validate(w.Combat, seed)},
 		// BUG-73: each live clock fight held against the FILE's watches and
 		// chases. Only the file holds both halves here: the combat model's
@@ -1245,6 +1247,14 @@ func (v *Game) resumeLoad(w *d2save.World) error {
 	}
 
 	v.loadStep("pursuit")
+
+	// The raid's R2: who the hunters choose among the living -- after the
+	// watches it reads, before combat (its rows resolve nothing).
+	if err := v.seek.Restore(w.Seek); err != nil {
+		return refuseLoad(LoadRefusedBlock, "seek: %v", err)
+	}
+
+	v.loadStep("seek")
 
 	if err := v.combat.Restore(w.Combat, seed); err != nil {
 		return refuseLoad(LoadRefusedBlock, "combat: %v", err)

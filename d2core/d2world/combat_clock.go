@@ -307,6 +307,51 @@ func (c *Combat) fightingElsewhere() map[string]bool {
 	return out
 }
 
+// engaged reports that id is a living enemy of a live fight -- his, or one he
+// is not in -- that has not left it (dead, routed or broken off): the raid's
+// R2, "a fighter keeps its target". Seek asks it between frames and never
+// retargets such a watcher, so a monster at his throat stays at his throat
+// (J-R1-3, default (a)) and a monster killing a villager finishes the job.
+// A nil model has no fights.
+func (c *Combat) engaged(id string) bool {
+	if c == nil {
+		return false
+	}
+
+	in := func(e *encounter) bool {
+		if e == nil || e.gone(id) {
+			return false
+		}
+
+		for _, en := range e.enemies {
+			if en != nil && en.WatcherID() == id {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	// His fight, mid clock step, is in the book -- read without counting,
+	// as fightingElsewhere reads it: Seek is no callback of a clock step.
+	his := c.encounter
+	if b := c.clockBook; b != nil && b.stepping {
+		his = b.encounter
+	}
+
+	if in(his) {
+		return true
+	}
+
+	for _, e := range c.clockFights {
+		if in(e) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // awareOfAnother reports a watcher whose noticed watch names someone other
 // than q: a clock fight's enemy whose watch has moved on (pruneOrEnd).
 func (c *Combat) awareOfAnother(id string, q Quarry) bool {

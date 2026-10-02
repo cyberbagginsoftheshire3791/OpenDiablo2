@@ -160,8 +160,14 @@ var Register = []Entry{
 		"Re-paths live chases as the quarry moves.", ""},
 	{sym(pkgWorld, "Pursuit.Chase"), BucketWire, VerdictLive,
 		"Starts a chase. Reached from startChasesForTheAware, in ordinary game code -- this is half of the seam M4.3b was reopened over.", ""},
-	{sym(pkgWorld, "Pursuit.Chasing"), BucketWire, VerdictLive,
-		"Stops a chase being restarted every tick, which would reset the re-path clock and reproduce M4.3a's 218-solve bug.", ""},
+	// WHAT THIS ROW SAID BEFORE, recorded per docs/reachability.md: wire /
+	// live, "Stops a chase being restarted every tick, which would reset the
+	// re-path clock and reproduce M4.3a's 218-solve bug." The raid's R2
+	// build's reach gate (29 Sep 2026) measured it dead: R2 replaced its one
+	// game caller, startChasesForTheAware, with Pursuit.ChasingWhom (which
+	// now carries that guard), and nothing else calls it.
+	{sym(pkgWorld, "Pursuit.Chasing"), BucketDelete, VerdictDead,
+		"A seam nobody takes any more: the raid's R2 moved its one game caller (Game.startChasesForTheAware) to Pursuit.ChasingWhom, which keeps the not-restarted-every-tick guard (M4.3a's 218 solves) and adds the chase following the watch. Only d2world's unit tests call it; remove it with them.", ""},
 	{sym(pkgWorld, "Notice.Watch"), BucketWire, VerdictLive,
 		"The spawn tables call this for every arriving member, so a new wolf can see you.", ""},
 	{sym(pkgWorld, "Notice.AwarePairs"), BucketWire, VerdictLive,
@@ -334,7 +340,7 @@ var Register = []Entry{
 	{sym(pkgItems, "Kit.Eat"), BucketWire, VerdictLive,
 		"T6: a click on a pack row he eats (peksimet) in the kit panel -- Game.eatFromPack.", ""},
 	{sym(pkgWorld, "Notice.SetHidden"), BucketWire, VerdictLive,
-		"T6: asleep inside the palisade, nothing new sees him while memory fades on its own clock -- Game.applyTalk.", ""},
+		"T6: asleep inside the palisade, nothing new sees him while memory fades on its own clock -- Game.applyTalk. Since the raid's R2 it hides him alone (the player bound by Notice.SetPlayer), not the village.", ""},
 	{sym(pkgScreen, "Game.Forage"), BucketWire, VerdictLive,
 		"T7: K gathers branches for half an hour from a stock the land does not renew -- and sets the forage stance for those minutes, so D8 section 9's caught-head-down branch is reachable in a shipped build at last.", ""},
 	{sym(pkgScreen, "Game.keepWatch"), BucketWire, VerdictLive,
@@ -408,6 +414,37 @@ var Register = []Entry{
 		"The raid's S0-1 (a): CreateGame attaches Game.protectedQuarry, so no fight opens on the four speakers (1-HP stand-ins with no death to show) until their death art lands. Nil is legal -- nobody protected -- so losing this line is silent everywhere but TestAFightHeIsNotIn's speakers act.", ""},
 	{sym("d2common/d2rand", "Rederive"), BucketWire, VerdictLive,
 		"The raid's R1: NewCombat seeds the clock fights' combat-clock stream from the one StreamCombat seed it is handed (newFightBook), so its ten construction sites take no new argument.", ""},
+
+	// The raid's R2 (the village at night, 29 Sep 2026): notice sides, Seek
+	// (beasts and men) and his hiding (d2world/seek.go).
+	{sym(pkgWorld, "NewSeek"), BucketWire, VerdictLive,
+		"The raid's R2: CreateGame builds Seek, who the night's hunters choose among the living, and registers the seek provider.", ""},
+	{sym(pkgWorld, "Seek.Advance"), BucketWire, VerdictLive,
+		"The raid's R2: Game.advanceWorld steps Seek every frame after the tables (and the notice model they step) and the rising, before the chases -- a hostile watcher takes the nearest living it can see, on its stagger phase. If this goes dark every hostile watches him alone again, as before R2, and TestTheNearestLiving is the instrument.", ""},
+	{sym(pkgWorld, "Seek.SetQuarries"), BucketWire, VerdictLive,
+		"The raid's R2: CreateGame attaches Game.seekQuarries -- him, the deployed squad models, the map's villagers (the speakers, protected under S0-1 (a)). Nil names nobody but each watch's own target and the stand-ins, so losing it is silent everywhere but TestTheNearestLiving's act 4 control.", ""},
+	{sym(pkgWorld, "Seek.SetResolver"), BucketWire, VerdictLive,
+		"The raid's R2: CreateGame attaches worldResolver, through which Seek finds a stand-in by id and writes him as player in its rows.", ""},
+	{sym(pkgWorld, "Seek.Restore"), BucketWire, VerdictLive,
+		"The raid's R2: the load's step 5 restores the seek block after the notice and pursuit blocks (Game.resumeLoad).", ""},
+	{sym(pkgWorld, "Seek.Validate"), BucketWire, VerdictLive,
+		"The raid's R2: the load's step 4 checks the seek block (Game.checkLoad).", ""},
+	{sym(pkgWorld, "Seek.Snapshot"), BucketWire, VerdictLive,
+		"The raid's R2: Game.SaveWorld takes the seek block (worldFile), and since M4.6 B5 the game saves: the menu, the close hook and the dawn autosave (Game.SaveWorldAs). Deferred to M4.6 B5 on its branch; re-bucketed at the raid-r2 x master merge (1 Oct 2026, the R2 review's C5).", ""},
+	{sym(pkgWorld, "Seek.CheckSnapshot"), BucketWire, VerdictLive,
+		"The raid's R2: Game.SaveWorld holds the seek block it took to the load's own checks (validateSnapshots), and since M4.6 B5 the game saves (Game.SaveWorldAs). Deferred to M4.6 B5 on its branch; re-bucketed at the raid-r2 x master merge (1 Oct 2026, the R2 review's C5).", ""},
+	{sym(pkgWorld, "Notice.SetPlayer"), BucketWire, VerdictLive,
+		"The raid's R2: Game.advanceWorld (and Game.applyTalk, before a sleep) binds his id, so his sleep (Notice.SetHidden) hides him alone and the night goes on seeing the village. If this goes dark SetHidden hides every quarry again (T6's first rule), and TestHisSleepHidesOnlyHim is the instrument.", ""},
+	{sym(pkgWorld, "Notice.Retarget"), BucketWire, VerdictLive,
+		"The raid's R2: Seek.look moves a hostile's watch onto the nearest living it can see, keeping the watch's counters.", ""},
+	{sym(pkgWorld, "Notice.WatchAs"), BucketWire, VerdictLive,
+		"The raid's R2: a watch on a side. Notice.Watch (the tables' and the rising's hostile watches) calls it; the living side is the harness's until the watch posts (R6).", ""},
+	{sym(pkgWorld, "Notice.AwarePairsOf"), BucketWire, VerdictLive,
+		"The raid's R2: AwarePairs is AwarePairsOf(hostile) -- the pairs combat and startChasesForTheAware act on. The living side's pairs are for R6's cry.", ""},
+	{sym(pkgWorld, "Pursuit.ChasingWhom"), BucketWire, VerdictLive,
+		"The raid's R2: Game.startChasesForTheAware starts a chase again on the watch's target when the chase is on anyone else -- a watch Seek moved onto a villager moves the chase with it. If this goes dark the wolf walks at the man it no longer wants.", ""},
+	{sym(pkgScreen, "Game.WatchAs"), BucketDefer, VerdictHarnessOnly,
+		"The raid's R2: strigoi_watch's one route, for both sides -- hostile (side omitted, Game.Watch's old job) and side:living, a villager's watch, noticed and reported, never a chase or a fight. Only the harness makes a living watch until the watch posts do.", "the raid's R6 (the watch posts and the cry)"},
 	{sym(pkgWorld, "Meters.SetConditioning"), BucketWire, VerdictLive,
 		"T3: Endurance's talents applied to his body -- fatigue and hunger rates, the Shaken and no-Reaction thresholds.", ""},
 	{sym(pkgWorld, "Light.SetCarriedBurnRate"), BucketWire, VerdictLive,
@@ -1062,8 +1099,14 @@ var Register = []Entry{
 		"The harness's readiness signal: true once the world has run a frame with the player in it.", ""},
 	{sym(pkgScreen, "Game.Pursue"), BucketObserve, VerdictHarnessOnly,
 		"A handle-to-entity wrapper so a script can start a chase by id. The game starts its own chases through startChasesForTheAware, which is wired.", ""},
-	{sym(pkgScreen, "Game.Watch"), BucketObserve, VerdictHarnessOnly,
-		"The same wrapper for awareness. The spawn tables call Notice.Watch directly, which is wired.", ""},
+	// WHAT THIS ROW SAID BEFORE, recorded per docs/reachability.md: observe /
+	// harness-only, "The same wrapper for awareness. The spawn tables call
+	// Notice.Watch directly, which is wired." The raid's R2 build's reach
+	// gate (29 Sep 2026) measured it dead: strigoi_watch now calls
+	// Game.WatchAs for both sides (side omitted is hostile), and Game.Watch
+	// is left to d2gamescreen's unit tests.
+	{sym(pkgScreen, "Game.Watch"), BucketDelete, VerdictDead,
+		"A seam nobody takes any more: since the raid's R2, strigoi_watch calls Game.WatchAs for both sides, and Game.Watch (WatchAs hostile) is called only by load_b4b_test.go. Remove it with those two calls.", ""},
 	{sym(pkgScreen, "Game.Unwatch"), BucketObserve, VerdictHarnessOnly,
 		"The wrapper's other half. Note that the game's own unwatch path is missing entirely -- see Notice.Unwatch above.", ""},
 	{sym(pkgScreen, "Game.ForgetBody"), BucketObserve, VerdictHarnessOnly,

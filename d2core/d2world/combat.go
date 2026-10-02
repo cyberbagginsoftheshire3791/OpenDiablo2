@@ -698,6 +698,12 @@ func NewCombat(clock *Clock, notice *Notice, fitness FitnessSource, illum Illumi
 		clockBook: newFightBook(seed),
 	}
 
+	// A watch on a quarry dead by its body is no aware pair (the R2 review
+	// B's B1): the notice model asks this combat model's bodies.
+	if notice != nil {
+		notice.gone = c.deadByBody
+	}
+
 	d2harness.Register(c)
 
 	return c

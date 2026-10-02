@@ -115,6 +115,7 @@ var harnessDialFields = map[string][]string{
 	},
 	"pursuit": {"arrive_within", "repath_tiles"},
 	"rising":  {"edge_floor", "hasty_weight", "p", "pressure"},
+	"seek":    {"retarget_minutes", "stagger_slots", "switch_margin_tiles", "dwell_minutes"}, // the raid's R2: D-S1, the stagger, and its review's stickiness (B1)
 	// M4.6 B5: the dawn autosave switched off, for a script whose subject is
 	// a save of its own it must load after a dawn (TestSaveResume). The combat
 	// status (30 Sep 2026): its grace, in seconds of game time.
@@ -157,6 +158,9 @@ var harnessNotDials = map[string][]string{
 	"progress": {"grant_xp"},
 	// a verb: a chase released.
 	"pursuit": {"release"},
+	// the raid's R2: the stand-in collection's two verbs -- state the file's
+	// seek block carries (stand_ins), restored by the load, never re-applied.
+	"seek": {"stand_in", "stand_in_remove"},
 	// state: a group's morale, the open bodies (the file's spawns block); a
 	// verb: a group despawned.
 	"spawns": {"despawn", "morale", "open_bodies"},

@@ -33,8 +33,24 @@ import (
 // interfaces so d2world keeps importing no map engine and no ebiten. That is
 // also what makes it testable: the tests run on fakes with no MPQs.
 type Notice struct {
-	// hidden: he is out of sight of everything (T6, asleep inside).
+	// hidden: he is out of sight (T6, asleep inside). Since the raid's R2 it
+	// hides HIM alone -- the quarry bound by SetPlayer -- and the village
+	// stays in sight of the night; with no player bound (every unit fixture,
+	// the legacy rule Combat.SetPlayer keeps too) it hides every quarry, as
+	// T6 first built it.
 	hidden bool
+
+	// player is his entity id, bound every frame by the game screen as
+	// Combat's is (the raid's R2): who SetHidden hides. "" hides everyone.
+	player string
+
+	// gone reports a quarry dead by its body: NewCombat wires its own
+	// deadByBody here (the R2 review B's B1). A watch whose target is gone
+	// is no AWARE pair -- no chase or fight starts on a corpse, and daybreak
+	// sends its pack home -- though the watch, its memory and its counters
+	// stay as they are (a watch is released where a death is handled:
+	// Combat.quarryDead). Nil: nothing is gone.
+	gone func(quarryID string) bool
 
 	dials NoticeDials
 	sight Sight
@@ -77,6 +93,29 @@ type Watcher interface {
 // The thing being watched is a Quarry -- the same interface Pursuit chases,
 // deliberately, because the thing worth noticing and the thing worth chasing
 // are the same thing, and one adapter in the game screen should satisfy both.
+
+// WatchSide is which side of the night a watch is on (the raid's R2, P2 (a):
+// "keep the fence; widen who"). The fence -- sight, distance and the light at
+// the target -- is the same for both; what differs is what may ACT on the
+// answer.
+type WatchSide string
+
+const (
+	// SideHostile is a beast, a man or the dead watching the living: the only
+	// side whose awareness starts a chase or a fight (AwarePairs). Every watch
+	// the spawn tables and the rising make is hostile, and so is Watch's.
+	SideHostile WatchSide = "hostile"
+
+	// SideLiving is a villager on watch watching the hostile: noticed and
+	// reported like any watch, and NEVER a chase or a fight -- the village's
+	// own side does not start one (the raid's R2). The watch posts and the
+	// cry read it (R6); until then only a script makes one (strigoi_watch
+	// side:living).
+	SideLiving WatchSide = "living"
+)
+
+// validSide reports a side the model knows.
+func validSide(s WatchSide) bool { return s == SideHostile || s == SideLiving }
 
 // NoticeDials are the numbers M4.3b ships with. Every one is a [DIAL].
 //
@@ -146,6 +185,9 @@ type watch struct {
 	watcher Watcher
 	target  Quarry
 
+	// side is the raid's R2: hostile (the default) or living.
+	side WatchSide
+
 	// noticed is the answer the rest of the game acts on. sees is the raw
 	// sight test at the last evaluation, and the two differ on purpose for
 	// MemoryMinutes after a watcher loses sight of something it had found.
@@ -187,15 +229,46 @@ func (n *Notice) Wired() bool { return n.sight != nil && n.illum != nil }
 // whether something can already see the player.
 //
 // One watcher watches one thing. A creature aware of two targets at once is a
-// question about target selection, which is M4.5's, not this milestone's.
+// question about target selection, which is M4.5's, not this milestone's --
+// and since the raid's R2 it is Seek's: Seek chooses WHICH one, and moves the
+// watch there with Retarget, so the fence here stays sight, distance and light.
+//
+// A watch made here is hostile (SideHostile), as every watch before R2 was.
 func (n *Notice) Watch(watcher Watcher, target Quarry) {
-	if watcher == nil || target == nil {
-		return
+	n.WatchAs(watcher, target, SideHostile)
+}
+
+// WatchAs is Watch on a named side (the raid's R2). A side the model does not
+// know is refused (false), as a nil watcher or target is.
+func (n *Notice) WatchAs(watcher Watcher, target Quarry, side WatchSide) bool {
+	if watcher == nil || target == nil || !validSide(side) {
+		return false
 	}
 
-	w := &watch{watcher: watcher, target: target}
+	w := &watch{watcher: watcher, target: target, side: side}
 	n.watches[watcher.WatcherID()] = w
 	n.evaluate(w)
+
+	return true
+}
+
+// Retarget moves one watcher's watch onto another quarry and evaluates it
+// once, at once (the raid's R2: Seek's retarget). Unlike Watch it KEEPS the
+// watch -- its side, its counters (checks, notices) and what it remembers --
+// because a wolf that turns from him to a nearer villager has not been born
+// again: notices counts a transition from unaware to aware, and a watcher
+// that was aware of him and now sees the villager made none. It reports
+// false for a watcher that watches nothing, or a nil quarry.
+func (n *Notice) Retarget(watcherID string, target Quarry) bool {
+	w, ok := n.watches[watcherID]
+	if !ok || target == nil {
+		return false
+	}
+
+	w.target = target
+	n.evaluate(w)
+
+	return true
 }
 
 // Unwatch drops a watcher. A provider that reports a collection needs a verb
@@ -231,14 +304,32 @@ func (n *Notice) Noticed(watcherID string) (noticed, watching bool) {
 	return w.noticed, true
 }
 
-// Aware returns the ids of every watcher currently aware of its target, in a
-// stable order. This is what the spawn tables read to decide that a group has
-// found the player, and what M4.5 will read to decide a fight can start.
-func (n *Notice) Aware() []string {
+// targetGone reports that a watch's target is dead by its body (gone).
+func (n *Notice) targetGone(w *watch) bool {
+	return n.gone != nil && w.target != nil && n.gone(w.target.QuarryID())
+}
+
+// awareOfTheLiving reports that a watcher has noticed its target and the
+// target is not dead by its body: what daybreak's "coming for someone" asks
+// (Spawns.aware; the R2 review B's B1).
+func (n *Notice) awareOfTheLiving(watcherID string) bool {
+	w, ok := n.watches[watcherID]
+
+	return ok && w.noticed && !n.targetGone(w)
+}
+
+// Aware returns the ids of every HOSTILE watcher currently aware of its
+// target, in a stable order: the same set AwarePairs hands out to act on (the
+// two must never disagree). AwareOf is the same for either side.
+func (n *Notice) Aware() []string { return n.AwareOf(SideHostile) }
+
+// AwareOf returns the ids of every watcher of one side currently aware of its
+// target, in a stable order (the raid's R2).
+func (n *Notice) AwareOf(side WatchSide) []string {
 	out := make([]string, 0, len(n.watches))
 
 	for _, id := range n.watcherIDs() {
-		if n.watches[id].noticed {
+		if w := n.watches[id]; w.noticed && w.side == side && !n.targetGone(w) {
 			out = append(out, id)
 		}
 	}
@@ -260,15 +351,24 @@ type AwarePair struct {
 	Target  Quarry
 }
 
-// AwarePairs returns the watchers that are currently aware, with what they are
-// aware of, in a stable order. Aware() returns the same set as bare ids for
-// reporting; this is the form something can act on.
-func (n *Notice) AwarePairs() []AwarePair {
+// AwarePairs returns the HOSTILE watchers that are currently aware, with what
+// they are aware of, in a stable order. Aware() returns the same set as bare
+// ids for reporting; this is the form something can act on.
+//
+// HOSTILE ONLY, AND THAT IS THE RAID'S R2 RULE: the village's own side never
+// starts a chase or a fight. Combat's scan, the clock driver and the game's
+// startChasesForTheAware all read this, so a villager on watch who sees a
+// wolf is aware of it and does not run at it. The living side's pairs are
+// AwarePairsOf(SideLiving), for what reads the watch (R6's cry).
+func (n *Notice) AwarePairs() []AwarePair { return n.AwarePairsOf(SideHostile) }
+
+// AwarePairsOf is AwarePairs for one side (the raid's R2).
+func (n *Notice) AwarePairsOf(side WatchSide) []AwarePair {
 	out := make([]AwarePair, 0, len(n.watches))
 
 	for _, id := range n.watcherIDs() {
 		w := n.watches[id]
-		if !w.noticed {
+		if !w.noticed || w.side != side || n.targetGone(w) {
 			continue
 		}
 
@@ -324,7 +424,7 @@ func (n *Notice) evaluate(w *watch) {
 
 	w.distance = distance(wx, wy, tx, ty)
 
-	if n.hidden {
+	if n.hides(w.target.QuarryID()) {
 		w.sees = false
 
 		return
@@ -338,12 +438,7 @@ func (n *Notice) evaluate(w *watch) {
 		return
 	}
 
-	w.lightAtTarget = n.illum.Level(int(math.Floor(tx)), int(math.Floor(ty)))
-
-	w.reach = n.dials.Radius
-	if w.lightAtTarget >= n.dials.LitLevel {
-		w.reach *= n.dials.LitMultiplier
-	}
+	w.lightAtTarget, w.reach = n.reachAt(tx, ty)
 
 	// Distance is checked before the raycast on purpose: it is arithmetic and
 	// the raycast walks the grid, so the cheap test gates the dear one.
@@ -360,6 +455,29 @@ func (n *Notice) evaluate(w *watch) {
 		w.notices++
 		n.notices++
 	}
+}
+
+// reachAt is the fence's arithmetic for a target at (tx, ty): the light at its
+// tile, and the radius that light buys -- Radius, times LitMultiplier when the
+// target is lit. One function, so Seek's choice among quarries and a watch's
+// own sight test can never disagree about who is in reach (the raid's R2).
+// The model must be Wired.
+func (n *Notice) reachAt(tx, ty float64) (light, reach float64) {
+	light = n.illum.Level(int(math.Floor(tx)), int(math.Floor(ty)))
+
+	reach = n.dials.Radius
+	if light >= n.dials.LitLevel {
+		reach *= n.dials.LitMultiplier
+	}
+
+	return light, reach
+}
+
+// hides reports that a quarry is out of sight of everything: he, while he is
+// hidden (SetHidden) -- or, with no player bound, anyone while hidden is set
+// (the legacy rule).
+func (n *Notice) hides(quarryID string) bool {
+	return n.hidden && (n.player == "" || quarryID == n.player)
 }
 
 // watcherIDs returns the live watcher ids in a stable order.
@@ -397,6 +515,7 @@ func (n *Notice) Report() []map[string]interface{} {
 		list = append(list, map[string]interface{}{
 			"watcher":         id,
 			"quarry":          w.target.QuarryID(),
+			"side":            string(w.side),
 			"sees":            w.sees,
 			"noticed":         w.noticed,
 			"distance":        w.distance,
@@ -419,15 +538,27 @@ func (n *Notice) Report() []map[string]interface{} {
 // Dials exposes the current dials so the spawns provider can report them.
 func (n *Notice) Dials() NoticeDials { return n.dials }
 
-// SetRadius moves the base notice radius. Returns false for a value that is
-// not a positive number of world tiles.
 // SetHidden says he cannot be seen (T6: asleep inside the palisade). A watch
 // that already noticed him keeps its memory and FORGETS him on the usual
 // clock; nothing new notices him. The review of T6's first version found the
 // notice model frozen outright, so a pack that saw him at dusk still knew him
 // four hours later.
+//
+// HIS SLEEP HIDES ONLY HIM (the raid's R2, P2 (b)). T6 built it as one flag
+// that hid every quarry from every watch, which was the same thing while he
+// was the only quarry there was; with the village's living on the board it
+// would hide the village from the night for as long as he slept. So it hides
+// the quarry bound by SetPlayer, and a wolf that sees a villager goes on
+// seeing her. With no player bound -- every unit fixture -- it hides every
+// quarry, as before (the legacy rule, as Combat.SetPlayer keeps its own).
 func (n *Notice) SetHidden(hidden bool) { n.hidden = hidden }
 
+// SetPlayer binds his entity id (the raid's R2): the quarry SetHidden hides.
+// The game screen binds it every frame, beside Combat.SetPlayer.
+func (n *Notice) SetPlayer(id string) { n.player = id }
+
+// SetRadius moves the base notice radius. Returns false for a value that is
+// not a positive number of world tiles.
 func (n *Notice) SetRadius(tiles float64) bool {
 	if tiles <= 0 {
 		return false

@@ -848,11 +848,15 @@ type harnessWatchIn struct {
 	// ids and knows nothing about handles.
 	Target  string `json:"target,omitempty" jsonschema:"handle of the entity that might be noticed; omit with release:true"`
 	Release bool   `json:"release,omitempty" jsonschema:"stop the watcher noticing instead of starting"`
+
+	// Side is the raid's R2: which side of the night the watch is on.
+	Side string `json:"side,omitempty" jsonschema:"hostile (the default: a beast, a man or the dead watching the living) or living (a villager on watch: noticed and reported, never a chase or a fight)"`
 }
 
 type harnessWatchOut struct {
 	Watcher  string `json:"watcher"`
 	Target   string `json:"target"`
+	Side     string `json:"side,omitempty"`
 	Watching int    `json:"watching"`
 	Noticed  bool   `json:"noticed"`
 	Wired    bool   `json:"wired"`
@@ -1029,7 +1033,10 @@ func (a *App) harnessAddActionTools(srv *mcp.Server) {
 			"half of R2 3's dark-into-light trade. It knows sight, distance and the light at the target and nothing " +
 			"else, by signature. The spawn tables watch their own members automatically; this is for placing a " +
 			"watcher exactly where a script needs one. Stop with release:true, read the verdicts with " +
-			"strigoi_get_system_state spawns (notice blocks ride on each group, plus notice_wired / notice_aware).",
+			"strigoi_get_system_state spawns (notice blocks ride on each group, plus notice_wired / notice_aware). " +
+			"side:living makes a villager's watch (the raid's R2): noticed and reported like any watch, never a chase " +
+			"or a fight; the default, hostile, is every watch the tables make. Who a hostile then chooses among the " +
+			"living is the seek provider's.",
 		Annotations: harnessAnnMut(false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessWatchIn) (*mcp.CallToolResult, harnessWatchOut, error) {
 		harnessLogCall("strigoi_watch")
@@ -1090,7 +1097,20 @@ func (a *App) harnessAddActionTools(srv *mcp.Server) {
 				return
 			}
 
-			if !game.Watch(watcher, target) {
+			side := in.Side
+			if side == "" {
+				side = "hostile"
+			}
+
+			if side != "hostile" && side != "living" {
+				toolErr = harnessErr("BAD_ARGUMENT",
+					fmt.Sprintf("side %q is neither hostile nor living", in.Side),
+					"omit side for a hostile watch, or pass side:living for a villager's")
+
+				return
+			}
+
+			if !game.WatchAs(watcher, target, side) {
 				toolErr = harnessErr("BAD_ARGUMENT",
 					fmt.Sprintf("%q cannot be a watcher", in.Watcher),
 					"watch with a player or an npc handle")
@@ -1098,7 +1118,7 @@ func (a *App) harnessAddActionTools(srv *mcp.Server) {
 				return
 			}
 
-			out.Target = in.Target
+			out.Target, out.Side = in.Target, side
 			out.Watching = game.Notice().Count()
 			out.Noticed, _ = game.Notice().Noticed(watcher.ID())
 		})

@@ -68,6 +68,8 @@ func TestPursuitSnapshotEveryFieldIsSeen(t *testing.T) {
 
 	outcomes := b2bSweep(t, sv, want, []b2bMutation{
 		{"pursuit.solves lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.Solves = 0 }},
+		{"pursuit.rechase_solves moved", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.RechaseSolves++ }},
+		{"pursuit.rechase_solves past solves", b2bRefuse, func(_ *testing.T, s *b2bSnap) { s.Pursuit.RechaseSolves = s.Pursuit.Solves + 1 }},
 		{"pursuit.chases lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.Chases = nil }},
 		{"pursuit.a chase lost", b2bDiverge, func(_ *testing.T, s *b2bSnap) { s.Pursuit.Chases = s.Pursuit.Chases[1:] }},
 
@@ -108,10 +110,13 @@ func TestPursuitSnapshotEveryFieldIsSeen(t *testing.T) {
 func b2bPursuitClasses() []b2aClass {
 	return []b2aClass{
 		{Pursuit{}, map[string]string{
-			"dials":  "D: the pursuit dials, the game's numbers; a script's writes are test setup (trap 7)",
-			"router": "W: the map's router",
-			"chases": "S:pursuit.chases",
-			"solves": "S:pursuit.solves",
+			"dials":             "D: the pursuit dials, the game's numbers; a script's writes are test setup (trap 7)",
+			"router":            "W: the map's router",
+			"chases":            "S:pursuit.chases",
+			"solves":            "S:pursuit.solves",
+			"rechases":          "S:pursuit.rechase_solves",
+			"rechasedThisFrame": "D: zeroed by every Advance before the frame's chases restart (Pursuit steps before startChasesForTheAware), so never read between frames",
+			"rechasesDeferred":  "D: a benchmark's and a test's count of budget refusals, in no provider and no digest; a resumed game counts from 0",
 		}},
 		{chase{}, map[string]string{
 			"hunter":         "S:pursuit.chases[0].hunter",
@@ -123,6 +128,7 @@ func b2bPursuitClasses() []b2aClass {
 			"reachable":      "S:pursuit.chases[0].reachable",
 			"solves":         "S:pursuit.chases[0].solves",
 			"arrived":        "S:pursuit.chases[0].arrived",
+			"fromWatch":      "D: false on load, as the combat status read every chase; the world sets it again the next frame its watch is aware of another quarry (Rechase). Only a world chase saved in the frames a re-chase was deferred, whose watch then forgets before it is moved, is read differently (integrate-1oct)",
 		}},
 	}
 }

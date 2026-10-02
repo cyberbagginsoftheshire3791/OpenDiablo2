@@ -213,7 +213,7 @@ func TestAHuntedNightResumes(t *testing.T) {
 
 	require.Equal(t, []string{
 		"clock", "natives", "entities", "validated", "health", "squads", "light", "torch", "corpses", "rising",
-		"spawns", "spawner", "notice", "pursuit", "combat", "bodies", "scene", "hero", "world_rng",
+		"spawns", "spawner", "notice", "pursuit", "seek", "combat", "bodies", "scene", "hero", "world_rng",
 	}, resumed.loadSteps, "the load order (docs/m4.6-world-save-notes.md)")
 
 	// The villager: re-keyed IN PLACE -- the same entity, the saved id, the

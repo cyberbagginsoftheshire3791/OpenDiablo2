@@ -58,6 +58,12 @@ var b3ShapeHashes = map[int]string{
 	// milestone's rule allows amending version 2's shape until saving is a
 	// player's (B5), and B5 had not merged (world.go, Version).
 	2: "be2baeb5d220d42c0d27a1c4402cb3851ce09562e20cc9a49ee2df5af81c14d4",
+	// The raid's R2 and its review fixes (29 Sep and 1 Oct 2026):
+	// notice.watches[].side, the seek block and pursuit.rechase_solves. R2
+	// first amended version 2 with no bump (f0748aba..., never shipped);
+	// Josh's ruling of 30 Sep (every shape change bumps) made it version 3,
+	// over version 2 as master left it (BUG-87's action_at included).
+	3: "1162e8cc002adb8b884d217f696ba8d7599dc3f1e89fafc35b68d4dfa4c8caa9",
 }
 
 var b3UpdateGolden = flag.Bool("update-golden", false, "write testdata/world-v<Version>.json from the fixture and print the shape hash")

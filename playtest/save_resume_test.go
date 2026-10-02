@@ -264,6 +264,10 @@ const (
 	quickResolveOff = 2.0
 )
 
+// squadModelAt is where act 1 deploys the second squad's model: across the
+// village from his post (the second R2 review's A1).
+var squadModelAt = [2]float64{14.5, 33.5}
+
 // huntedDials are the dials acts 1-3 leave set at T. A dial is never saved
 // (trap 7): a relaunched game has the defaults until the script sets them
 // again, and "load last save" in one process has them re-applied by the load.
@@ -703,7 +707,15 @@ func eveningActs1to3(t *testing.T) evening {
 
 	// B4b: a deployed squad -- a second squad whose model is an NPC on the
 	// map (squadDeployer) -- which the load must rebuild wearing its saved id.
-	s.call("strigoi_set_system_field", map[string]any{"system": "meters", "field": "squad_add", "value": map[string]any{}})
+	//
+	// DEPLOYED ACROSS THE VILLAGE, NOT AT HIS SIDE (the second R2 review's
+	// A1, 1 Oct 2026). The model is a quarry (the first review's C7 (a)), and
+	// since Seek holds a seen target (its B1) a pack that turns to a model two
+	// tiles from him stays on it: his own fight after T landed no blow, and
+	// BUG-77's guard on HIS fight had nothing to guard. Placed here, out of
+	// the pack's way, the pack comes for him under the shipped dials.
+	s.call("strigoi_set_system_field", map[string]any{"system": "meters", "field": "squad_add",
+		"value": map[string]any{"x": squadModelAt[0], "y": squadModelAt[1]}})
 
 	if n := len(asList(metersState(s)["squads"])); n != 2 {
 		t.Fatalf("act 1 (B4b): squad_add deploys a second squad: %d squads", n)
@@ -870,19 +882,51 @@ func eveningActs1to3(t *testing.T) evening {
 	t.Logf("act 3: in the two hours the fights ran to %v encounters (%q the last's end)",
 		combatState(s)["encounters"], str(combatState(s), "ended_reason"))
 
+	// The raid's R2: who the pack chose among the living after T (the
+	// deployed squad's model is one), and the fights he was not in.
+	sk := seekState(s)
+	t.Logf("MEASURE act 3: seek looks %v retargets %v holds %v; the clock fights %v",
+		sk["looks"], sk["retargets"], sk["holds"], afhClock(s))
+
 	// The B4b review fixes (BUG-77): the fight after T landed blows -- rolls
 	// drawn, rebuilt monsters swinging and struck -- and none was
 	// quick-resolved, so act 6 compares a fight, not its absence.
+	//
+	// HIS OWN FIGHT, AND THE VILLAGE'S APART (the second R2 review's A1, 1 Oct
+	// 2026). The first review fixes counted his fight's blows and the clock
+	// fights' together, after the sticky target kept the pack on a model at
+	// his side; that let a resume that put his own combat stream one draw off
+	// pass (the review's control p2). His squad's model now stands across
+	// the village (squadModelAt), the pack comes for him under the shipped
+	// dials, and his fight must land rounds and blows after T, none
+	// quick-resolved -- BUG-77's guard as B4b's review fixes wrote it. The
+	// clock fights after T are measured on their own line, and asserted on
+	// their own when there are any. Their quick_resolved is not asserted: a
+	// clock fight does not quick-resolve at quickResolveOff or at 0 (measured:
+	// pt-ctl-act3-quick-resolve, 1 Oct), so the clause could not fire.
 	atU := combatState(s)
-	if blows := mustNum(t, atU, "actions_total") - mustNum(t, atT, "actions_total"); blows <= 0 ||
-		mustNum(t, atU, "rounds") <= mustNum(t, atT, "rounds") ||
+	clockT, clockU := sub(atT, "clock"), sub(atU, "clock")
+	hisBlows := mustNum(t, atU, "actions_total") - mustNum(t, atT, "actions_total")
+	hisRounds := mustNum(t, atU, "rounds") - mustNum(t, atT, "rounds")
+	clockBlows := mustNum(t, clockU, "actions_total") - mustNum(t, clockT, "actions_total")
+	clockRounds := mustNum(t, clockU, "rounds") - mustNum(t, clockT, "rounds")
+	clockStarted := mustNum(t, clockU, "started") - mustNum(t, clockT, "started")
+
+	t.Logf("MEASURE act 3: after T, his fight %v rounds and %v blows; %v clock fights started, %v rounds and %v blows",
+		hisRounds, hisBlows, clockStarted, clockRounds, clockBlows)
+
+	if hisBlows <= 0 || hisRounds <= 0 ||
 		mustNum(t, atU, "quick_resolved") != mustNum(t, atT, "quick_resolved") {
-		t.Fatalf("act 3: the fight after T is fought blow by blow: %v blows, rounds %v -> %v, quick_resolved %v -> %v",
-			blows, atT["rounds"], atU["rounds"], atT["quick_resolved"], atU["quick_resolved"])
+		t.Fatalf("act 3: his fight after T is fought blow by blow: %v blows, rounds %v -> %v, quick_resolved %v -> %v",
+			hisBlows, atT["rounds"], atU["rounds"], atT["quick_resolved"], atU["quick_resolved"])
 	}
 
-	t.Logf("act 3: after T, %v rounds and %v blows, none quick-resolved",
-		mustNum(t, atU, "rounds")-mustNum(t, atT, "rounds"), mustNum(t, atU, "actions_total")-mustNum(t, atT, "actions_total"))
+	if clockStarted > 0 && (clockBlows <= 0 || clockRounds <= 0) {
+		t.Fatalf("act 3: a clock fight after T is fought blow by blow: %v started, %v rounds, %v blows",
+			clockStarted, clockRounds, clockBlows)
+	}
+
+	t.Logf("act 3: after T, his fight %v rounds and %v blows, none quick-resolved", hisRounds, hisBlows)
 
 	c := clockState(s)
 	if str(c, "stage") == "night" || flag(t, lightState(s), "carried_lit") {
@@ -2786,7 +2830,7 @@ func saveVerbActs(t *testing.T) {
 var worldBlocks = []string{
 	"version", "build", "saved_at",
 	"map", "seed", "rng", "hero", "sidecar",
-	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit",
+	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit", "seek",
 	"corpses", "rising", "combat", "bodies", "entities", "scene",
 }
 

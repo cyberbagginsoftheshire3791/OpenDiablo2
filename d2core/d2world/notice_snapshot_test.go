@@ -67,6 +67,12 @@ func TestNoticeSnapshotEveryFieldIsSeen(t *testing.T) {
 		watch("notices lost", b2bSeeing, b2bDiverge, func(w *WatchSnapshot) { w.Notices = 0 }),
 		watch("distance negative", b2bSeeing, b2bRefuse, func(w *WatchSnapshot) { w.Distance = -1 }),
 
+		// The raid's R2: the side the watch is on (a hostile wolf restored as
+		// a villager on watch would never come for him).
+		watch("side lost", b2bSeeing, b2bRefuse, func(w *WatchSnapshot) { w.Side = "" }),
+		watch("side unknown", b2bSeeing, b2bRefuse, func(w *WatchSnapshot) { w.Side = "neutral" }),
+		watch("side living", b2bSeeing, b2bDiverge, func(w *WatchSnapshot) { w.Side = string(SideLiving) }),
+
 		// Identity.
 		watch("watcher empty", b2bSeeing, b2bRefuse, func(w *WatchSnapshot) { w.Watcher = "" }),
 		watch("watcher unknown", b2bSeeing, b2bRefuse, func(w *WatchSnapshot) { w.Watcher = "e:999" }),
@@ -102,6 +108,8 @@ func b2bNoticeClasses() []b2aClass {
 	return []b2aClass{
 		{Notice{}, map[string]string{
 			"hidden":  "T: true only inside a sleep (talk.go sets it and defers it back); Snapshot refuses while set",
+			"player":  "W: his entity id, bound every frame by the game screen (the raid's R2: whom hidden hides)",
+			"gone":    "W: the combat model's deadByBody, wired by NewCombat (the R2 review B's B1)",
 			"dials":   "D: the notice dials, the radius above all -- Quiet Step's bonus is applied to them when the game is built (trap 7)",
 			"sight":   "W: the map's line of sight",
 			"illum":   "W: the light model a target is lit by",
@@ -112,6 +120,7 @@ func b2bNoticeClasses() []b2aClass {
 		{watch{}, map[string]string{
 			"watcher":       "S:notice.watches[0].watcher",
 			"target":        "S:notice.watches[0].target",
+			"side":          "S:notice.watches[0].side",
 			"noticed":       "S:notice.watches[0].noticed",
 			"sees":          "S:notice.watches[0].sees",
 			"distance":      "S:notice.watches[0].distance",

@@ -109,7 +109,7 @@ rulings of 25 Sep).** Use the runner, not a bare `go test`:
   first run under the new rule reported a real failure as FLAKY because an edit
   landed between the run and its rerun, which then tested other code.
 
-**The 53 playtest scripts.** That count, the harness version below and the
+**The 54 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -970,6 +970,44 @@ this doc fails until it agrees.
   fog off: `ui.zoom` takes 2.0 and refuses 2.1, `view_scale` reads 2, and his
   feet stay where they were on screen at 1.0 (within 3 px: the camera stays on
   him).
+* `seek_test.go` — the fifty-fourth (merged 1 Oct after the combat status's, integrate-1oct; the fiftieth on its own branch), the raid milestone's R2 (29 Sep 2026): who the
+  night's hunters choose among the living. First run 29 Sep by the R2 build
+  (Josh's approval of 19:17): red twice on the script's own setup, fixed
+  there, then green (`strigoi-harness-runs\wt-r2\build\pt-r2.txt`,
+  `pt-r2-2.txt`; the R2 build note). **`TestTheNearestLiving`** (seed 1462,
+  `handsStart`): act 1, a
+  `zombie1` six tiles off on a clear line watches him and a `fallen1`
+  stand-in villager (`seek.stand_in`) stands a tile and a half to its side --
+  the monster's seek row takes her (`reason` living), its watch and its chase
+  move to her, `seek.retargets` +1, and a clock fight opens on her, none of it
+  his; act 2, **the brief's control**, the distances swapped (him four off,
+  the villager seven) -- the monster keeps him, no retarget; act 3, a stand-in
+  villager's `side:living` watch on a `zombie1` beside her -- she is in
+  `spawns.notice_aware_living`, and there is no chase of hers, no fight on the
+  monster and no seek row for her; act 4 (**S0-1 (a)**), the earlier acts'
+  three stand-ins taken back out of the living first (`stand_in_remove`: at
+  the first run act 3's, 4.1 tiles from Charsi, was still one, and Seek
+  rightly took her), with `notice_radius` 4 (set back to 12 after) and him
+  out of reach, a `fallen1` beside Charsi watching him keeps him (`reason`
+  none): no fight on her, no body.
+  **`TestHisSleepHidesOnlyHim`**: at night, the shelter sleep's answer on
+  screen, a `zombie1` four tiles off watches him and a stand-in villager
+  stands six tiles to its side (awake, he is the nearer); he sleeps four
+  hours: `seek.retargets` rises during the sleep and the monster's watch and
+  its chase both end on her (the monster turned to her), the sleep runs all
+  240 minutes, and nothing touches him. **Nothing walks during a sleep**
+  (measured at the first run): the sleep is `spendMinutes`' ten-minute steps
+  of `advanceWorld`, and an entity moves only in `MapEngine.Advance`'s
+  frames, so the monster ends the four hours six tiles from her and no fight
+  can open on her under the launcher's policy (adjacency); the script logs
+  `combat.clock.started` (0 -> 0) and asserts the chase instead. The
+  source-mutation controls, all red at the build: the global hidden put back
+  (`global-hidden`), the chases reading every side (`chases-all-sides`, act
+  3), the speakers' protection lifted (`no-protection-wiring`, act 4) and the
+  chase not following the watch (`no-rechase`, act 1). Since the R2 review fixes
+  (1 Oct 2026) the sleep act requires the monster's notice row (it accepted
+  none), and its control is the one binding of him left (`no-frame-binding`:
+  advanceWorld's `Notice.SetPlayer` removed -- red).
 * `menu_labels_test.go` — the forty-fifth, BUG-27 (28 Sep 2026): the main
   menu's labels can be READ in the default game. It boots to the menu, clicks
   past the trademark page off every button, parks the cursor, screenshots, and
@@ -1065,7 +1103,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.16.1)
+## The tools (37; harness 0.16.2)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1081,7 +1119,11 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 >   `release:true` ends it.
 > - `strigoi_watch` (M4.3b) — make one entity notice another;
 >   `release:true` stops it. The spawn tables watch their own members, so
->   this is for placing a watcher exactly where a script needs one.
+>   this is for placing a watcher exactly where a script needs one. Since the
+>   raid's R2 (harness 0.14.4) it takes `side`: `hostile` (the default, every
+>   watch the tables make) or `living` -- a villager's watch, noticed and
+>   reported like any (`spawns.notice_aware_living`, the row's `side`), and
+>   never a chase or a fight. The reply says the side.
 >
 > Providers are now six: `clock`, `light` (M4.1), `meters` (M4.2),
 > `pursuit` (M4.3a), `spawns` (M4.3b) and `ui` (M3.4).
@@ -1161,7 +1203,7 @@ commit its provider registers — `meters` did at M4.2, `spawns` at M4.3b,
 `combat` at M4.5 step 1.
 
 Registered today — **`clock`**, **`light`**, **`meters`**, **`pursuit`**,
-**`spawns`**, **`combat`**, **`fog`** and **`ui`**, all while a game screen is live -- and
+**`spawns`**, **`combat`**, **`seek`** (the raid's R2), **`fog`** and **`ui`**, all while a game screen is live -- and
 the systems the game screen owns and registers once the hero binds, among
 them **`journal`** (J1, 24 Sep 2026; read-only: what is written, the tasks,
 the pages, the events raised, unread counts, `open`) and **`scene`** (M4.6 B1,
@@ -1529,6 +1571,51 @@ quarry (S0-1 (a)): no fight opens on one. The world save carries the whole
 block, live fights included (`combat.clock`; the raid's Q5 (a): a fight he is
 not in never stops a save), which is the world file's version 2. Nothing new
 is settable.
+
+**`seek`** (the raid's R2, 29 Sep 2026; harness 0.14.4): who the night's
+hunters choose among the living. `rows[]`, in watcher order, one per HOSTILE
+watcher Seek serves -- beasts and men; the spawn tables' dead row is not
+served until its draw lands (R5), and the village's own side (`side:living`)
+never is -- each `{watcher, row, target, reason, until_look_minutes,
+candidates}`: `row` the spawn row the watcher is of ("" for one a script
+placed), `target` what its watch was on at its last look (`player` for him),
+`reason` `pending` (made, its stagger phase still to come), `living` (the
+watch is on the nearest living it could see within the notice model's own
+reach), `none` (nothing living in sight: the watch was kept), `fighting` (a
+living enemy of a live fight, his or the village's: a fighter keeps its
+target) or `held` (since harness 0.16.1, the R2 review's B1: a nearer quarry
+was in sight, and the watch kept its own target, still in reach and in sight,
+because the nearer was not nearer by `switch_margin_tiles` or the row was
+inside its dwell); `until_look_minutes` the world minutes to its next look
+(its phase is in it: the minute is cut into `stagger_slots` phases, each new
+row taking the least-loaded phase of the rows already looking, so a pack that
+arrives in one frame looks across the minute's night frames, and so do two
+packs that arrive a few frames apart); `candidates` how many living were in
+reach at that look; `dwell_minutes` the world minutes left in which a row
+keeps a target it switched to while that target is seen (0 outside one).
+Beside them `stand_ins` (the entity ids a script named living), `slots`
+(phases given out, one per row made), `looks`, `retargets`, `holds` (looks
+that came out `held`), `rays` (sight tests the looks cast), `route_solves`
+(Seek's own: always 0, it casts rays only -- nearest is by straight line, the
+raid's S0-2 (a); **each retarget costs the chase one A* solve in the same
+frame**, which the `pursuit` provider counts as `rechase_solves`), `wired`,
+and `dials {retarget_minutes, stagger_slots, switch_margin_tiles,
+dwell_minutes}`.
+The living it chooses among: him, every deployed squad model, the map's
+villagers (the speakers, protected under S0-1 (a) and so never chosen) and the
+stand-ins -- and always the watch's own target. Settable: `retarget_minutes`,
+`stagger_slots`, `switch_margin_tiles` (1.5) and `dwell_minutes` (2.0) (dials;
+the last two at 0 are R2's strict nearest), and the stand-in collection's two verbs,
+`stand_in` and `stand_in_remove` (an entity id, `strigoi_get_entity`'s `id`),
+until R3b puts the village's members on the map. The world save carries it
+whole as the `seek` block (new in version 3 of the world file). The `pursuit`
+provider reports `rechase_solves` (since 0.16.1): the solves made restarting a
+chase on another quarry -- a retarget's cost -- included in `solves`; and the
+dial `rechases_per_frame` (1): the game restarts at most that many chases on
+another quarry between two of Pursuit's steps (`Pursuit.Rechase`; the rest
+follow on the frames after). A script's `strigoi_pursue` is never capped. Each
+`spawns` notice row gained `side`, and the provider `notice_aware_living` (the
+village's watchers that see something; `notice_aware` is the hostile side's).
 
 **There is deliberately no start verb, no set-health verb, no land-a-blow
 verb and no set-animation verb** — the same call spawns made about spawning.
