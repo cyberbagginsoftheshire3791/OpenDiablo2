@@ -118,6 +118,9 @@ type Kind struct {
 	// (fog of war F4; tiled.go's Kind.Height and Kind.SightRadius).
 	Height      int
 	SightRadius int
+	// Building is whether a household's door may be beside it (the raid's
+	// R3a; tiled.go's Kind.Building).
+	Building bool
 	// Legal is worked out from Declared, so it is advisory: Validate settles
 	// it from the PNG's own header.
 	Legal Legal
@@ -311,7 +314,7 @@ func (m *model) deriveKinds(tree *jsonObject) {
 
 			p, err := parseKindProps(props[id])
 			k.Blocked, k.BlocksSight, k.Footprint, k.propErr = p.blocked, p.blocksSight, p.footprint, err
-			k.Height, k.SightRadius = p.height, p.sightRadius
+			k.Height, k.SightRadius, k.Building = p.height, p.sightRadius, p.building
 			k.Legal = LegalLayers(k.Footprint, k.Declared.X, k.Declared.Y)
 
 			if _, clash := m.byGID[k.GID]; !clash {
@@ -343,8 +346,9 @@ type kindProps struct {
 	blocked     bool
 	blocksSight bool
 	footprint   image.Point
-	height      int // fog of war F4: a floor tile's ground height
-	sightRadius int // fog of war F4: a tower's sight
+	height      int  // fog of war F4: a floor tile's ground height
+	sightRadius int  // fog of war F4: a tower's sight
+	building    bool // the raid's R3a: a household's door may be beside it
 }
 
 // parseKindProps is the loader's Kind.properties, to the letter: the same four
@@ -353,8 +357,8 @@ type kindProps struct {
 // read one implementation.
 func parseKindProps(props []any) (kindProps, error) {
 	var (
-		out                  kindProps
-		sightSet, blockedSet bool
+		out                               kindProps
+		sightSet, blockedSet, buildingSet bool
 	)
 
 	for _, raw := range props {
@@ -404,6 +408,13 @@ func parseKindProps(props []any) (kindProps, error) {
 			}
 
 			out.sightRadius = n
+		case "building":
+			v, isBool := asBool(value)
+			if typ != "bool" || !isBool {
+				return out, errors.New("property \"building\" must be a bool")
+			}
+
+			out.building, buildingSet = v, true
 		default:
 			return out, fmt.Errorf("unknown tile property %q; the game reads %s", name, d2maptiled.TilePropertyNames)
 		}
@@ -433,6 +444,16 @@ func parseKindProps(props []any) (kindProps, error) {
 		}
 
 		out.blocked = true
+	}
+
+	// The raid's R3a (tiled.go's Kind.properties): a structure is a building
+	// unless it says otherwise or is a tower; a building is solid.
+	if !buildingSet {
+		out.building = out.footprint != (image.Point{}) && out.sightRadius == 0
+	}
+
+	if out.building && !out.blocked {
+		return out, errors.New("\"building\" marks a solid building; this tile is not blocked")
 	}
 
 	if !sightSet {

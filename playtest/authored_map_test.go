@@ -264,8 +264,21 @@ func TestAuthoredMap(t *testing.T) {
 		t.Fatalf("the hotar: the game reports %v; the map places %v", hh["hotar"], m.Hotar)
 	}
 
-	if posts := asList(hh["posts"]); len(posts) != len(m.Posts) {
+	posts := asList(hh["posts"])
+	if len(posts) != len(m.Posts) || len(m.Posts) == 0 {
 		t.Fatalf("the posts: the game reports %v; the map places %+v", hh["posts"], m.Posts)
+	}
+
+	// Each post where the map put it, and watching what the map says (the
+	// R3a review's B3: the gate post 24,34 and the corner post 33,13 are not
+	// their own transposes).
+	for i, want := range m.Posts {
+		got, _ := posts[i].(map[string]any)
+		at := asList(got["at"])
+
+		if str(got, "post") != want.Post || int(at[0].(float64)) != want.At.X || int(at[1].(float64)) != want.At.Y {
+			t.Fatalf("post %d: the game reports %v; the map places %+v", i, got, want)
+		}
 	}
 
 	// The stock is the house's own: a script's write moves one house, and a

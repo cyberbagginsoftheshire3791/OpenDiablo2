@@ -1,6 +1,7 @@
 package d2maptiled
 
 import (
+	"encoding/json"
 	"image"
 	"os"
 	"path"
@@ -91,5 +92,67 @@ func TestTheShippedVillagesHouseholds(t *testing.T) {
 	if want := map[string]string{"warriv1": "the headman's house", "kashya": "the well house", "charsi": "the smith's house",
 		"akara": "the church"}; !reflect.DeepEqual(speakers, want) {
 		t.Errorf("speakers %v, want %v", speakers, want)
+	}
+}
+
+// TestTheShippedVillagesBuildingsAreMarked (the R3a review's B2): on the
+// shipped village a door beside a tree or beside the gate's watchtower is
+// beside no building -- the house, smithy and church walls are marked
+// "building", the trees and the tower are not -- while a door beside the
+// smithy's walls is taken.
+func TestTheShippedVillagesBuildingsAreMarked(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "data", "strigoi", "maps")
+
+	data, err := os.ReadFile(filepath.Join(root, "village.tmj"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	strigoi := filepath.Dir(root)
+	load := func(p string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(strigoi, filepath.FromSlash(strings.TrimPrefix(path.Clean(p), "/data/strigoi"))))
+	}
+
+	with := func(x, y float64) error {
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatal(err)
+		}
+
+		for _, raw := range m["layers"].([]any) {
+			if l := raw.(map[string]any); l["name"] == "objects" {
+				l["objects"] = append(l["objects"].([]any), map[string]any{
+					"id": 900, "name": "probe", "type": "household", "x": x * 80, "y": y * 80, "point": true,
+				})
+			}
+		}
+
+		out, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = Parse(out, "/data/strigoi/maps", load)
+
+		return err
+	}
+
+	for _, c := range []struct {
+		what string
+		x, y float64
+		want string // "" for taken
+	}{
+		{"beside a tree (25,37)", 25.5, 38.5, "its door tile 25,38 is beside no building"},
+		{"beside the gate's watchtower (25,34)", 25.5, 33.5, "its door tile 25,33 is beside no building"},
+		{"beside the smithy's walls (26,31)", 25.5, 31.5, ""},
+	} {
+		err := with(c.x, c.y)
+
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("a door %s is refused: %v", c.what, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("a door %s: %v; want %q", c.what, err, c.want)
+		}
 	}
 }

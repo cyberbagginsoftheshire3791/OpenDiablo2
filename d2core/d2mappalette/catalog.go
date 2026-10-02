@@ -648,8 +648,16 @@ func tileProperties(props []tmjProperty) (fp image.Point, blocked, sight, blocke
 			if p.Type != "int" || json.Unmarshal(p.Value, &n) != nil {
 				return fp, false, false, false, fmt.Errorf("property %q must be an int", p.Name)
 			}
+		case "building":
+			// The raid's R3a: whether a household's door may be beside it.
+			// The palette places no household, so it only checks the type;
+			// the loader's rules are tiled.go's Kind.properties.
+			var v bool
+			if p.Type != "bool" || json.Unmarshal(p.Value, &v) != nil {
+				return fp, false, false, false, errors.New("property \"building\" must be a bool")
+			}
 		default:
-			return fp, false, false, false, fmt.Errorf("unknown tile property %q; the game reads \"blocked\", \"blocks_sight\", \"footprint_w\", \"footprint_h\", \"height\" and \"sight_radius\"", p.Name)
+			return fp, false, false, false, fmt.Errorf("unknown tile property %q; the game reads \"blocked\", \"blocks_sight\", \"building\", \"footprint_w\", \"footprint_h\", \"height\" and \"sight_radius\"", p.Name)
 		}
 	}
 

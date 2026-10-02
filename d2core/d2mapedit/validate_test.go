@@ -1,6 +1,7 @@
 package d2mapedit
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -256,6 +257,64 @@ func TestTheLoaderAndTheValidatorAgree(t *testing.T) {
 			withVillage(m)
 			m.object(4)["properties"].([]any)[1] = tmj{"name": "household", "type": "string", "value": "the mill"}
 		}, RuleNPC},
+		// The R3a review's B1: a walls building two tiles wide (0,1-0,2, the
+		// wall marked a building), its two tiles kept by two households --
+		// "another" at 1,1 beside 0,1 alone, "third" at 0,3 beside 0,2 alone.
+		{"a two-tile walls building kept twice", func(m tmj, _ art) {
+			withVillage(m)
+			m.setProp(1, "building", "bool", true)
+			m.setTile(LayerWalls, 0, 1, 2)
+			m.setTile(LayerWalls, 0, 2, 2)
+			m.addObject(tmj{"id": 12, "name": "another", "type": ClassHousehold, "x": 1.5 * tileH, "y": 1.5 * tileH,
+				"width": 0, "height": 0, "rotation": 0, "visible": true, "point": true})
+			m.addObject(tmj{"id": 13, "name": "third", "type": ClassHousehold, "x": 0.5 * tileH, "y": 3.5 * tileH,
+				"width": 0, "height": 0, "rotation": 0, "visible": true, "point": true})
+			m["nextobjectid"] = 14
+		}, RuleHousehold},
+		// B2: buildings are marked.
+		{"building as a string", func(m tmj, _ art) {
+			m.setTile(LayerWalls, 3, 0, 2)
+			m.setProp(1, "building", "string", "yes")
+		}, RuleTileProperty},
+		{"a building that is not blocked", func(m tmj, _ art) { m.setProp(0, "building", "bool", true) }, RuleTileProperty},
+		{"a building on the floor", func(m tmj, _ art) {
+			m.setProp(1, "building", "bool", true)
+			m.setTile(LayerFloor, 3, 0, 2)
+		}, RuleWrongLayer},
+		{"a household door beside an unmarked wall", func(m tmj, _ art) {
+			// Blocked and seen-blocking, as a tree is, but not "building".
+			withVillage(m)
+			m.setProp(1, "blocks_sight", "bool", true)
+			m.setTile(LayerWalls, 0, 2, 2)
+			m.object(9)["x"] = 0.5 * tileH
+		}, RuleHousehold},
+		{"a household beside a structure that is no building", func(m tmj, _ art) {
+			withVillage(m)
+			m.setProp(2, "building", "bool", false)
+		}, RuleHousehold},
+		// C1: null, and an int not written as the loader reads one.
+		{"household incense null", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["properties"].([]any)[1] = tmj{"name": "incense", "type": "int", "value": nil}
+		}, RuleHousehold},
+		{"household incense written 3.0", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["properties"].([]any)[1] = tmj{"name": "incense", "type": "int", "value": json.Number("3.0")}
+		}, RuleHousehold},
+		{"household incense written 3e0", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["properties"].([]any)[1] = tmj{"name": "incense", "type": "int", "value": json.Number("3e0")}
+		}, RuleHousehold},
+		{"household church null", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["properties"].([]any)[3] = tmj{"name": "church", "type": "bool", "value": nil}
+		}, RuleHousehold},
+		// C2: points only.
+		{"a household drawn as a rectangle", func(m tmj, _ art) {
+			withVillage(m)
+			m.object(9)["width"], m.object(9)["height"] = tileH, tileH
+		}, RuleObjectSize},
+		{"a hotar drawn as an ellipse", func(m tmj, _ art) { withVillage(m); m.object(10)["ellipse"] = true }, RuleObjectSize},
 		{"an npc whose household is a number", func(m tmj, _ art) {
 			withVillage(m)
 			m.object(4)["properties"].([]any)[1] = tmj{"name": "household", "type": "int", "value": 1}
@@ -429,6 +488,20 @@ var refusals = map[string]string{
 	"a watch post with an unknown property":       "unknown property \"men\"; a watch_post takes \"post\"",
 	"an npc of a household the map does not have": "npc warriv1 (object 4) names household \"the mill\"",
 	"an npc whose household is a number":          "npc (object 4): household must be a string",
+
+	// The R3a review's fixes (B1, B2, C1, C2), measured 2 Oct 2026.
+	"a two-tile walls building kept twice":               "household \"third\" (object 13) keeps the building household \"another\" keeps",
+	"building as a string":                               "property \"building\" must be a bool",
+	"a building that is not blocked":                     "\"building\" marks a solid building; this tile is not blocked",
+	"a building on the floor":                            "carries \"building\" but is placed on the floor layer",
+	"a household door beside an unmarked wall":           "its door tile 0,3 is beside no building",
+	"a household beside a structure that is no building": "household \"home\" (object 9): its door tile 1,3 is beside no building",
+	"household incense null":                             "household \"home\" (object 9): incense is null",
+	"household incense written 3.0":                      "incense must be an int from 0 to 99",
+	"household incense written 3e0":                      "incense must be an int from 0 to 99",
+	"household church null":                              "household \"home\" (object 9): church is null",
+	"a household drawn as a rectangle":                   "household (object 9) is drawn as a shape",
+	"a hotar drawn as an ellipse":                        "hotar (object 10) is drawn as a shape",
 }
 
 // The shipped village must validate CLEAN, or "place a house" starts from a red
@@ -966,5 +1039,26 @@ func TestTheVillagesObjectsValidateClean(t *testing.T) {
 	out, err := d.Bytes()
 	if err != nil || string(out) != string(data) {
 		t.Fatalf("an untouched village fixture does not round-trip (err %v)", err)
+	}
+}
+
+// TestAnOffMapDoorIsOneProblem (the R3a review's C3): a household a hair off
+// the map is the one problem the loader names -- off the map -- not also a
+// door "beside" whatever the tile it truncates to happens to touch.
+func TestAnOffMapDoorIsOneProblem(t *testing.T) {
+	t.Parallel()
+
+	m, files := fixture(t)
+	withVillage(m)
+	m.object(9)["x"] = -0.01 * tileH
+
+	d, err := Open(m.bytes(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	problems := d.Validate(files.size())
+	if len(problems) != 1 || problems[0].Rule != RuleOffMap {
+		t.Fatalf("want one off-map problem, got %v", problems)
 	}
 }

@@ -1,6 +1,7 @@
 package d2maptiled
 
 import (
+	"encoding/json"
 	"image"
 	"reflect"
 	"strings"
@@ -38,9 +39,19 @@ func addObjects(f *fixture, objects ...map[string]any) {
 	}
 }
 
+// markBuilding marks the fixture's house wall (tile 2) a building, as the
+// shipped village marks its house, smithy and church walls (the R3a
+// review's B2).
+func markBuilding(f *fixture) {
+	t := f.tile(2)
+	props, _ := t["properties"].([]any)
+	t["properties"] = append(props, map[string]any{"name": "building", "type": "bool", "value": true})
+}
+
 // withVillage adds a household at the wall's door (2,1) with the npc as its
 // member, a hotar at 0,0 and a gate post at 3,0: every class, valid.
 func withVillage(f *fixture) {
+	markBuilding(f)
 	addObjects(f,
 		villageObject(10, "household", "the wall house", 2.5, 1.5,
 			prop("members", "string", "man, woman,child"), prop("incense", "int", 3),
@@ -91,6 +102,7 @@ func TestTheVillagesObjectsAreRead(t *testing.T) {
 
 	// An empty house and a church are households too.
 	g := newFixture(t)
+	markBuilding(g)
 	addObjects(g, villageObject(10, "household", "church", 2.5, 1.5, prop("church", "bool", true)))
 
 	m, err = g.parse(t)
@@ -152,6 +164,48 @@ func TestTheVillagesObjectsRefuse(t *testing.T) {
 			f.objects()[3].(map[string]any)["x"] = 1.5 * 80 // the hotar off the door
 			f.objects()[3].(map[string]any)["y"] = 2.5 * 80
 		}, "its door tile 0,0 is beside no building"},
+		{"a door beside a wall that is no building", func(f *fixture) {
+			// The house wall without "building": blocked and seen-blocking
+			// (a tree is the same), but not marked -- the review's B2.
+			f.tile(2)["properties"] = []any{prop("blocked", "bool", true)}
+		}, "its door tile 2,1 is beside no building"},
+		{"two households of one walls building two tiles wide", func(f *fixture) {
+			// The wall runs 2,0-3,0; the second door is beside its other
+			// tile (the review's B1). The post moves off the new wall.
+			setWall(f, 3, 0, 3)
+			f.objects()[4].(map[string]any)["x"], f.objects()[4].(map[string]any)["y"] = 0.5*80, 2.5*80
+			addObjects(f, villageObject(13, "household", "another", 3.5, 1.5))
+		}, "household \"another\" (object 13) keeps the building household \"the wall house\" keeps"},
+		{"building as a string", func(f *fixture) { f.tile(2)["properties"].([]any)[1] = prop("building", "string", "yes") },
+			"property \"building\" must be a bool"},
+		{"a building that is not blocked", func(f *fixture) {
+			f.tile(0)["properties"] = []any{prop("building", "bool", true)}
+		}, "\"building\" marks a solid building; this tile is not blocked"},
+		{"a building on the floor", func(f *fixture) {
+			// mud, blocked, on the floor at 1,1, marked a building.
+			f.tile(1)["properties"] = append(f.tile(1)["properties"].([]any), prop("building", "bool", true))
+		}, "carries \"building\" but is placed on the floor layer"},
+		{"incense null", func(f *fixture) {
+			household(f)["properties"].([]any)[1] = prop("incense", "int", nil)
+		}, "household \"the wall house\" (object 10): incense is null"},
+		{"incense written 3.0", func(f *fixture) {
+			household(f)["properties"].([]any)[1] = prop("incense", "int", json.RawMessage("3.0"))
+		}, "incense must be an int from 0 to 99"},
+		{"members null", func(f *fixture) {
+			household(f)["properties"].([]any)[0] = prop("members", "string", nil)
+		}, "members is null"},
+		{"an npc's household null", func(f *fixture) {
+			props := f.objects()[1].(map[string]any)["properties"].([]any)
+			props[1] = prop("household", "string", nil)
+		}, "npc (object 2): household must be a string"},
+		{"a household drawn as a rectangle", func(f *fixture) {
+			household(f)["width"], household(f)["height"] = 80.0, 80.0
+		}, "household (object 10) is drawn as a shape"},
+		{"a hotar drawn as an ellipse", func(f *fixture) { f.objects()[3].(map[string]any)["ellipse"] = true },
+			"hotar (object 11) is drawn as a shape"},
+		{"a watch post drawn as a polygon", func(f *fixture) {
+			f.objects()[4].(map[string]any)["polygon"] = []any{map[string]any{"x": 0, "y": 0}, map[string]any{"x": 80, "y": 0}}
+		}, "watch_post (object 12) is drawn as a shape"},
 		{"a door beside two buildings", func(f *fixture) { setWall(f, 2, 2, 3) },
 			"its door tile 2,1 is beside 2 buildings"},
 		{"two households on one door tile", func(f *fixture) {

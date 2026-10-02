@@ -42,6 +42,10 @@ names say `placeholder-` so nobody mistakes them.
 - Tilesets **embedded** in the map (Map → Embed Tileset).
 - Tile properties: `blocked` (bool) and `blocks_sight` (bool; defaults to
   `blocked`). A fence or ditch is `blocked` but not `blocks_sight`.
+  `building` (bool, the raid's R3a): whether a household's door may be
+  beside it -- true by default for a structure that is not a tower, false
+  for everything else; a building must be `blocked` and is never placed on
+  the floor layer.
 - Raised sight (fog of war F4, `docs/fog.md`): a **floor** tile may carry
   `height` (int 0..8): an eye standing on it sees 2 tiles further a level
   (the churchyard tile is `height` 1 -- the church and cemetery's high
@@ -71,10 +75,14 @@ names say `placeholder-` so nobody mistakes them.
 - **The village's own objects** (the raid's R3a, 2 Oct 2026), all **point**
   objects:
   - **`household`**: placed on the household's **door tile** -- a walkable
-    tile right beside (not diagonally) its building: a house's footprint, or
-    a building drawn in walls tiles (the church, the smithy), which is a
-    walls tile that is `blocked` AND `blocks_sight` (so a fence, seen
-    through, is no building). Its **name** is what an npc's `household`
+    tile right beside (not diagonally) its building. **Buildings are marked**
+    (the R3a review's B2, Josh's to overturn): a structure is a building
+    unless its tile says `building` false or it is a tower (a
+    `sight_radius`); a walls tile is a building only when its tile says
+    `building` true -- the village marks `placeholder-house`,
+    `placeholder-smithy`, `placeholder-church` and `placeholder-church-tower`.
+    So a fence, a tree or the gate's watchtower is no building. A building
+    drawn in walls tiles is the run of them touching side to side. Its **name** is what an npc's `household`
     names. Properties, all optional: `members` (string: the household's
     people by role, comma-separated: `man`, `woman`, `old`, `youth`,
     `child`; none is an empty house), `incense` and `stakes` (int 0..99:
@@ -87,6 +95,8 @@ names say `placeholder-` so nobody mistakes them.
     `gate` or `corner`.
   - An **`npc`** may carry a string `household` naming its household, so
     the speakers are members of a house.
+  - All three are **points** (Tiled's point tool): one drawn as a rectangle,
+    an ellipse or a polygon is refused. A property left null is refused.
 
   **The village's are a proposal (the raid's R3a), Josh's to move:** a
   household at the door of each of the six peasant houses and the church's

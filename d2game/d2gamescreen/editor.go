@@ -1181,7 +1181,12 @@ func (e *Editor) footprintIsClear(r image.Rectangle) (bool, string) {
 // than after it -- which is the whole point of the ghost.
 func (e *Editor) nobodyStandsIn(r image.Rectangle) (bool, string) {
 	for _, o := range e.doc.Objects() {
-		if o.Class != d2mapedit.ClassNPC && o.Class != d2mapedit.ClassPlayerStart {
+		switch o.Class {
+		case d2mapedit.ClassNPC, d2mapedit.ClassPlayerStart,
+			// The raid's R3a (its review): a door, the hotar and a watch post
+			// must be standable too, so burying one is explained here.
+			d2mapedit.ClassHousehold, d2mapedit.ClassHotar, d2mapedit.ClassWatchPost:
+		default:
 			continue
 		}
 

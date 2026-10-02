@@ -39,6 +39,10 @@
 //     cannot see through -- and is set false for a low fence or a well.
 //     Any other property name is refused, so a typo cannot silently do
 //     nothing.
+//   - "building", bool (the raid's R3a): whether a household's door may be
+//     beside it -- default true for a structure that is not a tower, false
+//     for everything else; a building must be blocked, and is never placed on
+//     the floor layer (households.go).
 //   - Raised sight (fog of war F4, 1 Oct 2026; docs/fog.md): a FLOOR tile
 //     may carry "height", an int 0..8 (default 0) -- the ground's height in
 //     levels; an eye standing on it sees further (2 tiles a level) -- and a
@@ -160,7 +164,7 @@ const (
 
 // TilePropertyNames are the tile properties the game reads, as the refusal of
 // any other names them (the World Editor says the same words).
-const TilePropertyNames = `"blocked", "blocks_sight", "footprint_w", "footprint_h", "height" and "sight_radius"`
+const TilePropertyNames = `"blocked", "blocks_sight", "building", "footprint_w", "footprint_h", "height" and "sight_radius"`
 
 func (l Layer) String() string {
 	switch l {
@@ -193,6 +197,11 @@ type Kind struct {
 	// SightRadius is a tower's sight in tiles (fog of war F4: a structure
 	// that is an eye of its own); 0 for everything that is not a tower.
 	SightRadius int
+	// Building is whether a household's door may be beside it (the raid's
+	// R3a, its review's B2): a wall tile is one only when it says so
+	// ("building": true -- the house, smithy and church walls); a structure
+	// is one unless it says otherwise, and a tower (a sight_radius) is not.
+	Building bool
 }
 
 // Cell is one map tile: an index into Map.Kinds for each layer, -1 for none,
@@ -749,6 +758,8 @@ func (p *parser) kind(gid int, layer Layer) (int, error) {
 		return 0, fmt.Errorf("%s is a structure (it has a footprint) placed on the %s layer; place it as a tile object on the objects layer", name, layer)
 	case layer != LayerFloor && k.Height != 0:
 		return 0, fmt.Errorf("%s carries \"height\", a floor tile's property, but is placed on the %s layer; put it on the floor layer", name, layer)
+	case layer == LayerFloor && k.Building:
+		return 0, fmt.Errorf("%s carries \"building\" but is placed on the floor layer; a building is a wall or a structure -- put it on the walls layer", name)
 	}
 
 	if err := checkArt(pixels, layer, k.Footprint); err != nil {
@@ -891,13 +902,21 @@ func checkArt(img *image.RGBA, layer Layer, footprint image.Point) error {
 }
 
 func (k *Kind) properties(props []tmjProperty) error {
-	sightSet, blockedSet := false, false
+	sightSet, blockedSet, buildingSet := false, false, false
 
 	for _, prop := range props {
 		var v bool
 
 		switch prop.Name {
 		case "blocked", "blocks_sight":
+		case "building":
+			if prop.Type != "bool" || json.Unmarshal(prop.Value, &k.Building) != nil || isNull(prop.Value) {
+				return errors.New("property \"building\" must be a bool")
+			}
+
+			buildingSet = true
+
+			continue
 		case "footprint_w", "footprint_h":
 			var n int
 			if prop.Type != "int" || json.Unmarshal(prop.Value, &n) != nil || n < 1 || n > 16 {
@@ -975,6 +994,17 @@ func (k *Kind) properties(props []tmjProperty) error {
 		}
 
 		k.Blocked = true
+	}
+
+	// The raid's R3a (its review's B2): a structure is a building unless it
+	// says otherwise or is a tower; a tile is one only when it says so, and a
+	// building is solid.
+	if !buildingSet {
+		k.Building = k.Footprint != (image.Point{}) && k.SightRadius == 0
+	}
+
+	if k.Building && !k.Blocked {
+		return errors.New("\"building\" marks a solid building; this tile is not blocked")
 	}
 
 	// A structure is solid on its footprint whatever it says (v0), so its
@@ -1194,7 +1224,7 @@ func npcProperties(o *tmjObject) (monstat, household string, err error) {
 				return "", "", fmt.Errorf("npc (object %d): monstat must be a string", o.ID)
 			}
 		case "household":
-			if prop.Type != "string" || json.Unmarshal(prop.Value, &household) != nil {
+			if prop.Type != "string" || json.Unmarshal(prop.Value, &household) != nil || isNull(prop.Value) {
 				return "", "", fmt.Errorf("npc (object %d): household must be a string", o.ID)
 			}
 

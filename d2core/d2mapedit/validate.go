@@ -663,6 +663,14 @@ func (v *validation) placeKind(gid int, layer string, x, y int) {
 		return
 	}
 
+	// The raid's R3a: a building is a wall or a structure (tiled.go's
+	// parser.kind).
+	if k.Building && layer == LayerFloor {
+		v.tile(Problem{Rule: RuleWrongLayer, Kind: k.Name, Msg: "carries \"building\" but is placed on the floor layer; a building is a wall or a structure -- put it on the walls layer"}, x, y)
+
+		return
+	}
+
 	p := Problem{Kind: k.Name, Tile: image.Pt(x, y), HasTile: true}
 	v.checkArtFor(k, layer, p)
 }

@@ -14,10 +14,12 @@ import (
 // is (see "What a map must look like"):
 //
 //   - "household": a point object on the household's DOOR TILE -- a standable
-//     tile orthogonally beside its building: a structure's footprint, or a
-//     building drawn in walls tiles (the church, the smithy), which is a wall
-//     tile that is both blocked and blocks sight, so a low fence (blocked,
-//     seen through) is no building. Its name is what an npc's "household"
+//     tile orthogonally beside its building. A building is MARKED (the R3a
+//     review's B2, Josh's to overturn): a structure is one unless its tile
+//     says "building": false or it is a tower (a sight_radius); a walls tile
+//     is one only when its tile says "building": true (the house, smithy and
+//     church walls). So a fence, a tree or the watchtower is no building. A
+//     building drawn in walls tiles is the 4-connected run of them. Its name is what an npc's "household"
 //     names. Properties, all optional: "members" (string, the household's
 //     people by role, comma-separated, from Roles; none is an empty house),
 //     "incense" and "stakes" (ints from 0 to MaxHouseholdStock: what the house
@@ -32,6 +34,10 @@ import (
 //     "gate" or "corner". Standable.
 //   - an "npc" may carry a string "household" naming the household it belongs
 //     to, so the four speakers are members of a house.
+//
+// All three are POINTS (the review's C2): one drawn as a rectangle, an
+// ellipse or a polygon is refused rather than read at its corner. A property
+// whose value is JSON null is refused (C1), never read as its zero.
 //
 // The parser reads them and the game builds the households from them; it does
 // not decide what a role does (the people table, R3b).
@@ -88,6 +94,22 @@ func isRole(s string) bool {
 	return false
 }
 
+// isNull is whether a property's raw value is JSON null, which
+// json.Unmarshal would read as the zero value without a word.
+func isNull(raw json.RawMessage) bool {
+	return strings.TrimSpace(string(raw)) == "null"
+}
+
+// pointOnly refuses a village object drawn as anything but a point.
+func pointOnly(class string, o *tmjObject) error {
+	if o.Width != 0 || o.Height != 0 || o.Ellipse ||
+		(len(o.Polygon) > 0 && string(o.Polygon) != "null") || (len(o.Polyline) > 0 && string(o.Polyline) != "null") {
+		return fmt.Errorf("%s (object %d) is drawn as a shape; place it as a point (Tiled's point tool)", class, o.ID)
+	}
+
+	return nil
+}
+
 // household reads a household object standing at x, y.
 func (p *parser) household(o *tmjObject, x, y float64) error {
 	name := strings.TrimSpace(o.Name)
@@ -95,9 +117,17 @@ func (p *parser) household(o *tmjObject, x, y float64) error {
 		return fmt.Errorf("household (object %d) has no name; an npc's \"household\" property names it", o.ID)
 	}
 
+	if err := pointOnly("household", o); err != nil {
+		return err
+	}
+
 	h := Household{Name: name}
 
 	for _, prop := range o.Properties {
+		if isNull(prop.Value) {
+			return fmt.Errorf("household %q (object %d): %s is null; give it a value or remove it", name, o.ID, prop.Name)
+		}
+
 		switch prop.Name {
 		case "members":
 			var s string
@@ -182,6 +212,10 @@ func ParseMembers(s string) ([]string, error) {
 
 // hotar reads the boundary object.
 func (p *parser) hotar(o *tmjObject, x, y float64) error {
+	if err := pointOnly("hotar", o); err != nil {
+		return err
+	}
+
 	if len(o.Properties) > 0 {
 		return fmt.Errorf("hotar (object %d) takes no properties", o.ID)
 	}
@@ -201,6 +235,10 @@ func (p *parser) hotar(o *tmjObject, x, y float64) error {
 
 // watchPost reads a watch post.
 func (p *parser) watchPost(o *tmjObject, x, y float64) error {
+	if err := pointOnly("watch_post", o); err != nil {
+		return err
+	}
+
 	post := ""
 
 	for _, prop := range o.Properties {
@@ -292,7 +330,7 @@ func (p *parser) buildingsBeside(t image.Point) []building {
 		var b building
 
 		switch c := p.out.At(n.X, n.Y); {
-		case c.Structure > 0:
+		case c.Structure > 0 && p.out.Kinds[p.out.Structures[c.Structure-1].Kind].Building:
 			b = building{structure: c.Structure - 1}
 		case p.buildingWall(n.X, n.Y):
 			b = building{structure: -1, walls: p.wallBuilding(n.X, n.Y)}
@@ -314,11 +352,11 @@ func (p *parser) buildingsBeside(t image.Point) []building {
 }
 
 // buildingWall is whether x, y holds a wall tile that is part of a building:
-// blocked AND blocks sight (a fence or a well, seen through, is not).
+// one whose tile says "building": true.
 func (p *parser) buildingWall(x, y int) bool {
 	c := p.out.At(x, y)
 
-	return c.Wall >= 0 && p.out.Kinds[c.Wall].Blocked && p.out.Kinds[c.Wall].BlocksSight
+	return c.Wall >= 0 && c.Structure == 0 && p.out.Kinds[c.Wall].Building
 }
 
 // wallBuilding labels the building wall tile x, y belongs to: the building is

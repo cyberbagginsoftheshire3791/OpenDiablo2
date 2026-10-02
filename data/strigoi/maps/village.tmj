@@ -5244,6 +5244,11 @@
        "name": "blocked",
        "type": "bool",
        "value": true
+      },
+      {
+       "name": "building",
+       "type": "bool",
+       "value": true
       }
      ]
     },
@@ -5255,6 +5260,11 @@
      "properties": [
       {
        "name": "blocked",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "building",
        "type": "bool",
        "value": true
       }
@@ -5270,6 +5280,11 @@
        "name": "blocked",
        "type": "bool",
        "value": true
+      },
+      {
+       "name": "building",
+       "type": "bool",
+       "value": true
       }
      ]
     },
@@ -5281,6 +5296,11 @@
      "properties": [
       {
        "name": "blocked",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "building",
        "type": "bool",
        "value": true
       }

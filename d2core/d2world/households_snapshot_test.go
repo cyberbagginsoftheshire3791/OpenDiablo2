@@ -233,3 +233,21 @@ func TestHouseholdsReportTheMap(t *testing.T) {
 	_, err = NewHouseholds(VillagePlaces{Households: []HouseholdPlace{{Name: "x", Incense: HouseholdStockMax + 1}}})
 	require.Error(t, err, "a map's stock past the bound is refused")
 }
+
+// TestTheStockBoundIsInclusive (the R3a review's B4): a house may hold
+// exactly HouseholdStockMax, built from the map or restored from the file,
+// and not one more.
+func TestTheStockBoundIsInclusive(t *testing.T) {
+	top := HouseholdStockMax
+
+	h, err := NewHouseholds(VillagePlaces{Households: []HouseholdPlace{{Name: "x", Incense: top, Stakes: top}}})
+	require.NoError(t, err, "a house at the bound is built")
+	t.Cleanup(h.Close)
+
+	require.NoError(t, HouseholdsSnapshot{Houses: []HouseSnapshot{{ID: "h:1", Incense: top, Stakes: top}}}.Check(), "and kept")
+	require.NoError(t, h.HarnessSet("incense", map[string]interface{}{"house": "h:1", "value": float64(top)}), "and set")
+
+	for _, bad := range []HouseSnapshot{{ID: "h:1", Incense: top + 1}, {ID: "h:1", Stakes: top + 1}} {
+		require.Error(t, HouseholdsSnapshot{Houses: []HouseSnapshot{bad}}.Check(), "%+v", bad)
+	}
+}

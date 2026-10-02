@@ -281,7 +281,7 @@ func emptyRows() []sweepRow {
 				h, _ := raw.(map[string]any)
 				h["incense"], h["stakes"] = json.Number("0"), json.Number("0")
 			}
-		}, want: wantDiverge, moves: []string{"system households"}},
+		}, want: wantDiverge, moves: []string{"system households"}, check: householdsAreTheFiles},
 	}
 }
 
@@ -369,7 +369,7 @@ func perturbRows() []sweepRow {
 			houses := asList(blockOf(t, f, "households")["houses"])
 			h, _ := houses[len(houses)-1].(map[string]any)
 			h["incense"], h["stakes"] = json.Number("1"), json.Number("5")
-		}, want: wantDiverge, moves: []string{"system households"}},
+		}, want: wantDiverge, moves: []string{"system households"}, check: householdsAreTheFiles},
 		{block: "sidecar", name: "perturb sidecar.journal: two entries' order swapped", edit: func(t *testing.T, f map[string]any) {
 			w := blockOf(t, blockOf(t, blockOf(t, f, "sidecar"), "journal"), "written")
 			w["b1_taken"], w["b2_corps"] = w["b2_corps"], w["b1_taken"]
@@ -449,6 +449,35 @@ func zeroFog(t *testing.T, file map[string]any) {
 		"map": str(blockOf(t, file, "map"), "sha"), "w": json.Number(fmt.Sprint(villageSide)),
 		"h": json.Number(fmt.Sprint(villageSide)), "explored": base64.StdEncoding.EncodeToString(make([]byte, villageSide*villageSide/8)),
 	}
+}
+
+// householdsAreTheFiles (the R3a review's B5): every house of the resumed
+// game holds the stock the FILE gives it, house by house -- so a load that
+// put the right numbers on the wrong houses (a permuted restore) is red, not
+// merely "diverged". The perturb row's last house reads incense 1, stakes 5,
+// and every other house what T had.
+func householdsAreTheFiles(t *testing.T, s *session, file, _ map[string]any) error {
+	t.Helper()
+
+	want := asList(blockOf(t, file, "households")["houses"])
+	got := asList(systemState(s, "households")["houses"])
+
+	if len(got) != len(want) {
+		return fmt.Errorf("the resumed game has %d houses; the file %d", len(got), len(want))
+	}
+
+	for i := range want {
+		w, _ := want[i].(map[string]any)
+		g, _ := got[i].(map[string]any)
+
+		if str(g, "id") != str(w, "id") || int(num(g, "incense")) != int(mustNumber(t, w["incense"])) ||
+			int(num(g, "stakes")) != int(mustNumber(t, w["stakes"])) {
+			return fmt.Errorf("house %d: the resumed game reports %s incense %v stakes %v; the file %s incense %v stakes %v",
+				i+1, str(g, "id"), g["incense"], g["stakes"], str(w, "id"), w["incense"], w["stakes"])
+		}
+	}
+
+	return nil
 }
 
 // fogGridIsTheFiles: the resumed game's explored grid is the file's, bit for
