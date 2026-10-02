@@ -1010,16 +1010,7 @@ func (v *Game) Advance(elapsed float64) error {
 		v.journalAdvance()
 	}
 
-	// The map keeps its ORIGINAL condition: the escape menu still freezes the
-	// animations, because that pause is a pause of the whole screen.
-	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
-		v.gameClient.MapEngine.Advance(elapsed)
-	}
-
-	// Fog of war (F1, F2): after the map has moved him, every frame -- a held
-	// turn stops the world clock, not his Move (plan §2.4), and his torch is
-	// drawn and seen by where he stands now (BUG-110). Nothing when fog is off.
-	v.fogAdvance()
+	v.advanceTheMap(elapsed)
 
 	// The decision timer counts only frames on which the world stopped FOR THE
 	// COMBAT REASON: Wait() tests awaiting itself, so a frame paused under the
@@ -1195,6 +1186,43 @@ func (v *Game) screenLive() bool {
 	menuClosed := v.escapeMenu != nil && !v.escapeMenu.IsOpen()
 
 	return menuClosed || len(v.gameClient.Players) != 1
+}
+
+// advanceTheMap is the frame's map and what follows him on it.
+//
+// The map keeps its ORIGINAL condition: the escape menu still freezes the
+// animations, because that pause is a pause of the whole screen.
+//
+// Then his light (BUG-110, the sim's half, 1 Oct 2026): the light model is
+// told where he stands after the map has moved him, EVERY frame, held or
+// not. Light.SetPlayer used to run only inside the gated advanceWorld, so in
+// a held player turn -- the world stopped, his Move a real walk -- his torch
+// shone from where the turn opened, and what the sim reads there read the
+// stale torch: the combat resolver's lit/dark advantage on his strike and on
+// the blows that follow it in the same turn. With a running world nothing
+// changes: advanceWorld still sets it at the top of the world's step, from
+// where this frame's map left him.
+//
+// Then fog (F1, F2): after the map has moved him, every frame -- a held turn
+// stops the world clock, not his Move (plan §2.4), and his torch is drawn and
+// seen by where he stands now. Nothing when fog is off.
+func (v *Game) advanceTheMap(elapsed float64) {
+	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
+		v.gameClient.MapEngine.Advance(elapsed)
+	}
+
+	v.lightFollowsHim()
+	v.fogAdvance()
+}
+
+// lightFollowsHim tells the light model where he stands now (BUG-110).
+func (v *Game) lightFollowsHim() {
+	if v.light == nil || v.localPlayer == nil {
+		return
+	}
+
+	at := v.localPlayer.Position.World()
+	v.light.SetPlayer(at.X(), at.Y())
 }
 
 // advanceWorldOrHold is the frame's world: run when nothing holds it. Held by

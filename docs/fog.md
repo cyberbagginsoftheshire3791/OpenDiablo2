@@ -111,11 +111,15 @@ turn opened while he walked his Move. Fog reads a `d2world.LightView` -- the
 same light with his carried sources where he stands THIS frame -- and while
 fog is drawn the renderer draws by the same view (`draws_by: view`), so "he
 sees it" and "it is drawn lit" are one fact. The view never writes the light
-model: the sim (Notice, the combat resolver's lit/dark rule, spawns) reads
-the light model as master does, so fog stays display only. Whenever the world
-has just run, the view is the light model to the bit
-(`TestTheViewIsTheLightWhereHeStands`). The sim's own half of BUG-110 is
-Josh's to rule.
+model, so fog stays display only. Whenever the world has just run, the view
+is the light model to the bit (`TestTheViewIsTheLightWhereHeStands`). **The
+sim's own half of BUG-110 was fixed on 1 Oct (`harness-fixes`):** the game
+tells the light model where he stands every frame, after the map moves him
+(`Game.advanceTheMap`, `lightFollowsHim`) -- not only in the gated
+`advanceWorld` -- so the combat resolver's lit/dark advantage in a held turn
+reads his torch where he stands, and a fog-off game draws it there too. In a
+game the view and the model now agree on every frame
+(`TestHisTorchFollowsHimThroughAHeldTurnForTheSim`, d2gamescreen).
 
 **The HUD asks the same question (BUG-107).** The overhead bars and the
 game's enemy-bar list, the hover and talk label and its hit test, the corpse

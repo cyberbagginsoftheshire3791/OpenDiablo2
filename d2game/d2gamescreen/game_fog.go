@@ -161,8 +161,9 @@ func (v *Game) fogAdvance() {
 	at := v.localPlayer.Position.World()
 
 	// BUG-110: his torch shines from where he stands THIS frame, for fog and
-	// for the drawn light -- the light model itself (what the sim reads) is
-	// not touched; it learns where he is in advanceWorld, as it always has.
+	// for the drawn light. Fog never writes the light model (what the sim
+	// reads): the game tells it where he is, every frame, just before this
+	// (advanceTheMap's lightFollowsHim), so the view and the model agree.
 	if v.fog.view != nil {
 		v.fog.view.SetCarriedAt(at.X(), at.Y())
 	}
