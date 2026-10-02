@@ -2855,6 +2855,7 @@ var worldBlocks = []string{
 	"map", "seed", "rng", "hero", "sidecar",
 	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit", "seek",
 	"corpses", "rising", "combat", "bodies", "entities", "scene", "fog",
+	"households",
 }
 
 // saveUnmoved saves and requires that the save moved nothing: the digest

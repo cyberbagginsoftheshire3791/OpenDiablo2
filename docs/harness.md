@@ -1234,7 +1234,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.16.7)
+## The tools (37; harness 0.16.8)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1334,7 +1334,7 @@ commit its provider registers — `meters` did at M4.2, `spawns` at M4.3b,
 `combat` at M4.5 step 1.
 
 Registered today — **`clock`**, **`light`**, **`meters`**, **`pursuit`**,
-**`spawns`**, **`combat`**, **`seek`** (the raid's R2), **`fog`** and **`ui`**, all while a game screen is live -- and
+**`spawns`**, **`combat`**, **`seek`** (the raid's R2), **`households`** (the raid's R3a), **`fog`** and **`ui`**, all while a game screen is live -- and
 the systems the game screen owns and registers once the hero binds, among
 them **`journal`** (J1, 24 Sep 2026; read-only: what is written, the tasks,
 the pages, the events raised, unread counts, `open`) and **`scene`** (M4.6 B1,
@@ -1729,6 +1729,23 @@ block, live fights included (`combat.clock`; the raid's Q5 (a): a fight he is
 not in never stops a save), which is the world file's version 2. Nothing new
 is settable.
 
+**`households`** (the raid's R3a, 2 Oct 2026; harness 0.16.8): the village's
+houses, as the map places them (`household`, `hotar` and `watch_post`
+objects, and an npc's `household`; `data/strigoi/maps/README.md`).
+`houses[]`, in map order, each `{id, name, door, members, speakers, church,
+incense, stakes, incense_start, stakes_start}`: `id` is `h:<n>` (1-based, map
+order), `door` the door tile `[x, y]`, `members` the household's people by role
+as authored (`man`, `woman`, `old`, `youth`, `child`), `speakers` the map's
+npcs that name it (by stand-in monstat), `incense`/`stakes` the stock it holds
+and `*_start` what the map gave it. Beside them `households`, `churches`,
+`members` (roles plus speakers, every house), `hotar` (`[x, y]`, or null) and
+`posts[]` (`{post, at}`, `post` `gate` or `corner`). All world state (the
+digest's world part). Settable, as test set-up the way `village`'s `rep` is:
+`incense` and `stakes`, each `{"house": "h:<n>", "value": n}` (0..99). R3a
+stops there: nothing in the world spends or renews the stock yet, and the
+members are roles, not bodies (R3b). The world save carries every house's
+stock as the `households` block (new in version 6 of the world file).
+
 **`seek`** (the raid's R2, 29 Sep 2026; harness 0.14.4): who the night's
 hunters choose among the living. `rows[]`, in watcher order, one per HOSTILE
 watcher Seek serves -- beasts and men; the spawn tables' dead row is not
@@ -2096,6 +2113,12 @@ the load report says `ended_actions` (BUG-92: a held action this build's art
 no longer fits is ended as it would have ended, not refused), and a held
 action at a point no play can have is refused (BUG-91). And since BUG-94 the
 dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
+**0.16.8 (the raid's R3a, `raid-r3a`, 2 Oct 2026)**: a `households`
+provider (above) -- the village's houses, hotar and watch posts from the map,
+and each house's stock, settable as `incense` and `stakes` -- in the digest's
+world part; the world file is version 6 (its `households` block), so an
+evening kept by 0.16.7 is refused as another harness's. The shipped village
+gained its households, hotar and posts, so its SHA moved.
 **0.16.7 (fog of war F5, `fog-f5`, 2 Oct 2026)**: nothing new in the surface;
 the SHIPPED VIEW moved -- a game started with no switches has fog on and the
 camera at 0.5 (`-fog=false`, `-zoom 1` and `-classic` are the ways back). So

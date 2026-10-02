@@ -315,6 +315,37 @@ func LayAuthoredMap(engine *d2mapengine.MapEngine, m *d2maptiled.Map) {
 	engine.SetHeights(authoredHeights(m))
 	engine.SetTowers(authoredTowers(m))
 	engine.SetAuthoredRegion(m.SoundEnv, m.DisplayName)
+
+	// The raid's R3a: the village's households, hotar and watch posts, for
+	// the game's households system.
+	engine.SetVillage(authoredVillage(m))
+}
+
+// authoredVillage is the map's village as the engine keeps it: each household
+// with the npcs that name it (by monstat, in map order).
+func authoredVillage(m *d2maptiled.Map) d2mapengine.AuthoredVillage {
+	v := d2mapengine.AuthoredVillage{Hotar: m.Hotar, HasHotar: m.HasHotar}
+
+	for _, h := range m.Households {
+		var speakers []string
+
+		for _, n := range m.NPCs {
+			if n.Household == h.Name {
+				speakers = append(speakers, n.Monstat)
+			}
+		}
+
+		v.Households = append(v.Households, d2mapengine.AuthoredHousehold{
+			Name: h.Name, Door: h.Door, Members: append([]string(nil), h.Members...), Speakers: speakers,
+			Incense: h.Incense, Stakes: h.Stakes, Church: h.Church,
+		})
+	}
+
+	for _, p := range m.Posts {
+		v.Posts = append(v.Posts, d2mapengine.AuthoredPost{At: p.At, Post: p.Post})
+	}
+
+	return v
 }
 
 // authoredHeights is the map's ground height per tile, row-major; nil when the

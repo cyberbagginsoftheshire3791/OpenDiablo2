@@ -86,6 +86,11 @@ func b3SavableGame(t *testing.T) (*Game, string) {
 	v.seek = d2world.NewSeek(v.notice, v.spawns, v.combat, d2world.DefaultSeekDials())
 	v.seek.SetQuarries(v.seekQuarries)
 	v.seek.SetResolver(worldResolver{v})
+	// The raid's R3a: every game has its households, as CreateGame builds
+	// them -- from the map's village (this map places none).
+	households, err := d2world.NewHouseholds(villagePlaces(engine.Village()))
+	require.NoError(t, err)
+	v.households = households
 	v.lastStage = v.worldClock.Stage()
 	// Fog of war F3: every game has a fog, as CreateGame builds it -- off,
 	// as a game is with -fog=false, so it saves an empty grid.

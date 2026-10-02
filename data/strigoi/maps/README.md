@@ -42,6 +42,10 @@ names say `placeholder-` so nobody mistakes them.
 - Tilesets **embedded** in the map (Map → Embed Tileset).
 - Tile properties: `blocked` (bool) and `blocks_sight` (bool; defaults to
   `blocked`). A fence or ditch is `blocked` but not `blocks_sight`.
+  `building` (bool, the raid's R3a): whether a household's door may be
+  beside it -- true by default for a structure that is not a tower, false
+  for everything else; a building must be `blocked` and is never placed on
+  the floor layer.
 - Raised sight (fog of war F4, `docs/fog.md`): a **floor** tile may carry
   `height` (int 0..8): an eye standing on it sees 2 tiles further a level
   (the churchyard tile is `height` 1 -- the church and cemetery's high
@@ -68,6 +72,43 @@ names say `placeholder-` so nobody mistakes them.
   comes from the dark is placed outside every inside area and has to come in
   by the gate. The village's covers the fence ring (tiles 12-35). Draw it
   with the rectangle tool; every tile it touches is inside.
+- **The village's own objects** (the raid's R3a, 2 Oct 2026), all **point**
+  objects:
+  - **`household`**: placed on the household's **door tile** -- a walkable
+    tile right beside (not diagonally) its building. **Buildings are marked**
+    (the R3a review's B2, Josh's to overturn): a structure is a building
+    unless its tile says `building` false or it is a tower (a
+    `sight_radius`); a walls tile is a building only when its tile says
+    `building` true -- the village marks `placeholder-house`,
+    `placeholder-smithy`, `placeholder-church` and `placeholder-church-tower`.
+    So a fence, a tree or the gate's watchtower is no building. A building
+    drawn in walls tiles is the run of them touching side to side. Its **name** is what an npc's `household`
+    names. Properties, all optional: `members` (string: the household's
+    people by role, comma-separated: `man`, `woman`, `old`, `youth`,
+    `child`; none is an empty house), `incense` and `stakes` (int 0..99:
+    what the house starts with) and `church` (bool: the church, the one
+    house that is always kept; one at most). One household to a building
+    and to a door tile, and no two of one name.
+  - **`hotar`**: the village's boundary, where it carries its dead out to.
+    One at most, walkable, outside every `inside` area, no properties.
+  - **`watch_post`**: where the watch stands; one string property `post`,
+    `gate` or `corner`.
+  - An **`npc`** may carry a string `household` naming its household, so
+    the speakers are members of a house.
+  - All three are **points** (Tiled's point tool): one drawn as a rectangle,
+    an ellipse or a polygon is refused. A property left null is refused.
+
+  **The village's are a proposal (the raid's R3a), Josh's to move:** a
+  household at the door of each of the six peasant houses and the church's
+  (the church `16,16`, the headman's `28,21`, the well house `27,27`, the
+  west house `17,27`, the smith's `20,31`, the north-east house `30,16`, the
+  north house `24,16`; the burned house keeps none), each with 3 incense and
+  2 stakes; the hotar on the road south of the gate (`22,40`); a gate post
+  at `24,34` (by the tower) and a corner post at `33,13` (inside the
+  north-east gap); and the speakers in their houses -- the headman's, the
+  well house (the woman at the well), the smith's and the church (the
+  priest). Nothing reads the houses yet but the households provider and the
+  world save (R3b gives the members bodies).
 - Refused because the game would silently ignore them: hidden, translucent,
   offset, parallax or tinted layers; tile offsets; collision shapes drawn in
   the Tile Collision Editor (use `blocked`); animated tiles; flipped or rotated

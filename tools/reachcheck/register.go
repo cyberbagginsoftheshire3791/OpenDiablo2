@@ -1634,6 +1634,27 @@ var Register = []Entry{
 		"The fog provider's lines_cached: a counter read.", ""},
 	{sym(pkgWorld, "FogSnapshot.Empty"), BucketWire, VerdictLive,
 		"FogSnapshot.Check, Fog.Validate/Restore and World.checkFog: an empty block is a fog that never looked.", ""},
+	// The raid's R3a (2 Oct 2026; the raid brief's P1): the village's
+	// households, hotar and watch posts read from the map, and the houses'
+	// stock in the world file (version 6).
+	{sym(pkgMapEngine, "MapEngine.SetVillage"), BucketWire, VerdictLive,
+		"d2mapgen.LayAuthoredMap hands the engine the authored map's households, hotar and posts (authoredVillage), on every authored world the game builds.", ""},
+	{sym(pkgMapEngine, "MapEngine.Village"), BucketWire, VerdictLive,
+		"CreateGame reads the map's village for the households system (villagePlaces).", ""},
+	{sym(pkgWorld, "NewHouseholds"), BucketWire, VerdictLive,
+		"CreateGame builds every game's households from the map (none on a generated world) and registers the households provider.", ""},
+	{sym(pkgWorld, "Households.Snapshot"), BucketWire, VerdictLive,
+		"Game.worldFile takes the households block at every save (the menu, the close, the dawn autosave).", ""},
+	{sym(pkgWorld, "Households.Validate"), BucketWire, VerdictLive,
+		"The load's step 4 (Game.checkLoad) and the save's validateSnapshots: one stock per household this map places.", ""},
+	{sym(pkgWorld, "Households.Restore"), BucketWire, VerdictLive,
+		"The load's step 5 (Game.resumeLoad), after the rising: every house's stock put back. If it went dark a resumed game would hold the map's own stock -- TestSaveResume's digest (the households provider) is the instrument.", ""},
+	{sym(pkgWorld, "HouseholdsSnapshot.Check"), BucketWire, VerdictLive,
+		"d2save's World.checkHouseholds, from World.Check in every Decode the load's step 1 makes, and Households.Validate.", ""},
+	{sym(pkgMapEdit, "Doc.PlacePoint"), BucketDefer, VerdictDead,
+		"The edit that places a household, a hotar or a watch post: the raid's R3a wrote the village's proposal with it (and its unit test), and no screen calls it until the People tab.", "the raid's R3c (the editor's People tab)"},
+	{sym(pkgMapEdit, "Doc.SetProperty"), BucketDefer, VerdictDead,
+		"The edit that sets an npc's household (and any point object's property): R3a wrote the four speakers' households with it; no screen calls it until the People tab.", "the raid's R3c (the editor's People tab)"},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in

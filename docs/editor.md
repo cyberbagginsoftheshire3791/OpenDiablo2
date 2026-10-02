@@ -130,6 +130,19 @@ carry file and line citations, and live in `d2mappalette`'s `WhyNoTerrain`,
 `WhyNoCreatures` and `WhyNoPeople`. A piece that cannot be placed is greyed the
 same way and says why.
 
+**The village's objects** (the raid's R3a, 2 Oct 2026). The map reads three
+more point objects -- `household` (on its door tile, beside one building),
+`hotar` and `watch_post` -- and an npc's optional `household`
+(`data/strigoi/maps/README.md` has the rules; `d2maptiled/households.go`).
+The validator refuses what the loader refuses for them, rule for rule
+(`d2mapedit/village.go`; `TestTheLoaderAndTheValidatorAgree`'s village
+cases), so the village with its households saves. The screen does not draw
+or place them yet -- that is the People tab, the raid's R3c; until then a
+household's door tile selects it like a person's. The records are written by
+two edits, `Doc.PlacePoint` and `Doc.SetProperty` (`d2mapedit/people.go`),
+which the village's proposal was written with and which the People tab will
+run.
+
 **The status area** along the bottom is four lines: the map's name and path, the
 unsaved marker (which follows the undo history: undo back to the saved map and
 it goes out -- C), the zoom, the kinds used against the loader's cap of 256 and the

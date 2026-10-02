@@ -3,6 +3,7 @@
 package playtest
 
 import (
+	"fmt"
 	"image"
 	"image/png"
 	"math"
@@ -226,6 +227,73 @@ func TestAuthoredMap(t *testing.T) {
 	shot := s.call("strigoi_screenshot", map[string]any{"name": "authored-village"})
 	t.Logf("the village from its player_start: %s", str(shot, "path"))
 
+	// --- act 4b: the households (the raid's R3a) --------------------------------
+	// The game builds the village's houses from the map: every household
+	// object, in map order, with its door, roles, speakers, church mark and
+	// stock, the hotar and the posts -- read from the live game's provider,
+	// held against the map the test parsed itself.
+	hh := systemState(s, "households")
+	homes := asList(hh["houses"])
+
+	if len(homes) != len(m.Households) || len(m.Households) == 0 {
+		t.Fatalf("the households provider reports %d houses; the map places %d", len(homes), len(m.Households))
+	}
+
+	for i, want := range m.Households {
+		got, _ := homes[i].(map[string]any)
+		door := asList(got["door"])
+
+		var speakers []string
+
+		for _, n := range m.NPCs {
+			if n.Household == want.Name {
+				speakers = append(speakers, n.Monstat)
+			}
+		}
+
+		if str(got, "id") != fmt.Sprintf("h:%d", i+1) || str(got, "name") != want.Name ||
+			int(door[0].(float64)) != want.Door.X || int(door[1].(float64)) != want.Door.Y ||
+			fmt.Sprint(got["members"]) != fmt.Sprint(append([]string{}, want.Members...)) ||
+			fmt.Sprint(got["speakers"]) != fmt.Sprint(append([]string{}, speakers...)) ||
+			got["church"] != want.Church || int(num(got, "incense")) != want.Incense || int(num(got, "stakes")) != want.Stakes {
+			t.Fatalf("house %d: the game reports %v; the map places %+v with speakers %v", i+1, got, want, speakers)
+		}
+	}
+
+	if h := asList(hh["hotar"]); len(h) != 2 || int(h[0].(float64)) != m.Hotar.X || int(h[1].(float64)) != m.Hotar.Y {
+		t.Fatalf("the hotar: the game reports %v; the map places %v", hh["hotar"], m.Hotar)
+	}
+
+	posts := asList(hh["posts"])
+	if len(posts) != len(m.Posts) || len(m.Posts) == 0 {
+		t.Fatalf("the posts: the game reports %v; the map places %+v", hh["posts"], m.Posts)
+	}
+
+	// Each post where the map put it, and watching what the map says (the
+	// R3a review's B3: the gate post 24,34 and the corner post 33,13 are not
+	// their own transposes).
+	for i, want := range m.Posts {
+		got, _ := posts[i].(map[string]any)
+		at := asList(got["at"])
+
+		if str(got, "post") != want.Post || int(at[0].(float64)) != want.At.X || int(at[1].(float64)) != want.At.Y {
+			t.Fatalf("post %d: the game reports %v; the map places %+v", i, got, want)
+		}
+	}
+
+	// The stock is the house's own: a script's write moves one house, and a
+	// write the provider refuses moves nothing.
+	s.call("strigoi_set_system_field", map[string]any{"system": "households", "field": "incense",
+		"value": map[string]any{"house": "h:2", "value": 0}})
+
+	if got, _ := asList(systemState(s, "households")["houses"])[1].(map[string]any); int(num(got, "incense")) != 0 ||
+		int(num(got, "incense_start")) != m.Households[1].Incense {
+		t.Fatalf("h:2 after its incense was set to 0: %v", got)
+	}
+
+	t.Logf("act 4b PASS: %d households as the map places them (the church %v), the hotar at %v, %d posts; h:2's incense set to 0",
+		len(homes), m.Households[0].Church, m.Hotar, len(m.Posts))
+
 	// --- act 5: out of the gate on the authored collision ---------------------------
 	gx, gy := 23.5, 40.5
 	move := s.call("strigoi_move_player_to", map[string]any{"x": gx, "y": gy, "wait": true, "max_ticks": 3000})
@@ -333,6 +401,12 @@ func TestAuthoredMap(t *testing.T) {
 
 	if tile := s.call("strigoi_get_tile", map[string]any{"x": 120, "y": 120}); !flag(t, tile, "exists") {
 		t.Fatal("control: the refused map did not fall back to the 150-tile generated world")
+	}
+
+	// The raid's R3a: a generated world places no households, no hotar and no
+	// posts -- the provider's control (act 4b's houses came from the map).
+	if hh := systemState(s, "households"); len(asList(hh["houses"])) != 0 || hh["hotar"] != nil || len(asList(hh["posts"])) != 0 {
+		t.Fatalf("control: the generated world reports households %v", hh)
 	}
 
 	if items := floorDump(t, s); len(items) == 0 || int(num(items[0], "style")) == authoredStyle {

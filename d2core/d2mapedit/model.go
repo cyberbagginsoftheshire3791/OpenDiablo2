@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	"math"
-	"strings"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2maptiled"
 )
@@ -119,6 +118,9 @@ type Kind struct {
 	// (fog of war F4; tiled.go's Kind.Height and Kind.SightRadius).
 	Height      int
 	SightRadius int
+	// Building is whether a household's door may be beside it (the raid's
+	// R3a; tiled.go's Kind.Building).
+	Building bool
 	// Legal is worked out from Declared, so it is advisory: Validate settles
 	// it from the PNG's own header.
 	Legal Legal
@@ -152,6 +154,15 @@ type Object struct {
 	W, H float64
 	// Monstat is an npc's monstats record (tiled.go:1079-1098).
 	Monstat string
+	// Household is the household an npc names, "" for none (the raid's R3a;
+	// d2maptiled's NPC.Household).
+	Household string
+	// Members, Incense, Stakes and Church are a household's properties, and
+	// Post a watch post's (the raid's R3a; d2maptiled/households.go).
+	Members         []string
+	Incense, Stakes int
+	Church          bool
+	Post            string
 	// Footprint is a structure's footprint in whole tiles, Max exclusive,
 	// laid back from its bottom corner (tiled.go:1013-1014).
 	Footprint image.Rectangle
@@ -162,7 +173,10 @@ type Object struct {
 	Point    bool
 
 	monstatErr error
-	props      []any
+	// propErr is what the loader would say about a household's or a watch
+	// post's properties, or nil (the raid's R3a).
+	propErr error
+	props   []any
 }
 
 // IsStructure reports whether the object is a tile object, which is the only
@@ -300,7 +314,7 @@ func (m *model) deriveKinds(tree *jsonObject) {
 
 			p, err := parseKindProps(props[id])
 			k.Blocked, k.BlocksSight, k.Footprint, k.propErr = p.blocked, p.blocksSight, p.footprint, err
-			k.Height, k.SightRadius = p.height, p.sightRadius
+			k.Height, k.SightRadius, k.Building = p.height, p.sightRadius, p.building
 			k.Legal = LegalLayers(k.Footprint, k.Declared.X, k.Declared.Y)
 
 			if _, clash := m.byGID[k.GID]; !clash {
@@ -332,8 +346,9 @@ type kindProps struct {
 	blocked     bool
 	blocksSight bool
 	footprint   image.Point
-	height      int // fog of war F4: a floor tile's ground height
-	sightRadius int // fog of war F4: a tower's sight
+	height      int  // fog of war F4: a floor tile's ground height
+	sightRadius int  // fog of war F4: a tower's sight
+	building    bool // the raid's R3a: a household's door may be beside it
 }
 
 // parseKindProps is the loader's Kind.properties, to the letter: the same four
@@ -342,8 +357,8 @@ type kindProps struct {
 // read one implementation.
 func parseKindProps(props []any) (kindProps, error) {
 	var (
-		out                  kindProps
-		sightSet, blockedSet bool
+		out                               kindProps
+		sightSet, blockedSet, buildingSet bool
 	)
 
 	for _, raw := range props {
@@ -393,6 +408,13 @@ func parseKindProps(props []any) (kindProps, error) {
 			}
 
 			out.sightRadius = n
+		case "building":
+			v, isBool := asBool(value)
+			if typ != "bool" || !isBool {
+				return out, errors.New("property \"building\" must be a bool")
+			}
+
+			out.building, buildingSet = v, true
 		default:
 			return out, fmt.Errorf("unknown tile property %q; the game reads %s", name, d2maptiled.TilePropertyNames)
 		}
@@ -422,6 +444,16 @@ func parseKindProps(props []any) (kindProps, error) {
 		}
 
 		out.blocked = true
+	}
+
+	// The raid's R3a (tiled.go's Kind.properties): a structure is a building
+	// unless it says otherwise or is a tower; a building is solid.
+	if !buildingSet {
+		out.building = out.footprint != (image.Point{}) && out.sightRadius == 0
+	}
+
+	if out.building && !out.blocked {
+		return out, errors.New("\"building\" marks a solid building; this tile is not blocked")
 	}
 
 	if !sightSet {
@@ -525,7 +557,11 @@ func (m *model) deriveObjects(tree *jsonObject) {
 				obj.Footprint = footprintAt(k.Footprint, obj.X, obj.Y)
 			}
 		case obj.Class == ClassNPC:
-			obj.Monstat, obj.monstatErr = npcMonstat(obj.props)
+			obj.Monstat, obj.Household, obj.monstatErr = npcProperties(obj.props)
+		case obj.Class == ClassHousehold:
+			obj.propErr = householdProperties(&obj)
+		case obj.Class == ClassWatchPost:
+			obj.Post, obj.propErr = postProperty(obj.props)
 		case obj.Class == ClassInside:
 			obj.Rect = insideRect(obj.X, obj.Y, obj.W, obj.H)
 		}
@@ -567,39 +603,6 @@ func insideRect(x, y, w, h float64) image.Rectangle {
 		int(math.Floor(x)), int(math.Floor(y)),
 		int(math.Ceil(x+w)), int(math.Ceil(y+h)),
 	)
-}
-
-// npcMonstat is the loader's own npcMonstat (tiled.go:1079-1098).
-func npcMonstat(props []any) (string, error) {
-	monstat := ""
-
-	for _, raw := range props {
-		p, ok := asObject(raw)
-		if !ok {
-			return "", errors.New("a property is not a JSON object")
-		}
-
-		name := fieldString(p, "name")
-		if name != "monstat" {
-			return "", fmt.Errorf("unknown property %q; an npc takes \"monstat\"", name)
-		}
-
-		value, _ := p.Get("value")
-
-		s, isString := asString(value)
-		if fieldString(p, "type") != "string" || !isString {
-			return "", errors.New("monstat must be a string")
-		}
-
-		monstat = s
-	}
-
-	monstat = strings.TrimSpace(monstat)
-	if monstat == "" {
-		return "", errors.New("no monstat property naming who stands here")
-	}
-
-	return monstat, nil
 }
 
 func (m *model) deriveProperties(tree *jsonObject) {

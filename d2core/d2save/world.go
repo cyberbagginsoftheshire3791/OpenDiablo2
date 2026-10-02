@@ -125,7 +125,19 @@ import (
 // review of the per-frame budget"). MEASURED, 2 Oct 2026: his
 // %APPDATA%\OpenDiablo2\Saves holds no world file of any version, so none of
 // his is set aside by this bump.
-const Version = 5
+//
+// VERSION 6 (the raid's R3a, 2 Oct 2026): a new top-level block, households
+// -- every house's stock (d2world.HouseholdsSnapshot: per household, in map
+// order, its id h:<n>, its incense and its stakes). The houses themselves --
+// doors, roles, speakers, the church, the hotar and the watch posts -- are
+// the map's (D5 guards them) and are not saved. A version-5 file is refused
+// on its version and set aside as .v5.unread, never read and never lost; he
+// begins at dawn with his hero, kit and progress, as at every bump -- the
+// decided default, no migration, Josh's to overturn
+// (docs/m4.6-world-save-notes.md, "Version 6"). MEASURED, 2 Oct 2026 07:40:
+// his %APPDATA%\OpenDiablo2\Saves holds 8,059 entries and no world file of
+// any version, so none of his is set aside by this bump.
+const Version = 6
 
 // ErrWorldVersion is what a file of any version but Version is refused with.
 // The error is a *VersionError naming the version the file holds. Its message
@@ -236,7 +248,8 @@ const (
 	ReasonSceneFinite   = "scene-finite"
 	ReasonSceneWatch    = "scene-watch"
 	ReasonSceneStage    = "scene-stage"
-	ReasonFog           = "fog" // fog of war F3: a fog block Snapshot could not have written, or of another map than the file's
+	ReasonFog           = "fog"        // fog of war F3: a fog block Snapshot could not have written, or of another map than the file's
+	ReasonHouseholds    = "households" // the raid's R3a: a households block Snapshot could not have written
 
 	// The pairing with the files beside it (B4's step 1).
 	ReasonPairHero   = "pair-hero"   // CheckHeroFile: another hero's .od2
@@ -255,6 +268,7 @@ var Blocks = []string{
 	"map", "seed", "rng", "hero", "sidecar",
 	"clock", "light", "squads", "spawns", "spawner", "notice", "pursuit", "seek",
 	"corpses", "rising", "combat", "bodies", "entities", "scene", "fog",
+	"households",
 }
 
 // World is the whole file.
@@ -321,6 +335,12 @@ type World struct {
 	// that never looked -- fog off -- or had not looked yet. Check holds its
 	// map to the file's.
 	Fog d2world.FogSnapshot `json:"fog"`
+
+	// Households is every house's stock (the raid's R3a, new in version 6):
+	// per household the map places, in map order, its incense and stakes.
+	// Check holds its ids and bounds; whether it fits the map the load builds
+	// (one per household) is the load's (Households.Validate).
+	Households d2world.HouseholdsSnapshot `json:"households"`
 }
 
 // Map is the world the game was built from. For an authored map, Path is the
@@ -725,7 +745,24 @@ func (w *World) Check() error {
 		err = w.checkFog()
 	}
 
+	if err == nil {
+		err = w.checkHouseholds()
+	}
+
 	return err
+}
+
+// checkHouseholds (the raid's R3a): the households block is one
+// Households.Snapshot could have written -- ids h:1, h:2, ... in order, each
+// stock in its bounds. One per household the map places is the load's
+// (Households.Validate): the file names its map, and another is refused
+// before, MAP (D5).
+func (w *World) checkHouseholds() error {
+	if err := w.Households.Check(); err != nil {
+		return refuse(ReasonHouseholds, "%v", err)
+	}
+
+	return nil
 }
 
 // checkFog (fog of war F3): the fog block is one Fog.Snapshot could have

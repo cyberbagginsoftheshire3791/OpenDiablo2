@@ -58,6 +58,9 @@ type MapEngine struct {
 	towers         []image.Rectangle
 	towerSight     []float64
 	authoredRegion *authoredRegion
+	// village is an authored map's households, hotar and watch posts (the
+	// raid's R3a, village.go); empty on a generated map.
+	village AuthoredVillage
 
 	// Which authored bits line of sight obeys. Set explicitly in
 	// CreateMapEngine rather than left to the zero value, because the zero
@@ -169,6 +172,7 @@ func (m *MapEngine) resetState(width, height int) {
 	m.towers = nil
 	m.towerSight = nil
 	m.authoredRegion = nil
+	m.village = AuthoredVillage{}
 }
 
 func (m *MapEngine) addDT1(fileName string) {

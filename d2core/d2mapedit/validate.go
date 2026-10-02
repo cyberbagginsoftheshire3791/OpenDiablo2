@@ -663,6 +663,14 @@ func (v *validation) placeKind(gid int, layer string, x, y int) {
 		return
 	}
 
+	// The raid's R3a: a building is a wall or a structure (tiled.go's
+	// parser.kind).
+	if k.Building && layer == LayerFloor {
+		v.tile(Problem{Rule: RuleWrongLayer, Kind: k.Name, Msg: "carries \"building\" but is placed on the floor layer; a building is a wall or a structure -- put it on the walls layer"}, x, y)
+
+		return
+	}
+
 	p := Problem{Kind: k.Name, Tile: image.Pt(x, y), HasTile: true}
 	v.checkArtFor(k, layer, p)
 }
@@ -672,6 +680,8 @@ func (v *validation) placeKind(gid int, layer string, x, y int) {
 func (v *validation) objects() {
 	starts := 0
 	ids := map[int]bool{}
+
+	var vc villageCheck
 
 	for _, o := range v.doc.m.objects {
 		if ids[o.ID] {
@@ -713,20 +723,30 @@ func (v *validation) objects() {
 			}
 
 			v.standable("npc "+o.Monstat, o)
+			vc.npcs = append(vc.npcs, o)
 		case ClassInside:
 			v.inside(o)
+		case ClassHousehold:
+			v.household(o, &vc)
+		case ClassHotar:
+			v.hotar(o, &vc)
+		case ClassWatchPost:
+			v.watchPost(o)
 		case "":
 			v.add(Problem{Rule: RuleObjectClass, Object: o.ID,
-				Msg: fmt.Sprintf("object %q has no class; set it to player_start, npc or inside", o.Name)})
+				Msg: fmt.Sprintf("object %q has no class; set it to %s", o.Name, d2maptiled.ObjectClassesOr)})
 		default:
 			v.add(Problem{Rule: RuleObjectClass, Object: o.ID,
-				Msg: fmt.Sprintf("has class %q; the game reads player_start, npc and inside", o.Class)})
+				Msg: fmt.Sprintf("has class %q; the game reads %s", o.Class, d2maptiled.ObjectClassesAnd)})
 		}
 	}
 
 	if starts != 1 {
 		v.add(Problem{Rule: RuleStart, Msg: fmt.Sprintf("the objects layer holds %d player_start objects, want exactly 1", starts)})
 	}
+
+	// The raid's R3a: the loader's village pass, once the whole layer is read.
+	v.village(&vc)
 }
 
 // standable is tiled.go:1103-1114: a person off the map or on a tile nobody can

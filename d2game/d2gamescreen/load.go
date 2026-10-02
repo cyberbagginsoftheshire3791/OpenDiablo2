@@ -725,6 +725,8 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 		// Fog of war F3: the explored grid is of this map and its size
 		// (the F1 review's C6; D5).
 		{"fog", v.fogValidate(w.Fog)},
+		// The raid's R3a: one stock per household this map places.
+		{"households", v.households.Validate(w.Households)},
 	}
 
 	for _, c := range checks {
@@ -1248,6 +1250,14 @@ func (v *Game) resumeLoad(w *d2save.World) error {
 	}
 
 	v.loadStep("rising")
+
+	// The raid's R3a: every house's stock -- after the rising, before the
+	// systems whose refs will name members (R3b; the raid brief's P1).
+	if err := v.households.Restore(w.Households); err != nil {
+		return refuseLoad(LoadRefusedBlock, "households: %v", err)
+	}
+
+	v.loadStep("households")
 
 	if err := v.spawns.Restore(w.Spawns, r, seed); err != nil {
 		return refuseLoad(LoadRefusedBlock, "spawns: %v", err)

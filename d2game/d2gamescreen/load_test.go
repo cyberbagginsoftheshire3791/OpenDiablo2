@@ -225,7 +225,7 @@ func TestTheLoadResumesTheSavedMoment(t *testing.T) {
 
 	require.Equal(t, []string{
 		"clock", "natives", "entities", "validated", "health", "squads", "light", "torch", "corpses", "rising",
-		"spawns", "spawner", "notice", "pursuit", "seek", "combat", "bodies", "scene", "fog", "hero", "world_rng",
+		"households", "spawns", "spawner", "notice", "pursuit", "seek", "combat", "bodies", "scene", "fog", "hero", "world_rng",
 	}, resumed.loadSteps, "the load order (docs/m4.6-world-save-notes.md; B4b's steps 3 and bodies)")
 
 	// D1: the light model's torch, whole, and the kit's minutes zeroed --
