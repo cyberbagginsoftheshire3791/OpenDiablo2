@@ -29,9 +29,12 @@ import (
 // are shown for as long as it lasts (Q4: "contact" eyes, which reveal the tile
 // they stand on and nothing else).
 //
-// WHAT IT IS NOT YET (the plan's later bursts): the save (F3: the explored
-// grid is NOT saved -- a load starts black), raised sight (F4: talents, gear,
-// height, towers), and default-on (F5).
+// F3, "kept" (1 Oct 2026): the explored grid is saved -- the world file's
+// fog block, keyed on the map it was explored on (fog_snapshot.go). What he
+// sees now is derived and is not.
+//
+// WHAT IT IS NOT YET (the plan's later bursts): raised sight (F4: talents,
+// gear, height, towers), and default-on (F5).
 //
 // Resolution is the TILE (§6): authored maps block whole tiles, the renderer
 // draws and lights per tile, entities are bucketed per tile. The village is

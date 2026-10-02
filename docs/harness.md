@@ -989,15 +989,26 @@ this doc fails until it agrees.
   seed: a torch-lit walk at 23:00, then a fight under the shipped tactical layer
   (`combat.player_control` human) -- a zombie three tiles off set to watch
   him, 600 frames of it -- with a second zombie
-  standing nine tiles off in the dark): EVERY system's world hash agrees, fog's
-  and the ui's included, every digest part but `process` agrees, the ui state
+  standing nine tiles off in the dark): EVERY system's world hash agrees but
+  fog's own (since F3 the explored grid is fog's world state, and with fog off
+  nothing is explored -- the test requires that it DOES differ, the control),
+  the ui's included, every digest part but `process` and `systems` (which
+  hashes fog's world state with the rest) agrees, the ui state
   less only `bars` and `hover_label` is equal field for field, and with fog on
   the fight's enemies were contacts (the control that fog was engaged). Since
   the F2 review (B6) the ui's `bars` are in the digest's PROCESS part: with fog
   on, which bars are drawn depends on what he sees. A second function, `TestZoomInToTwo` (the zoom-in, the same day), with
   fog off: `ui.zoom` takes 2.0 and refuses 2.1, `view_scale` reads 2, and his
   feet stay where they were on screen at 1.0 (within 3 px: the camera stays on
-  him).
+  him). A fifth, `TestFogIsKept` (fog of war F3, "kept", 1 Oct 2026; `-fog
+  -zoom 0.5`, unaided): a walk of 13.5 tiles at noon, the save -- the world
+  file (version 4) holds a 48 x 48 `fog` block keyed on the file's map, its
+  grid the provider's `grid` -- 360 frames and 20 minutes on (S_U); to the
+  menu and `start_game{save_path}`: resumed, S_R0 = S_T (the explored grid
+  among it) with the start tile still `explored`, and the same walk gives S_U
+  again. Act 5, the teeth: T's file with its fog block emptied resumes and
+  diverges (`fog`), the start tile `unexplored`; act 6: T's file with its
+  grid keyed on another map is refused `FILE` (the `fog` rule) and set aside.
 * `seek_test.go` — the fifty-fourth (merged 1 Oct after the combat status's, integrate-1oct; the fiftieth on its own branch), the raid milestone's R2 (29 Sep 2026): who the
   night's hunters choose among the living. First run 29 Sep by the R2 build
   (Josh's approval of 19:17): red twice on the script's own setup, fixed
@@ -1131,7 +1142,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.16.2)
+## The tools (37; harness 0.16.3)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1852,7 +1863,11 @@ recompute saw by the lit term alone -- lit ground past every eye's reach, Q3),
 own tile is shown, Q4), `by_light` (fog sees by the light model) and
 `draws_by` (`view` while fog is drawn: the renderer draws by the light with
 his torch where he stands, BUG-110; `light` otherwise, master's draw); the cost counters `recomputes`, `skipped` (an
-update that found his tile unchanged) and `cells_read`, `saved` (false: F3), and
+update that found his tile unchanged) and `cells_read`, `saved` (true since F3,
+harness 0.16.3: the explored grid is in the world file), `map` (the map the
+grid is keyed on: the authored map's SHA-256, `""` for the generated Act 1 or a
+fog that has not looked) and `grid` (the explored grid as the world file's
+`fog.explored` writes it: base64 bits, row-major, `""` when empty), and
 `probe` once one is asked -- `{x, y, state, clear_from{<eye>}, lit, screen,
 structure}` (`lit`: brighter than the sky now), the tile's state, whether the line from his eye is clear, where
 its centre is on screen now, and the footprint `[x0, y0, x1, y1]` (Max
@@ -1862,9 +1877,13 @@ whole once any of it is seen). Settable: the five dials (`day_sight`, `dark_radi
 game's view, like `ui.zoom`; `explore` (`{x, y, r}`: every tile whose centre is
 within r marked explored), `forget` (the explored set cleared; the next update
 re-sees what he sees) and `reveal_all` are verbs; `probe` (`{x, y}`) is a
-question. It is in the digest's PROCESS part (F1 does not save fog, so a
-resumed game does not reproduce it), less `skipped` (a count of frames, which
-differ from launch to launch) and the probe's `screen` (presentation). `strigoi_get_entity` / `get_player` report
+question. **Since F3 (0.16.3)** `map`, `w`, `h`, `explored` and `grid` -- the
+explored grid the world file keeps -- are in the digest's WORLD part, so a
+resumed game must reproduce them (the resume digest compares them); the rest is
+in the PROCESS part (what he sees now is derived, the dials are never saved),
+less `skipped` (a count of frames, which differ from launch to launch) and the
+probe's `screen` (presentation). (Before F3 all of it was process: F1 and F2
+did not save fog.) `strigoi_get_entity` / `get_player` report
 `shown` (presentation, never in the digest): false only with fog drawn and the
 entity on a tile he does not see now (`MapRenderer.Shows`, the test the render
 passes use). Since F2 the HUD asks the same predicate (BUG-107): with fog
@@ -1945,6 +1964,14 @@ the load report says `ended_actions` (BUG-92: a held action this build's art
 no longer fits is ended as it would have ended, not refused), and a held
 action at a point no play can have is refused (BUG-91). And since BUG-94 the
 dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
+**0.16.3 (fog of war F3, "kept"; branch `fog-f3`, 1 Oct 2026)**: the world
+file is version 4 -- a `fog` block, the explored grid keyed on its map -- and
+the `fog` provider reports `saved` true, `map` and `grid`, with `map`, `w`,
+`h`, `explored` and `grid` in the digest's WORLD part (the resume digest
+compares the explored grid). A version-3 world file is set aside
+(`.v3.unread`); an evening kept by 0.16.2 is refused as another harness's.
+(The harness-fix branch working in parallel may also take 0.16.3; the merge
+settles the number.)
 **0.16.2 (integrate-1oct, 1 Oct 2026)** is the combat status, the raid's
 R2 and fog of war F2 merged on master `b84a7241` -- each had bumped 0.16.0
 to 0.16.1 on its own branch, so no one number named the three -- with the

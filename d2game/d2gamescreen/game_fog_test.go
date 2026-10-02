@@ -91,7 +91,9 @@ func TestFogDefaultsAreJoshs(t *testing.T) {
 
 // TestFogDigestLeavesOutFramesAndScreen: the digest's process part is what two
 // launches of one script share, so fog's frame counter (skipped) and the
-// probe's screen point stay out of it; the script still reads both.
+// probe's screen point stay out of it; the script still reads both. And (F3)
+// the explored grid is in the world part -- the part a resume must reproduce
+// -- and in that part alone.
 //
 // Negative control (1 Oct 2026): return HarnessState whole as the process part
 // and this fails, "the digest carries skipped, a count of frames"
@@ -114,8 +116,23 @@ func TestFogDigestLeavesOutFramesAndScreen(t *testing.T) {
 	}
 
 	world, process := p.HarnessDigest()
-	if len(world) != 0 {
-		t.Fatalf("fog put %v in the world part; F1 does not save it", world)
+
+	// F3: the explored grid is the world file's, so it is the world part's
+	// -- and nothing else of fog is (what he sees now is derived; the dials,
+	// counters and the view are this process's).
+	if len(world) != len(fogWorldFields) || world["explored"] != st["explored"] || world["grid"] != st["grid"] ||
+		world["w"] != 10 || world["h"] != 10 {
+		t.Fatalf("fog's world part is %v; want the explored grid and its names (%v)", world, fogWorldFields)
+	}
+
+	for _, k := range fogWorldFields {
+		if _, ok := process[k]; ok {
+			t.Fatalf("the process part carries %s, which the world part holds", k)
+		}
+	}
+
+	if process["visible"] != st["visible"] {
+		t.Fatalf("what he sees now left the process part: %v", process)
 	}
 
 	if _, ok := process["skipped"]; ok {
@@ -127,8 +144,8 @@ func TestFogDigestLeavesOutFramesAndScreen(t *testing.T) {
 		t.Fatalf("the digest's probe is %v; want its state and no screen point", probe)
 	}
 
-	if process["explored"] != st["explored"] || process["recomputes"] != 1 {
-		t.Fatalf("the digest lost the world-tile counts: %v", process)
+	if process["recomputes"] != 1 {
+		t.Fatalf("the digest lost the cost counters: %v", process)
 	}
 }
 

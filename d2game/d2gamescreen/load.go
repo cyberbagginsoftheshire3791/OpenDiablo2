@@ -700,6 +700,9 @@ func (v *Game) checkLoad(w *d2save.World) *LoadRefusal {
 		{"bodies", v.checkBodies(w.Bodies)},
 		{"world rng", w.RNG.World.Check(seed, d2rand.StreamWorld)},
 		{"scene", checkStage(w.Scene.LastStage)},
+		// Fog of war F3: the explored grid is of this map and its size
+		// (the F1 review's C6; D5).
+		{"fog", v.fogValidate(w.Fog)},
 	}
 
 	for _, c := range checks {
@@ -1279,6 +1282,15 @@ func (v *Game) resumeLoad(w *d2save.World) error {
 
 	v.restoreScene(w.Scene)
 	v.loadStep("scene")
+
+	// Fog of war F3: the explored grid. What he sees is not restored: the
+	// next fog update recomputes it from where he stands (he is put there
+	// next, before any frame runs).
+	if err := v.fogRestore(w.Fog); err != nil {
+		return refuseLoad(LoadRefusedBlock, "fog: %v", err)
+	}
+
+	v.loadStep("fog")
 
 	// Rule 4: he stands where he was saved, facing as he faced; his walk, if
 	// he had one, does not continue. His wind and his run toggle with him.

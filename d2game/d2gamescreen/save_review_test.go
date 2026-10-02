@@ -87,6 +87,9 @@ func b3SavableGame(t *testing.T) (*Game, string) {
 	v.seek.SetQuarries(v.seekQuarries)
 	v.seek.SetResolver(worldResolver{v})
 	v.lastStage = v.worldClock.Stage()
+	// Fog of war F3: every game has a fog, as CreateGame builds it -- off,
+	// as the shipped game is without -fog, so it saves an empty grid.
+	v.fog = newGameFog(mapTileSight{v}, false)
 
 	t.Cleanup(v.releaseWorld)
 

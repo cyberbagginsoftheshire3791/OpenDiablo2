@@ -75,6 +75,10 @@ func TestSaveResumeNegatives(t *testing.T) {
 		{"omit notice", omit("notice"), false},
 		{"omit pursuit", omit("pursuit"), false},
 		{"omit squads", omit("squads"), false},
+		// Fog of war F3 (version 4). This evening is played without -fog, so
+		// its grid is empty and an emptied block would be the same file: the
+		// emptied half for fog is TestFogIsKept's act 5, on a fogged day.
+		{"omit fog", omit("fog"), false},
 		{"empty bodies", func(file map[string]any) { file["bodies"] = []any{} }, true},
 		{"empty spawns.groups", func(file map[string]any) { sub(file, "spawns")["groups"] = []any{} }, true},
 		{"empty spawner.arrival", func(file map[string]any) { sub(file, "spawner")["arrival"] = json.Number("0") }, true},

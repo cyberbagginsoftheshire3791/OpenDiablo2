@@ -119,6 +119,10 @@ func b3Fixture() *World {
 				Motion: d2mapentity.Motion{Pos: vilPos, Target: vilPos, Path: [][2]float64{}, Speed: 3, Mode: "NU"}},
 		},
 		Scene: Scene{WatchStood: 30.25, FieldDead: []string{"dead:1", "dead:2"}, DawnPaidDay: 1, LastStage: "night", WatchClock: 1080, WatchClockSet: true},
+		// Fog of war F3 (version 4): a 5 x 3 grid on the file's map, tiles
+		// 0-2, 5-7 and 14 explored -- 0xE7 0x40, the last byte's top bit
+		// (past tile 14) zero.
+		Fog: d2world.FogSnapshot{Map: strings.Repeat("ab", 32), W: 5, H: 3, Explored: "50A="},
 	}
 }
 
@@ -441,6 +445,23 @@ func TestCheckRefusesWhatNoLoadCouldRestore(t *testing.T) {
 		"a stage that is none":    {ReasonSceneStage, func(w *World) { w.Scene.LastStage = "noon" }},
 		"a negative watch":        {ReasonSceneWatch, func(w *World) { w.Scene.WatchStood = -1 }},
 		"an infinite watch clock": {ReasonSceneFinite, func(w *World) { w.Scene.WatchClock = math.Inf(-1) }},
+
+		// Fog of war F3: the explored grid is Snapshot's, and of the file's
+		// own map (the F1 review's C6).
+		"a fog grid of another map":        {ReasonFog, func(w *World) { w.Fog.Map = strings.Repeat("cd", 32) }},
+		"a fog grid of no map":             {ReasonFog, func(w *World) { w.Fog.Map = "" }},
+		"a fog grid a byte short":          {ReasonFog, func(w *World) { w.Fog.Explored = "5w==" }},
+		"a fog grid a byte long":           {ReasonFog, func(w *World) { w.Fog.Explored = "50AA" }},
+		"a fog grid of another size":       {ReasonFog, func(w *World) { w.Fog.H = 8 }},
+		"a fog grid past its last tile":    {ReasonFog, func(w *World) { w.Fog.Explored = "58A=" }},
+		"a fog grid that is not base64":    {ReasonFog, func(w *World) { w.Fog.Explored = "50A!" }},
+		"a fog grid unpadded":              {ReasonFog, func(w *World) { w.Fog.Explored = "50A" }},
+		"a fog grid broken across lines":   {ReasonFog, func(w *World) { w.Fog.Explored = "50\nA=" }},
+		"a fog grid with one side":         {ReasonFog, func(w *World) { w.Fog.W, w.Fog.Explored = 0, "" }},
+		"a fog grid of negative size":      {ReasonFog, func(w *World) { w.Fog.W, w.Fog.H = -5, -3 }},
+		"a fog grid past any map":          {ReasonFog, func(w *World) { w.Fog.W = 5000 }},
+		"an empty fog grid naming a map":   {ReasonFog, func(w *World) { w.Fog.W, w.Fog.H, w.Fog.Explored = 0, 0, "" }},
+		"an empty fog grid holding a grid": {ReasonFog, func(w *World) { w.Fog.W, w.Fog.H, w.Fog.Map = 0, 0, "" }},
 	}
 
 	for name, tc := range cases {
@@ -528,6 +549,8 @@ func TestAFieldTheFileLacksIsRefused(t *testing.T) {
 		// time 0 are a real point of a play, so a file without them must not
 		// read as the action's first frame.
 		"entities[0].motion.action_at.frame", "entities[0].motion.action_at.elapsed",
+		// Fog of war F3: a grid with no map would key on its size alone.
+		"fog.map", "fog.explored", "fog.w",
 	} {
 		cut := b3Cut(t, data, path)
 
@@ -589,7 +612,27 @@ func b3Cut(t *testing.T, data []byte, path string) []byte {
 func TestAGeneratedWorldIsAMap(t *testing.T) {
 	w := b3Fixture()
 	w.Map = Map{Generated: true}
+	w.Fog.Map = "" // the generated map's grid is of no SHA: its identity is the seed
 
 	_, err := Decode(b3Encode(t, w))
 	require.NoError(t, err)
+}
+
+// FOG OF WAR F3: an empty fog block -- a game that never looked, fog off --
+// is a file a load reads, and it names no map.
+func TestAnEmptyFogBlockIsAFile(t *testing.T) {
+	w := b3Fixture()
+	w.Fog = d2world.FogSnapshot{}
+
+	got, err := Decode(b3Encode(t, w))
+	require.NoError(t, err)
+	require.True(t, got.Fog.Empty())
+
+	data := b3Encode(t, w)
+	require.Contains(t, string(data), `"fog": {
+    "map": "",
+    "w": 0,
+    "h": 0,
+    "explored": ""
+  }`, "the empty block as it is written")
 }

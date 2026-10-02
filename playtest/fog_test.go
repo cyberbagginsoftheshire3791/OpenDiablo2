@@ -3,11 +3,16 @@
 package playtest
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"math"
+	"os"
 	"sort"
+	"strings"
 	"testing"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2save"
 )
 
 // TestFogOfWar is fog of war F1's script: "black until explored", by day
@@ -971,10 +976,18 @@ func fogHoverAt(t *testing.T, s *session, handle string) string {
 // off, set to watch him; 600 frames of it, his turn held as the shipped game
 // holds it) with a second zombie standing out in the dark --
 // with fog on and with fog off give the same world: EVERY system's world
-// hash agrees (fog's included; the ui's too, now that the bars are in the
-// process part), every digest part but the process part agrees, and the ui
-// itself, less only `bars` and `hover_label` (what the HUD drew), is equal
-// field for field. With fog on the fight's enemies were contacts (fog was
+// hash agrees but fog's own (the ui's too, now that the bars are in the
+// process part), every digest part but the process part and the systems part
+// agrees, and the ui itself, less only `bars` and `hover_label` (what the HUD
+// drew), is equal field for field.
+//
+// FOG'S OWN WORLD STATE IS EXEMPT SINCE F3 (1 Oct 2026): the explored grid is
+// saved, so it is in fog's world part -- and with fog off nothing is
+// explored, so fog's hash, and the systems part that hashes every system's
+// world state together, differ by design. Every OTHER system is still
+// compared hash for hash, which is the whole of what the systems part held
+// besides fog. (Before F3 fog's world part was empty, and "fog's included"
+// held trivially.) With fog on the fight's enemies were contacts (fog was
 // engaged, the control that the run is not vacuous).
 //
 // The unit control is d2world's TestFogNeverTouchesTheSim (the plan's
@@ -986,7 +999,7 @@ func TestFogNeverTouchesTheSim(t *testing.T) {
 	differ := []string{}
 
 	for name, h := range on.systems {
-		if off.systems[name] != h {
+		if name != "fog" && off.systems[name] != h {
 			differ = append(differ, name)
 		}
 	}
@@ -1001,9 +1014,13 @@ func TestFogNeverTouchesTheSim(t *testing.T) {
 	}
 
 	for part, h := range on.parts {
-		if part != "process" && off.parts[part] != h {
+		if part != "process" && part != "systems" && off.parts[part] != h {
 			t.Errorf("the digest's %s part differs with fog on and off", part)
 		}
+	}
+
+	if on.systems["fog"] == off.systems["fog"] {
+		t.Error("the control: fog's own world state (the explored grid, F3) is the same with fog on and off -- nothing was explored, or the grid left the world part")
 	}
 
 	for k, v := range on.ui {
@@ -1145,4 +1162,189 @@ func farSpot(s *session, x, y, d float64) []float64 {
 	}
 
 	return nil
+}
+
+// TestFogIsKept is fog of war F3's script, "kept" (claude/fog-of-war-build-
+// plan.md §4 F3; the world file's version 4): with -fog he walks the village
+// by day, saves, and resumes -- the ground he explored is still remembered,
+// and the resumed game is the saved one, fog's explored grid included (it is
+// in the digest's world part now: the resume digest compares it).
+//
+//  1. Noon, -fog. He walks 13+ tiles from where he began; the start tile is
+//     explored and not visible.
+//  2. The save (it moves nothing). The file's fog block is the grid the
+//     provider reports, 48 x 48, on the file's own map.
+//  3. The uninterrupted run: a fixed walk back and 20 world minutes: S_U.
+//  4. To the menu, and start_game{save_path} in this process: the load
+//     resumes, S_R0 = S_T -- the explored grid among it -- and the start tile
+//     is still remembered. The same walk and minutes: S_R = S_U.
+//  5. THE TEETH (the negatives' emptied half): T's file with its fog block
+//     emptied (a game that never looked) resumes, and it is NOT the saved
+//     moment -- fog's world state differs, and the start tile is black: the
+//     load restores the grid, and the digest sees it.
+//  6. THE MAP KEY (the F1 review's C6): T's file with its fog grid keyed on
+//     another map is refused FILE (the fog rule) and set aside; he begins at
+//     dawn.
+//
+// UNAIDED: nothing spawned, watched or pursued.
+func TestFogIsKept(t *testing.T) {
+	const dawnMinute = 165.0 // 02:45, the epoch
+
+	s := startGame(t, "-fog", "-zoom", "0.5")
+	s.call("strigoi_pause", map[string]any{})
+
+	game := s.call("strigoi_start_game", map[string]any{
+		"hero_name": "Kept", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
+	})
+	save := str(game, "save_path")
+
+	dials := func() {
+		setField(s, "save", "autosave", false) // the dawn writes nothing over T's file
+		setField(s, "rising", "p", 0.0)
+		setField(s, "rising", "edge_floor", 0)
+		setField(s, "spawns", "chance", 0)
+	}
+	dials()
+
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 12*60 - dawnMinute})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	// --- act 1: noon, a walk -------------------------------------------------
+	if fog := fogState(s); !flag(t, fog, "enabled") || !flag(t, fog, "saved") {
+		t.Fatalf("-fog: fog is not on, or does not say it is saved (enabled %v, saved %v)", fog["enabled"], fog["saved"])
+	}
+
+	sx, sy := playerTile(s)
+	walked := fogWalkAway(t, s, float64(sx)+0.5, float64(sy)+0.5, 13.5)
+	s.call("strigoi_step", map[string]any{"frames": 30}) // he stops
+
+	if st := str(probeAt(s, sx, sy), "state"); st != "explored" {
+		t.Fatalf("act 1: after a walk of %.1f tiles the start tile (%d,%d) is %s; want explored", walked, sx, sy, st)
+	}
+
+	fogT := fogState(s)
+	t.Logf("act 1: walked %.1f tiles from (%d,%d); %v explored, %v visible", walked, sx, sy, fogT["explored"], fogT["visible"])
+
+	// --- act 2: the save -----------------------------------------------------
+	sT := snapWorld(t, s)
+	out := saveUnmoved(t, s, "act 2", map[string]any{})
+	worldPath := str(out, "world_path")
+	fileT := mustRead(t, worldPath)
+
+	var file struct {
+		Version int                  `json:"version"`
+		Map     struct{ SHA string } `json:"map"`
+		Fog     struct {
+			Map      string `json:"map"`
+			W, H     int
+			Explored string `json:"explored"`
+		} `json:"fog"`
+	}
+
+	if err := json.Unmarshal(fileT, &file); err != nil {
+		t.Fatalf("act 2: the world file is not JSON: %v", err)
+	}
+
+	switch {
+	case file.Version != d2save.Version:
+		t.Fatalf("act 2: the file is version %d, want %d", file.Version, d2save.Version)
+	case file.Fog.W != 48 || file.Fog.H != 48:
+		t.Fatalf("act 2: the fog grid is %d x %d; the village is 48 x 48", file.Fog.W, file.Fog.H)
+	case file.Fog.Map == "" || file.Fog.Map != file.Map.SHA:
+		t.Fatalf("act 2: the fog grid is keyed on map %q and the file was saved on %q", file.Fog.Map, file.Map.SHA)
+	case file.Fog.Explored != str(fogT, "grid"):
+		t.Fatalf("act 2: the file's grid is not the one the provider reports:\n file %s\n fog  %s", file.Fog.Explored, str(fogT, "grid"))
+	}
+
+	t.Logf("act 2 PASS: saved; the fog block is 48 x 48 on map %.12s, %d characters", file.Fog.Map, len(file.Fog.Explored))
+
+	// --- act 3: the uninterrupted run ----------------------------------------
+	onward := func() {
+		s.call("strigoi_move_player_to", map[string]any{"x": float64(sx) + 3.5, "y": float64(sy) + 6.5})
+		s.call("strigoi_step", map[string]any{"frames": 360})
+		s.call("strigoi_step_world", map[string]any{"world_minutes": 20})
+		s.call("strigoi_step", map[string]any{"frames": 2})
+	}
+
+	onward()
+	sU := snapWorld(t, s)
+	t.Logf("act 3: on: %v explored", fogState(s)["explored"])
+
+	// --- act 4: the resume ---------------------------------------------------
+	resume := func(act string, world []byte) map[string]any {
+		s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
+		awaitMenu(t, s)
+
+		if err := os.WriteFile(worldPath, world, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		g := s.call("strigoi_start_game", map[string]any{"save_path": save, "wait_seconds": 90})
+		load := sub(g, "load")
+		t.Logf("%s: load %v", act, load)
+
+		dials()
+
+		return load
+	}
+
+	if load := resume("act 4", fileT); !flag(t, load, "resumed") {
+		t.Fatalf("act 4: the save did not resume: %v", load)
+	}
+
+	sameWorld(t, "act 4: S_R0 = S_T", sT, snapWorld(t, s))
+
+	fogR := fogState(s)
+	if str(fogR, "grid") != str(fogT, "grid") || mustNum(t, fogR, "explored") != mustNum(t, fogT, "explored") {
+		t.Fatalf("act 4: the resumed fog remembers %v tiles, the saved one %v (or another grid)", fogR["explored"], fogT["explored"])
+	}
+
+	if st := str(probeAt(s, sx, sy), "state"); st != "explored" {
+		t.Fatalf("act 4: resumed, the start tile (%d,%d) is %s; the ground he walked is remembered", sx, sy, st)
+	}
+
+	onward()
+	sameWorld(t, "act 4: S_R = S_U", sU, snapWorld(t, s))
+	t.Logf("act 4 PASS: resumed as saved (%v tiles remembered) and ran on as the uninterrupted game", fogR["explored"])
+
+	// --- act 5: the teeth ----------------------------------------------------
+	emptied := decodeNumbers(t, fileT)
+	emptied["fog"] = map[string]any{"map": "", "w": 0, "h": 0, "explored": ""}
+
+	data, err := json.MarshalIndent(emptied, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if load := resume("act 5", append(data, '\n')); !flag(t, load, "resumed") {
+		t.Fatalf("act 5: an emptied fog block is a file the load takes; it must resume: %v", load)
+	}
+
+	sE := snapWorld(t, s)
+	if sE.Resume == sT.Resume || sE.Systems["fog"] == sT.Systems["fog"] {
+		t.Fatalf("act 5: the fog block emptied, the resume is the saved moment (fog %v / %v): nothing sees the grid",
+			sE.Systems["fog"], sT.Systems["fog"])
+	}
+
+	if st := str(probeAt(s, sx, sy), "state"); st != "unexplored" {
+		t.Fatalf("act 5: with the grid emptied the start tile (%d,%d) is %s; want unexplored", sx, sy, st)
+	}
+
+	t.Logf("act 5 PASS: the emptied fog block resumed and diverged (fog), the start tile black: %s", divergence(t, sT, sE, map[string]any{}))
+
+	// --- act 6: the map key --------------------------------------------------
+	elsewhere := decodeNumbers(t, fileT)
+	sub(elsewhere, "fog")["map"] = strings.Repeat("cd", 32)
+
+	if data, err = json.MarshalIndent(elsewhere, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+
+	load := resume("act 6", append(data, '\n'))
+	if flag(t, load, "resumed") || str(load, "refused") != "FILE" || !strings.Contains(str(load, "reason"), "fog") ||
+		str(load, "set_aside") == "" {
+		t.Fatalf("act 6: a fog grid keyed on another map must be refused FILE (fog) and set aside: %v", load)
+	}
+
+	t.Logf("act 6 PASS: a fog grid of another map refused FILE and set aside (%s)", str(load, "set_aside"))
 }

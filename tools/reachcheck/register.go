@@ -1580,6 +1580,20 @@ var Register = []Entry{
 		"fightContacts: an enemy dead, routed or broke off is no contact (the F2 review's C3).", ""},
 	{sym(pkgMapRenderer, "MapRenderer.LightSampler"), BucketObserve, VerdictHarnessOnly,
 		"The fog provider's draws_by: which light the renderer draws by now, a read.", ""},
+
+	// Fog of war F3, "kept" (1 Oct 2026): the explored grid in the world file.
+	// The game saves (the escape menu, the close, the dawn: M4.6 B5) and loads
+	// (start, "load last save"), so every row is wire.
+	{sym(pkgWorld, "Fog.Snapshot"), BucketWire, VerdictLive,
+		"Game.worldFile takes the fog block through Game.fogSnapshot at every save (the menu, the close, the dawn autosave).", ""},
+	{sym(pkgWorld, "Fog.Validate"), BucketWire, VerdictLive,
+		"The load's step 4 (Game.checkLoad -> fogValidate) and the save's validateSnapshots: a grid of this map and size.", ""},
+	{sym(pkgWorld, "Fog.Restore"), BucketWire, VerdictLive,
+		"The load's step 5 (Game.resumeLoad -> fogRestore): the explored grid put back. If it went dark a resumed game would start black -- TestFogIsKept act 4 and TestAFoggedGameIsKept are the instruments.", ""},
+	{sym(pkgWorld, "FogSnapshot.Check"), BucketWire, VerdictLive,
+		"d2save's World.checkFog, from World.Check in every Decode the load's step 1 makes, and Fog.Validate.", ""},
+	{sym(pkgWorld, "FogSnapshot.Empty"), BucketWire, VerdictLive,
+		"FogSnapshot.Check, Fog.Validate/Restore and World.checkFog: an empty block is a fog that never looked.", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in
