@@ -46,7 +46,8 @@ names say `placeholder-` so nobody mistakes them.
   `height` (int 0..8): an eye standing on it sees 2 tiles further a level
   (the churchyard tile is `height` 1 -- the church and cemetery's high
   ground). A **1x1 structure** may carry `sight_radius` (int 1..64): it is a
-  tower, an eye of its own (the `placeholder-watchtower` at the gate sees 16).
+  tower, an eye of its own (the `placeholder-watchtower` at the gate sees 16;
+  it is `blocks_sight` false, so the beasts see past it as before).
   `height` anywhere but the floor, and `sight_radius` on anything but a 1x1
   structure, are refused.
 - People are **point** objects: one `player_start`, and `npc` objects with a string

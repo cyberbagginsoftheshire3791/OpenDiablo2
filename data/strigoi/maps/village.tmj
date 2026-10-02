@@ -5136,6 +5136,11 @@
      "imageheight": 400,
      "properties": [
       {
+       "name": "blocks_sight",
+       "type": "bool",
+       "value": false
+      },
+      {
        "name": "footprint_w",
        "type": "int",
        "value": 1

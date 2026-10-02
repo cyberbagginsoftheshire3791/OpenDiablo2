@@ -321,3 +321,81 @@ func TestTheRecordedWalkOnAnyGrid(t *testing.T) {
 		}
 	}
 }
+
+// TestTakingUpTheBowRecomputesWhereHeStands (the F4 review's C3): standing
+// still, he takes the bow up -- his eye's gear goes 0 -> 2 on the same tile --
+// and fog recomputes at once and sees 14, not at his next step.
+//
+// Negative control (2 Oct 2026, strigoi-harness-runs\wt-fog4\nc\): the gear
+// left out of the eye's key (keyOfEye) and this fails, "the bow taken up
+// standing still: 1 recomputes, then 1" (nc-gear-not-keyed.txt).
+func TestTakingUpTheBowRecomputesWhereHeStands(t *testing.T) {
+	f := NewFog(DefaultFogDials(), &openSight{})
+	f.Update(64, 64, []Eye{{ID: "s:1", X: 30.5, Y: 30.5}})
+	r0, _, _ := f.Counters()
+
+	if st := f.At(44, 30); st != FogUnexplored {
+		t.Fatalf("without the bow the tile 14 off (44,30) is %v", st)
+	}
+
+	f.Update(64, 64, []Eye{{ID: "s:1", X: 30.5, Y: 30.5, Gear: 2}})
+	r1, _, _ := f.Counters()
+
+	if r1 != r0+1 || f.At(44, 30) != FogVisible {
+		t.Fatalf("the bow taken up standing still: %d recomputes, then %d; the tile 14 off is %v", r0, r1, f.At(44, 30))
+	}
+}
+
+// TestATowerAloneSeesAFarFire (the F4 review's C3; Q3 and Q6): at deep night
+// a fire 30 tiles from the tower -- far past its sight of 16 -- is seen
+// because the TOWER has a clear line to its lit ground; his own line to it is
+// walled.
+//
+// Negative control (2 Oct 2026, strigoi-harness-runs\wt-fog4\nc\): the lit
+// term skipping the towers' lines (seeLitGround) and this fails, "the fire 30
+// tiles from the tower (20,10) is unexplored" (nc-lit-term-no-towers.txt).
+func TestATowerAloneSeesAFarFire(t *testing.T) {
+	// The tower at (50,10), the fire at (20,10), him at (5,10) with a wall at
+	// (10,10) between him and it (openSight walls a row's eastward lines).
+	sight := &raisedSight{towers: []image.Rectangle{image.Rect(50, 10, 51, 11)}, sight: []float64{16}}
+	sight.blocked = map[[2]int]bool{{10, 10}: true}
+	disc, lit := litDisc(1, 20.5, 10.5, 2)
+	f := nightFog(&fakeSky{sky: 0, band: 0.1, lit: lit, discs: []LitDisc{disc}}, sight)
+
+	f.Update(64, 64, []Eye{{ID: "s:1", X: 5.5, Y: 10.5}})
+
+	if st := f.At(20, 10); st != FogVisible {
+		t.Fatalf("the fire 30 tiles from the tower (20,10) is %v; the tower has a clear line to it", st)
+	}
+
+	if clear := f.ClearFrom(20, 10); clear["s:1"] || !clear["tower/50,10"] {
+		t.Fatalf("the lines to the fire: %v; want his walled and the tower's clear", clear)
+	}
+}
+
+// TestTwoEyesOfOneIDSeeAsTwo (the F4 review's C2): two eyes that share an id
+// on two tiles see exactly what two eyes of two ids see -- the line cache is
+// per id, and the second of a shared id walks uncached rather than reading
+// the first's lines.
+//
+// Negative control (2 Oct 2026, strigoi-harness-runs\wt-fog4\nc\): drop the
+// claimed check in linesFor and this fails, "tile (23,30) is unexplored to
+// the shared id and visible to two ids" (nc-dup-id.txt).
+func TestTwoEyesOfOneIDSeeAsTwo(t *testing.T) {
+	sight := &raisedSight{}
+	// Both on row 30, a wall at (22,30) between them: the first's line to
+	// (25,30) is walled, the second's is clear.
+	sight.blocked = map[[2]int]bool{{22, 30}: true}
+
+	shared, apart := NewFog(DefaultFogDials(), sight), NewFog(DefaultFogDials(), sight)
+	shared.Update(64, 64, []Eye{{ID: "dup", X: 15.5, Y: 30.5}, {ID: "dup", X: 30.5, Y: 30.5}})
+	apart.Update(64, 64, []Eye{{ID: "a", X: 15.5, Y: 30.5}, {ID: "b", X: 30.5, Y: 30.5}})
+
+	for ty := 0; ty < 64; ty++ {
+		for tx := 0; tx < 64; tx++ {
+			if a, b := shared.At(tx, ty), apart.At(tx, ty); a != b {
+				t.Fatalf("tile (%d,%d) is %v to the shared id and %v to two ids", tx, ty, a, b)
+			}
+		}
+	}
+}

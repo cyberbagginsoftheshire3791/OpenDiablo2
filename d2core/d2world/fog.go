@@ -420,7 +420,10 @@ func (f *Fog) resize(w, h int) {
 	}
 
 	// A line cached on another map is not this map's (§1.4 holds per map),
-	// nor is its opacity, nor (sized to it) its rays.
+	// nor is its opacity, nor (sized to it) its rays. DEFENSIVE (the F4
+	// review's C2): every new map is a new Game and so a new Fog today, and a
+	// cache of another size is reset in linesFor anyway; this keeps a map
+	// swapped under a living fog from reading the old map's lines.
 	f.lines = nil
 	f.opaque = nil
 	f.rays = nil
@@ -653,8 +656,11 @@ func (f *Fog) linesFor(e Eye) *eyeLines {
 	x, y := tileOf(e.X), tileOf(e.Y)
 
 	c, ok := f.lines[e.ID]
+	// Two eyes of one id on two tiles: the second walks uncached. DEFENSIVE
+	// (the F4 review's C2): the game's ids are unique (s:1, squad/entity,
+	// tower/x,y); TestTwoEyesOfOneIDSeeAsTwo holds it.
 	if ok && c.claimed == f.epoch && (c.x != x || c.y != y) {
-		return nil // two eyes of one id on two tiles: the second walks uncached
+		return nil
 	}
 
 	if !ok {
@@ -942,7 +948,8 @@ func (f *Fog) lineClear(i, tx, ty int) bool {
 	)
 
 	// The recorded walk needs the eye on the grid (an eye may stand off its
-	// last row); off it, the map's own walk answers.
+	// last row); off it, the map's own walk answers. (BUG-116; tested by
+	// TestTheRecordedWalkOnAnyGrid.)
 	if ex, ey := tileOf(e.X), tileOf(e.Y); f.opaque != nil && f.in(ex, ey) {
 		clear, cells = f.gridLineClear(ex, ey, tx, ty)
 	} else {

@@ -219,8 +219,8 @@ func (k *Kit) PackItem(i int) (*Item, *Instance, bool) {
 // a bow was refused the hand, because shooting is not built; Q9's +2 needs it
 // in his hands, so he may take it up out of a fight -- both hands, as any
 // two-hander, never past a lit torch -- to look along it. It still does not
-// shoot: MainBite gives no bite for a ranged weapon, so in a fight he strikes
-// as with an empty hand. Josh's to overturn (the F4 report's question).
+// shoot: in a fight it is swung, its Bash (2-5 blunt, the F4 review's B2;
+// MainBite). Josh's to overturn (the F4 report's question).
 func (k *Kit) Equip(i int, inFight, offLit bool) error {
 	if k == nil || k.cat == nil {
 		return ErrUnboundKit
@@ -352,16 +352,26 @@ type Bite struct {
 }
 
 // MainBite reports the main-hand weapon.
+//
+// A HELD BOW (fog of war F4's review, B2, 2 Oct 2026) is swung, not shot:
+// its bite is its Bash -- the composite bow's 2-5 blunt -- scaled like any
+// weapon's, with no reaction. Before, a held bow had no bite and he struck
+// with the placeholder profile, 12-20, a sound kılıç's (BUG-118).
 func (k *Kit) MainBite() (Bite, bool) {
 	it, inst, ok := k.ItemIn(SlotMain)
-	if !ok || it.Weapon == nil || it.Weapon.Ranged {
+	if !ok || it.Weapon == nil || (it.Weapon.Ranged && it.Weapon.Bash == nil) {
 		return Bite{}, false
 	}
 
 	f := makeFactor(inst.Make) * conditionFactor(inst.Condition)
 
-	lo := int(math.Round(float64(it.Weapon.Min) * f))
-	hi := int(math.Round(float64(it.Weapon.Max) * f))
+	least, most, class, reaction := it.Weapon.Min, it.Weapon.Max, it.Weapon.Class, it.Weapon.Reaction
+	if it.Weapon.Ranged {
+		least, most, class, reaction = it.Weapon.Bash.Min, it.Weapon.Bash.Max, Blunt, ReactionNone
+	}
+
+	lo := int(math.Round(float64(least) * f))
+	hi := int(math.Round(float64(most) * f))
 
 	if lo < 1 {
 		lo = 1
@@ -372,8 +382,8 @@ func (k *Kit) MainBite() (Bite, bool) {
 	}
 
 	return Bite{
-		Item: it.ID, Min: lo, Max: hi, Class: it.Weapon.Class,
-		VsMail: it.Weapon.VsMail, Reaction: it.Weapon.Reaction,
+		Item: it.ID, Min: lo, Max: hi, Class: class,
+		VsMail: it.Weapon.VsMail, Reaction: reaction,
 	}, true
 }
 

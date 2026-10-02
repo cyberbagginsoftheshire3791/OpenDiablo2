@@ -113,6 +113,18 @@ type Weapon struct {
 
 	// Ranged weapons exist as items; shooting is a v0 non-goal (R2 §3).
 	Ranged bool `json:"ranged,omitempty"`
+
+	// Bash is what a RANGED weapon strikes for when it is held and swung in
+	// a fight -- shooting is not built (fog of war F4 let a bow be held, Q9;
+	// the F4 review's B2, 2 Oct 2026). Blunt, no reaction. A ranged weapon
+	// with no bash has no bite (he strikes with the placeholder profile).
+	Bash *Bash `json:"bash,omitempty"`
+}
+
+// Bash is a ranged weapon's own melee blow. [DIAL]
+type Bash struct {
+	Min int `json:"min"`
+	Max int `json:"max"`
 }
 
 // Armour is how a worn piece protects.
@@ -258,6 +270,10 @@ func validate(it *Item) error {
 		case ReactionRiposte, ReactionBrace, ReactionOpportunity, ReactionNone:
 		default:
 			return fmt.Errorf("reaction %q", w.Reaction)
+		}
+
+		if b := w.Bash; b != nil && (!w.Ranged || b.Min < 1 || b.Max < b.Min) {
+			return fmt.Errorf("a bash is a ranged weapon's, with 1 <= min <= max")
 		}
 	case KindArmour:
 		if it.Armour == nil || it.Armour.Points < 0 {

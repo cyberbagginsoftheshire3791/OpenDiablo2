@@ -147,7 +147,7 @@ recommended default, Josh's to overturn**:
 | Q | Decided on the default | Built |
 |---|---|---|
 | **Q6** towers | no garrison; a tower sees its radius by day; at night, like a squad, only what is lit plus a short dark radius; a lit beacon on it lets it see by night | a structure with `sight_radius` is an eye of its own (`tower/<x>,<y>`), always; by night its unlit reach is tonight's dark radius; a light placed at it is lit ground the tower has a line to |
-| **Q7** placement | a tower at the village gate, and the church / cemetery high ground at height 1 (G4's "cemetery on the high ground"); placeholder art, labelled | `village.tmj`: a 1x1 `placeholder-watchtower` at tile (25,34), just inside the fence east of the road through the gate, `sight_radius` 16; every churchyard floor tile (`placeholder-churchyard`, the church and the graves stand on it) `height` 1 |
+| **Q7** placement | a tower at the village gate, and the church / cemetery high ground at height 1 (G4's "cemetery on the high ground"); placeholder art, labelled | `village.tmj`: a 1x1 `placeholder-watchtower` at tile (25,34), just inside the fence east of the road through the gate, `sight_radius` 16, `blocks_sight` false (below); every churchyard floor tile (`placeholder-churchyard`, the church and the graves stand on it) `height` 1 |
 | **Q8** talent | Night Eyes also widens his dark radius by 1 (it keeps its +10) | `talents.json`: Night Eyes `dark_sight: 1`; `dark_sight` is a known effect (additive); his eye's dark radius is tonight's + it |
 | **Q9** gear | an equipped composite bow: +2; squad TYPES add theirs when squads have a type | `items.json`: the composite bow `sight: 2` (an item's optional `sight`, given only by what is in his hands); squad types are NOT built (nothing would set them) |
 
@@ -159,6 +159,19 @@ two by the sky exactly as before, never past its own sight. The rule is
 otherwise F2's: lit ground with a clear line is seen at any distance, from any
 eye, a tower's included.
 
+- **The tower is a wall to no one's eyes** (the F4 review's A, 2 Oct 2026;
+  decided on a default Josh can overturn). A structure blocks sight by
+  default, and as first built the tower did, in every game, fog on or off:
+  5,182 of 178,846 beast line-of-sight answers between standable tiles about
+  the gate changed. It is now `"blocks_sight": false` -- a timber tower on
+  posts a man can see past -- so the beasts' sight about the gate is the
+  village's without the tower, answer for answer
+  (`TestTheTowerChangesNoBeastsSight`; red with the property taken out).
+  **What still changes for every game is one tile of walking:** the tower's
+  tile is solid, as every structure's is, so some routes in through the gate
+  run a little longer (the review measured 2,244 routes from outside the gate
+  to the yards inside 2-3 subtiles longer, none made unreachable), and the
+  road through the gate (tiles 23-24) is untouched.
 - **Height adds radius only.** v1 does not see over blockers: a man on the
   high ground sees further, not over the church wall. The plan's §6.
 - **A tower is 1x1 for now** (the parser refuses a larger one): it sees from
@@ -172,9 +185,17 @@ eye, a tower's included.
   ("shooting is not built yet"), which would have left Q9's +2 with nothing
   that could ever give it. He may now take it up out of a fight -- both hands,
   never past a lit torch, as any two-hander -- to look along it; it still does
-  not shoot (`MainBite` gives no bite for a ranged weapon, so in a fight he
-  strikes as with an empty hand). The kit panel shows it as "(+2 sight in
-  hand; no shooting yet)". **Josh's to overturn** (the F4 report's question).
+  not shoot. **In a fight it is swung** (the F4 review's B2, decided on a
+  default Josh can overturn): its own bash, **2-5 blunt, no reaction**
+  (`items.json` `weapon.bash`; `Kit.MainBite`) -- the bow is 0.9 kg of horn,
+  wood and sinew made to flex, a light stick swung, so below the knife's 6-11
+  and far below the kılıç's 12-20. (At `c06e4c3a` a held bow had no bite and
+  he struck with the placeholder profile, 12-20 cut -- a sound kılıç's; that
+  empty hands strike like a kılıç at all is BUG-118, open, Josh's call.)
+  **The kit panel** shows the bow as "(+2 sight with fog of war; no shooting
+  yet)" (the review's B1: the +2 is real only where fog is drawn, so the words
+  say so, with fog on or off; the rule that he may hold it is the sim's and is
+  not gated on the display). **Josh's to overturn** (the F4 report's question).
 - **Talents and kit are his:** the other models of his squads have neither
   term; squad types are not built.
 - **The map:** `height` (an int 0..8 on a FLOOR tile) and `sight_radius` (an

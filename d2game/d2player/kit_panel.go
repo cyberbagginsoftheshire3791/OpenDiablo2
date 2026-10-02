@@ -331,7 +331,7 @@ func describe(kit *d2items.Kit, it *d2items.Item, inst *d2items.Instance, slot d
 
 	switch {
 	case it.Weapon != nil && it.Weapon.Ranged:
-		parts = append(parts, fmt.Sprintf(KitRangedNote, it.Sight)) // fog of war F4: held to look along
+		parts = append(parts, fmt.Sprintf(KitRangedNote, it.Sight)) // fog of war F4: held, it raises sight (seen only with fog on); the F4 review's B1 wording
 	case it.Weapon != nil:
 		parts = append(parts, fmt.Sprintf("%d-%d %s", it.Weapon.Min, it.Weapon.Max, it.Weapon.Class))
 	case it.Armour != nil && it.Armour.Block:

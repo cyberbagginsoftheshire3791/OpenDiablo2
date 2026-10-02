@@ -106,8 +106,8 @@ func TestShippedVillageCatalog(t *testing.T) {
 		"village-placeholder#14": {"Village well", d2maptiled.LayerWall, image.Pt(1, 1), 160, 256, true, false, CategoryProps},
 		"village-placeholder#16": {"Peasant house", d2maptiled.LayerStructure, image.Pt(3, 3), 480, 448, true, true, CategoryBuildings},
 		"village-placeholder#17": {"Burned house (cold ruin)", d2maptiled.LayerStructure, image.Pt(3, 3), 480, 448, true, true, CategoryBuildings},
-		// Fog of war F4: the gate's watchtower, a 1x1 structure (placeholder art).
-		"village-placeholder#18": {"Watchtower", d2maptiled.LayerStructure, image.Pt(1, 1), 160, 400, true, true, CategoryBuildings},
+		// Fog of war F4: the gate's watchtower, a 1x1 structure (placeholder art), seen past.
+		"village-placeholder#18": {"Watchtower", d2maptiled.LayerStructure, image.Pt(1, 1), 160, 400, true, false, CategoryBuildings}, // blocks_sight false: the F4 review's A
 	}
 
 	for id, w := range want {
