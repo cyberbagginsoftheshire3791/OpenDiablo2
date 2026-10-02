@@ -2289,6 +2289,11 @@ func (c *Combat) HarnessState() map[string]interface{} {
 		state["bodies_known"] = c.bodies.BodiesKnown()
 	}
 
+	// The HUD's log of his last blows (M4.6 B6 review, BUG-117): the world
+	// file saves and restores it, and until this no provider reported it, so
+	// a resume that lost it compared equal.
+	state["blow_log"] = c.blowLogReport()
+
 	if c.clock != nil {
 		state["stage"] = c.clock.Stage().String()
 	}
@@ -2696,4 +2701,22 @@ func (c *Combat) HarnessSet(field string, value interface{}) error {
 	}
 
 	return nil
+}
+
+// blowLogReport is the HUD's blow log, oldest first, as the world file
+// carries it (CombatBlowSnapshot's fields). The ids are entity ids as the
+// fight saw them: his is his connection's, so in the shipped game a resumed
+// log names the id he had before the load -- never drawn, because the log is
+// drawn only during a fight and every new fight starts it empty.
+func (c *Combat) blowLogReport() []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(c.blowLog))
+
+	for _, b := range c.blowLog {
+		out = append(out, map[string]interface{}{
+			"round": b.Round, "attacker": b.Attacker, "target": b.Target, "band": b.Band,
+			"damage": b.Damage, "reaction": b.Reaction, "killed": b.Killed,
+		})
+	}
+
+	return out
 }

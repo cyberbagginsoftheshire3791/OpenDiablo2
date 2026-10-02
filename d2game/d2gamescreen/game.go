@@ -793,6 +793,7 @@ func (v *Game) OnUnload() error {
 	d2harness.Unregister(progressProvider{v})
 	d2harness.Unregister(villageProvider{v})
 	d2harness.Unregister(journalProvider{v}) // B11
+	d2harness.Unregister(kitProvider{v})     // M4.6 B6
 
 	// Before anything below can fail and return early: an OnUnload that
 	// stopped at an unbind error must not leave this screen's providers to

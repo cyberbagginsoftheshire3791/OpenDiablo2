@@ -512,7 +512,14 @@ func fillCounts(text string, counts func(string) int) string {
 }
 
 // HarnessState is what the "journal" provider reports: every id written,
-// each task's state, the pages, and the events raised.
+// each task's state, the pages, and the events raised -- and, since the M4.6
+// B6 review (BUG-117), the rest of what Save writes: the order things were
+// written in (written_seq, page_seq: each id's and date's sequence number,
+// which the panel sorts by, newest first), the rungs reached, each task's
+// sequence number and edge memory (task_rows), and where each part was last
+// read up to (seen). Before it a resume that lost the order, a rung or a
+// task's memory compared equal (the reviewer's field sweep: 63 journal
+// fields "SAME").
 func (j *Journal) HarnessState() map[string]interface{} {
 	written := make([]string, 0, len(j.st.Written))
 	for id := range j.st.Written {
@@ -551,6 +558,40 @@ func (j *Journal) HarnessState() map[string]interface{} {
 		unread[p.ID] = j.Unread(p.ID)
 	}
 
+	writtenSeq := map[string]interface{}{}
+	for id, n := range j.st.Written {
+		writtenSeq[id] = n
+	}
+
+	pageSeq := map[string]interface{}{}
+	for d, n := range j.st.Pages {
+		pageSeq[d] = n
+	}
+
+	rungs := make([]string, 0, len(j.st.Rungs))
+	for r, on := range j.st.Rungs {
+		if on {
+			rungs = append(rungs, r)
+		}
+	}
+
+	sort.Strings(rungs)
+
+	taskRows := map[string]interface{}{}
+	for id, t := range j.st.Tasks {
+		mem := make([]interface{}, 0, len(t.Mem))
+		for _, m := range t.Mem {
+			mem = append(mem, map[string]interface{}{"held": m.Held, "events": m.Events})
+		}
+
+		taskRows[id] = map[string]interface{}{"state": t.State, "seq": t.Seq, "mem": mem}
+	}
+
+	seen := map[string]interface{}{}
+	for part, n := range j.st.Seen {
+		seen[part] = n
+	}
+
 	return map[string]interface{}{
 		"written":      written,
 		"pages":        pages,
@@ -561,5 +602,10 @@ func (j *Journal) HarnessState() map[string]interface{} {
 		"last_written": j.last,
 		"last_date":    j.st.LastDate,
 		"seq":          j.st.Seq,
+		"written_seq":  writtenSeq,
+		"page_seq":     pageSeq,
+		"rungs":        rungs,
+		"task_rows":    taskRows,
+		"seen":         seen,
 	}
 }

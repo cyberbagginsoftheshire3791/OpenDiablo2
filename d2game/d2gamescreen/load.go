@@ -107,6 +107,13 @@ const (
 type LoadRefusal struct {
 	Code   string
 	Detail string
+
+	// Rule is the d2save rule that refused the file (d2save.ReasonOf) when
+	// the refusal is d2save's -- Decode's and Check's (VERSION, FILE) and the
+	// pairing's (HERO, TORN) -- and "" for every other: a system's Validate
+	// (BLOCK), the map the game built (MAP), rule 9 (NETWORK). M4.6 B6: the
+	// omit sweep holds each block's refusal to its rule, not only its code.
+	Rule string
 }
 
 func (r *LoadRefusal) Error() string { return r.Code + ": " + r.Detail }
@@ -116,6 +123,12 @@ func (r *LoadRefusal) Unwrap() error { return ErrLoadRefused }
 
 func refuseLoad(code, format string, args ...interface{}) *LoadRefusal {
 	return &LoadRefusal{Code: code, Detail: fmt.Sprintf(format, args...)}
+}
+
+// refuseLoadErr is a refusal whose cause is d2save's: its detail is the
+// error's words, and its Rule the rule that refused (M4.6 B6).
+func refuseLoadErr(code string, err error) *LoadRefusal {
+	return &LoadRefusal{Code: code, Detail: err.Error(), Rule: d2save.ReasonOf(err)}
 }
 
 // EVERY REFUSAL SETS THE FILE ASIDE (rule 7). Until B4b one did not: B4a left
@@ -148,6 +161,12 @@ type LoadReport struct {
 	Refused  string `json:"refused,omitempty"`
 	Reason   string `json:"reason,omitempty"`
 	SetAside string `json:"set_aside,omitempty"`
+
+	// Rule is the d2save rule behind the refusal (LoadRefusal.Rule): a FILE
+	// refusal's block-missing, map, generation and the rest, VERSION's
+	// "version", HERO's and TORN's pair-hero and pair-moment; "" for a
+	// refusal that is not the file's own (M4.6 B6).
+	Rule string `json:"rule,omitempty"`
 
 	// Steps are the load's steps in the order they ran: the load order as it
 	// happened ("clock", then "health", "squads", "light", ...).
@@ -285,6 +304,7 @@ func SetLoadAside(savePath string, refusal *LoadRefusal, afterOpen bool) string 
 	updateLastLoad(func(r *LoadReport) {
 		r.WorldPath, r.Found, r.Resumed = worldPath, true, false
 		r.Refused, r.Reason, r.SetAside, r.FellBack = refusal.Code, refusal.Detail, aside, afterOpen
+		r.Rule = refusal.Rule
 
 		if restored {
 			r.Preload = "restored"
@@ -366,6 +386,7 @@ func PrepareLoad(savePath string, network bool) (*d2save.World, *LoadRefusal) {
 
 		updateLastLoad(func(rep *LoadReport) {
 			rep.Found, rep.Refused, rep.Ignored = true, r.Code, true
+			rep.Rule = r.Rule
 			if rep.Reason == "" {
 				rep.Reason = r.Detail
 			}
@@ -429,6 +450,7 @@ func PrepareLoad(savePath string, network bool) (*d2save.World, *LoadRefusal) {
 			updateLastLoad(func(rep *LoadReport) {
 				rep.WorldPath, rep.Found, rep.Resumed = worldPath, true, false
 				rep.Refused, rep.SetAside = refusal.Code, aside
+				rep.Rule = refusal.Rule
 				rep.Reason = refusal.Detail + " (set aside; its .bak, his sidecar's moment, could not be put in its place)"
 			})
 
@@ -589,10 +611,10 @@ func checkWorldFile(savePath string, data []byte, network bool) (*d2save.World, 
 	w, err := d2save.Decode(data)
 	if err != nil {
 		if errors.Is(err, d2save.ErrWorldVersion) {
-			return nil, nil, refuseLoad(LoadRefusedVersion, "%v", err)
+			return nil, nil, refuseLoadErr(LoadRefusedVersion, err)
 		}
 
-		return nil, nil, refuseLoad(LoadRefusedFile, "%v", err)
+		return nil, nil, refuseLoadErr(LoadRefusedFile, err)
 	}
 
 	od2, err := os.ReadFile(savePath) // nolint:gosec // the hero's own save
@@ -601,7 +623,7 @@ func checkWorldFile(savePath string, data []byte, network bool) (*d2save.World, 
 	}
 
 	if err := w.CheckHeroFile(od2); err != nil {
-		return nil, nil, refuseLoad(LoadRefusedHero, "%v", err)
+		return nil, nil, refuseLoadErr(LoadRefusedHero, err)
 	}
 
 	sidecar, err := os.ReadFile(d2items.SidecarPath(savePath)) // nolint:gosec // the hero's own save
@@ -610,7 +632,7 @@ func checkWorldFile(savePath string, data []byte, network bool) (*d2save.World, 
 	}
 
 	if err := w.SameMoment(sidecar); err != nil {
-		return nil, nil, refuseLoad(LoadRefusedTorn, "%v", err)
+		return nil, nil, refuseLoadErr(LoadRefusedTorn, err)
 	}
 
 	return w, sidecar, nil

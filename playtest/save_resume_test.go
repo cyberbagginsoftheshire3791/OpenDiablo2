@@ -31,9 +31,11 @@ import (
 // "stops at that point then resumes at that point" only if it does so with a
 // pack after him, and every dusk, night and dawn save measured is hunted.
 // Act 7 is B3's (the save verb and its refusals), run first in a process of
-// its own (saveVerbActs, below). Act 8 is rule 4 (a save mid-walk, B4b). The
-// omit sweep of act 9 is TestSaveResumeNegatives (B4b, opt-in; B6's to
-// finish).
+// its own (saveVerbActs, below). Act 8 is rule 4 (a save mid-walk, B4b). Act
+// 9 is the omit sweep (M4.6 B6; omitSweep, save_resume_negatives_test.go):
+// every block of the world file dropped in turn from T's file, each resume
+// diverging or refused with its reason -- run last, on this evening, so the
+// suite builds the evening once.
 //
 //	1  Seed 99, stepped, the default game. A night that fills every block:
 //	   the kit (the default loadout); a fight by day, a dog slain and LEFT
@@ -131,6 +133,10 @@ import (
 //	   moment resumes exactly, runs on the same, and each slain lies where
 //	   the saved game's lies. (A death saved at its frame is
 //	   TestSaveResumeMidAction's: a village fight, which he is not in.)
+//	9  THE OMIT SWEEP (M4.6 B6), after 6i: the untouched file resumes S_T
+//	   (the control of the controls), then every block of d2save.Blocks is
+//	   omitted, and emptied, in turn: each resume diverges where the block
+//	   lives or is refused with the block's own rule.
 //
 // THE COMPARISON (BUG-58 fixed, 29 Sep 2026): the digest's resume_digest is
 // every part a resumed game must reproduce -- not sim (the harness's clock)
@@ -1571,6 +1577,9 @@ func eveningActs4to6(t *testing.T, ev evening) {
 
 	// --- 6i (the B4b review fixes): a save in the death window --------------
 	deathWindowAct6i(t, s, ev)
+
+	// --- 9 (M4.6 B6): the omit sweep, every block dropped in turn ------------
+	omitSweep(t, s, ev)
 }
 
 // actThree puts his files back as act 3 left them -- his .od2 and sidecar two
@@ -2366,9 +2375,14 @@ func refusedToDawn(t *testing.T, s *session, act, save, code string, seed int, f
 		t.Fatalf("%s: the world file is out of the way (%v)", act, err)
 	}
 
+	// BUG-114: at dawn of the day after the last day his sidecar's journal
+	// knows (the epoch, for a sidecar with no dated page).
 	c := clockState(s)
-	if str(c, "stage") != "dawn" || mustNum(t, c, "world_minutes") > 1 || mustNum(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "health") <= 0 {
-		t.Fatalf("%s: he begins at dawn, alive: %v", act, c)
+	wake := wakeMinutesOf(t, sidecar)
+
+	if m := mustNum(t, c, "world_minutes"); str(c, "stage") != "dawn" || m < wake || m > wake+1 ||
+		mustNum(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "health") <= 0 {
+		t.Fatalf("%s: he begins at dawn, alive, %v world minutes in (the day after his journal's last): %v", act, wake, c)
 	}
 
 	t.Logf("%s PASS: refused %s (%s), set aside as %s; his own sidecar beside it; he begins at dawn", act, code, str(load, "reason"), filepath.Base(aside))
@@ -3144,4 +3158,32 @@ func faceSomewhere(t *testing.T, s *session) {
 	}
 
 	t.Fatalf("walked to a neighbour and back, and he faces direction 0 both ways")
+}
+
+// wakeMinutesOf is where a game that resumes no world save starts his clock
+// (BUG-114): 02:45 of the day after his sidecar journal's last_date, in world
+// minutes since the epoch -- 0 for a sidecar with no dated page.
+func wakeMinutesOf(t *testing.T, sidecar []byte) float64 {
+	t.Helper()
+
+	var doc struct {
+		Journal struct {
+			LastDate string `json:"last_date"`
+		} `json:"journal"`
+	}
+
+	if err := json.Unmarshal(sidecar, &doc); err != nil {
+		t.Fatalf("his sidecar is not JSON: %v", err)
+	}
+
+	if doc.Journal.LastDate == "" {
+		return 0
+	}
+
+	last, err := time.Parse("2006-01-02", doc.Journal.LastDate)
+	if err != nil {
+		t.Fatalf("his journal's last_date %q: %v", doc.Journal.LastDate, err)
+	}
+
+	return float64(int(last.Sub(time.Date(1462, 6, 17, 0, 0, 0, 0, time.UTC)).Hours()/24)+1) * 24 * 60
 }
