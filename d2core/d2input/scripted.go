@@ -27,7 +27,9 @@ type scriptedButton struct {
 // InputService (P3 spec §3.7, engine change E6). A scripted press is "just
 // pressed" for exactly one poll and "pressed" until released; a tap releases
 // after one poll. Scripted state merges with the real device state, so a
-// human at the keyboard is never locked out. The playtest harness drives it
+// human at the keyboard is never locked out -- except the MOUSE of a game the
+// harness owns (OwnMouse, BUG-111), which is the script's alone. The
+// playtest harness drives it
 // through strigoi_key / strigoi_click / strigoi_move_cursor /
 // strigoi_type_text; with nothing scripted it is a transparent pass-through.
 //
@@ -41,10 +43,23 @@ type ScriptedInputService struct {
 	buttons map[d2enum.MouseButton]*scriptedButton
 	chars   []rune // delivered by the next InputChars poll
 
-	cursor               *[2]int // scripted cursor; cleared when the real cursor moves
+	cursor               *[2]int // scripted cursor; cleared when the real cursor moves (unless owned)
 	lastRealX, lastRealY int
 	realSeen             bool
+
+	// mouseOwned: the real mouse is not read at all -- its position, its
+	// buttons and its wheel (BUG-111). See OwnMouse.
+	mouseOwned bool
 }
+
+// ParkedCursorX and ParkedCursorY are where an owned mouse's cursor sits
+// before a script has placed it: off the window, where nothing is hovered --
+// the place an unfocused game's real cursor usually was, now the same in
+// every run.
+const (
+	ParkedCursorX = -1
+	ParkedCursorY = -1
+)
 
 // NewScriptedInputService wraps a real input service.
 func NewScriptedInputService(real d2interface.InputService) *ScriptedInputService {
@@ -127,7 +142,8 @@ func (s *ScriptedInputService) Click(x, y int, b d2enum.MouseButton) {
 	pressButton(s.button(b), true)
 }
 
-// MoveCursor places the scripted cursor. It stays until the real mouse moves.
+// MoveCursor places the scripted cursor. It stays until the real mouse moves,
+// or, with the mouse owned, until a script moves it.
 func (s *ScriptedInputService) MoveCursor(x, y int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -141,6 +157,38 @@ func (s *ScriptedInputService) TypeText(text string) {
 	defer s.mu.Unlock()
 
 	s.chars = append(s.chars, []rune(text)...)
+}
+
+// OwnMouse gives the script the whole mouse for the rest of the process
+// (BUG-111): the real cursor's position, its buttons and its wheel are never
+// read again, so a scripted cursor stays where the script put it however the
+// human moves the real one, and before a script has placed it the cursor is
+// parked off the window (ParkedCursorX, ParkedCursorY).
+//
+// The harness calls it for every game started with -harness, from the first
+// frame, rather than at a script's first cursor verb: such a game is a
+// scripted game launched without focus (30 Sep), and every reading in it
+// must be the same in every run -- a hover, a click or a mouse-move event
+// the real mouse makes before the script touches the cursor is as much a
+// flake as one after. Josh works at the same laptop while the suite runs; his
+// mouse was moving the scripted cursor (TestWatch, TestASlainManRises,
+// TestTheDeadWalk hovered ""; BUG-15's scripted pointer reads). The keyboard
+// still merges: an unfocused window gets no keys, and a focused one is a
+// human who chose to type into it. A harness build run WITHOUT -harness never
+// owns the mouse and plays as before.
+func (s *ScriptedInputService) OwnMouse() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.mouseOwned = true
+}
+
+// MouseOwned reports whether OwnMouse has been called.
+func (s *ScriptedInputService) MouseOwned() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.mouseOwned
 }
 
 // Cursor reports the cursor the game currently sees (scripted or real).
@@ -235,8 +283,20 @@ func endButtonTick(b *scriptedButton) bool {
 // -------------------------------------------------- d2interface.InputService --
 
 // CursorPosition returns the scripted cursor while one is set and the real
-// mouse has not moved since; otherwise the real cursor.
+// mouse has not moved since; otherwise the real cursor. With the mouse owned
+// the real cursor is never read: the scripted cursor, or the parked one.
 func (s *ScriptedInputService) CursorPosition() (x, y int) {
+	if s.MouseOwned() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		if s.cursor != nil {
+			return s.cursor[0], s.cursor[1]
+		}
+
+		return ParkedCursorX, ParkedCursorY
+	}
+
 	rx, ry := s.real.CursorPosition()
 
 	s.mu.Lock()
@@ -315,9 +375,10 @@ func (s *ScriptedInputService) IsKeyJustReleased(k d2enum.Key) bool {
 	return ok && b.justReleased
 }
 
-// IsMouseButtonPressed merges real and scripted held state.
+// IsMouseButtonPressed merges real and scripted held state (scripted only
+// with the mouse owned; so do the two edges below).
 func (s *ScriptedInputService) IsMouseButtonPressed(m d2enum.MouseButton) bool {
-	if s.real.IsMouseButtonPressed(m) {
+	if !s.MouseOwned() && s.real.IsMouseButtonPressed(m) {
 		return true
 	}
 
@@ -331,7 +392,7 @@ func (s *ScriptedInputService) IsMouseButtonPressed(m d2enum.MouseButton) bool {
 
 // IsMouseButtonJustPressed merges real and scripted press edges.
 func (s *ScriptedInputService) IsMouseButtonJustPressed(m d2enum.MouseButton) bool {
-	if s.real.IsMouseButtonJustPressed(m) {
+	if !s.MouseOwned() && s.real.IsMouseButtonJustPressed(m) {
 		return true
 	}
 
@@ -345,7 +406,7 @@ func (s *ScriptedInputService) IsMouseButtonJustPressed(m d2enum.MouseButton) bo
 
 // IsMouseButtonJustReleased merges real and scripted release edges.
 func (s *ScriptedInputService) IsMouseButtonJustReleased(m d2enum.MouseButton) bool {
-	if s.real.IsMouseButtonJustReleased(m) {
+	if !s.MouseOwned() && s.real.IsMouseButtonJustReleased(m) {
 		return true
 	}
 
@@ -379,7 +440,12 @@ func (s *ScriptedInputService) KeyPressDuration(k d2enum.Key) int {
 // There is no scripted wheel: the playtest harness has no verb that rolls one,
 // so overlaying state here would be a seam nothing drives. A human at the
 // wheel is never locked out, which is the same rule the rest of this overlay
-// follows.
+// follows -- but for an owned mouse, whose wheel is still: nothing scripted
+// rolls it, and the real one is not read (BUG-111; the wheel zooms the map).
 func (s *ScriptedInputService) Wheel() (xoff, yoff float64) {
+	if s.MouseOwned() {
+		return 0, 0
+	}
+
 	return s.real.Wheel()
 }

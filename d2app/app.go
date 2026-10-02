@@ -490,7 +490,7 @@ func (a *App) renderCapture(target d2interface.Surface) error {
 
 func (a *App) render(target d2interface.Surface) {
 	a.screen.Render(target)
-	a.ui.Render(target)
+	d2screen.RenderUI(a.screen, a.ui, target)
 
 	if err := a.guiManager.Render(target); err != nil {
 		return
@@ -543,9 +543,7 @@ func (a *App) advanceOnce(elapsedUnscaled, elapsed, elapsedLastScreenAdvance, cu
 	a.advancePlaytestEnd()
 	a.advancePlaytestCleanup()
 
-	a.ui.Advance(elapsed)
-
-	if err := a.inputManager.Advance(elapsed, current); err != nil {
+	if err := d2screen.AdvanceUIAndInput(a.screen, a.ui, a.inputManager, elapsed, current); err != nil {
 		return err
 	}
 

@@ -16,9 +16,11 @@ import "math"
 // draws by -- so "he sees it" and "it is drawn lit" stay one fact.
 //
 // IT NEVER WRITES THE LIGHT MODEL: the sim (Notice, the combat resolver's
-// lit/dark rule, spawns, the corpse check) keeps reading Light itself, as
-// master does, so fog stays display only (plan §3.3). Fixing what the SIM
-// reads during a held turn is a change to combat, and Josh's to rule.
+// lit/dark rule, spawns, the corpse check) keeps reading Light itself, so fog
+// stays display only (plan §3.3). The sim's own half of BUG-110 was fixed in
+// the game, not here (1 Oct 2026): the game screen tells the light model
+// where he stands every frame after the map moves him (Game.advanceTheMap),
+// so in a game the view and the model now agree on every frame.
 type LightView struct {
 	light *Light
 	x, y  float64

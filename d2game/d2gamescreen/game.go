@@ -683,8 +683,13 @@ type Game struct {
 	// metersBodied records that the local player's health has been handed to
 	// s:1, which cannot happen at construction because the player does not
 	// exist yet.
-	worldClock   *d2world.Clock
-	light        *d2world.Light
+	worldClock *d2world.Clock
+	light      *d2world.Light
+
+	// mapStepForTest, when set, is the frame's map step (stepTheMap): unit
+	// tests only. Nil in every game.
+	mapStepForTest func(elapsed float64)
+
 	fog          *gameFog // fog of war F1 (game_fog.go); always made, drawn only with -fog
 	squads       *d2world.Squads
 	meters       *d2world.Meters
@@ -1010,16 +1015,7 @@ func (v *Game) Advance(elapsed float64) error {
 		v.journalAdvance()
 	}
 
-	// The map keeps its ORIGINAL condition: the escape menu still freezes the
-	// animations, because that pause is a pause of the whole screen.
-	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
-		v.gameClient.MapEngine.Advance(elapsed)
-	}
-
-	// Fog of war (F1, F2): after the map has moved him, every frame -- a held
-	// turn stops the world clock, not his Move (plan §2.4), and his torch is
-	// drawn and seen by where he stands now (BUG-110). Nothing when fog is off.
-	v.fogAdvance()
+	v.advanceTheMap(elapsed)
 
 	// The decision timer counts only frames on which the world stopped FOR THE
 	// COMBAT REASON: Wait() tests awaiting itself, so a frame paused under the
@@ -1195,6 +1191,65 @@ func (v *Game) screenLive() bool {
 	menuClosed := v.escapeMenu != nil && !v.escapeMenu.IsOpen()
 
 	return menuClosed || len(v.gameClient.Players) != 1
+}
+
+// advanceTheMap is the frame's map and what follows him on it.
+//
+// The map keeps its ORIGINAL condition: the escape menu still freezes the
+// animations, because that pause is a pause of the whole screen.
+//
+// Then his light (BUG-110, the sim's half, 1 Oct 2026): the light model is
+// told where he stands after the map has moved him, EVERY frame, held or
+// not. Light.SetPlayer used to run only inside the gated advanceWorld, so in
+// a held player turn -- the world stopped, his Move a real walk -- his torch
+// shone from where the turn opened, and what the sim reads there read the
+// stale torch: the combat resolver's lit/dark advantage on his strike and on
+// the blows that follow it in the same turn.
+//
+// WHAT IT CHANGES IN A RUNNING WORLD (the review's C1): the world's step runs
+// BEFORE the map's in Game.Advance, and advanceWorld still tells the light
+// model where he stands at its top -- where the previous frame's map step
+// left him -- so the sim's readings in a running world are master's. What
+// moved is the model BETWEEN frames: it now holds where this frame's map step
+// left him, one map step ahead of master's while he walks. Whatever reads it
+// between frames -- the renderer of a fog-off game, the harness's light
+// provider -- sees him there; standing, nothing differs.
+//
+// Then fog (F1, F2): after the map has moved him, every frame -- a held turn
+// stops the world clock, not his Move (plan §2.4), and his torch is drawn and
+// seen by where he stands now. Nothing when fog is off.
+func (v *Game) advanceTheMap(elapsed float64) {
+	v.stepTheMap(elapsed)
+
+	v.lightFollowsHim()
+	v.fogAdvance()
+}
+
+// stepTheMap is the frame's map step: the map engine moves everything on it,
+// him with them. A unit test's game has no map he walks on, so it may stand
+// a walk in for the step (mapStepForTest) -- which is how
+// TestHisTorchFollowsHimThroughAHeldTurnForTheSim sees the light told where
+// he is AFTER the step, not before it.
+func (v *Game) stepTheMap(elapsed float64) {
+	if v.mapStepForTest != nil {
+		v.mapStepForTest(elapsed)
+
+		return
+	}
+
+	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
+		v.gameClient.MapEngine.Advance(elapsed)
+	}
+}
+
+// lightFollowsHim tells the light model where he stands now (BUG-110).
+func (v *Game) lightFollowsHim() {
+	if v.light == nil || v.localPlayer == nil {
+		return
+	}
+
+	at := v.localPlayer.Position.World()
+	v.light.SetPlayer(at.X(), at.Y())
 }
 
 // advanceWorldOrHold is the frame's world: run when nothing holds it. Held by
@@ -2270,6 +2325,28 @@ func (v *Game) Unwatch(watcherID string) bool {
 	}
 
 	return v.notice.Unwatch(watcherID)
+}
+
+// TakeOutOfTheWorld is the world's half of an entity taken off the map
+// without a death -- strigoi_remove_entity today (BUG-112): its watch and its
+// chase end (the pairing a death and a despawn use) and it leaves every fight
+// it is in, his and the village's (Combat.Remove). It reports how many fights
+// it left and whether a watch and a chase ended. The map and the body are the
+// caller's: it took the entity off the map.
+func (v *Game) TakeOutOfTheWorld(id string) (fights int, unwatched, released bool) {
+	if v.notice != nil {
+		unwatched = v.notice.Unwatch(id)
+	}
+
+	if v.pursuit != nil {
+		released = v.pursuit.Release(id)
+	}
+
+	if v.combat != nil {
+		fights = v.combat.Remove(id)
+	}
+
+	return fights, unwatched, released
 }
 
 // WatchAs is Watch on a named side (the raid's R2): "hostile", as Watch is,

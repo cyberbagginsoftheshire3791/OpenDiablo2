@@ -58,6 +58,11 @@ type harnessRemoveOut struct {
 	// BodyDropped: the monster's body went with him (M4.6 B3 review, B4:
 	// left, a body with no entity fails every save after it).
 	BodyDropped bool `json:"body_dropped"`
+
+	// FightsLeft: how many fights he was in that he left -- his and the
+	// village's -- as a death leaves them (BUG-112: before it the fight ran
+	// on against a monster taken off the map).
+	FightsLeft int `json:"fights_left"`
 }
 
 func (a *App) harnessSpawn(kind, code string, x, y float64) (d2interface.MapEntity, error) {
@@ -202,7 +207,7 @@ func (a *App) harnessAddSpawnTools(srv *mcp.Server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "strigoi_remove_entity",
-		Description: "Remove an entity by handle from the running map (npc, item, object, missile). Players cannot be removed. A watcher is unwatched, a hunter's chase released and a monster's body forgotten with it (unwatched/released/body_dropped say so), as the game's own removals do; its pack keeps it as a member. The handle stays known so a later get_entity reports it gone.",
+		Description: "Remove an entity by handle from the running map (npc, item, object, missile). Players cannot be removed. A watcher is unwatched, a hunter's chase released, a monster's body forgotten and every fight it is in -- his and the village's -- left with it (unwatched/released/body_dropped/fights_left say so; a fight with nothing left in it ends disengaged, BUG-112), as the game's own removals do; its pack keeps it as a member. The handle stays known so a later get_entity reports it gone.",
 		Annotations: harnessAnnMut(true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in harnessRemoveIn) (*mcp.CallToolResult, harnessRemoveOut, error) {
 		harnessLogCall("strigoi_remove_entity")
@@ -248,12 +253,14 @@ func (a *App) harnessAddSpawnTools(srv *mcp.Server) {
 			// unwatches through Combat.withdraw; this is the harness's
 			// removal doing the same. His group keeps him, as a pack keeps
 			// its dead.
+			//
+			// And his fights (BUG-112): a monster taken off the map leaves
+			// every fight he is in, his and the village's, through the game's
+			// one path (Game.TakeOutOfTheWorld, Combat.Remove). Before it the
+			// fight kept his row, and the removed monster -- off the map but
+			// still "in reach" -- struck him round after round.
 			if _, game := harnessGame(); game != nil {
-				out.Unwatched = game.Unwatch(id)
-
-				if p := game.Pursuit(); p != nil {
-					out.Released = p.Release(id)
-				}
+				out.FightsLeft, out.Unwatched, out.Released = game.TakeOutOfTheWorld(id)
 
 				// And his body: the game forgets a body whenever it takes
 				// an entity off the map (releaseNPCBody); left here, a body

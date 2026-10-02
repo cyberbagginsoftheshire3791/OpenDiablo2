@@ -133,6 +133,12 @@ func TestUIInventory(t *testing.T) {
 		t.Fatalf("move_cursor: want a scripted cursor, got %v", cursor)
 	}
 
+	// BUG-111 (harness 0.16.3): a game started with -harness owns the mouse --
+	// the real cursor, buttons and wheel are never read.
+	if cursor["mouse_owned"] != true {
+		t.Fatalf("move_cursor: a -harness game owns the mouse (BUG-111), got %v", cursor)
+	}
+
 	s.call("strigoi_click", map[string]any{"x": int(sx) + 120, "y": int(sy) + 60, "button": "left"})
 	s.call("strigoi_step", map[string]any{"frames": 180})
 
