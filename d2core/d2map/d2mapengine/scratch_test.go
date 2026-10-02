@@ -2,6 +2,7 @@ package d2mapengine
 
 import (
 	"container/heap"
+	"fmt"
 	"math"
 	"math/rand"
 	"reflect"
@@ -11,11 +12,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine/testdata/masterref"
 )
 
-// BUG-115's references: coarsePath, corridorRoute and PathFind exactly as they
-// stood before it, over searchReference and blockedAtReference, so the scratch
-// and the RouteQuery's proofs can be held to them answer for answer.
+// BUG-115's references. THE ANSWERS come from master 05ba3666's own
+// d2mapengine, frozen verbatim in testdata/masterref (the BUG-115 review's
+// copy: only the package line differs, plus export_rev.go's grid builder).
+// It lives under testdata so the go tool's ./... patterns -- go build, go vet,
+// the reach gate's deadcode runs -- never see it; only these tests import it.
+// The copies below (coarsePathReference, corridorRouteReference, the counting
+// half of pathFindReference) are kept to COUNT the old code's searches and
+// corridors, which master does not report; pathFindReference checks the
+// counting copy against master on every call.
 
 // coarseReferenceRuns counts the reference's corridor tile searches.
 var coarseReferenceRuns int
@@ -149,8 +157,64 @@ func (m *MapEngine) corridorRouteReference(from, goal subTile) ([]subTile, bool,
 	return steps, len(steps) > 0, legs
 }
 
-// pathFindReference is PathFind before BUG-115, and how many searches it ran.
+// masterOf is master's engine over the same walls as m: every subtile m
+// blocks (read the old way, blockedAtReference) blocked, and the same tile
+// slice length. Cached per engine; forgetMaster after editing m's walls.
+func masterOf(m *MapEngine) *masterref.MapEngine {
+	mastersMu.Lock()
+	defer mastersMu.Unlock()
+
+	if g, ok := masters[m]; ok {
+		return g
+	}
+
+	w, h := m.size.Width, m.size.Height
+	g := masterref.NewGrid(w, h)
+
+	for y := 0; y < h*subtilesPerTile; y++ {
+		for x := 0; x < w*subtilesPerTile; x++ {
+			if m.blockedAtReference(x, y) {
+				g.BlockSub(x, y)
+			}
+		}
+	}
+
+	if short := w*h - len(m.tiles); short > 0 {
+		g.TruncateTiles(short)
+	}
+
+	masters[m] = g
+
+	return g
+}
+
+func forgetMaster(m *MapEngine) {
+	mastersMu.Lock()
+	delete(masters, m)
+	mastersMu.Unlock()
+}
+
+var (
+	mastersMu sync.Mutex
+	masters   = map[*MapEngine]*masterref.MapEngine{}
+)
+
+// pathFindReference is master's PathFind (the answer) and how many searches
+// the old code ran for it (the counting copy, which must agree with master).
 func (m *MapEngine) pathFindReference(start, dest d2vector.Position) ([]d2vector.Position, int) {
+	want := masterOf(m).PathFind(start, dest)
+
+	counted, searches := m.pathFindCounted(start, dest)
+	if !reflect.DeepEqual(want, counted) {
+		panic(fmt.Sprintf("the counting copy of the old PathFind is not master's: %v -> %v", start, dest))
+	}
+
+	return want, searches
+}
+
+// pathFindCounted is PathFind before BUG-115 (a copy), and how many searches
+// it ran.
+func (m *MapEngine) pathFindCounted(start, dest d2vector.Position) ([]d2vector.Position, int) {
 	from := subTile{int(math.Floor(start.X())), int(math.Floor(start.Y()))}
 	goal := subTile{int(math.Floor(dest.X())), int(math.Floor(dest.Y()))}
 
@@ -178,6 +242,21 @@ func (m *MapEngine) pathFindReference(start, dest d2vector.Position) ([]d2vector
 	}
 
 	return waypoints(from, steps, dest, exact), searches
+}
+
+// masterCoarse is master's coarsePath in subTiles.
+func masterCoarse(g *masterref.MapEngine, a, b subTile) []subTile {
+	p := g.CoarsePathRef(a.x, a.y, b.x, b.y)
+	if p == nil {
+		return nil
+	}
+
+	out := make([]subTile, len(p))
+	for i, t := range p {
+		out[i] = subTile{t[0], t[1]}
+	}
+
+	return out
 }
 
 // endsIn is mapRouter.routeExact's "reachable": the route's last waypoint is
@@ -234,7 +313,7 @@ func (m *MapEngine) routeBesideReference(hx, hy, qx, qy float64) ([]d2vector.Pos
 
 	for _, n := range besideOffsets {
 		gx, gy := qx+n[0], qy+n[1]
-		if m.blockedAtReference(int(math.Floor(gx*5)), int(math.Floor(gy*5))) {
+		if masterOf(m).BlockedAt(int(math.Floor(gx*5)), int(math.Floor(gy*5))) {
 			continue
 		}
 
@@ -292,6 +371,7 @@ func TestCoarsePathMatchesTheReference(t *testing.T) {
 
 			want := m.coarsePathReference(a, b)
 			require.Equal(t, want, m.coarsePath(a, b), "seed %d pair %d: %v -> %v", seed, i, a, b)
+			require.Equal(t, masterCoarse(masterOf(m), a, b), want, "the copy is master's")
 
 			if want != nil {
 				found++

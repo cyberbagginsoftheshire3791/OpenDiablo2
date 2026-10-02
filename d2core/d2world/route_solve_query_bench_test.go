@@ -7,6 +7,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
+	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine/testdata/masterref"
 )
 
 // The game's Route loop since BUG-115 (game.go mapRouter.Route): one
@@ -67,19 +68,80 @@ func routeInBench(q *d2mapengine.RouteQuery, toX, toY float64) ([][2]float64, bo
 	return out, reachable
 }
 
-// ON THE REAL VILLAGE, THE QUERY LOOP IS THE OLD LOOP. Every placement of the
+// villageMaster is master's engine (d2mapengine/testdata/masterref, master
+// 05ba3666's code verbatim, test-only) over the laid village's walls.
+func villageMaster(e *d2mapengine.MapEngine, w, h int) *masterref.MapEngine {
+	g := masterref.NewGrid(w, h)
+
+	for y := 0; y < h*5; y++ {
+		for x := 0; x < w*5; x++ {
+			// Read the walls as master did, through SubTileAt.
+			if f := e.SubTileAt(x, y); f == nil || f.BlockWalk {
+				g.BlockSub(x, y)
+			}
+		}
+	}
+
+	return g
+}
+
+// besideMasterRouter is the game's Route loop as it was before BUG-115, over
+// MASTER's engine: master's blocked check and master's PathFind.
+type besideMasterRouter struct {
+	g        *masterref.MapEngine
+	attempts *int
+}
+
+func (r besideMasterRouter) Route(fromX, fromY, toX, toY float64) ([][2]float64, bool) {
+	exact := func(gx, gy float64) ([][2]float64, bool) {
+		*r.attempts++
+
+		path := r.g.PathFind(d2vector.NewPositionTile(fromX, fromY), d2vector.NewPositionTile(gx, gy))
+		out := make([][2]float64, 0, len(path))
+
+		for i := range path {
+			w := path[i].World()
+			out = append(out, [2]float64{w.X(), w.Y()})
+		}
+
+		reachable := false
+		if n := len(out); n > 0 {
+			reachable = math.Floor(out[n-1][0]) == math.Floor(gx) && math.Floor(out[n-1][1]) == math.Floor(gy)
+		}
+
+		return out, reachable
+	}
+
+	for _, n := range benchNeighboursNearest(fromX, fromY, toX, toY) {
+		gx, gy := toX+n[0], toY+n[1]
+		if r.g.BlockedAt(int(math.Floor(gx*5)), int(math.Floor(gy*5))) {
+			continue
+		}
+
+		if beside, ok := exact(gx, gy); ok {
+			return beside, true
+		}
+	}
+
+	return exact(toX, toY)
+}
+
+// ON THE REAL VILLAGE, THE QUERY LOOP IS MASTER'S LOOP. Every placement of the
 // solve bench, open and walled in, plus the reverse (the hunter in the yard):
 // the same route and the same reachable from both, and never more searches
 // than the old loop's PathFinds (each at least one search). The walled-in
-// placements are where the proofs fire. Control (a source mutation in
-// d2mapengine/scratch.go): learn marking a search's cells sealed rather than
-// reachable goes red here.
+// placements are where the proofs fire. The old side is master's own code
+// (besideMasterRouter), not this build's PathFind. Control (a source mutation
+// in d2mapengine/scratch.go): learn marking a search's cells sealed rather
+// than reachable goes red here.
 func TestTheRouteQueryIsTheOldLoopOnTheVillage(t *testing.T) {
 	type run struct {
 		name   string
 		e      func() (*d2mapengine.MapEngine, [][4]float64)
 		proven bool
 	}
+
+	village := benchVillageMap(t) // for its size
 
 	runs := []run{
 		{"open", func() (*d2mapengine.MapEngine, [][4]float64) {
@@ -118,7 +180,7 @@ func TestTheRouteQueryIsTheOldLoopOnTheVillage(t *testing.T) {
 	for _, r := range runs {
 		e, pairs := r.e()
 		attempts, searches := 0, 0
-		old := besideAttemptsRouter{e: e, attempts: &attempts}
+		old := besideMasterRouter{g: villageMaster(e, village.Width, village.Height), attempts: &attempts}
 		now := besideQueryRouter{e: e, searches: &searches}
 
 		for i, p := range pairs {
