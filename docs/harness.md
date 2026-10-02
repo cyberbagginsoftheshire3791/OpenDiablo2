@@ -1204,7 +1204,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 | `strigoi_move_player_to` | MovePlayer packet toward a world-tile target; `wait`/`max_ticks` step until arrived / stuck / timeout |
 | `strigoi_set_system_field` | Write one allow-listed provider field (test setup); `FIELD_NOT_SETTABLE` otherwise |
 | `strigoi_spawn_entity` | npc (monstats Id) · item (item codes) · object (objects.txt index or name) at a world tile, through the engine's own factory; returns a handle |
-| `strigoi_remove_entity` | Remove by handle (never a player); a watcher is unwatched and its chase released with it, as a death does (M4.6 B2b review), reported as `unwatched`/`released`; and a monster's body is forgotten with it (`body_dropped`, 0.13.1, the B3 review's B4: a body left with no entity failed every later save `INTERNAL`); and it leaves every fight it is in, his and the village's (`fights_left`, 0.16.3, BUG-112: the fight had run on against a removed zombie; a fight left empty ends `disengaged`, a clock fight's quarry removed ends its fight and lets go every watch on it, as its death does) |
+| `strigoi_remove_entity` | Remove by handle (never a player); a watcher is unwatched and its chase released with it, as a death does (M4.6 B2b review), reported as `unwatched`/`released`; and a monster's body is forgotten with it (`body_dropped`, 0.13.1, the B3 review's B4: a body left with no entity failed every later save `INTERNAL`); and it leaves every fight it is in, his and the village's (`fights_left`, 0.16.3, BUG-112: the fight had run on against a removed zombie; a fight left with only its dead or routed ends `enemies_dead`/`enemies_routed` as pruneOrEnd would, one left with no row ends `disengaged`, a Downed man who may stand again keeps it going, and a clock fight's quarry removed ends its fight and lets go every watch on it, as its death does) |
 | `strigoi_key` | tap · down · up, by name (`i`, `escape`, `f5`, `kp7`, `graveaccent`, …) |
 | `strigoi_click` | left/right/middle at screen pixels, optional shift/control/alt; walks the player like a real click |
 | `strigoi_move_cursor` | Place the scripted cursor (holds until a script moves it: a `-harness` game never reads the real mouse, `mouse_owned`, 0.16.3, BUG-111; parked at -1,-1 until a script places it) |
@@ -1949,12 +1949,20 @@ dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
 owns the mouse (BUG-111) -- the real cursor's position, buttons and wheel
 are never read, so a scripted cursor holds while Josh works at the laptop;
 before a script places it the cursor is parked off the window at -1,-1; the
-input verbs report `mouse_owned`. `strigoi_remove_entity` takes the entity
-out of every fight it is in and reports `fights_left` (BUG-112). And the
-sim's half of BUG-110: his torch's light follows him through a held turn
-for the light model too (`Game.advanceTheMap`), so the combat resolver's
-lit/dark readings in such a turn, and the `light` provider's
-`player_level` and carried source's `x`/`y`, move. An evening kept by 0.16.2 is refused as another harness's.
+input verbs report `mouse_owned`; a harness build run by hand, without
+`-harness`, keeps the real mouse. `strigoi_remove_entity` takes the entity
+out of every fight it is in and reports `fights_left` (BUG-112; a fight left
+with only its dead or routed ends as their deaths would end it,
+`enemies_dead`/`enemies_routed`, one left with no row `disengaged`, and a
+Downed man who may stand again keeps it going). While a screen loads the UI
+and the input are neither advanced nor drawn (BUG-109): a scripted input
+sent during a load lands on the first frame after it. And the sim's half of
+BUG-110: the light model is told where he stands every frame, after the map
+step (`Game.advanceTheMap`), so in a held turn the combat resolver's lit/dark
+readings follow him, and between frames the model -- the `light` provider's
+`player_level` and carried source's `x`/`y`, and a fog-off game's drawn torch
+-- holds this frame's position, one map step ahead of 0.16.2 while he walks.
+An evening kept by 0.16.2 is refused as another harness's.
 **0.16.2 (integrate-1oct, 1 Oct 2026)** is the combat status, the raid's
 R2 and fog of war F2 merged on master `b84a7241` -- each had bumped 0.16.0
 to 0.16.1 on its own branch, so no one number named the three -- with the
@@ -2004,7 +2012,11 @@ with `-harness`, which is the script's alone (0.16.3, BUG-111: Josh's real
 mouse moved the scripted cursor while the suite ran). The keyboard still
 merges: an unfocused harness window gets no keys. Each input tool queues its action onto
 the game goroutine and returns only after the frame that polled it, so the
-very next tool call sees the effect. The game controls keep their own clock
+very next tool call sees the effect -- except during a screen load: while a
+screen loads the input manager does not poll (BUG-109, 0.16.3), so a
+scripted key, click or cursor move sent during a load is held, unconsumed,
+and lands on the first frame after the load (the tool still returns after
+the frame it was queued on). The game controls keep their own clock
 (accumulated from the frame deltas) for click-repeat timing instead of the
 wall clock, so scripted clicks replay identically under the stepped clock.
 

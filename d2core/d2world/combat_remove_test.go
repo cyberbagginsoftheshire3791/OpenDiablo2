@@ -121,3 +121,85 @@ func TestARemovedEnemyLeavesAClockFight(t *testing.T) {
 	_, watching := f.notice.Noticed("m:2")
 	assert.False(t, watching, "every watch on the quarry taken away is let go, as at its death")
 }
+
+// The review's C3 (its probe TestReviewRemoveTheLastLivingWithTheDeadLeft):
+// he kills one zombie, the other is taken off the map. The fight is over and
+// it ends as it would have had the other died -- enemies_dead, his kill
+// counted -- not "disengaged": the dead one's row is still in it.
+func TestARemovalLeavingOnlyTheDeadEndsEnemiesDead(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	f.add(t, "z:1", 1, zombie())
+	other := f.add(t, "z:2", 5000, zombie())
+	other.x, other.y = 39, 40
+	f.open(t)
+
+	for i := 0; i < 30 && f.health("z:1") > 0; i++ {
+		f.round()
+	}
+
+	require.LessOrEqual(t, f.health("z:1"), 0, "z:1 died")
+	require.True(t, f.c.Fighting(), "the control: z:2 still fights")
+
+	assert.Equal(t, 1, f.c.Remove("z:2"))
+	assert.False(t, f.c.Fighting(), "nothing left alive in it: over")
+	assert.Equal(t, "enemies_dead", f.c.EndedReason(), "the dead one's row is still in it: it ends as pruneOrEnd ends it")
+	assert.Equal(t, 1, f.c.HarnessState()["ended_enemies_dead"])
+	assert.Equal(t, 0, f.c.HarnessState()["ended_disengaged"])
+}
+
+// The review's C4 (its mutant R5): a Downed man who may stand again keeps the
+// fight going when the last living enemy is taken away -- the fight goes on
+// until he stands or is staked, as pruneOrEnd keeps it (stillIn).
+func TestARemovalLeavesTheDownedInTheFight(t *testing.T) {
+	corpses := NewCorpses(nil, nil, nil)
+	corpses.FallHuman("body", "", 41, 40)
+	require.True(t, corpses.Rise("body"))
+	corpses.Raised("body", "d:1")
+
+	f := newResolverFight(t, 1)
+	f.c.SetCorpses(corpses)
+	f.add(t, "d:1", 1, deadProfile("g:1"))
+	other := f.add(t, "z:2", 5000, zombie())
+	other.x, other.y = 39, 40
+	f.open(t)
+
+	for i := 0; i < 30 && !f.c.encounter.dead["d:1"]; i++ {
+		f.round()
+	}
+
+	require.True(t, f.c.encounter.dead["d:1"], "d:1 was cut down")
+	require.True(t, corpses.DownedMember("d:1"), "and lies Downed: he may stand again")
+	require.True(t, f.c.Fighting())
+
+	assert.Equal(t, 1, f.c.Remove("z:2"))
+	assert.True(t, f.c.Fighting(), "a Downed man who may stand again keeps the fight")
+
+	// The control: staked, he keeps nothing, and the next round ends it.
+	require.True(t, corpses.Close("body"))
+	f.round()
+	assert.False(t, f.c.Fighting(), "staked, nothing keeps the fight")
+	assert.Equal(t, "enemies_dead", f.c.EndedReason())
+}
+
+// The reviewer's mutant R7: a dead enemy taken off the map leaves no dead
+// mark behind -- its row, its place in the order and its dead mark all go
+// (a mark with no row would be saved and counted as a body that is not
+// there).
+func TestARemovedDeadEnemyLeavesNoMark(t *testing.T) {
+	f := newResolverFight(t, 1462)
+	f.add(t, "z:1", 1, zombie())
+	other := f.add(t, "z:2", 5000, zombie())
+	other.x, other.y = 39, 40
+	f.open(t)
+
+	for i := 0; i < 30 && !f.c.encounter.dead["z:1"]; i++ {
+		f.round()
+	}
+
+	require.True(t, f.c.encounter.dead["z:1"], "the control: z:1 is marked dead")
+
+	assert.Equal(t, 1, f.c.Remove("z:1"))
+	assert.True(t, f.c.Fighting(), "z:2 fights on")
+	assert.False(t, f.c.encounter.dead["z:1"], "the removed one's dead mark went with its row")
+	assert.NotContains(t, f.c.encounter.enemyOrder, "z:1")
+}

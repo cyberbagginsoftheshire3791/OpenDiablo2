@@ -61,13 +61,19 @@ func TestAnOwnedMouseIgnoresTheRealOne(t *testing.T) {
 		t.Fatal("OwnMouse did not take")
 	}
 
-	// Before a script has placed it: parked off the window, every poll.
+	// Before a script has placed it: parked off the window, every poll -- the
+	// literal -1,-1 (the review's C6: comparing against the constants let a
+	// cursor parked ON the window, at 0,0, pass), where nothing is hovered.
 	for i := 0; i < 3; i++ {
-		if x, y := s.CursorPosition(); x != ParkedCursorX || y != ParkedCursorY {
-			t.Errorf("poll %d before any scripted cursor: %d,%d, want parked %d,%d", i, x, y, ParkedCursorX, ParkedCursorY)
+		if x, y := s.CursorPosition(); x != -1 || y != -1 {
+			t.Errorf("poll %d before any scripted cursor: %d,%d, want parked off the window at -1,-1", i, x, y)
 
 			break
 		}
+	}
+
+	if ParkedCursorX != -1 || ParkedCursorY != -1 {
+		t.Errorf("the parked cursor is %d,%d; the docs and the harness say -1,-1", ParkedCursorX, ParkedCursorY)
 	}
 
 	s.MoveCursor(300, 200)
@@ -147,5 +153,53 @@ func TestAnUnownedMouseStillYieldsToTheHuman(t *testing.T) {
 
 	if _, y := s.Wheel(); y != 1 {
 		t.Fatal("an unowned mouse's real wheel must show through")
+	}
+}
+
+// typingReal is the same restless human, typing as well: the I key held
+// (pressed this poll, for a while), a character on the line.
+type typingReal struct {
+	restlessReal
+}
+
+func (r *typingReal) IsKeyPressed(k d2enum.Key) bool      { return k == d2enum.KeyI }
+func (r *typingReal) IsKeyJustPressed(k d2enum.Key) bool  { return k == d2enum.KeyI }
+func (r *typingReal) IsKeyJustReleased(k d2enum.Key) bool { return k == d2enum.KeyJ }
+func (r *typingReal) KeyPressDuration(k d2enum.Key) int {
+	if k == d2enum.KeyI {
+		return 7
+	}
+
+	return 0
+}
+func (r *typingReal) InputChars() []rune { return []rune("x") }
+
+// TestAnOwnedMouseLeavesTheKeyboardAlone is the line's other edge (the
+// review's R3): owning the mouse takes the mouse only. A real key -- held,
+// pressed, released, typed -- still reaches the game, as it does in a game
+// the harness does not own.
+func TestAnOwnedMouseLeavesTheKeyboardAlone(t *testing.T) {
+	s := NewScriptedInputService(&typingReal{})
+	s.OwnMouse()
+
+	if !s.IsKeyPressed(d2enum.KeyI) || !s.IsKeyJustPressed(d2enum.KeyI) {
+		t.Fatal("the real I key, held and just pressed, must reach a game whose mouse is owned")
+	}
+
+	if !s.IsKeyJustReleased(d2enum.KeyJ) {
+		t.Fatal("the real J key's release must reach a game whose mouse is owned")
+	}
+
+	if d := s.KeyPressDuration(d2enum.KeyI); d != 7 {
+		t.Fatalf("the real I key held 7 polls reads %d with the mouse owned", d)
+	}
+
+	if c := s.InputChars(); string(c) != "x" {
+		t.Fatalf("the real typed character reads %q with the mouse owned, want \"x\"", string(c))
+	}
+
+	// And the mouse is still owned: the control that this is an owned game.
+	if x, y := s.CursorPosition(); x != -1 || y != -1 {
+		t.Fatalf("the cursor %d,%d: this game must own the mouse", x, y)
 	}
 }

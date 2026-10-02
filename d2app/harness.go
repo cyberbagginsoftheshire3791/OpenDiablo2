@@ -280,6 +280,19 @@ func (a *App) harnessInputService(real d2interface.InputService) d2interface.Inp
 	return harness.input
 }
 
+// harnessClaimMouse gives the script the whole mouse (BUG-111) -- only in a
+// game started with -harness: a harness build run by hand, without it, keeps
+// the real mouse, as every build did before. It reports whether it took it.
+func harnessClaimMouse() bool {
+	if harness.enabled == nil || !*harness.enabled || harness.input == nil {
+		return false
+	}
+
+	harness.input.OwnMouse()
+
+	return true
+}
+
 func (a *App) harnessRegisterFlags() {
 	harness.enabled = flag.Bool("harness", false, "start the playtest-harness MCP server (loopback only)")
 	harness.addr = flag.String("harness-addr", harnessDefaultAddr, "harness listen address (must be loopback)")
@@ -305,9 +318,7 @@ func (a *App) harnessStart() {
 	// while the suite runs, and his real mouse moved the scripted cursor --
 	// hovers read "" and clicks missed. A harnessed game never reads the real
 	// mouse's position, buttons or wheel (ScriptedInputService.OwnMouse).
-	if harness.input != nil {
-		harness.input.OwnMouse()
-	}
+	harnessClaimMouse()
 
 	host := *harness.addr
 	if i := strings.LastIndex(host, ":"); i >= 0 {

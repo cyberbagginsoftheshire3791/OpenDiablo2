@@ -11,14 +11,31 @@ const (
 	logPrefix = "Screen Manager"
 )
 
+// screenUI is what the screen manager asks of the UI manager (*d2ui.UIManager).
+// An interface so a test can drive a real ScreenManager without the UI's
+// assets (BUG-109's TestAScreensOnLoadNeverRacesTheFrame).
+type screenUI interface {
+	Reset()
+}
+
+// screenGUI is what the screen manager asks of the GUI manager
+// (*d2gui.GuiManager), for the same reason.
+type screenGUI interface {
+	ShowLoadScreen(progress float64)
+	HideLoadScreen()
+	ShowCursor()
+	HideCursor()
+	SetLayout(layout *d2gui.Layout)
+}
+
 // ScreenManager manages game screens (main menu, credits, character select, game, etc)
 type ScreenManager struct {
-	uiManager     *d2ui.UIManager
+	uiManager     screenUI
 	nextScreen    Screen
 	loadingScreen Screen
 	loadingState  LoadingState
 	currentScreen Screen
-	guiManager    *d2gui.GuiManager
+	guiManager    screenGUI
 
 	*d2util.Logger
 }

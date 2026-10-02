@@ -683,8 +683,13 @@ type Game struct {
 	// metersBodied records that the local player's health has been handed to
 	// s:1, which cannot happen at construction because the player does not
 	// exist yet.
-	worldClock   *d2world.Clock
-	light        *d2world.Light
+	worldClock *d2world.Clock
+	light      *d2world.Light
+
+	// mapStepForTest, when set, is the frame's map step (stepTheMap): unit
+	// tests only. Nil in every game.
+	mapStepForTest func(elapsed float64)
+
 	fog          *gameFog // fog of war F1 (game_fog.go); always made, drawn only with -fog
 	squads       *d2world.Squads
 	meters       *d2world.Meters
@@ -1199,20 +1204,42 @@ func (v *Game) screenLive() bool {
 // a held player turn -- the world stopped, his Move a real walk -- his torch
 // shone from where the turn opened, and what the sim reads there read the
 // stale torch: the combat resolver's lit/dark advantage on his strike and on
-// the blows that follow it in the same turn. With a running world nothing
-// changes: advanceWorld still sets it at the top of the world's step, from
-// where this frame's map left him.
+// the blows that follow it in the same turn.
+//
+// WHAT IT CHANGES IN A RUNNING WORLD (the review's C1): the world's step runs
+// BEFORE the map's in Game.Advance, and advanceWorld still tells the light
+// model where he stands at its top -- where the previous frame's map step
+// left him -- so the sim's readings in a running world are master's. What
+// moved is the model BETWEEN frames: it now holds where this frame's map step
+// left him, one map step ahead of master's while he walks. Whatever reads it
+// between frames -- the renderer of a fog-off game, the harness's light
+// provider -- sees him there; standing, nothing differs.
 //
 // Then fog (F1, F2): after the map has moved him, every frame -- a held turn
 // stops the world clock, not his Move (plan §2.4), and his torch is drawn and
 // seen by where he stands now. Nothing when fog is off.
 func (v *Game) advanceTheMap(elapsed float64) {
-	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
-		v.gameClient.MapEngine.Advance(elapsed)
-	}
+	v.stepTheMap(elapsed)
 
 	v.lightFollowsHim()
 	v.fogAdvance()
+}
+
+// stepTheMap is the frame's map step: the map engine moves everything on it,
+// him with them. A unit test's game has no map he walks on, so it may stand
+// a walk in for the step (mapStepForTest) -- which is how
+// TestHisTorchFollowsHimThroughAHeldTurnForTheSim sees the light told where
+// he is AFTER the step, not before it.
+func (v *Game) stepTheMap(elapsed float64) {
+	if v.mapStepForTest != nil {
+		v.mapStepForTest(elapsed)
+
+		return
+	}
+
+	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
+		v.gameClient.MapEngine.Advance(elapsed)
+	}
 }
 
 // lightFollowsHim tells the light model where he stands now (BUG-110).

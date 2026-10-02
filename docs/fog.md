@@ -117,9 +117,13 @@ sim's own half of BUG-110 was fixed on 1 Oct (`harness-fixes`):** the game
 tells the light model where he stands every frame, after the map moves him
 (`Game.advanceTheMap`, `lightFollowsHim`) -- not only in the gated
 `advanceWorld` -- so the combat resolver's lit/dark advantage in a held turn
-reads his torch where he stands, and a fog-off game draws it there too. In a
-game the view and the model now agree on every frame
-(`TestHisTorchFollowsHimThroughAHeldTurnForTheSim`, d2gamescreen).
+reads his torch where he stands, and a fog-off game draws it there too
+(`TestHisTorchFollowsHimThroughAHeldTurnForTheSim`, d2gamescreen). In a game
+the view and the model now agree on every frame, so **the view is now a
+guard, and it is kept**: fog and the renderer still read the light through
+`LightView`, which never writes the model, so fog cannot reach the sim
+whatever the game does with the model, and fog-f3 builds on the type
+(`LitCarriedAt`). Do not remove it as redundant.
 
 **The HUD asks the same question (BUG-107).** The overhead bars and the
 game's enemy-bar list, the hover and talk label and its hit test, the corpse

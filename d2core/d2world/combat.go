@@ -1750,8 +1750,11 @@ func (c *Combat) onlyTheDead(enemies []Combatant) bool {
 // nerve lost: a pack keeps its nerve for a member taken away) and it did not
 // break, so it is not kept as dead, routed or broke; its row and its place in
 // the order go, as a risen man's old row goes when he stands again
-// (rejoinOne). A fight with nothing left in it ends "disengaged" -- nothing
-// alive is engaged, and nobody won.
+// (rejoinOne). A Downed man who may stand again keeps the fight going, as he
+// does in pruneOrEnd (stillIn). When nothing left keeps it going, a fight
+// with the dead or the routed still in its rows ends as pruneOrEnd ends it
+// (enemies_dead, enemies_routed); one with no row left ends "disengaged" --
+// nothing is engaged, and nobody won.
 //
 // A CLOCK FIGHT'S QUARRY taken away ends that fight the way its death does,
 // without the body: every watch on it is let go (quarryDead's
@@ -1835,6 +1838,16 @@ func (c *Combat) removeOne(id string) bool {
 		if en != nil && c.stillIn(e, en.WatcherID()) {
 			return true
 		}
+	}
+
+	// Nothing left that keeps the fight going. Rows still standing are the
+	// dead and the routed he fought (the review's C3): the fight ends as
+	// pruneOrEnd would have ended it, enemies_dead or enemies_routed. Only a
+	// fight with no row left at all ends disengaged -- nobody won.
+	if len(e.enemies) > 0 {
+		c.end(e.endingReason())
+
+		return true
 	}
 
 	c.end("disengaged")
