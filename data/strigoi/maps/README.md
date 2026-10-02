@@ -16,7 +16,10 @@ layout is a **proposal** from S1 §9.1 and G4: a hasty ditch and wattle fence
 (ADAPTED, per the 11 Sep ruling) with the gate to the south and the north-east
 run left unfinished, the church and graves on the high ground at the north end,
 a well on the green, timber houses on their yards, the smithy by the gate,
-forest on the slope to the north-west. Josh decides the shape.
+forest on the slope to the north-west. Josh decides the shape. Since fog of
+war F4 (2 Oct 2026; the plan's Q7 on its default) a watchtower stands just
+inside the gate (tile 25,34; `tiles/placeholder-watchtower.png`, a labelled
+PLACEHOLDER) and the churchyard is the high ground (height 1).
 
 **Every image in `tiles/` is a PLACEHOLDER** — flat-coloured shapes drawn by
 the tool so the map has something to show. Art is Josh's and GPT's lane; the
@@ -39,6 +42,14 @@ names say `placeholder-` so nobody mistakes them.
 - Tilesets **embedded** in the map (Map → Embed Tileset).
 - Tile properties: `blocked` (bool) and `blocks_sight` (bool; defaults to
   `blocked`). A fence or ditch is `blocked` but not `blocks_sight`.
+- Raised sight (fog of war F4, `docs/fog.md`): a **floor** tile may carry
+  `height` (int 0..8): an eye standing on it sees 2 tiles further a level
+  (the churchyard tile is `height` 1 -- the church and cemetery's high
+  ground). A **1x1 structure** may carry `sight_radius` (int 1..64): it is a
+  tower, an eye of its own (the `placeholder-watchtower` at the gate sees 16;
+  it is `blocks_sight` false, so the beasts see past it as before).
+  `height` anywhere but the floor, and `sight_radius` on anything but a 1x1
+  structure, are refused.
 - People are **point** objects: one `player_start`, and `npc` objects with a string
   property `monstat` (the D2 stand-in: `warriv1`, `kashya`, `charsi`, `akara`
   are the four speakers).

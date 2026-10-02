@@ -58,6 +58,17 @@ func TestTheLoaderAndTheValidatorAgree(t *testing.T) {
 		{"a footprint past sixteen", func(m tmj, _ art) { m.setProp(2, "footprint_w", "int", maxFootprint+1) }, RuleTileProperty},
 		{"a footprint that is not square", func(m tmj, _ art) { m.setProp(2, "footprint_h", "int", 3) }, RuleTileProperty},
 		{"half a footprint", func(m tmj, _ art) { m.dropProp(2, "footprint_h") }, RuleTileProperty},
+		// ---- raised sight (fog of war F4; tiled.go's height and sight_radius) ----
+		{"a height past eight", func(m tmj, _ art) { m.setProp(0, "height", "int", 9) }, RuleTileProperty},
+		{"a height as a bool", func(m tmj, _ art) { m.setProp(0, "height", "bool", true) }, RuleTileProperty},
+		{"a height on a wall", func(m tmj, _ art) {
+			m.setTile(LayerWalls, 3, 0, 2)
+			m.setProp(1, "height", "int", 1)
+		}, RuleWrongLayer},
+		{"a height on a structure", func(m tmj, _ art) { m.setProp(2, "height", "int", 1) }, RuleTileProperty},
+		{"a sight_radius on a floor tile", func(m tmj, _ art) { m.setProp(0, "sight_radius", "int", 8) }, RuleTileProperty},
+		{"a sight_radius of zero", func(m tmj, _ art) { m.setProp(0, "sight_radius", "int", 0) }, RuleTileProperty},
+		{"a tower bigger than one tile", func(m tmj, _ art) { m.setProp(2, "sight_radius", "int", 8) }, RuleTileProperty},
 		{"a structure that says it is not solid", func(m tmj, _ art) { m.setProp(2, "blocked", "bool", false) }, RuleTileProperty},
 
 		// ---- art (tiled.go:807-833, :773) ----
@@ -261,6 +272,13 @@ var refusals = map[string]string{
 	"a footprint of zero":                               "\"footprint_w\" must be an int from 1 to 16",
 	"a footprint past sixteen":                          "\"footprint_w\" must be an int from 1 to 16",
 	"a footprint that is not square":                    "is not square",
+	"a height as a bool":                                "\"height\" must be an int from 0 to 8",
+	"a height on a structure":                           "a structure cannot carry it",
+	"a height on a wall":                                "carries \"height\", a floor tile's property, but is placed on the walls layer",
+	"a height past eight":                               "\"height\" must be an int from 0 to 8",
+	"a sight_radius of zero":                            "\"sight_radius\" must be an int from 1 to 64",
+	"a sight_radius on a floor tile":                    "makes a structure a tower",
+	"a tower bigger than one tile":                      "a tower is 1x1 for now",
 	"a half-transparent layer":                          "has opacity 0.5",
 	"a hidden layer":                                    "is hidden in the editor",
 	"a layer the game does not read":                    "is not one the game reads",
@@ -697,4 +715,82 @@ func sheetMap(t *testing.T, tilecount, place int) (tmj, art) {
 	m.setTile(LayerFloor, 3, 3, place)
 
 	return m, files
+}
+
+// TestTheEditorKeepsHeightAndSight (fog of war F4, the plan's test of the same
+// name): a floor tile's "height" and a 1x1 structure's "sight_radius" are read
+// alike by the editor and the loader, survive an untouched round trip byte for
+// byte, and are what the shipped village carries -- the churchyard's high ground
+// at height 1 and the watchtower at the gate seeing 16.
+//
+// Negative control (2 Oct 2026, strigoi-harness-runs\wt-fog4\nc\): drop the
+// editor's "height" case (parseKindProps) and this fails, "the validator
+// complains about a height and a tower: [tile-property: t#0: unknown tile
+// property "height" ..." (nc-editor-height.txt). The seven raised-sight cases
+// of TestTheLoaderAndTheValidatorAgree carry that test's own positive control;
+// with the loader's height-on-a-wall refusal taken out, "a height on a wall"
+// fails "the loader ACCEPTS this map" (nc-height-anywhere.txt).
+func TestTheEditorKeepsHeightAndSight(t *testing.T) {
+	t.Parallel()
+
+	m, files := fixture(t)
+	m.setProp(0, "height", "int", 2)
+
+	tower := m.tile(2)
+	tower["image"], tower["imagewidth"], tower["imageheight"] = "tower.png", 2*artUnit, 300
+	files["tower.png"] = pngOf(t, 2*artUnit, 300)
+	m.setProp(2, "footprint_w", "int", 1)
+	m.setProp(2, "footprint_h", "int", 1)
+	m.setProp(2, "sight_radius", "int", 12)
+
+	o := m.object(3)
+	o["width"], o["height"] = 2*artUnit, 300
+
+	data := m.bytes(t)
+
+	parsed, err := d2maptiled.Parse(data, "", files.loader())
+	if err != nil {
+		t.Fatalf("the loader refuses a map with a height and a tower: %v", err)
+	}
+
+	d, err := Open(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if problems := d.Validate(files.size()); len(problems) > 0 {
+		t.Fatalf("the validator complains about a height and a tower: %v", problems)
+	}
+
+	floor, _ := d.Kind(1)
+	house, _ := d.Kind(3)
+
+	if floor.Height != 2 || parsed.HeightAt(0, 0) != 2 || d.HeightAt(0, 0) != 2 {
+		t.Errorf("height: editor kind %d, editor tile %d, loader %d; want 2 each", floor.Height, d.HeightAt(0, 0), parsed.HeightAt(0, 0))
+	}
+
+	st := parsed.Structures[0]
+	if house.SightRadius != 12 || parsed.Kinds[st.Kind].SightRadius != 12 || d.TowerSightAt(st.Front().X, st.Front().Y) != 12 {
+		t.Errorf("sight_radius: editor kind %d, loader %d; want 12 each", house.SightRadius, parsed.Kinds[st.Kind].SightRadius)
+	}
+
+	out, err := d.Bytes()
+	if err != nil || string(out) != string(data) {
+		t.Fatalf("an untouched map with a height and a tower does not round-trip (err %v)", err)
+	}
+
+	// The shipped village: the churchyard is the high ground, the gate has
+	// its tower, and the editor reads both.
+	v := openVillage(t)
+	if h := v.HeightAt(15, 17); h != 1 {
+		t.Errorf("the churchyard (15,17) is at height %d; Q7's high ground is 1", h)
+	}
+
+	if h := v.HeightAt(23, 28); h != 0 {
+		t.Errorf("the start (23,28) is at height %d; want flat ground", h)
+	}
+
+	if r := v.TowerSightAt(25, 34); r != 16 {
+		t.Errorf("the gate's tower (25,34) sees %d; want 16", r)
+	}
 }

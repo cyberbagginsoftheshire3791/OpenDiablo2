@@ -90,6 +90,11 @@ type Item struct {
 	Armour *Armour    `json:"armour,omitempty"`
 	Light  *LightSpec `json:"light,omitempty"`
 	Tool   *Tool      `json:"tool,omitempty"`
+
+	// Sight is how much further he sees with it in his hands, in tiles (fog
+	// of war F4; Josh's Q9, decided on its default: the composite bow, +2 --
+	// the hunter's eye). Optional; carried in the pack it gives nothing.
+	Sight float64 `json:"sight,omitempty"`
 }
 
 // Weapon is how a weapon fights. Every number is a [DIAL] (E3 §4 gives the
@@ -108,6 +113,18 @@ type Weapon struct {
 
 	// Ranged weapons exist as items; shooting is a v0 non-goal (R2 §3).
 	Ranged bool `json:"ranged,omitempty"`
+
+	// Bash is what a RANGED weapon strikes for when it is held and swung in
+	// a fight -- shooting is not built (fog of war F4 let a bow be held, Q9;
+	// the F4 review's B2, 2 Oct 2026). Blunt, no reaction. A ranged weapon
+	// with no bash has no bite (he strikes with the placeholder profile).
+	Bash *Bash `json:"bash,omitempty"`
+}
+
+// Bash is a ranged weapon's own melee blow. [DIAL]
+type Bash struct {
+	Min int `json:"min"`
+	Max int `json:"max"`
 }
 
 // Armour is how a worn piece protects.
@@ -222,6 +239,14 @@ func validate(it *Item) error {
 		return fmt.Errorf("an item needs an id and a name")
 	}
 
+	if it.Sight < 0 || it.Sight > MaxSight {
+		return fmt.Errorf("sight %v is outside 0..%v tiles", it.Sight, MaxSight)
+	}
+
+	if it.Sight != 0 && it.Fits != "main" && it.Fits != "off" {
+		return fmt.Errorf("sight is given only by what is held in a hand; this item fits %q", it.Fits)
+	}
+
 	switch it.Fits {
 	case "main", "off", "body", "head", "belt", "pack":
 	default:
@@ -245,6 +270,10 @@ func validate(it *Item) error {
 		case ReactionRiposte, ReactionBrace, ReactionOpportunity, ReactionNone:
 		default:
 			return fmt.Errorf("reaction %q", w.Reaction)
+		}
+
+		if b := w.Bash; b != nil && (!w.Ranged || b.Min < 1 || b.Max < b.Min) {
+			return fmt.Errorf("a bash is a ranged weapon's, with 1 <= min <= max")
 		}
 	case KindArmour:
 		if it.Armour == nil || it.Armour.Points < 0 {
@@ -384,3 +413,7 @@ func splitStack(entry string) (id string, count int) {
 
 	return id, count
 }
+
+// MaxSight bounds an item's sight (fog of war F4), so a typo of 20 is refused
+// rather than obeyed.
+const MaxSight = 8

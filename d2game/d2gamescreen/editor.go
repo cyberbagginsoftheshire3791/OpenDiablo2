@@ -987,6 +987,15 @@ func (e *Editor) tileWord(x, y int) string {
 		parts = append(parts, "inside")
 	}
 
+	// Fog of war F4: raised ground and towers.
+	if h := e.doc.HeightAt(x, y); h > 0 {
+		parts = append(parts, fmt.Sprintf("height %d", h))
+	}
+
+	if r := e.doc.TowerSightAt(x, y); r > 0 {
+		parts = append(parts, fmt.Sprintf("a tower: sees %d", r))
+	}
+
 	return strings.Join(parts, ", ")
 }
 

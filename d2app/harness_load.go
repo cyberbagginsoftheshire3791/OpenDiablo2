@@ -106,7 +106,7 @@ func harnessResume(saved *d2save.UUIDStream) []string {
 var harnessDialFields = map[string][]string{
 	"clock": {"frozen", "moon"},
 	// fog of war F1: how far he sees by day, and how remembered ground looks.
-	"fog": {"day_sight", "dark_radius", "moon_dark_radius", "memory_level", "memory_saturation"},
+	"fog": {"day_sight", "dark_radius", "moon_dark_radius", "height_tiles", "memory_level", "memory_saturation"},
 	"combat": {
 		"adjacent_tiles", "advantage_shift", "auto_end_turn", "crit_band", "crit_factor",
 		"disengage_tiles", "enemy_move_tiles", "engage_tiles", "forced_band", "graze_band",

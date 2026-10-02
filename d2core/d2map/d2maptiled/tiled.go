@@ -37,6 +37,15 @@
 //     cannot see through -- and is set false for a low fence or a well.
 //     Any other property name is refused, so a typo cannot silently do
 //     nothing.
+//   - Raised sight (fog of war F4, 1 Oct 2026; docs/fog.md): a FLOOR tile
+//     may carry "height", an int 0..8 (default 0) -- the ground's height in
+//     levels; an eye standing on it sees further (2 tiles a level) -- and a
+//     STRUCTURE may carry "sight_radius", an int 1..64: it is a tower, an
+//     eye of its own that sees that far from its tile. A tower's footprint
+//     is 1x1 for now (it sees from its one tile; a larger footprint would
+//     hide every line behind its own walls). "height" on a wall or a
+//     structure, and "sight_radius" on anything but a structure, are
+//     refused.
 //   - Flipped or rotated tiles are refused (the renderer draws art as-is).
 //   - STRUCTURES -- a house, a burned house, anything bigger than a tile --
 //     are TILE OBJECTS on the objects layer, whose tileset tile carries two
@@ -140,6 +149,17 @@ const (
 // wall's. [DIAL]
 const maxStructureHeight = 768
 
+// MaxHeight bounds a floor tile's "height" and MaxSightRadius a tower's
+// "sight_radius" (fog of war F4), so a typo of 100 is refused, not obeyed.
+const (
+	MaxHeight      = 8
+	MaxSightRadius = 64
+)
+
+// TilePropertyNames are the tile properties the game reads, as the refusal of
+// any other names them (the World Editor says the same words).
+const TilePropertyNames = `"blocked", "blocks_sight", "footprint_w", "footprint_h", "height" and "sight_radius"`
+
 func (l Layer) String() string {
 	switch l {
 	case LayerWall:
@@ -164,6 +184,13 @@ type Kind struct {
 	// Footprint is a structure's size in tiles (W along x, H along y); zero
 	// for an ordinary tile.
 	Footprint image.Point
+	// Height is a floor tile's ground height in levels (fog of war F4: an
+	// eye standing on it sees further); 0 for flat ground and every other
+	// layer.
+	Height int
+	// SightRadius is a tower's sight in tiles (fog of war F4: a structure
+	// that is an eye of its own); 0 for everything that is not a tower.
+	SightRadius int
 }
 
 // Cell is one map tile: an index into Map.Kinds for each layer, -1 for none,
@@ -244,6 +271,16 @@ func (m *Map) Blocked(x, y int) bool {
 	}
 
 	return c.Structure > 0 || m.Kinds[c.Floor].Blocked || (c.Wall >= 0 && m.Kinds[c.Wall].Blocked)
+}
+
+// HeightAt is the ground's height at x, y in levels: its floor tile's
+// "height" (fog of war F4), 0 with no floor.
+func (m *Map) HeightAt(x, y int) int {
+	if c := m.At(x, y); c.Floor >= 0 {
+		return m.Kinds[c.Floor].Height
+	}
+
+	return 0
 }
 
 // BlocksSight reports whether a line of sight stops at x, y. A tile with no
@@ -691,6 +728,8 @@ func (p *parser) kind(gid int, layer Layer) (int, error) {
 		return 0, fmt.Errorf("%s is placed as a tile object but has no footprint_w/footprint_h; only structures are tile objects", name)
 	case layer != LayerStructure && k.Footprint != (image.Point{}):
 		return 0, fmt.Errorf("%s is a structure (it has a footprint) placed on the %s layer; place it as a tile object on the objects layer", name, layer)
+	case layer != LayerFloor && k.Height != 0:
+		return 0, fmt.Errorf("%s carries \"height\", a floor tile's property, but is placed on the %s layer; put it on the floor layer", name, layer)
 	}
 
 	if err := checkArt(pixels, layer, k.Footprint); err != nil {
@@ -853,8 +892,26 @@ func (k *Kind) properties(props []tmjProperty) error {
 			}
 
 			continue
+		case "height":
+			var n int
+			if prop.Type != "int" || json.Unmarshal(prop.Value, &n) != nil || n < 0 || n > MaxHeight {
+				return fmt.Errorf("property \"height\" must be an int from 0 to %d", MaxHeight)
+			}
+
+			k.Height = n
+
+			continue
+		case "sight_radius":
+			var n int
+			if prop.Type != "int" || json.Unmarshal(prop.Value, &n) != nil || n < 1 || n > MaxSightRadius {
+				return fmt.Errorf("property \"sight_radius\" must be an int from 1 to %d", MaxSightRadius)
+			}
+
+			k.SightRadius = n
+
+			continue
 		default:
-			return fmt.Errorf("unknown tile property %q; the game reads \"blocked\", \"blocks_sight\", \"footprint_w\" and \"footprint_h\"", prop.Name)
+			return fmt.Errorf("unknown tile property %q; the game reads %s", prop.Name, TilePropertyNames)
 		}
 
 		if prop.Type != "bool" || json.Unmarshal(prop.Value, &v) != nil {
@@ -872,6 +929,17 @@ func (k *Kind) properties(props []tmjProperty) error {
 
 	if (k.Footprint.X == 0) != (k.Footprint.Y == 0) {
 		return errors.New("a structure needs both footprint_w and footprint_h")
+	}
+
+	// Raised sight (fog of war F4): a tower is a structure, and sees from its
+	// one tile; height is the ground's, so a structure has none of its own.
+	switch {
+	case k.SightRadius != 0 && k.Footprint == (image.Point{}):
+		return errors.New("\"sight_radius\" makes a structure a tower; this tile has no footprint_w/footprint_h")
+	case k.SightRadius != 0 && k.Footprint != image.Pt(1, 1):
+		return fmt.Errorf("a tower is 1x1 for now (it sees from its one tile); this one is %dx%d", k.Footprint.X, k.Footprint.Y)
+	case k.Height != 0 && k.Footprint != (image.Point{}):
+		return errors.New("\"height\" is the ground's, a floor tile's property; a structure cannot carry it")
 	}
 
 	if k.Footprint != (image.Point{}) {

@@ -115,6 +115,10 @@ type Kind struct {
 	Footprint   image.Point
 	Blocked     bool
 	BlocksSight bool
+	// Height is a floor tile's ground height and SightRadius a tower's sight
+	// (fog of war F4; tiled.go's Kind.Height and Kind.SightRadius).
+	Height      int
+	SightRadius int
 	// Legal is worked out from Declared, so it is advisory: Validate settles
 	// it from the PNG's own header.
 	Legal Legal
@@ -296,6 +300,7 @@ func (m *model) deriveKinds(tree *jsonObject) {
 
 			p, err := parseKindProps(props[id])
 			k.Blocked, k.BlocksSight, k.Footprint, k.propErr = p.blocked, p.blocksSight, p.footprint, err
+			k.Height, k.SightRadius = p.height, p.sightRadius
 			k.Legal = LegalLayers(k.Footprint, k.Declared.X, k.Declared.Y)
 
 			if _, clash := m.byGID[k.GID]; !clash {
@@ -327,6 +332,8 @@ type kindProps struct {
 	blocked     bool
 	blocksSight bool
 	footprint   image.Point
+	height      int // fog of war F4: a floor tile's ground height
+	sightRadius int // fog of war F4: a tower's sight
 }
 
 // parseKindProps is the loader's Kind.properties, to the letter: the same four
@@ -372,13 +379,37 @@ func parseKindProps(props []any) (kindProps, error) {
 			} else {
 				out.footprint.Y = n
 			}
+		case "height":
+			n, isInt := asInt(value)
+			if typ != "int" || !isInt || n < 0 || n > d2maptiled.MaxHeight {
+				return out, fmt.Errorf("property \"height\" must be an int from 0 to %d", d2maptiled.MaxHeight)
+			}
+
+			out.height = n
+		case "sight_radius":
+			n, isInt := asInt(value)
+			if typ != "int" || !isInt || n < 1 || n > d2maptiled.MaxSightRadius {
+				return out, fmt.Errorf("property \"sight_radius\" must be an int from 1 to %d", d2maptiled.MaxSightRadius)
+			}
+
+			out.sightRadius = n
 		default:
-			return out, fmt.Errorf("unknown tile property %q; the game reads \"blocked\", \"blocks_sight\", \"footprint_w\" and \"footprint_h\"", name)
+			return out, fmt.Errorf("unknown tile property %q; the game reads %s", name, d2maptiled.TilePropertyNames)
 		}
 	}
 
 	if (out.footprint.X == 0) != (out.footprint.Y == 0) {
 		return out, errors.New("a structure needs both footprint_w and footprint_h")
+	}
+
+	// Raised sight (fog of war F4; tiled.go's Kind.properties, to the letter).
+	switch {
+	case out.sightRadius != 0 && out.footprint == (image.Point{}):
+		return out, errors.New("\"sight_radius\" makes a structure a tower; this tile has no footprint_w/footprint_h")
+	case out.sightRadius != 0 && out.footprint != image.Pt(1, 1):
+		return out, fmt.Errorf("a tower is 1x1 for now (it sees from its one tile); this one is %dx%d", out.footprint.X, out.footprint.Y)
+	case out.height != 0 && out.footprint != (image.Point{}):
+		return out, errors.New("\"height\" is the ground's, a floor tile's property; a structure cannot carry it")
 	}
 
 	if out.footprint != (image.Point{}) {

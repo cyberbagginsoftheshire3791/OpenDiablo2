@@ -1,9 +1,12 @@
 package d2world
 
 import (
+	"fmt"
 	"image"
 	"math"
 	"strings"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2geom"
 )
 
 // FOG OF WAR, AGE OF EMPIRES II STYLE -- F1, "black until explored" (by day).
@@ -33,8 +36,26 @@ import (
 // fog block, keyed on the map it was explored on (fog_snapshot.go). What he
 // sees now is derived and is not.
 //
-// WHAT IT IS NOT YET (the plan's later bursts): raised sight (F4: talents,
-// gear, height, towers), and default-on (F5).
+// F4, "raised sight" (1 Oct 2026; Josh's ruling 4: "all of them" -- talents,
+// structures, gear / squad type and height raise sight; the plan's Q6-Q9
+// decided on their recommended defaults while Josh was away, his to
+// overturn): an eye's sight is its base (the day sight; a tower's own
+// sight_radius) + its gear (Q9: an equipped composite bow, +2) + HeightTiles
+// a level of the ground it stands on; its dark radius is tonight's + its
+// talent (Q8: Night Eyes, +1). A TOWER (a structure with a sight_radius) is
+// an eye of its own with no garrison (Q6): by day it sees its radius, by
+// night, like a squad, its dark radius and what is lit -- so a beacon lit on
+// it lets it see by night. Height adds radius only: v1 does not see over
+// blockers. Squad TYPES add theirs when squads get a type (not built: nothing
+// would set it).
+//
+// THE COST (F4): every eye's lines of sight are cached per tile it stands on
+// (eyeLines) -- tiles never change after generation, and an eye sees from the
+// centre of its tile -- so a recompute for the sky, the moon, a lit source or
+// a dial reads the cache, a standing tower walks its lines once a game, and
+// only an eye that changed tile walks again.
+//
+// WHAT IT IS NOT YET (the plan's last burst): default-on (F5).
 //
 // Resolution is the TILE (§6): authored maps block whole tiles, the renderer
 // draws and lights per tile, entities are bucketed per tile. The village is
@@ -55,6 +76,10 @@ type FogDials struct {
 	DarkRadius     float64
 	MoonDarkRadius float64
 
+	// HeightTiles is how much further an eye sees per level of the ground it
+	// stands on (F4; the plan's §2.2: 2). [DIAL]
+	HeightTiles float64
+
 	// MemoryLevel is the brightness an explored-but-unseen tile is drawn at
 	// AT MOST: min(the tile's light, MemoryLevel), never a product, so a
 	// remembered tile at night is not darkened twice. MemorySaturation is its
@@ -65,7 +90,7 @@ type FogDials struct {
 
 // DefaultFogDials are F1's shipped dials.
 func DefaultFogDials() FogDials {
-	return FogDials{DaySight: 12, DarkRadius: 1.5, MoonDarkRadius: 4, MemoryLevel: 0.45, MemorySaturation: 0.25}
+	return FogDials{DaySight: 12, DarkRadius: 1.5, MoonDarkRadius: 4, HeightTiles: 2, MemoryLevel: 0.45, MemorySaturation: 0.25}
 }
 
 // TileSight is the line of sight fog needs: whether the line from a point to
@@ -81,6 +106,29 @@ type TileSight interface {
 // does. Fog reads them when it sizes itself to a map.
 type Structured interface {
 	Structures() []image.Rectangle
+}
+
+// OpaqueTiles is optionally implemented by a TileSight whose TileSightClear
+// is d2geom.TileLineClear over these answers (F4): *d2mapengine.MapEngine is.
+// Fog then reads every tile's answer once a map into a grid of its own and
+// walks that grid with the same TileLineClear -- the same line, a quarter of
+// the cost (no subtile lookup per cell).
+type OpaqueTiles interface {
+	TileBlocksSight(tx, ty int) bool
+}
+
+// Heights is optionally implemented by a TileSight that knows the ground's
+// height (F4): *d2mapengine.MapEngine does. An eye on ground of height h sees
+// HeightTiles * h further.
+type Heights interface {
+	HeightAt(tx, ty int) int
+}
+
+// Towered is optionally implemented by a TileSight that knows the map's towers
+// (F4): their footprints and sight radii, one for one. *d2mapengine.MapEngine
+// does. Fog reads them when it sizes itself to a map, and every one is an eye.
+type Towered interface {
+	TowerSights() (footprints []image.Rectangle, sight []float64)
 }
 
 // FogLight is the light fog needs (F2): the sky (0 night floor .. 1 day),
@@ -112,6 +160,33 @@ type Eye struct {
 	ID      string
 	X, Y    float64
 	Contact bool
+
+	// F4, raised sight. The zero values are an F3 eye.
+	//
+	// Base is the eye's sight before its gear and its ground: 0 is the dials'
+	// DaySight (a squad), a tower's sight_radius otherwise.
+	Base float64
+	// Gear is the sight its gear gives (Q9: his equipped composite bow, +2).
+	// Squad types will add theirs here when squads have a type.
+	Gear float64
+	// DarkTalent widens its dark radius (Q8: Night Eyes, +1).
+	DarkTalent float64
+	// Tower is a structure's eye (Q6): fog makes them from the map (Towered).
+	Tower bool
+}
+
+// EyeSight is one eye of the last recompute with what it saw by (F4): its
+// sight and the terms it is made of, its dark radius, its unlit reach, and the
+// height of the ground it stands on.
+type EyeSight struct {
+	Eye
+
+	Sight      float64 // BaseTerm + Gear + HeightTerm
+	BaseTerm   float64 // the day sight, or a tower's own
+	HeightTerm float64 // HeightTiles * Height
+	Height     int     // the ground's height under it, in levels
+	Dark       float64 // tonight's dark radius + DarkTalent
+	UnlitReach float64 // lerp(Dark, Sight, sky)
 }
 
 // FogTile is what fog says of one tile.
@@ -161,6 +236,23 @@ type Fog struct {
 	eyes    []Eye
 	eyeKeys []eyeKey // the eyes' tiles at the last recompute
 
+	// F4: what each eye of the last recompute saw by (one for one with
+	// eyes), the map's towers and ground, and every eye's cached lines.
+	sights   []EyeSight
+	towers   []Eye
+	heights  Heights
+	lines    map[string]*eyeLines
+	eyeLine  []*eyeLines // one for one with eyes, this recompute
+	linesHit int
+
+	// opaque is the map's sight-blocking tiles, read once a map from an
+	// OpaqueTiles sight (nil: walk the sight's own TileSightClear); rays are
+	// the walk's reads recorded once per offset (rayRead), indexed over
+	// (2w-1) x (2h-1) offsets.
+	opaque []bool
+	rays   [][]rayRead
+	rayMap map[int32][]rayRead // a grid too large for the table: rays by offset
+
 	// structures are the map's footprints, clipped to the grid: a structure
 	// with any tile seen is seen whole, and remembered whole (wholeStructures).
 	structures []image.Rectangle
@@ -173,6 +265,36 @@ type eyeKey struct {
 	id      string
 	x, y    int
 	contact bool
+
+	base, gear, darkTalent float64 // F4: a bow taken up recomputes
+}
+
+// eyeLines is one eye's lines of sight, cached (F4): from the centre of tile
+// (x, y), which tiles' lines were tried and which were clear. Tiles never
+// change after generation (plan §1.4) and an eye sees from the centre of its
+// tile, so a line walked once is the same line until the eye changes tile.
+type eyeLines struct {
+	x, y         int
+	tried, clear []uint64
+	claimed      uint32 // the recompute (epoch) whose eye holds it
+}
+
+// reset empties the cache for an eye now at tile (x, y) on an n-tile grid.
+func (c *eyeLines) reset(x, y, n int) {
+	c.x, c.y = x, y
+	words := (n + 63) / 64
+
+	if cap(c.tried) < words {
+		c.tried, c.clear = make([]uint64, words), make([]uint64, words)
+
+		return
+	}
+
+	c.tried, c.clear = c.tried[:words], c.clear[:words]
+
+	for i := range c.tried {
+		c.tried[i], c.clear[i] = 0, 0
+	}
 }
 
 // fogSkySteps quantises the sky fraction fog keys on and reaches by: dusk's
@@ -265,15 +387,154 @@ func (f *Fog) resize(w, h int) {
 
 	f.structures = f.structures[:0]
 
-	if s, ok := f.sight.(Structured); ok {
-		grid := image.Rect(0, 0, w, h)
+	grid := image.Rect(0, 0, w, h)
 
+	if s, ok := f.sight.(Structured); ok {
 		for _, r := range s.Structures() {
 			if r = r.Intersect(grid); !r.Empty() {
 				f.structures = append(f.structures, r)
 			}
 		}
 	}
+
+	// F4: the ground's height, and every tower as an eye at the centre tile
+	// of its footprint (towers are 1x1 for now: the tile itself). A line is
+	// never read through the eye's own tile, so a tower sees past its walls.
+	f.heights, _ = f.sight.(Heights)
+	f.towers = f.towers[:0]
+
+	if t, ok := f.sight.(Towered); ok {
+		footprints, sight := t.TowerSights()
+
+		for i, r := range footprints {
+			if r = r.Intersect(grid); r.Empty() || i >= len(sight) || sight[i] <= 0 {
+				continue
+			}
+
+			cx, cy := r.Min.X+r.Dx()/2, r.Min.Y+r.Dy()/2
+			f.towers = append(f.towers, Eye{
+				ID: fmt.Sprintf("tower/%d,%d", cx, cy), X: float64(cx) + 0.5, Y: float64(cy) + 0.5,
+				Base: sight[i], Tower: true,
+			})
+		}
+	}
+
+	// A line cached on another map is not this map's (§1.4 holds per map),
+	// nor is its opacity, nor (sized to it) its rays. DEFENSIVE (the F4
+	// review's C2): every new map is a new Game and so a new Fog today, and a
+	// cache of another size is reset in linesFor anyway; this keeps a map
+	// swapped under a living fog from reading the old map's lines.
+	f.lines = nil
+	f.opaque = nil
+	f.rays = nil
+}
+
+// readOpacity reads the map's sight-blocking tiles into fog's own grid, once
+// a map (F4), when the sight can say them.
+func (f *Fog) readOpacity() {
+	o, ok := f.sight.(OpaqueTiles)
+	if !ok || f.w <= 0 || f.h <= 0 {
+		return
+	}
+
+	f.opaque = make([]bool, f.w*f.h)
+
+	for ty := 0; ty < f.h; ty++ {
+		for tx := 0; tx < f.w; tx++ {
+			f.opaque[ty*f.w+tx] = o.TileBlocksSight(tx, ty)
+		}
+	}
+
+	// The table of rays, one slot an offset, for a grid of up to 256 x 256
+	// (6 MB of empty slots at most); a larger one keeps its rays in a map.
+	f.rays, f.rayMap = nil, nil
+
+	if n := (2*f.w - 1) * (2*f.h - 1); n <= maxRayTable {
+		f.rays = make([][]rayRead, n)
+	} else {
+		f.rayMap = make(map[int32][]rayRead)
+	}
+}
+
+// maxRayTable is the most offsets fog keeps in a table rather than a map:
+// (2*256-1)^2, a 256 x 256 grid's.
+const maxRayTable = 511 * 511
+
+// rayRead is one read of the tile walk (d2geom.TileLineReads) from a tile's
+// centre, relative to the eye's tile: one tile (x1, y1), or at a corner the
+// two beside it (x2, y2 too), which stop the line only if both block.
+type rayRead struct {
+	x1, y1, x2, y2 int16
+	corner         bool
+}
+
+// rayTo is the walk from the centre of a tile to the centre of the tile (dx,
+// dy) off it, recorded once (F4): from one tile's centre to another's the walk
+// is the same whatever the tiles -- every coordinate it computes is the
+// offset's, to the bit -- so fog records it once and replays it from every
+// eye against its own grid.
+func (f *Fog) rayTo(dx, dy int) []rayRead {
+	i := (dy+f.h-1)*(2*f.w-1) + dx + f.w - 1
+
+	if f.rays != nil {
+		if r := f.rays[i]; r != nil {
+			return r
+		}
+	} else if r, ok := f.rayMap[int32(i)]; ok {
+		return r
+	}
+
+	r := make([]rayRead, 0, 2*(abs(dx)+abs(dy))/3+1)
+	d2geom.TileLineReads(0.5, 0.5, dx, dy, func(x1, y1, x2, y2 int, corner bool) bool {
+		r = append(r, rayRead{int16(x1), int16(y1), int16(x2), int16(y2), corner})
+
+		return false
+	})
+
+	if f.rays != nil {
+		f.rays[i] = r
+	} else {
+		f.rayMap[int32(i)] = r
+	}
+
+	return r
+}
+
+// gridLineClear is the walk replayed from eye tile (ex, ey) to tile (tx, ty)
+// against fog's own grid: d2geom.TileLineClear's answer and cell count, to
+// the bit (TestFogsGridWalksTheMapsLines), without the walk's arithmetic.
+// Off the grid blocks, as off the map does for the map's own walk.
+func (f *Fog) gridLineClear(ex, ey, tx, ty int) (clear bool, cells int) {
+	w, h, opaque := f.w, f.h, f.opaque
+	blocked := func(x, y int) bool { return x < 0 || y < 0 || x >= w || y >= h || opaque[y*w+x] }
+
+	for _, rd := range f.rayTo(tx-ex, ty-ey) {
+		if rd.corner {
+			cells += 2
+
+			if blocked(ex+int(rd.x1), ey+int(rd.y1)) && blocked(ex+int(rd.x2), ey+int(rd.y2)) {
+				return false, cells
+			}
+
+			continue
+		}
+
+		cells++
+
+		if blocked(ex+int(rd.x1), ey+int(rd.y1)) {
+			return false, cells
+		}
+	}
+
+	return true, cells
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+
+	return v
 }
 
 // Update recomputes what the eyes see on a w x h map when something that
@@ -326,9 +587,13 @@ func (f *Fog) Update(w, h int, eyes []Eye) bool {
 	// ground.
 	for _, e := range eyes {
 		x, y := tileOf(e.X), tileOf(e.Y)
-		f.eyeKeys = append(f.eyeKeys, eyeKey{e.ID, x, y, e.Contact})
-		f.eyes = append(f.eyes, Eye{ID: e.ID, X: float64(x) + 0.5, Y: float64(y) + 0.5, Contact: e.Contact})
+		f.eyeKeys = append(f.eyeKeys, keyOfEye(e))
+		e.X, e.Y = float64(x)+0.5, float64(y)+0.5
+		f.eyes = append(f.eyes, e)
 	}
+
+	// F4: the map's towers see too (Q6: no garrison). They never move.
+	f.eyes = append(f.eyes, f.towers...)
 
 	f.recompute()
 	f.dirty = false
@@ -342,12 +607,73 @@ func (f *Fog) sameEyes(eyes []Eye) bool {
 	}
 
 	for i, e := range eyes {
-		if f.eyeKeys[i] != (eyeKey{e.ID, tileOf(e.X), tileOf(e.Y), e.Contact}) {
+		if f.eyeKeys[i] != keyOfEye(e) {
 			return false
 		}
 	}
 
 	return true
+}
+
+func keyOfEye(e Eye) eyeKey {
+	return eyeKey{e.ID, tileOf(e.X), tileOf(e.Y), e.Contact, e.Base, e.Gear, e.DarkTalent}
+}
+
+// sightOf is what one eye sees by (F4): sight = base (the day sight, or a
+// tower's own) + gear + HeightTiles x the height of the ground under it; dark
+// = tonight's dark radius + its talent; and its unlit reach, blended between
+// them by the sky as UnlitReach blends a plain eye's. Never a reach past its
+// sight: a talent cannot make the dark wider than the day.
+func (f *Fog) sightOf(e Eye) EyeSight {
+	s := EyeSight{Eye: e, BaseTerm: e.Base}
+	if s.BaseTerm <= 0 {
+		s.BaseTerm = f.dials.DaySight
+	}
+
+	if f.heights != nil {
+		if x, y := tileOf(e.X), tileOf(e.Y); f.in(x, y) {
+			s.Height = f.heights.HeightAt(x, y)
+		}
+	}
+
+	s.HeightTerm = f.dials.HeightTiles * float64(s.Height)
+	s.Sight = s.BaseTerm + e.Gear + s.HeightTerm
+	s.Dark = f.darkRadius + e.DarkTalent
+
+	dark := math.Min(s.Dark, s.Sight)
+	s.UnlitReach = dark + (s.Sight-dark)*clamp01(f.sky)
+
+	return s
+}
+
+// linesFor is eye i's line cache for this recompute: the one it had, if it
+// stands on the same tile, else emptied for its new one.
+func (f *Fog) linesFor(e Eye) *eyeLines {
+	if f.lines == nil {
+		f.lines = make(map[string]*eyeLines)
+	}
+
+	x, y := tileOf(e.X), tileOf(e.Y)
+
+	c, ok := f.lines[e.ID]
+	// Two eyes of one id on two tiles: the second walks uncached. DEFENSIVE
+	// (the F4 review's C2): the game's ids are unique (s:1, squad/entity,
+	// tower/x,y); TestTwoEyesOfOneIDSeeAsTwo holds it.
+	if ok && c.claimed == f.epoch && (c.x != x || c.y != y) {
+		return nil
+	}
+
+	if !ok {
+		c = &eyeLines{}
+		f.lines[e.ID] = c
+		c.reset(x, y, f.w*f.h)
+	} else if c.x != x || c.y != y || len(c.tried) != (f.w*f.h+63)/64 {
+		c.reset(x, y, f.w*f.h)
+	}
+
+	c.claimed = f.epoch
+
+	return c
 }
 
 // recompute is the visible set from every eye, and explored |= visible.
@@ -366,13 +692,32 @@ func (f *Fog) recompute() {
 
 	f.visibleCount = 0
 
+	// F4: the map's opacity, once a map; what every eye sees by; its lines.
+	if f.opaque == nil {
+		f.readOpacity()
+	}
+
+	f.sights = f.sights[:0]
+	f.eyeLine = f.eyeLine[:0]
+
+	for _, e := range f.eyes {
+		f.sights = append(f.sights, f.sightOf(e))
+
+		var c *eyeLines
+		if !e.Contact && f.w > 0 && f.h > 0 {
+			c = f.linesFor(e)
+		}
+
+		f.eyeLine = append(f.eyeLine, c)
+	}
+
+	f.pruneLines()
+
 	if f.w <= 0 || f.h <= 0 {
 		return
 	}
 
-	reach := f.UnlitReach()
-
-	for _, e := range f.eyes {
+	for i, e := range f.eyes {
 		if e.Contact {
 			continue // shown last, below
 		}
@@ -382,7 +727,7 @@ func (f *Fog) recompute() {
 			f.see(ex, ey)
 		}
 
-		r := reach
+		r := f.sights[i].UnlitReach
 		x0, x1 := clampInt(tileOf(e.X-r), 0, f.w-1), clampInt(tileOf(e.X+r), 0, f.w-1)
 		y0, y1 := clampInt(tileOf(e.Y-r), 0, f.h-1), clampInt(tileOf(e.Y+r), 0, f.h-1)
 
@@ -392,7 +737,7 @@ func (f *Fog) recompute() {
 					continue // another eye saw it already
 				}
 
-				if f.sees(e, tx, ty, r) {
+				if f.sees(i, tx, ty, r) {
 					f.see(tx, ty)
 				}
 			}
@@ -473,12 +818,12 @@ func (f *Fog) seeLitGround() {
 					continue
 				}
 
-				for _, e := range f.eyes {
+				for i, e := range f.eyes {
 					if e.Contact {
 						continue
 					}
 
-					if f.lineClear(e, tx, ty) {
+					if f.lineClear(i, tx, ty) {
 						f.see(tx, ty)
 						f.litSeen++
 
@@ -565,7 +910,8 @@ func (f *Fog) StructureAt(tx, ty int) (image.Rectangle, bool) {
 // to it crosses no blocking tile strictly between (T itself may block: a wall
 // is seen by its face). The other half, lit ground at any distance with a
 // clear line, is seeLitGround.
-func (f *Fog) sees(e Eye, tx, ty int, r float64) bool {
+func (f *Fog) sees(i, tx, ty int, r float64) bool {
+	e := f.eyes[i]
 	if tx == tileOf(e.X) && ty == tileOf(e.Y) {
 		return true
 	}
@@ -574,20 +920,81 @@ func (f *Fog) sees(e Eye, tx, ty int, r float64) bool {
 		return false
 	}
 
-	return f.lineClear(e, tx, ty)
+	return f.lineClear(i, tx, ty)
 }
 
-// lineClear is the map's line of sight from an eye to a tile, counted.
-func (f *Fog) lineClear(e Eye, tx, ty int) bool {
+// lineClear is the map's line of sight from eye i (of this recompute) to a
+// tile on the grid, counted: from the eye's line cache when it was walked
+// before from the same tile (F4), else walked and remembered.
+func (f *Fog) lineClear(i, tx, ty int) bool {
 	if f.sight == nil {
 		return true
 	}
 
-	clear, cells := f.sight.TileSightClear(e.X, e.Y, tx, ty)
+	c, t := f.eyeLine[i], ty*f.w+tx
+	word, bit := t/64, uint64(1)<<(uint(t)%64)
+
+	if c != nil && c.tried[word]&bit != 0 {
+		f.linesHit++
+
+		return c.clear[word]&bit != 0
+	}
+
+	e := f.eyes[i]
+
+	var (
+		clear bool
+		cells int
+	)
+
+	// The recorded walk needs the eye on the grid (an eye may stand off its
+	// last row); off it, the map's own walk answers. (BUG-116; tested by
+	// TestTheRecordedWalkOnAnyGrid.)
+	if ex, ey := tileOf(e.X), tileOf(e.Y); f.opaque != nil && f.in(ex, ey) {
+		clear, cells = f.gridLineClear(ex, ey, tx, ty)
+	} else {
+		clear, cells = f.sight.TileSightClear(e.X, e.Y, tx, ty)
+	}
+
 	f.cellsRead += cells
+
+	if c != nil {
+		c.tried[word] |= bit
+
+		if clear {
+			c.clear[word] |= bit
+		}
+	}
 
 	return clear
 }
+
+// pruneLines forgets the line caches of eyes that are gone, so a game of many
+// comings and goings holds one cache an eye.
+func (f *Fog) pruneLines() {
+	if len(f.lines) <= len(f.eyes) {
+		return
+	}
+
+	keep := make(map[string]bool, len(f.eyes))
+	for _, e := range f.eyes {
+		keep[e.ID] = true
+	}
+
+	for id := range f.lines {
+		if !keep[id] {
+			delete(f.lines, id)
+		}
+	}
+}
+
+// EyeSights are the eyes of the last recompute with what each saw by (F4):
+// sight, its terms, dark radius, unlit reach and the ground's height.
+func (f *Fog) EyeSights() []EyeSight { return append([]EyeSight(nil), f.sights...) }
+
+// LinesCached is how many lines of sight were read from the eyes' caches
+// rather than walked (F4's cost counter, beside Counters' cells read).
+func (f *Fog) LinesCached() int { return f.linesHit }
 
 func (f *Fog) see(tx, ty int) {
 	f.show(tx, ty)
@@ -676,13 +1083,19 @@ func (f *Fog) Explore(x, y, r float64) int {
 
 // Forget clears the explored set: every tile unexplored again until the next
 // Update, which sees what the eyes see. The harness's "forget" verb; nothing
-// in the game forgets.
+// in the game forgets. It forgets the eyes' cached lines and fog's read of the
+// map's opacity too (F4), so the next Update walks every line from the map again: the one way to make fog see a
+// map whose tiles changed. Tiles never change after generation today (plan
+// §1.4); the day a house can burn mid-game, that change must drop the lines
+// as this does (§3.9).
 func (f *Fog) Forget() {
 	for i := range f.explored {
 		f.explored[i] = 0
 	}
 
 	f.exploredCount = 0
+	f.lines = nil
+	f.opaque = nil
 	f.dirty = true
 }
 

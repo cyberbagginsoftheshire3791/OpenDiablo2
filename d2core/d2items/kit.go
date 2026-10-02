@@ -83,7 +83,6 @@ var (
 	ErrInFight      = errors.New("not in a fight")
 	ErrTwoHanded    = errors.New("the main hand holds a two-handed weapon")
 	ErrLitTorch     = errors.New("douse the torch first")
-	ErrRanged       = errors.New("shooting is not built yet")
 	ErrStory        = errors.New("that stays with him")
 	ErrNoSuchItem   = errors.New("nothing there")
 	ErrDoesNotFit   = errors.New("it does not go there")
@@ -212,8 +211,16 @@ func (k *Kit) PackItem(i int) (*Item, *Instance, bool) {
 //
 // v0 RULES (U1 §5.2, E3 §4): no changing gear inside a fight; a two-hander
 // takes the off-hand, so the off-hand item goes to the pack, and never a lit
-// torch; nothing goes in the off-hand beside a two-hander; a bow is carried,
-// not wielded (shooting is not built); the belt takes belt things.
+// torch; nothing goes in the off-hand beside a two-hander; the belt takes belt
+// things.
+//
+// A BOW MAY BE HELD, NOT SHOT (fog of war F4, 2 Oct 2026; Josh's Q9 on its
+// default, "an equipped composite bow: +2 sight, the hunter's eye"). Until F4
+// a bow was refused the hand, because shooting is not built; Q9's +2 needs it
+// in his hands, so he may take it up out of a fight -- both hands, as any
+// two-hander, never past a lit torch -- to look along it. It still does not
+// shoot: in a fight it is swung, its Bash (2-5 blunt, the F4 review's B2;
+// MainBite). Josh's to overturn (the F4 report's question).
 func (k *Kit) Equip(i int, inFight, offLit bool) error {
 	if k == nil || k.cat == nil {
 		return ErrUnboundKit
@@ -231,10 +238,6 @@ func (k *Kit) Equip(i int, inFight, offLit bool) error {
 	slot, err := k.slotFor(it)
 	if err != nil {
 		return err
-	}
-
-	if it.Weapon != nil && it.Weapon.Ranged {
-		return ErrRanged
 	}
 
 	if slot == SlotOff {
@@ -349,16 +352,26 @@ type Bite struct {
 }
 
 // MainBite reports the main-hand weapon.
+//
+// A HELD BOW (fog of war F4's review, B2, 2 Oct 2026) is swung, not shot:
+// its bite is its Bash -- the composite bow's 2-5 blunt -- scaled like any
+// weapon's, with no reaction. Before, a held bow had no bite and he struck
+// with the placeholder profile, 12-20, a sound kılıç's (BUG-118).
 func (k *Kit) MainBite() (Bite, bool) {
 	it, inst, ok := k.ItemIn(SlotMain)
-	if !ok || it.Weapon == nil || it.Weapon.Ranged {
+	if !ok || it.Weapon == nil || (it.Weapon.Ranged && it.Weapon.Bash == nil) {
 		return Bite{}, false
 	}
 
 	f := makeFactor(inst.Make) * conditionFactor(inst.Condition)
 
-	lo := int(math.Round(float64(it.Weapon.Min) * f))
-	hi := int(math.Round(float64(it.Weapon.Max) * f))
+	least, most, class, reaction := it.Weapon.Min, it.Weapon.Max, it.Weapon.Class, it.Weapon.Reaction
+	if it.Weapon.Ranged {
+		least, most, class, reaction = it.Weapon.Bash.Min, it.Weapon.Bash.Max, Blunt, ReactionNone
+	}
+
+	lo := int(math.Round(float64(least) * f))
+	hi := int(math.Round(float64(most) * f))
 
 	if lo < 1 {
 		lo = 1
@@ -369,8 +382,8 @@ func (k *Kit) MainBite() (Bite, bool) {
 	}
 
 	return Bite{
-		Item: it.ID, Min: lo, Max: hi, Class: it.Weapon.Class,
-		VsMail: it.Weapon.VsMail, Reaction: it.Weapon.Reaction,
+		Item: it.ID, Min: lo, Max: hi, Class: class,
+		VsMail: it.Weapon.VsMail, Reaction: reaction,
 	}, true
 }
 
@@ -745,4 +758,20 @@ func (k *Kit) Use(id string) bool {
 	}
 
 	return false
+}
+
+// Sight is how much further the gear in his hands lets him see, in tiles (fog
+// of war F4; Josh's Q9, decided on its default: an equipped composite bow,
+// +2): the items worn in his main and off hands. A bow in the pack gives
+// nothing.
+func (k *Kit) Sight() float64 {
+	n := 0.0
+
+	for _, s := range []Slot{SlotMain, SlotOff} {
+		if it, _, ok := k.ItemIn(s); ok {
+			n += it.Sight
+		}
+	}
+
+	return n
 }

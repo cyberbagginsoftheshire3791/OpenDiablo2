@@ -1022,7 +1022,30 @@ this doc fails until it agrees.
   lit through his kit (L); he walks off and stops at the far edge of a tile
   he has just entered, his torch's edge on new ground, and saves; resumed,
   S_R0 = S_T, then 4 frames standing and a walk on give S_U again, fog's
-  world hash named first.
+  world hash named first. A sixth, `TestFogRaisedSight` (fog of war F4,
+  raised sight, 2 Oct 2026; `-fog -zoom 0.5`, unaided; Q6-Q9 on their
+  defaults): act 10, the gate's tower is an eye seeing 16 and holds ground
+  12.5-15.5 off it while he stands 17+ tiles away on the churchyard; act 13,
+  there (height 1) he sees 14 and a tile 12.5-14 off is seen -- with
+  `height_tiles` 0 it is not, back at 2 it is; act 15, the composite bow
+  taken up through the kit panel makes him see 16 (gear +2) and a tile
+  14.5-16 off is seen, put down it is not; act 11, at 23:00 under a new moon
+  the tower's unlit reach is 1.5, the tile it held by day is remembered and
+  the tile beside it seen; act 12, a hearth placed at the tower (its beacon)
+  makes a tile 3-4.5 off it, on the tower's line and not on his (he stands
+  behind the church), seen and lit -- removed, remembered again; act 14,
+  Night Eyes taken through the talent panel widens his dark radius 1.5 -> 2.5
+  and an unlit tile 2-2.5 off is seen; act 16, Josh's frame: the tower at
+  night, its beacon lit, from four tiles up the road (`fog-f4-tower-night-beacon`).
+  F4 moved four of the earlier acts, because the gate's tower (6 tiles from
+  the start) now sees ground they had assumed unseen: `TestFogOfWar` act 2
+  and `TestFogIsKept` acts 1, 4 and 5 witness remembered ground with the tile
+  nearest the start that neither he nor the tower sees (`rememberedNear`; the
+  start tile itself is the tower's now); act 2's grey look skips a tile with a
+  visible structure's tile within five in front of it (a house the tower holds
+  drew its colour over the remembered tile's centre:
+  `visibleStructureInFront`); act 3's far villager is one out of the tower's
+  sight too; and `TestFogAtNight` act 8 counts squad eyes, the tower aside.
 * `seek_test.go` — the fifty-fourth (merged 1 Oct after the combat status's, integrate-1oct; the fiftieth on its own branch), the raid milestone's R2 (29 Sep 2026): who the
   night's hunters choose among the living. First run 29 Sep by the R2 build
   (Josh's approval of 19:17): red twice on the script's own setup, fixed
@@ -1156,7 +1179,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.16.5)
+## The tools (37; harness 0.16.6)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1899,7 +1922,12 @@ game screen registers it, fog on or off (`d2gamescreen/game_fog.go`):
 (tile counts), `rows` (for a map of at most 64 x 64: one string a row, `0`
 unexplored, `1` explored, `2` visible), `eyes[]` (`id` `s:1`, `x`, `y`,
 `sight`, `dark`, `unlit_reach`, `terms{base}`; since F2 every model of his
-squads is an eye, `<squad>/<entity>`), the dials `day_sight` (12),
+squads is an eye, `<squad>/<entity>`; **since F4, harness 0.16.5, each eye's
+OWN** `sight` (base + gear + height), `dark` (tonight's + its talent) and
+`unlit_reach`, `tower`, `height` (the ground's level under it), `terms{base,
+gear, height}` and `dark_terms{tonight, talent}`, and every tower of the map
+is an eye, `tower/<x>,<y>`), `towers` (how many), `lines_cached` (F4's cost
+counter: lines read from the eyes' caches, not walked), the dials `day_sight` (12),
 `dark_radius` (1.5) and `moon_dark_radius` (4) (F2, Josh's Q2: tonight's dark
 radius is lerp(dark, full-moon dark, moon)), `memory_level` (0.45) and
 `memory_saturation` (0.25); since F2 (harness 0.16.1) `tonight_dark`,
@@ -1919,8 +1947,10 @@ fog that has not looked) and `grid` (the explored grid as the world file's
 structure}` (`lit`: brighter than the sky now), the tile's state, whether the line from his eye is clear, where
 its centre is on screen now, and the footprint `[x0, y0, x1, y1]` (Max
 exclusive) of the structure standing on it, if one does (a structure is seen
-whole once any of it is seen). Settable: the five dials (`day_sight`, `dark_radius`,
-`moon_dark_radius` 0..64, the two looks 0..1) are DIALS; `enabled` (true / false; refused under `-classic`) is the
+whole once any of it is seen; since F4 `clear_from` names every eye, the towers
+too). Settable: the six dials (`day_sight`, `dark_radius`,
+`moon_dark_radius` 0..64, `height_tiles` 0..16 (F4: tiles of sight a level of
+ground, 2), the two looks 0..1) are DIALS; `enabled` (true / false; refused under `-classic`) is the
 game's view, like `ui.zoom`; `explore` (`{x, y, r}`: every tile whose centre is
 within r marked explored), `forget` (the explored set cleared; the next update
 re-sees what he sees) and `reveal_all` are verbs; `probe` (`{x, y}`) is a
@@ -2011,6 +2041,14 @@ the load report says `ended_actions` (BUG-92: a held action this build's art
 no longer fits is ended as it would have ended, not refused), and a held
 action at a point no play can have is refused (BUG-91). And since BUG-94 the
 dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
+**0.16.6 (integrate-3, 2 Oct 2026)** is `save-b6`, `pursuit-budget` and fog of
+war F4 (`fog-f4`) merged on master `d65e3a1c` -- each had bumped 0.16.4 to
+0.16.5 on its own branch, so no one 0.16.5 named the other two; nothing new
+in the surface. An evening kept by any one 0.16.5 alone is refused as another
+harness's. The world file is version 5 (`pursuit-budget`'s
+`pursuit.chases[].from_watch`), and the village's map SHA moved (F4's gate
+watchtower), so a version-4 save, and any kept evening from before, is set
+aside or refused.
 **0.16.5 (M4.6 B6, `save-b6`, 2 Oct 2026)**: the load report (`strigoi_start_game`'s and
 `strigoi_get_game_info`'s `load`) says `rule` -- the d2save rule that refused
 the world file (`block-missing`, `map`, `generation`, `rng-stream`, ... for
@@ -2033,6 +2071,17 @@ step or chases falling due together are served over several frames, so a
 hunter's route can arrive a frame or more later than on 0.16.4: an evening
 kept by 0.16.4 is refused as another harness's. Other branches may bump to
 0.16.5 too; the merge settles the number.
+**0.16.5 (fog of war F4, "raised sight"; branch `fog-f4`, 2 Oct 2026)**: the
+`fog` provider's eyes each report their own `sight`, `dark`, `unlit_reach`,
+`tower`, `height`, `terms{base, gear, height}` and `dark_terms{tonight,
+talent}`; the map's towers are eyes (`tower/<x>,<y>`); the provider reports
+`towers`, `height_tiles` and `lines_cached`, and takes one more dial,
+`height_tiles`; `forget` also drops the eyes' cached lines. The village has a
+tower at the gate and its churchyard is height 1 (the map's SHA moved: a
+world file kept on the old village is set aside, D5). The composite bow may
+be taken up through the kit (held, not shot; +2 sight), and Night Eyes adds 1
+to his dark radius -- so `ui.kit_rows`' bow text and `progress`' effects read
+differently. The world file is unchanged (version 4).
 **0.16.4 (integrate-2, 1 Oct 2026)** is `harness-fixes` and fog of war F3
 (`fog-f3`) merged on master `0ea27076` -- each had bumped 0.16.2 to 0.16.3
 on its own branch, so no one 0.16.3 named both; nothing new in the

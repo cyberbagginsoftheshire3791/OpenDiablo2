@@ -1,4 +1,4 @@
-# Fog of war (F1: black until explored; F2: the night closes it; F3: kept) -- 1 Oct 2026
+# Fog of war (F1: black until explored; F2: the night closes it; F3: kept; F4: raised sight) -- 1-2 Oct 2026
 
 **Josh, 1 Oct 2026:** "Since we are zooming out, I think we should add a fog of
 war with similar functionality to how Age of Empires 2 uses. Black until
@@ -137,6 +137,121 @@ marks, the tactical diamonds and click-to-strike all ask
 he does not see is not named, barred, marked or struck at -- and, since a
 hidden creature is never hovered, never highlighted (the F1 review's C3).
 
+## Raised sight (F4)
+
+**Josh, 1 Oct 2026 (ruling 4):** sight is raised by "all of them" --
+talents, structures, gear / squad type, and height. The plan's Q6-Q9 were
+still open when F4 was built (2 Oct, Josh away), so each is **decided on its
+recommended default, Josh's to overturn**:
+
+| Q | Decided on the default | Built |
+|---|---|---|
+| **Q6** towers | no garrison; a tower sees its radius by day; at night, like a squad, only what is lit plus a short dark radius; a lit beacon on it lets it see by night | a structure with `sight_radius` is an eye of its own (`tower/<x>,<y>`), always; by night its unlit reach is tonight's dark radius; a light placed at it is lit ground the tower has a line to |
+| **Q7** placement | a tower at the village gate, and the church / cemetery high ground at height 1 (G4's "cemetery on the high ground"); placeholder art, labelled | `village.tmj`: a 1x1 `placeholder-watchtower` at tile (25,34), just inside the fence east of the road through the gate, `sight_radius` 16, `blocks_sight` false (below); every churchyard floor tile (`placeholder-churchyard`, the church and the graves stand on it) `height` 1 |
+| **Q8** talent | Night Eyes also widens his dark radius by 1 (it keeps its +10) | `talents.json`: Night Eyes `dark_sight: 1`; `dark_sight` is a known effect (additive); his eye's dark radius is tonight's + it |
+| **Q9** gear | an equipped composite bow: +2; squad TYPES add theirs when squads have a type | `items.json`: the composite bow `sight: 2` (an item's optional `sight`, given only by what is in his hands); squad types are NOT built (nothing would set them) |
+
+**An eye's sight** is its base -- the day sight (`day_sight`, 12) for a
+squad, a tower's own `sight_radius` -- plus its gear, plus `height_tiles` (2)
+for every level of the ground it stands on. **Its dark radius** is tonight's
+(1.5 rising to 4 with the moon) plus its talent. Its unlit reach blends the
+two by the sky exactly as before, never past its own sight. The rule is
+otherwise F2's: lit ground with a clear line is seen at any distance, from any
+eye, a tower's included.
+
+- **The tower is a wall to no one's eyes** (the F4 review's A, 2 Oct 2026;
+  decided on a default Josh can overturn). A structure blocks sight by
+  default, and as first built the tower did, in every game, fog on or off:
+  5,182 of 178,846 beast line-of-sight answers between standable tiles about
+  the gate changed. It is now `"blocks_sight": false` -- a timber tower on
+  posts a man can see past -- so the beasts' sight about the gate is the
+  village's without the tower, answer for answer
+  (`TestTheTowerChangesNoBeastsSight`; red with the property taken out).
+  **What still changes for every game is one tile of walking:** the tower's
+  tile is solid, as every structure's is, so some routes in through the gate
+  run a little longer (the review measured 2,244 routes from outside the gate
+  to the yards inside 2-3 subtiles longer, none made unreachable), and the
+  road through the gate (tiles 23-24) is untouched.
+- **Height adds radius only.** v1 does not see over blockers: a man on the
+  high ground sees further, not over the church wall. The plan's §6.
+- **A tower is 1x1 for now** (the parser refuses a larger one): it sees from
+  its one tile, and a line is never read through the eye's own tile, so it
+  sees past its own walls. A larger footprint would need its eye lifted out of
+  its walls.
+- **The beacon** is a light placed at the tower (today the light provider's
+  `place_source`; map fires are authored after M4.7): its lit ground is seen
+  by the tower's lines, and by anyone else's with a clear line (Q3).
+- **The bow may be held, not shot.** Until F4 the kit refused a bow the hand
+  ("shooting is not built yet"), which would have left Q9's +2 with nothing
+  that could ever give it. He may now take it up out of a fight -- both hands,
+  never past a lit torch, as any two-hander -- to look along it; it still does
+  not shoot. **In a fight it is swung** (the F4 review's B2, decided on a
+  default Josh can overturn): its own bash, **2-5 blunt, no reaction**
+  (`items.json` `weapon.bash`; `Kit.MainBite`) -- the bow is 0.9 kg of horn,
+  wood and sinew made to flex, a light stick swung, so below the knife's 6-11
+  and far below the kılıç's 12-20. (At `c06e4c3a` a held bow had no bite and
+  he struck with the placeholder profile, 12-20 cut -- a sound kılıç's; that
+  empty hands strike like a kılıç at all is BUG-118, open, Josh's call.)
+  **The kit panel** shows the bow as "(+2 sight with fog of war; no shooting
+  yet)" (the review's B1: the +2 is real only where fog is drawn, so the words
+  say so, with fog on or off; the rule that he may hold it is the sim's and is
+  not gated on the display). **Josh's to overturn** (the F4 report's question).
+- **Talents and kit are his:** the other models of his squads have neither
+  term; squad types are not built.
+- **The map:** `height` (an int 0..8 on a FLOOR tile) and `sight_radius` (an
+  int 1..64 on a 1x1 STRUCTURE) are read by the game (`d2maptiled`), the World
+  Editor (`d2mapedit`, which also says "height 1" and "a tower: sees 16" for
+  a clicked tile) and its palette; anything else is refused with a message.
+  The edit was made through the editor's own records (the tileset tile added
+  to the tree as Tiled writes it, the tower placed with `PlaceStructure`, the
+  bytes `Doc.Checked` takes) -- a 49-line diff.
+- **D5:** the map's SHA changed, so a world file saved on the old village is
+  set aside when loaded. Measured 2 Oct 2026: his saves folder
+  (`%APPDATA%\OpenDiablo2\Saves`, 8,059 files) holds `.od2` heroes and their
+  `.od2.strigoi.json` sidecars and **no world file**, so nothing of his is set
+  aside.
+- **The world file's shape is unchanged** (the fog block is still the
+  explored grid; sight is derived): **no version bump**, it stays version 4.
+
+**The cost, answered.** F1-F2 measured 24 eyes at sight 16 at ~0.85 ms and
+24 eyes with 16 lit hearths at ~0.98 ms, over the plan's 0.5 ms frame. F4 cuts
+it two ways:
+
+1. **Every eye's lines are cached per tile it stands on** (`eyeLines`): tiles
+   never change after generation (plan §1.4) and an eye sees from its tile's
+   centre, so a recompute for the sky, the moon, a lit source or a dial reads
+   the cache, a tower walks its lines once a game, and only an eye that
+   changed tile walks again. (`forget` drops the caches: the one way to make
+   fog see a map whose tiles changed -- owed, with §3.9's memory, the day a
+   house can burn.)
+2. **The walk is recorded once per offset and replayed against fog's own
+   grid.** The map's walk moved to `d2geom.TileLineReads` /
+   `TileLineClear`, which `MapEngine.TileSightClear` still walks; fog reads
+   the map's opacity once a map (`MapEngine.TileBlocksSight`) and, since from
+   one tile's centre to another's the walk depends only on the offset,
+   replays each offset's recorded reads from every eye. Same answer and the
+   same cell count, to the bit (`TestFogsGridWalksTheMapsLines`, day and
+   night, 24 eyes, 40 steps). The rays sit in a table of one slot an offset
+   for a grid up to 256 x 256 and in a map beyond it, and an eye standing off
+   the grid (a model on the map's last row) is answered by the map's own walk
+   (`TestTheRecordedWalkOnAnyGrid`).
+
+`BenchmarkFogRaisedSight` and the re-run F1/F2 benchmarks
+(`d2mapgen/fog_bench_test.go`; 2 Oct 2026, Intel Core Ultra 7 258V; the real
+village with its tower; every iteration EVERY eye steps a tile, the worst
+frame, or -- "sky" -- the recompute is forced with nothing moving):
+
+| frame | 1 eye | 6 eyes | 24 eyes |
+|---|---|---|---|
+| step, sight 12 (raised: bows, high ground, the tower) | 0.028 ms | 0.080 ms | 0.18 ms |
+| step, sight 16 | 0.040 ms | 0.13 ms | **0.30 ms** |
+| sky, sight 16 (every line cached) | 0.022 ms | 0.046 ms | 0.13 ms |
+| night, 16 hearths lit, every eye stepping | 0.18 ms | 0.28 ms | **0.46 ms** |
+
+(F1-F3's numbers for the same frames: 24 eyes at 16 0.85 ms, at night with
+16 hearths 0.98 ms.) Every 24-eye frame is now under the 0.5 ms budget; the
+night with 16 fires is the closest.
+
 ## Turning it on
 
 | Control | Effect |
@@ -163,6 +278,7 @@ at 0 of 480,000 pixels differing from master `5510ef56`).
 | `day_sight` | **12** tiles | Josh's Q1: the same range beasts notice him at. At zoom 0.5 that reaches past the screen's sides (7.1 tiles) and nearly to its corners (12.7), so most of the black on screen is ground behind houses and walls; at 0.4 the corners (15.9) show it. |
 | `dark_radius` | **1.5** tiles [DIAL] | Josh's Q2, the new-moon end: the light model's FloorRadius, S1 §4's "the tile they stand on and little else" |
 | `moon_dark_radius` | **4** tiles [DIAL] | Josh's Q2, the full-moon end ("about 4"); tonight's is lerp(1.5, 4, moon) |
+| `height_tiles` | **2** tiles a level [DIAL] | F4, the plan's §2.2: an eye on ground of height h sees 2h further (the churchyard, height 1: 14) |
 | `memory_level` | 0.45 | the look; Josh's eye sets it at F1's launch |
 | `memory_saturation` | 0.25 | the look; ditto |
 
@@ -228,8 +344,15 @@ stands.
 - **Fog off is master's frame**, at night with a torch too: one seeded frame
   at 22:45 and one at noon, 0 of 480,000 pixels differ from master `b84a7241`
   (`strigoi-harness-runs\wt-fog2\pix-compare.txt`; the control, master's
-  night against the branch's noon, differs in 345,371).
-- **No raised sight (F4).** Talents, gear, height and towers.
+  night against the branch's noon, differs in 345,371). **Again at F4** (2
+  Oct 2026, master `d65e3a1c`, fog off, zoom 0.5, seed 1462, standing at noon
+  and at 22:45 with his torch lit): on master's `village.tmj` 0 of 480,000
+  pixels differ, both frames; on F4's own village only the new tower's art
+  differs -- 10,203 pixels at noon and 8,249 at night, all inside
+  (202..279, 279..466), where the tower stands on screen; the control,
+  master's noon against the branch's night, 479,581
+  (`strigoi-harness-runs\wt-fog4\pix-compare.txt`).
+
 - **Known small gaps from the F1 review (1 Oct).**
   - *A hovered hidden creature flashed highlighted for one frame* when it came
     into view (the hover reached hidden entities). **Closed in F2:** the hover
@@ -247,6 +370,8 @@ stands.
   screenshot-based checks are re-baselined once.
 
 ## Cost (F2, at night)
+
+*As measured at F2; F4 answered the over-budget rows (Raised sight, "The cost, answered").*
 
 `BenchmarkFogRecomputeAtNight` (the real village, deep night, new moon, his
 torch lit, hearths in a ring 14 tiles out; 1 Oct 2026, the same machine):
@@ -269,6 +394,8 @@ sky moves 1/64 or a band, the moon or a lit source changes.
 
 ## Cost (F1, by day)
 
+*As measured at F1; F4 answered the over-budget rows (Raised sight, "The cost, answered").*
+
 `BenchmarkFogRecompute` (`d2core/d2map/d2mapgen/fog_bench_test.go`, the real
 village; 1 Oct 2026, Intel Core Ultra 7 258V): one recompute with his one eye
 at sight 12 is about **0.07 ms** (~3,800 tiles read); fog recomputes only when
@@ -282,7 +409,10 @@ frame is a comparison (`skipped`). For F2/F4's scale: 6 eyes at 12 about
 The `fog` provider (docs/harness.md) and `strigoi_get_entity`'s `shown` (false
 only with fog on and the entity on ground he does not see now).
 `playtest/fog_test.go` is the script: `TestFogOfWar` (F1, by day),
-`TestFogAtNight` (F2's acts 5-9), `TestFogNeverTouchesTheSim` (F2, two
+`TestFogAtNight` (F2's acts 5-9), `TestFogRaisedSight` (F4's acts 10-16:
+the tower by day, by night and by its beacon, the high ground, the bow taken
+up through the kit panel, Night Eyes taken through the talent panel, and
+Josh's frame of the tower at night), `TestFogNeverTouchesTheSim` (F2, two
 launches; since F3 fog's own world state is exempt -- with fog off nothing is
 explored -- and required to differ) and `TestFogIsKept` (F3: explore, save,
 resume, the same grid and the same day after; a night act, his torch lit,

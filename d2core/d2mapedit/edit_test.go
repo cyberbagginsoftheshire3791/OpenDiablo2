@@ -54,8 +54,8 @@ func TestPlacingAHouseOnOpenGroundLeavesAMapTheGameTakes(t *testing.T) {
 
 	m := parseVillage(t, saved)
 
-	if len(m.Structures) != 8 {
-		t.Errorf("the loader reads %d structures, want the village's 7 plus the new one", len(m.Structures))
+	if len(m.Structures) != 9 {
+		t.Errorf("the loader reads %d structures, want the village's 8 (its houses and, since fog of war F4, the gate's tower) plus the new one", len(m.Structures))
 	}
 
 	// And the house is solid where it stands, which is what the loader does with

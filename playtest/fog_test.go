@@ -190,12 +190,17 @@ func TestFogOfWar(t *testing.T) {
 	nx, ny := playerTile(s)
 	t.Logf("act 2: walked %.1f tiles to (%d,%d)", walked, nx, ny)
 
-	setField(s, "fog", "probe", map[string]any{"x": startX, "y": startY})
-
-	if st := str(sub(fogState(s), "probe"), "state"); st != "explored" {
-		t.Fatalf("after a walk of %.1f tiles the start tile (%d,%d) is %s; want explored (remembered, not seen)",
-			walked, startX, startY, st)
+	// The ground he walked from is remembered, not seen. Since fog of war F4
+	// the gate's tower (6 tiles from the start) sees the start tile itself,
+	// so the witness is the tile nearest the start that neither he nor the
+	// tower sees now.
+	wx, wy, ok := rememberedNear(t, s, startX, startY, 6)
+	if !ok {
+		t.Fatalf("after a walk of %.1f tiles no tile within 6 of the start (%d,%d) is explored and unseen; want the ground behind him remembered",
+			walked, startX, startY)
 	}
+
+	t.Logf("act 2: the tile (%d,%d) by the start is remembered, not seen", wx, wy)
 
 	s.frame(t, "fog-2-after-walk-v2") // Josh's evidence: the remembered ground behind him
 
@@ -220,7 +225,14 @@ func TestFogOfWar(t *testing.T) {
 
 	grey := s.frame(t, "fog-2-grey")
 
-	memory := lowestProbe(t, s, 6.5, 9, 0.5, func(p map[string]any) bool { return str(p, "state") == "explored" })
+	// The tile must be what is drawn at its centre: since fog of war F4 the
+	// gate's tower holds houses in sight that his walk left behind, and a
+	// VISIBLE house standing in front of a remembered tile draws its art over
+	// it in colour. So no tile of a visible structure may stand within five
+	// tiles in front of it (lower on screen; a house's art is ~11 rows tall).
+	memory := lowestProbe(t, s, 6.5, 9, 0.5, func(p map[string]any) bool {
+		return str(p, "state") == "explored" && !visibleStructureInFront(s, int(num(p, "x")), int(num(p, "y")), 5)
+	})
 	if memory == nil {
 		t.Fatal("no remembered tile 6.5..9 off is on screen with day sight 5")
 	}
@@ -245,9 +257,22 @@ func TestFogOfWar(t *testing.T) {
 	s.call("strigoi_step", map[string]any{"frames": 2})
 
 	// --- act 3: a villager ----------------------------------------------------
+	// Since fog of war F4 the gate's tower sees the villagers about the green;
+	// from where his walk ends the one beyond them may be within his sight.
+	// So, if no villager is past his sight and the tower's, he walks on to the
+	// north-east green, then the south yards, and looks again.
 	handle, dist := farVillager(t, s, daySight+0.5)
+	for _, spot := range [][2]float64{{33.5, 20.5}, {16.5, 33.5}} {
+		if handle != "" {
+			break
+		}
+
+		fogWalkTo(t, s, spot[0], spot[1])
+		handle, dist = farVillager(t, s, daySight+0.5)
+	}
+
 	if handle == "" {
-		t.Fatalf("no villager is more than %.1f tiles from him", daySight+0.5)
+		t.Fatalf("no villager is more than %.1f tiles from him and out of the tower's sight", daySight+0.5)
 	}
 
 	ent := s.call("strigoi_get_entity", map[string]any{"handle": handle})
@@ -511,18 +536,80 @@ func farVillager(t *testing.T, s *session, d float64) (string, float64) {
 	p := s.call("strigoi_get_player", map[string]any{})
 	px, py := num(p, "x"), num(p, "y")
 
+	// Since fog of war F4 a tower is an eye of its own: a villager in its
+	// sight is seen however far he is.
+	var towers []map[string]any
+
+	for _, raw := range asList(fogState(s)["eyes"]) {
+		if e, ok := raw.(map[string]any); ok && flag(t, e, "tower") {
+			towers = append(towers, e)
+		}
+	}
+
+	inTowerSight := func(x, y float64) bool {
+		for _, e := range towers {
+			if math.Hypot(x-num(e, "x"), y-num(e, "y")) <= num(e, "sight")+1 {
+				return true
+			}
+		}
+
+		return false
+	}
+
 	for _, raw := range asList(s.call("strigoi_get_entities", map[string]any{"kind": "npc", "limit": 200})["items"]) {
 		row, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		if dist := math.Hypot(num(row, "x")-px, num(row, "y")-py); dist > d {
+		if dist := math.Hypot(num(row, "x")-px, num(row, "y")-py); dist > d && !inTowerSight(num(row, "x"), num(row, "y")) {
 			return str(row, "handle"), dist
 		}
 	}
 
 	return "", 0
+}
+
+// visibleStructureInFront is whether a tile of a structure that is visible
+// now stands within r tiles in front of (x, y) -- toward +x and +y, lower on
+// screen, where its art would stand over (x, y)'s centre (fog of war F4).
+func visibleStructureInFront(s *session, x, y, r int) bool {
+	for dy := 0; dy <= r; dy++ {
+		for dx := 0; dx <= r; dx++ {
+			if dx == 0 && dy == 0 {
+				continue
+			}
+
+			if p := probeAt(s, x+dx, y+dy); p["structure"] != nil && str(p, "state") == "visible" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// rememberedNear is the tile nearest (x, y), within r, that is explored and
+// not seen now -- remembered ground (fog of war F4: a witness that neither he
+// nor a tower sees).
+func rememberedNear(t *testing.T, s *session, x, y, r int) (int, int, bool) {
+	t.Helper()
+
+	for d := 0; d <= r; d++ {
+		for ty := y - d; ty <= y+d; ty++ {
+			for tx := x - d; tx <= x+d; tx++ {
+				if tx < 0 || ty < 0 || (abs(tx-x) != d && abs(ty-y) != d) {
+					continue // the ring at Chebyshev distance d only
+				}
+
+				if str(probeAt(s, tx, ty), "state") == "explored" {
+					return tx, ty, true
+				}
+			}
+		}
+	}
+
+	return 0, 0, false
 }
 
 // walkNearFog walks him to within r tiles of an entity, which may wander.
@@ -791,8 +878,17 @@ func TestFogAtNight(t *testing.T) {
 	eyes := asList(fog["eyes"])
 	t.Logf("act 8: %d eyes: %v", len(eyes), eyes)
 
-	if len(eyes) != 2 {
-		t.Fatalf("act 8: with a second squad there are %d eyes; every squad model is one", len(eyes))
+	// Since fog of war F4 the gate's tower is an eye too; it is not a squad's.
+	squadEyes := 0
+
+	for _, raw := range eyes {
+		if e, ok := raw.(map[string]any); ok && !flag(t, e, "tower") {
+			squadEyes++
+		}
+	}
+
+	if squadEyes != 2 {
+		t.Fatalf("act 8: with a second squad there are %d squad eyes; every squad model is one", squadEyes)
 	}
 
 	if st := probeState(s, hearth); st != "visible" {
@@ -1229,12 +1325,17 @@ func TestFogIsKept(t *testing.T) {
 	walked := fogWalkAway(t, s, float64(sx)+0.5, float64(sy)+0.5, 13.5)
 	s.call("strigoi_step", map[string]any{"frames": 30}) // he stops
 
-	if st := str(probeAt(s, sx, sy), "state"); st != "explored" {
-		t.Fatalf("act 1: after a walk of %.1f tiles the start tile (%d,%d) is %s; want explored", walked, sx, sy, st)
+	// The witness of the ground he walked: since fog of war F4 the gate's
+	// tower sees the start tile itself, so it is the tile nearest the start
+	// that neither he nor the tower sees now.
+	wx, wy, ok := rememberedNear(t, s, sx, sy, 6)
+	if !ok {
+		t.Fatalf("act 1: after a walk of %.1f tiles no tile within 6 of the start (%d,%d) is explored and unseen", walked, sx, sy)
 	}
 
 	fogT := fogState(s)
-	t.Logf("act 1: walked %.1f tiles from (%d,%d); %v explored, %v visible", walked, sx, sy, fogT["explored"], fogT["visible"])
+	t.Logf("act 1: walked %.1f tiles from (%d,%d); %v explored, %v visible; the witness (%d,%d) is remembered",
+		walked, sx, sy, fogT["explored"], fogT["visible"], wx, wy)
 
 	// --- act 2: the save -----------------------------------------------------
 	sT := snapWorld(t, s)
@@ -1321,8 +1422,8 @@ func TestFogIsKept(t *testing.T) {
 		t.Fatalf("act 4: the resumed fog remembers %v tiles, the saved one %v (or another grid)", fogR["explored"], fogT["explored"])
 	}
 
-	if st := str(probeAt(s, sx, sy), "state"); st != "explored" {
-		t.Fatalf("act 4: resumed, the start tile (%d,%d) is %s; the ground he walked is remembered", sx, sy, st)
+	if st := str(probeAt(s, wx, wy), "state"); st != "explored" {
+		t.Fatalf("act 4: resumed, the witness tile (%d,%d) is %s; the ground he walked is remembered", wx, wy, st)
 	}
 
 	onward()
@@ -1348,11 +1449,11 @@ func TestFogIsKept(t *testing.T) {
 			sE.Systems["fog"], sT.Systems["fog"])
 	}
 
-	if st := str(probeAt(s, sx, sy), "state"); st != "unexplored" {
-		t.Fatalf("act 5: with the grid emptied the start tile (%d,%d) is %s; want unexplored", sx, sy, st)
+	if st := str(probeAt(s, wx, wy), "state"); st != "unexplored" {
+		t.Fatalf("act 5: with the grid emptied the witness tile (%d,%d) is %s; want unexplored", wx, wy, st)
 	}
 
-	t.Logf("act 5 PASS: the emptied fog block resumed and diverged (fog), the start tile black: %s", divergence(t, sT, sE, map[string]any{}))
+	t.Logf("act 5 PASS: the emptied fog block resumed and diverged (fog), the witness tile black: %s", divergence(t, sT, sE, map[string]any{}))
 
 	// --- act 6: the map key --------------------------------------------------
 	elsewhere := decodeNumbers(t, fileT)
@@ -1479,4 +1580,347 @@ func TestFogIsKept(t *testing.T) {
 	nightFog("act 8: S_R = S_U walked on", sNU2, sNR2)
 	t.Logf("act 8 PASS: saved mid-tile at night with his torch lit, resumed to the same grid, and ran on as the uninterrupted game (%v explored)",
 		fogState(s)["explored"])
+}
+
+// TestFogRaisedSight is fog of war F4's script: raised sight (Josh's ruling 4,
+// 1 Oct 2026: "all of them" -- talents, structures, gear and height). Q6-Q9
+// are on the plan's recommended defaults, decided while Josh was away and
+// his to overturn. UNAIDED: nothing is spawned, watched or pursued; the beacon
+// is the light provider's place_source, the plan's own verb; the talent is
+// taken through the talent panel and the bow through the kit panel, as he
+// would.
+//
+//  10. The tower at the gate (Q7), by day: an eye of its own seeing 16 (Q6),
+//     it holds ground past his sight while he stands on the churchyard.
+//  13. Height: on the churchyard's high ground (height 1) he sees 14; a tile
+//     13-14 off is seen -- and with height_tiles 0 (the dial, both ways) it
+//     is not.
+//  15. The bow (Q9): taken up through the kit panel his sight is 16 there and
+//     a tile 15-16 off is seen; put down, it is not.
+//  11. The tower at deep night, new moon: like a squad, it sees its dark
+//     radius -- the tile beside it is seen, the tile it held by day is not.
+//  12. A beacon lit on it (a hearth placed at its tile): its lit ground, which
+//     his own eye has no line to, is seen by the tower; put out, it is not.
+//  14. Night Eyes (Q8), taken through the talent panel: his dark radius 1.5
+//     becomes 2.5 -- a tile 2.24 off, unseen before, is seen.
+//  16. Josh's frame: he walks to the tower at night, the beacon lit, at zoom
+//     0.5 (fog-f4-tower-night-beacon).
+//
+// The provider is the primary evidence (each eye's sight and terms, the
+// probe's state and clear_from per eye).
+func TestFogRaisedSight(t *testing.T) {
+	const dawnMinute = 165.0
+
+	s := startGame(t, "-fog", "-zoom", "0.5")
+
+	s.call("strigoi_pause", map[string]any{})
+
+	game := s.call("strigoi_start_game", map[string]any{
+		"hero_name": "Watch", "hero_class": "amazon", "seed": 1462, "wait_seconds": 90,
+	})
+	t.Logf("spawned at %v", game["spawn_tile"])
+
+	setField(s, "rising", "p", 0.0)
+	setField(s, "rising", "edge_floor", 0)
+	setField(s, "spawns", "chance", 0)
+
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 12*60 - dawnMinute}) // noon
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	// --- act 10: the tower by day ---------------------------------------------
+	tower := fogEye(t, fogState(s), "tower/25,34")
+	if !flag(t, tower, "tower") || mustNum(t, tower, "sight") != 16 || mustNum(t, fogState(s), "towers") != 1 {
+		t.Fatalf("act 10: the village's one tower, at the gate (25,34), sees 16 (Q7, Q6); the provider has %v", tower)
+	}
+
+	tx, ty := 25.5, 34.5 // the tower's eye
+
+	fogWalkTo(t, s, 17.5, 18.5) // the churchyard, the high ground
+
+	me := fogEye(t, fogState(s), "s:1")
+	t.Logf("act 10: on the churchyard he is at height %v seeing %v (terms %v)", me["height"], me["sight"], me["terms"])
+
+	held := fogFind(t, s, func(x, y int) bool {
+		dt := math.Hypot(float64(x)+0.5-tx, float64(y)+0.5-ty)
+		dh := math.Hypot(float64(x)+0.5-num(me, "x"), float64(y)+0.5-num(me, "y"))
+
+		return dt > 12.5 && dt <= 15.5 && dh > 17
+	}, func(p map[string]any) bool {
+		return str(p, "state") == "visible" && clearFrom(p, "tower/25,34")
+	}, int(tx), int(ty), 16)
+	if held == nil {
+		t.Fatal("act 10: no tile 12.5-15.5 from the tower, 17+ from him, is seen with a clear line from the tower")
+	}
+
+	t.Logf("act 10: the tower holds (%v,%v), %.1f off it and %.1f off him: %s",
+		held["x"], held["y"], math.Hypot(num(held, "x")+0.5-tx, num(held, "y")+0.5-ty),
+		math.Hypot(num(held, "x")+0.5-num(me, "x"), num(held, "y")+0.5-num(me, "y")), str(held, "state"))
+
+	// --- act 13: height --------------------------------------------------------
+	if num(me, "height") != 1 || num(me, "sight") != 14 || num(sub(me, "terms"), "height") != 2 {
+		t.Fatalf("act 13: on the churchyard he is at height %v seeing %v (terms %v); want 1, 14, +2", me["height"], me["sight"], me["terms"])
+	}
+
+	high := fogFind(t, s, func(x, y int) bool {
+		dh := math.Hypot(float64(x)+0.5-num(me, "x"), float64(y)+0.5-num(me, "y"))
+		dt := math.Hypot(float64(x)+0.5-tx, float64(y)+0.5-ty)
+
+		return dh > 12.5 && dh <= 14 && dt > 16.5
+	}, func(p map[string]any) bool {
+		return str(p, "state") == "visible" && clearFrom(p, "s:1")
+	}, int(num(me, "x")), int(num(me, "y")), 14)
+	if high == nil {
+		t.Fatal("act 13: no tile 12.5-14 off him, out of the tower's reach, is seen with a clear line")
+	}
+
+	setField(s, "fog", "height_tiles", 0.0)
+
+	if st := probeState(s, high); st != "explored" || num(fogEye(t, fogState(s), "s:1"), "sight") != 12 {
+		t.Fatalf("act 13: with height_tiles 0 the tile (%v,%v) is %s and he sees %v; want explored and 12",
+			high["x"], high["y"], st, fogEye(t, fogState(s), "s:1")["sight"])
+	}
+
+	setField(s, "fog", "height_tiles", 2.0)
+
+	if st := probeState(s, high); st != "visible" {
+		t.Fatalf("act 13: height_tiles back at 2, the tile (%v,%v) is %s", high["x"], high["y"], st)
+	}
+
+	t.Logf("act 13: from the high ground (%v,%v), %.1f off, is seen; with the height term off it is not",
+		high["x"], high["y"], math.Hypot(num(high, "x")+0.5-num(me, "x"), num(high, "y")+0.5-num(me, "y")))
+
+	// --- act 15: the bow -------------------------------------------------------
+	far := fogFind(t, s, func(x, y int) bool {
+		dh := math.Hypot(float64(x)+0.5-num(me, "x"), float64(y)+0.5-num(me, "y"))
+		dt := math.Hypot(float64(x)+0.5-tx, float64(y)+0.5-ty)
+
+		return dh > 14.5 && dh <= 16 && dt > 16.5
+	}, func(p map[string]any) bool {
+		return str(p, "state") != "visible" && clearFrom(p, "s:1")
+	}, int(num(me, "x")), int(num(me, "y")), 16)
+	if far == nil {
+		t.Fatal("act 15: no tile 14.5-16 off him, out of the tower's reach, with a clear line")
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "i"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	bow := kitRow(t, uiState(s), func(r map[string]any) bool {
+		return num(r, "pack") >= 0 && strings.Contains(str(r, "text"), "Composite bow")
+	})
+	s.call("strigoi_click", map[string]any{"button": "left", "x": int(num(bow, "x")), "y": int(num(bow, "y"))})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	hand := kitRow(t, uiState(s), func(r map[string]any) bool { return str(r, "slot") == "main" })
+	me = fogEye(t, fogState(s), "s:1")
+
+	if !strings.Contains(str(hand, "text"), "Composite bow") || num(me, "sight") != 16 || num(sub(me, "terms"), "gear") != 2 {
+		t.Fatalf("act 15: the bow taken up: his hand holds %q, he sees %v (terms %v); want the bow, 16, gear +2",
+			str(hand, "text"), me["sight"], me["terms"])
+	}
+
+	if st := probeState(s, far); st != "visible" {
+		t.Fatalf("act 15: with the bow in his hands the tile (%v,%v) is %s", far["x"], far["y"], st)
+	}
+
+	s.call("strigoi_click", map[string]any{"button": "left", "x": int(num(hand, "x")), "y": int(num(hand, "y"))})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if st := probeState(s, far); st != "explored" || num(fogEye(t, fogState(s), "s:1"), "sight") != 14 {
+		t.Fatalf("act 15: the bow put down, the tile (%v,%v) is %s and he sees %v; want explored and 14",
+			far["x"], far["y"], st, fogEye(t, fogState(s), "s:1")["sight"])
+	}
+
+	s.call("strigoi_key", map[string]any{"key": "i"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	t.Logf("act 15: with the bow (%v,%v) is seen, put down it is not", far["x"], far["y"])
+
+	// --- act 11: the tower at deep night -------------------------------------
+	// He stands behind the church (still the high ground): its walls hide the
+	// gate from him, so what is seen there at night is the tower's.
+	fogWalkTo(t, s, 16.5, 13.5)
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 11 * 60}) // 23:00
+	setField(s, "clock", "moon", 0.0)
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	tower = fogEye(t, fogState(s), "tower/25,34")
+	if num(tower, "unlit_reach") != 1.5 {
+		t.Fatalf("act 11: at deep night the tower sees %v unlit; like a squad, 1.5 (Q6)", tower["unlit_reach"])
+	}
+
+	if st := probeState(s, held); st != "explored" {
+		t.Fatalf("act 11: at night the tile the tower held by day (%v,%v) is %s; want explored", held["x"], held["y"], st)
+	}
+
+	if p := probeAt(s, 24, 34); str(p, "state") != "visible" {
+		t.Fatalf("act 11: at night the tile beside the tower (24,34) is %s; its dark radius is 1.5", str(p, "state"))
+	}
+
+	// --- act 12: a beacon on it ---------------------------------------------
+	beaconTile := func(ok func(map[string]any) bool) map[string]any {
+		return fogFind(t, s, func(x, y int) bool {
+			dt := math.Hypot(float64(x)+0.5-tx, float64(y)+0.5-ty)
+
+			return dt >= 3 && dt <= 4.5
+		}, func(p map[string]any) bool {
+			return clearFrom(p, "tower/25,34") && !clearFrom(p, "s:1") && ok(p)
+		}, int(tx), int(ty), 5)
+	}
+
+	dark := beaconTile(func(p map[string]any) bool { return str(p, "state") == "explored" })
+	if dark == nil {
+		t.Fatal("act 12: no tile 3-4.5 off the tower, on its line and not on his, is remembered in the dark")
+	}
+
+	setField(s, "light", "place_source", map[string]any{"kind": "hearth", "x": tx, "y": ty})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	lit := probeAt(s, int(num(dark, "x")), int(num(dark, "y")))
+	if str(lit, "state") != "visible" || !flag(t, lit, "lit") {
+		t.Fatalf("act 12: with the beacon lit the tile (%v,%v) is %s (lit %v); the tower sees its lit ground",
+			dark["x"], dark["y"], str(lit, "state"), lit["lit"])
+	}
+
+	beacon := lastSourceID(t, s, "hearth")
+	setField(s, "light", "remove_source", beacon)
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if st := probeState(s, dark); st != "explored" {
+		t.Fatalf("act 12: the beacon put out, the tile (%v,%v) is %s; want explored", dark["x"], dark["y"], st)
+	}
+
+	t.Logf("act 12: the beacon lit, the tower sees (%v,%v), which he has no line to; put out, it is dark", dark["x"], dark["y"])
+
+	// --- act 14: Night Eyes ---------------------------------------------------
+	me = fogEye(t, fogState(s), "s:1")
+	if num(me, "dark") != 1.5 {
+		t.Fatalf("act 14: before Night Eyes his dark radius is %v; want 1.5", me["dark"])
+	}
+
+	near := fogFind(t, s, func(x, y int) bool {
+		d := math.Hypot(float64(x)+0.5-num(me, "x"), float64(y)+0.5-num(me, "y"))
+
+		return d > 2 && d <= 2.5
+	}, func(p map[string]any) bool {
+		return clearFrom(p, "s:1") && str(p, "state") == "explored" && !flag(t, p, "lit")
+	}, int(num(me, "x")), int(num(me, "y")), 3)
+	if near == nil {
+		t.Fatal("act 14: no unlit tile 2-2.5 off him with a clear line")
+	}
+
+	setField(s, "progress", "grant_xp", 50.0) // level 2: one pick
+	s.call("strigoi_key", map[string]any{"key": "t"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+	clickCell(t, s, "night-eyes")
+	clickCell(t, s, "night-eyes")
+	s.call("strigoi_key", map[string]any{"key": "t"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if !talents(t, s)["night-eyes"] {
+		t.Fatalf("act 14: Night Eyes was not taken: %v", progressState(s))
+	}
+
+	me = fogEye(t, fogState(s), "s:1")
+	if num(me, "dark") != 2.5 || num(sub(me, "dark_terms"), "talent") != 1 {
+		t.Fatalf("act 14: with Night Eyes his dark radius is %v (terms %v); Q8 is +1", me["dark"], me["dark_terms"])
+	}
+
+	if st := probeState(s, near); st != "visible" {
+		t.Fatalf("act 14: with Night Eyes the tile (%v,%v) is %s", near["x"], near["y"], st)
+	}
+
+	t.Logf("act 14: Night Eyes taken: (%v,%v) is seen in the dark", near["x"], near["y"])
+
+	// --- act 16: Josh's frame -------------------------------------------------
+	setField(s, "light", "place_source", map[string]any{"kind": "hearth", "x": tx, "y": ty})
+	fogWalkTo(t, s, 25.5, 30.5) // four tiles up the road from the tower
+	s.call("strigoi_move_cursor", map[string]any{"x": 6, "y": 594})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	shot := s.call("strigoi_screenshot", map[string]any{"name": "fog-f4-tower-night-beacon"})
+	t.Logf("act 16: the tower at night, its beacon lit, -fog -zoom 0.5: %s", str(shot, "path"))
+}
+
+// fogEye is the provider's eye with this id.
+func fogEye(t *testing.T, fog map[string]any, id string) map[string]any {
+	t.Helper()
+
+	for _, raw := range asList(fog["eyes"]) {
+		if e, ok := raw.(map[string]any); ok && str(e, "id") == id {
+			return e
+		}
+	}
+
+	t.Fatalf("no fog eye %q in %v", id, fog["eyes"])
+
+	return nil
+}
+
+// clearFrom is whether the probe's line from the eye named is clear.
+func clearFrom(p map[string]any, id string) bool {
+	c, _ := p["clear_from"].(map[string]any)
+	v, _ := c[id].(bool)
+
+	return v
+}
+
+// fogFind probes the village's tiles within r of (cx, cy), row by row, that
+// pass the geometry, and returns the first whose probe ok accepts.
+func fogFind(t *testing.T, s *session, geo func(x, y int) bool, ok func(p map[string]any) bool, cx, cy, r int) map[string]any {
+	t.Helper()
+
+	for y := cy - r; y <= cy+r; y++ {
+		for x := cx - r; x <= cx+r; x++ {
+			if x < 0 || y < 0 || x >= 48 || y >= 48 || !geo(x, y) {
+				continue
+			}
+
+			if p := probeAt(s, x, y); ok(p) {
+				return p
+			}
+		}
+	}
+
+	return nil
+}
+
+// fogWalkTo walks him to (x, y) and fails if he cannot get within half a tile.
+func fogWalkTo(t *testing.T, s *session, x, y float64) {
+	t.Helper()
+
+	for k := 0; k < 200; k++ {
+		p := s.call("strigoi_get_player", map[string]any{})
+		if math.Hypot(num(p, "x")-x, num(p, "y")-y) < 0.5 {
+			return
+		}
+
+		if k%20 == 0 {
+			s.call("strigoi_move_player_to", map[string]any{"x": x, "y": y})
+		}
+
+		s.call("strigoi_step", map[string]any{"frames": 6})
+	}
+
+	p := s.call("strigoi_get_player", map[string]any{})
+	t.Fatalf("could not walk to (%.1f,%.1f); he is at (%.1f,%.1f)", x, y, num(p, "x"), num(p, "y"))
+}
+
+// lastSourceID is the id of the newest light source of this kind.
+func lastSourceID(t *testing.T, s *session, kind string) float64 {
+	t.Helper()
+
+	id := -1.0
+
+	for _, raw := range asList(lightState(s)["source_list"]) {
+		if src, ok := raw.(map[string]any); ok && str(src, "kind") == kind && num(src, "id") > id {
+			id = num(src, "id")
+		}
+	}
+
+	if id < 0 {
+		t.Fatalf("no %s in the light's source_list", kind)
+	}
+
+	return id
 }

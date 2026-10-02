@@ -119,11 +119,8 @@ func TestEquipRules(t *testing.T) {
 		t.Fatal("an empty main hand has no bite")
 	}
 
-	// The bow is carried, not wielded -- and its mirror, a sabre goes back.
-	if err := k.Equip(packIndex(t, k, "composite-bow"), false, false); !errors.Is(err, ErrRanged) {
-		t.Fatalf("equip the bow: %v", err)
-	}
-
+	// A sabre goes back. (Until fog of war F4 the bow was refused the hand
+	// here; it may be held now -- TestTheBowIsHeldToLookAlong.)
 	if err := k.Equip(packIndex(t, k, "kilic"), false, false); err != nil {
 		t.Fatalf("equip the sabre: %v", err)
 	}

@@ -112,8 +112,8 @@ func TestSaveKeepsThePreviousGeneration(t *testing.T) {
 
 	// And the map the game reads back is the edited one.
 	saved := parseVillage(t, got)
-	if len(saved.Structures) != 8 {
-		t.Errorf("the saved map holds %d structures, want 8", len(saved.Structures))
+	if len(saved.Structures) != 9 {
+		t.Errorf("the saved map holds %d structures, want 9 (the village's 8 -- the tower since fog of war F4 -- and the new one)", len(saved.Structures))
 	}
 }
 

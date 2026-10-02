@@ -50,7 +50,13 @@ type MapEngine struct {
 	// structures are an authored map's structure footprints, in whole tiles
 	// (Max exclusive): fog of war shows a structure whole once any of it is
 	// seen (SetStructures, tile_sight.go).
-	structures     []image.Rectangle
+	structures []image.Rectangle
+	// heights, towers and towerSight are an authored map's raised sight (fog
+	// of war F4, tile_sight.go): each tile's ground height (row-major; nil is
+	// flat) and each tower's footprint and sight radius.
+	heights        []uint8
+	towers         []image.Rectangle
+	towerSight     []float64
 	authoredRegion *authoredRegion
 
 	// Which authored bits line of sight obeys. Set explicitly in
@@ -159,6 +165,9 @@ func (m *MapEngine) resetState(width, height int) {
 	m.authoredStart = nil
 	m.authoredInside = nil
 	m.structures = nil
+	m.heights = nil
+	m.towers = nil
+	m.towerSight = nil
 	m.authoredRegion = nil
 }
 

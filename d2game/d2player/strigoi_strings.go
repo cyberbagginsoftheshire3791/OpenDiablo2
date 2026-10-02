@@ -126,7 +126,7 @@ const (
 	KitTitle       = "Kit    click: take off / put on    I: close"
 	KitEmpty       = "-"
 	KitPackHeader  = "Pack   (load %.1f kg)"
-	KitRangedNote  = "(carried, no shooting yet)"
+	KitRangedNote  = "(+%v sight with fog of war; no shooting yet)"
 	KitShieldNote  = "block, %d pts"
 	KitArmourNote  = "%d pts"
 	KitTorchNote   = "%.0f min"

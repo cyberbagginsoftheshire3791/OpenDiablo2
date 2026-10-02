@@ -4832,6 +4832,19 @@
        "value": "akara"
       }
      ]
+    },
+    {
+     "id": 14,
+     "name": "placeholder-watchtower",
+     "type": "structure",
+     "x": 2080,
+     "y": 2800,
+     "width": 160,
+     "height": 400,
+     "rotation": 0,
+     "visible": true,
+     "point": false,
+     "gid": 19
     }
    ],
    "opacity": 1,
@@ -4842,7 +4855,7 @@
   }
  ],
  "nextlayerid": 4,
- "nextobjectid": 14,
+ "nextobjectid": 15,
  "orientation": "isometric",
  "properties": [
   {
@@ -4872,7 +4885,7 @@
    "name": "village-placeholder",
    "objectalignment": "bottom",
    "spacing": 0,
-   "tilecount": 18,
+   "tilecount": 19,
    "tileheight": 448,
    "tiles": [
     {
@@ -4903,7 +4916,14 @@
      "id": 4,
      "image": "tiles/placeholder-churchyard.png",
      "imagewidth": 160,
-     "imageheight": 80
+     "imageheight": 80,
+     "properties": [
+      {
+       "name": "height",
+       "type": "int",
+       "value": 1
+      }
+     ]
     },
     {
      "id": 5,
@@ -5106,6 +5126,34 @@
        "name": "footprint_h",
        "type": "int",
        "value": 3
+      }
+     ]
+    },
+    {
+     "id": 18,
+     "image": "tiles/placeholder-watchtower.png",
+     "imagewidth": 160,
+     "imageheight": 400,
+     "properties": [
+      {
+       "name": "blocks_sight",
+       "type": "bool",
+       "value": false
+      },
+      {
+       "name": "footprint_w",
+       "type": "int",
+       "value": 1
+      },
+      {
+       "name": "footprint_h",
+       "type": "int",
+       "value": 1
+      },
+      {
+       "name": "sight_radius",
+       "type": "int",
+       "value": 16
       }
      ]
     }

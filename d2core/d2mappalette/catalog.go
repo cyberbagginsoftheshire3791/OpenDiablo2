@@ -640,8 +640,16 @@ func tileProperties(props []tmjProperty) (fp image.Point, blocked, sight, blocke
 			}
 
 			sight, sightSet = v, true
+		case "height", "sight_radius":
+			// Fog of war F4 (raised ground, a tower's sight): the palette
+			// places neither, so it only checks the type; the loader bounds
+			// them (tiled.go, MaxHeight and MaxSightRadius).
+			var n int
+			if p.Type != "int" || json.Unmarshal(p.Value, &n) != nil {
+				return fp, false, false, false, fmt.Errorf("property %q must be an int", p.Name)
+			}
 		default:
-			return fp, false, false, false, fmt.Errorf("unknown tile property %q; the game reads \"blocked\", \"blocks_sight\", \"footprint_w\" and \"footprint_h\"", p.Name)
+			return fp, false, false, false, fmt.Errorf("unknown tile property %q; the game reads \"blocked\", \"blocks_sight\", \"footprint_w\", \"footprint_h\", \"height\" and \"sight_radius\"", p.Name)
 		}
 	}
 

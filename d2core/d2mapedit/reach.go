@@ -143,3 +143,32 @@ func (d *Doc) ReachableFrom(x, y int) Reach {
 
 	return r
 }
+
+// HeightAt is the ground's height at x, y in levels: its floor tile's
+// "height" (fog of war F4: an eye standing there sees further), 0 off the map
+// or with no floor -- d2maptiled's Map.HeightAt.
+func (d *Doc) HeightAt(x, y int) int {
+	if !d.m.onMap(x, y) {
+		return 0
+	}
+
+	if floor := d.FloorTile(x, y); floor != 0 {
+		if k, ok := d.m.kind(floor); ok {
+			return k.Height
+		}
+	}
+
+	return 0
+}
+
+// TowerSightAt is the sight radius of the tower standing on x, y (fog of war
+// F4: a structure with "sight_radius"), 0 when none does.
+func (d *Doc) TowerSightAt(x, y int) int {
+	if st, on := d.StructureOn(x, y); on {
+		if k, ok := d.m.kind(st.GID); ok {
+			return k.SightRadius
+		}
+	}
+
+	return 0
+}
