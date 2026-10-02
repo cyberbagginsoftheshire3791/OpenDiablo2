@@ -1185,6 +1185,17 @@ func farSpot(s *session, x, y, d float64) []float64 {
 //  6. THE MAP KEY (the F1 review's C6): T's file with its fog grid keyed on
 //     another map is refused FILE (the fog rule) and set aside; he begins at
 //     dawn.
+//  7. THE NIGHT (the F3 review's A1): T's file resumed, on to 23:00, his torch
+//     lit through his kit (L), the noon's ground forgotten (fog.forget) so
+//     every step is onto ground he has not seen. He walks off, then on into
+//     the next tile the way he walks and stops at its far edge, his torch's
+//     edge on ground he has not seen: the save. On: 4 frames standing there
+//     (S_U1), then a walk on the same way (S_U2).
+//  8. That file resumed: S_R0 = S_T, and the same 4 frames and walk give
+//     S_R1 = S_U1 and S_R2 = S_U2 -- fog's world hash named first.
+//     Negative control: fog.go and light_view.go as 4984fde0 had them (lit
+//     from his exact point) and act 8 fails on fog (strigoi-harness-runs\
+//     wt-fog3\nc\ncp-a1-before-the-fix.txt).
 //
 // UNAIDED: nothing spawned, watched or pursued.
 func TestFogIsKept(t *testing.T) {
@@ -1230,6 +1241,7 @@ func TestFogIsKept(t *testing.T) {
 	out := saveUnmoved(t, s, "act 2", map[string]any{})
 	worldPath := str(out, "world_path")
 	fileT := mustRead(t, worldPath)
+	heroT := map[string][]byte{save: mustRead(t, save), save + ".strigoi.json": mustRead(t, save+".strigoi.json")}
 
 	var file struct {
 		Version int                  `json:"version"`
@@ -1271,12 +1283,22 @@ func TestFogIsKept(t *testing.T) {
 	t.Logf("act 3: on: %v explored", fogState(s)["explored"])
 
 	// --- act 4: the resume ---------------------------------------------------
-	resume := func(act string, world []byte) map[string]any {
+	// hero, when given, is his .od2 and sidecar as they were beside the world
+	// file (act 7: act 6's dawn wrote him a sidecar of no world save since).
+	resume := func(act string, world []byte, hero ...map[string][]byte) map[string]any {
 		s.call("strigoi_navigate", map[string]any{"screen": "main_menu"})
 		awaitMenu(t, s)
 
 		if err := os.WriteFile(worldPath, world, 0o600); err != nil {
 			t.Fatal(err)
+		}
+
+		for _, files := range hero {
+			for path, data := range files {
+				if err := os.WriteFile(path, data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 		}
 
 		g := s.call("strigoi_start_game", map[string]any{"save_path": save, "wait_seconds": 90})
@@ -1347,4 +1369,114 @@ func TestFogIsKept(t *testing.T) {
 	}
 
 	t.Logf("act 6 PASS: a fog grid of another map refused FILE and set aside (%s)", str(load, "set_aside"))
+
+	// --- act 7: the night, his torch lit, saved mid-tile ---------------------
+	// The F3 review's A1: fog sees by his torch from the CENTRE OF HIS TILE,
+	// so a game saved standing at the far edge of a tile he has just walked
+	// into -- his torch's edge on ground he had not seen -- resumes to the
+	// grid the game that ran on remembers. Before the fix the lit set was the
+	// one computed where he ENTERED the tile and the resume's first frame
+	// recomputed it from where he STANDS (the reviewer's pt-night2: 331 tiles
+	// vs 332). The torch is lit through his kit (L), as he lights it.
+	if load := resume("act 7", fileT, heroT); !flag(t, load, "resumed") {
+		t.Fatalf("act 7: the noon save did not resume: %v", load)
+	}
+
+	minuteOfDay := math.Mod(dawnMinute+worldMinutes(t, s), 24*60)
+	s.call("strigoi_step_world", map[string]any{"world_minutes": 23*60 - minuteOfDay})
+	s.call("strigoi_key", map[string]any{"key": "l"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if !flag(t, lightState(s), "carried_lit") {
+		t.Fatal("act 7: L does not light his torch (torch-and-blade is the harness default)")
+	}
+
+	// The noon walk explored all the ground near him: forget it (the harness
+	// verb), so every step of the night's walk is onto ground he has not seen.
+	setField(s, "fog", "forget", true)
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	nx, ny := playerTile(s)
+	fogWalkAway(t, s, float64(nx)+0.5, float64(ny)+0.5, 5.5)
+	s.call("strigoi_step", map[string]any{"frames": 30})
+
+	// On, the way he was walking (the longer axis of his walk, away from where
+	// he began): to the centre of his tile, then into the next tile, stopping
+	// at its far edge -- so his torch's edge moves onto ground he has not seen
+	// while fog's last recompute was as he entered that tile.
+	tx, ty := playerTile(s)
+	ax, ay := 0, 0
+
+	switch dx, dy := tx-nx, ty-ny; {
+	case dx == 0 && dy == 0:
+		t.Fatalf("act 7: the walk ended on the tile it began on (%d,%d)", tx, ty)
+	case dx*dx >= dy*dy:
+		ax = dx / int(math.Abs(float64(dx)))
+	default:
+		ay = dy / int(math.Abs(float64(dy)))
+	}
+
+	s.call("strigoi_move_player_to", map[string]any{"x": float64(tx) + 0.5, "y": float64(ty) + 0.5})
+	s.call("strigoi_step", map[string]any{"frames": 60})
+	s.call("strigoi_move_player_to", map[string]any{"x": float64(tx) + 0.5 + 1.42*float64(ax), "y": float64(ty) + 0.5 + 1.42*float64(ay)})
+	s.call("strigoi_step", map[string]any{"frames": 60})
+
+	p := s.call("strigoi_get_player", map[string]any{})
+	px, py := num(p, "x"), num(p, "y")
+	fogN := fogState(s)
+	t.Logf("act 7: at %s, walking (%+d,%+d), standing at (%.3f, %.3f) in tile (%d,%d); %v explored, %v visible, %v by his torch alone",
+		lightState(s)["carried_source"], ax, ay, px, py, int(math.Floor(px)), int(math.Floor(py)), fogN["explored"], fogN["visible"], fogN["lit_seen"])
+
+	// How far past his tile's centre he stands, the way he walks.
+	past := (px-math.Floor(px)-0.5)*float64(ax) + (py-math.Floor(py)-0.5)*float64(ay)
+
+	switch {
+	case int(math.Floor(px)) != tx+ax || int(math.Floor(py)) != ty+ay || past < 0.3:
+		t.Fatalf("act 7: the control: he stands at (%.3f, %.3f), not at the far edge of tile (%d,%d)", px, py, tx+ax, ty+ay)
+	case mustNum(t, fogN, "lit_seen") <= 0:
+		t.Fatalf("act 7: the control: his torch shows him no ground past his dark radius (lit_seen %v)", fogN["lit_seen"])
+	}
+
+	sNT := snapWorld(t, s)
+	nightFile := mustRead(t, str(saveUnmoved(t, s, "act 7", map[string]any{}), "world_path"))
+
+	onNight := func() (standing, walked worldSnap) {
+		s.call("strigoi_step", map[string]any{"frames": 4}) // standing where he saved
+		standing = snapWorld(t, s)
+
+		s.call("strigoi_move_player_to", map[string]any{"x": float64(tx+4*ax) + 0.5, "y": float64(ty+4*ay) + 0.5})
+		s.call("strigoi_step", map[string]any{"frames": 120})
+
+		return standing, snapWorld(t, s)
+	}
+
+	sNU1, sNU2 := onNight()
+	t.Logf("act 7: on: %v explored", fogState(s)["explored"])
+
+	if on := mustNum(t, fogState(s), "explored"); on <= mustNum(t, fogN, "explored") {
+		t.Fatalf("act 7: the control: the walk on explored nothing new (%v at the save, %v after)", fogN["explored"], on)
+	}
+
+	// --- act 8: the night resume ---------------------------------------------
+	if load := resume("act 8", nightFile); !flag(t, load, "resumed") {
+		t.Fatalf("act 8: the night save did not resume: %v", load)
+	}
+
+	nightFog := func(act string, a, b worldSnap) {
+		t.Helper()
+
+		if a.Systems["fog"] != b.Systems["fog"] {
+			t.Errorf("%s: fog's world hash %s, want %s", act, b.Systems["fog"], a.Systems["fog"])
+		}
+
+		sameWorld(t, act, a, b)
+	}
+
+	nightFog("act 8: S_R0 = S_T at night", sNT, snapWorld(t, s))
+
+	sNR1, sNR2 := onNight()
+	nightFog("act 8: S_R = S_U standing mid-tile", sNU1, sNR1)
+	nightFog("act 8: S_R = S_U walked on", sNU2, sNR2)
+	t.Logf("act 8 PASS: saved mid-tile at night with his torch lit, resumed to the same grid, and ran on as the uninterrupted game (%v explored)",
+		fogState(s)["explored"])
 }

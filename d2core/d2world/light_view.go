@@ -68,11 +68,20 @@ func (v *LightView) Level(tileX, tileY int) float64 {
 // quantised and never returns Ambient exactly, so "> Ambient()" marks half
 // the night lit (plan §3.2).
 func (v *LightView) Lit(tileX, tileY int) bool {
+	cx, cy := v.carried()
+
+	return v.LitCarriedAt(tileX, tileY, cx, cy)
+}
+
+// LitCarriedAt is Lit with the carried lights shining from (cx, cy): fog asks
+// it with his torch at the centre of his tile (the F3 review's A1), whatever
+// point he stands at and wherever the light model last put him.
+func (v *LightView) LitCarriedAt(tileX, tileY int, cx, cy float64) bool {
 	if v.live {
-		return v.Level(tileX, tileY) > v.skyBand
+		return v.light.levelOver(tileX, tileY, cx, cy, v.ambient) > v.skyBand
 	}
 
-	return v.Level(tileX, tileY) > v.light.quantise(clamp01(v.light.Ambient()))
+	return v.light.levelWith(tileX, tileY, cx, cy) > v.light.quantise(clamp01(v.light.Ambient()))
 }
 
 // SkyBand is the sky as drawn: the quantised ambient a lit tile exceeds.

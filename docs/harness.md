@@ -1009,6 +1009,11 @@ this doc fails until it agrees.
   again. Act 5, the teeth: T's file with its fog block emptied resumes and
   diverges (`fog`), the start tile `unexplored`; act 6: T's file with its
   grid keyed on another map is refused `FILE` (the `fog` rule) and set aside.
+  Acts 7-8 (the F3 review's A1): T's file resumed and on to 23:00, his torch
+  lit through his kit (L); he walks off and stops at the far edge of a tile
+  he has just entered, his torch's edge on new ground, and saves; resumed,
+  S_R0 = S_T, then 4 frames standing and a walk on give S_U again, fog's
+  world hash named first.
 * `seek_test.go` — the fifty-fourth (merged 1 Oct after the combat status's, integrate-1oct; the fiftieth on its own branch), the raid milestone's R2 (29 Sep 2026): who the
   night's hunters choose among the living. First run 29 Sep by the R2 build
   (Josh's approval of 19:17): red twice on the script's own setup, fixed

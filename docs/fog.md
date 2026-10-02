@@ -80,10 +80,15 @@ the sky fraction in 1/64 steps, the sky AS DRAWN (the ambient's quantised
 band -- the two step at different moments, and the lit set follows the band;
 the F2 review's C1), the moon, the fixed sources exactly, and a CARRIED
 source (his torch) by the TILE it shines from (the review's B4). So a walk
-with his torch lit recomputes once a tile step, not once a frame; between
-steps the lit set is the one computed as he entered the tile -- the drawn
-light follows him exactly, and the seen edge of his own torch can lag it by
-under a tile. Measured over a whole dusk frame by frame
+with his torch lit recomputes once a tile step, not once a frame. **Fog sees
+by his torch from the centre of his tile** (the F3 review's A1): the disc it
+iterates and the "lit" it asks (`LitCarriedAt`) both put the carried source
+there, as his eye is there -- so what his own torch shows him is a function
+of his tile alone. (Keyed by tile but lit from his exact point, the lit set was
+the one computed where he ENTERED the tile, and a game saved mid-tile resumed
+to other ground: 101 vs 110 explored, `TestAMidTileTorchSaveResumesToTheSameGrid`.)
+The drawn light follows him exactly, and the seen edge of his own torch can
+differ from the drawn one by under a tile. Measured over a whole dusk frame by frame
 (`TestDuskKeepsTheLitSetAndItsCost`): 2,241 frames, 79 recomputes, and on
 every frame the tiles fog sees by the lit term are exactly the tiles drawn
 lit.
@@ -186,7 +191,11 @@ stands.
   nothing of his was set aside.
 - **The harness:** the `fog` provider reports `saved` (true), `map` and
   `grid`; `map`, `w`, `h`, `explored` and `grid` are in the digest's world
-  part, so a resumed game must reproduce them (`TestFogIsKept`).
+  part, so a resumed game must reproduce them (`TestFogIsKept`, by day and
+  at 23:00 with his torch lit, saved mid-tile).
+- **`-fog` / `fog.enabled` changes the world part of the digest** (the F3
+  review's C3): a fog-off game never explores, so resuming a save with a
+  different `-fog` than the game that saved it gives S_R != S_U by design.
 
 `d2core/d2world/fog_snapshot.go` (`Fog.Snapshot/Validate/Restore`,
 `FogSnapshot.Check`); the world file's notes are
@@ -268,5 +277,6 @@ only with fog on and the entity on ground he does not see now).
 `TestFogAtNight` (F2's acts 5-9), `TestFogNeverTouchesTheSim` (F2, two
 launches; since F3 fog's own world state is exempt -- with fog off nothing is
 explored -- and required to differ) and `TestFogIsKept` (F3: explore, save,
-resume, the same grid and the same day after; the emptied block diverges; a
-grid of another map is refused).
+resume, the same grid and the same day after; a night act, his torch lit,
+saved mid-tile; the emptied block diverges; a grid of another map is
+refused).

@@ -96,6 +96,11 @@ type FogLight interface {
 	// together, so a band could change with the key unchanged.
 	SkyBand() float64
 	Lit(tileX, tileY int) bool
+	// LitCarriedAt is Lit with the carried sources shining from (cx, cy)
+	// rather than from where he stands this frame. Fog asks it with his torch
+	// at the CENTRE OF HIS TILE (the F3 review's A1), so what his own torch
+	// shows him is a function of his tile alone, as his eye is.
+	LitCarriedAt(tileX, tileY int, cx, cy float64) bool
 	LitDiscs(dst []LitDisc) []LitDisc
 }
 
@@ -183,10 +188,16 @@ const fogSkySteps = 64
 // A CARRIED source is keyed by the TILE it shines from (the F2 review's B4):
 // keyed exactly, a lit torch recomputed fog on every frame of a walk. Keyed by
 // its tile it recomputes once a tile step -- when his own eye moves tile
-// anyway -- and between steps the lit set is the one computed as he entered
-// the tile (the drawn light still follows him exactly; the seen edge of his
-// own torch can lag by under a tile until the next step). A fixed source is
-// keyed exactly: it does not move.
+// anyway. A fixed source is keyed exactly: it does not move.
+//
+// AND FOG SEES BY IT FROM THE TILE'S CENTRE (the F3 review's A1, 1 Oct 2026):
+// the disc fog iterates and the "lit" it asks (LitCarriedAt) both put the
+// carried source at the centre of his tile, never his exact point. Keyed by
+// tile but lit from the exact point, the lit set was the one computed where he
+// ENTERED the tile and kept until he left it -- so a game saved mid-tile and
+// resumed (which recomputes from where he STANDS) remembered different ground
+// from the game that ran on. The drawn light still follows him exactly; the
+// seen edge of his own torch can differ from the drawn one by under a tile.
 type lightKey struct {
 	sky   int
 	moon  float64
@@ -208,10 +219,11 @@ func (k *lightKey) same(sky int, moon, band float64, discs []LitDisc) bool {
 	return true
 }
 
-// keyOf is a lit disc as the key sees it: a carried one at its tile.
+// keyOf is a lit disc as fog sees it: a carried one shining from the centre
+// of its tile (A1). It is idempotent.
 func keyOf(d LitDisc) LitDisc {
 	if d.Carried {
-		d.X, d.Y = float64(tileOf(d.X)), float64(tileOf(d.Y))
+		d.X, d.Y = float64(tileOf(d.X))+0.5, float64(tileOf(d.Y))+0.5
 	}
 
 	return d
@@ -271,9 +283,8 @@ func (f *Fog) resize(w, h int) {
 //
 // The key is the eyes' tiles and the light's signature (F2): the sky
 // quantised to 1/64, the moon, and every lit source where it shines from --
-// a torch carried as he walks moves its disc every frame, so a lit torch
-// recomputes per frame of a walk (measured: BenchmarkFogRecompute's night
-// rows). Tiles never change after generation (plan §1.4).
+// a carried one by its tile (B4, A1: lightKey), so a lit torch recomputes once
+// a tile step of a walk. Tiles never change after generation (plan §1.4).
 func (f *Fog) Update(w, h int, eyes []Eye) bool {
 	if w != f.w || h != f.h {
 		f.resize(w, h)
@@ -285,6 +296,10 @@ func (f *Fog) Update(w, h int, eyes []Eye) bool {
 	if f.light != nil {
 		sky, moon, band = clamp01(f.light.SkyFraction()), clamp01(f.light.Moon()), f.light.SkyBand()
 		f.discs = f.light.LitDiscs(f.discs)
+
+		for i := range f.discs {
+			f.discs[i] = keyOf(f.discs[i]) // a carried disc at its tile's centre (A1)
+		}
 	}
 
 	skyQ := int(math.Round(sky * fogSkySteps))
@@ -424,6 +439,18 @@ func (f *Fog) DarkRadius() float64 { return f.darkRadius }
 // nothing from any source, so it cannot be lit above the sky -- and tries
 // each lit tile's lines once per recompute.
 func (f *Fog) seeLitGround() {
+	// His carried sources shine, for fog, from the centre of his tile (A1):
+	// every carried disc in the key is already there (keyOf).
+	cx, cy, carried := 0.0, 0.0, false
+
+	for _, d := range f.key.discs {
+		if d.Carried {
+			cx, cy, carried = d.X, d.Y, true
+
+			break
+		}
+	}
+
 	for _, d := range f.key.discs {
 		r := d.Radius
 		x0, x1 := clampInt(tileOf(d.X-r), 0, f.w-1), clampInt(tileOf(d.X+r), 0, f.w-1)
@@ -442,7 +469,7 @@ func (f *Fog) seeLitGround() {
 
 				f.litTried[i] = f.epoch
 
-				if !f.light.Lit(tx, ty) {
+				if !f.litFor(tx, ty, cx, cy, carried) {
 					continue
 				}
 
@@ -461,6 +488,16 @@ func (f *Fog) seeLitGround() {
 			}
 		}
 	}
+}
+
+// litFor is "lit" as fog sees it: with his carried sources shining from
+// (cx, cy), the centre of his tile, when there are any (A1).
+func (f *Fog) litFor(tx, ty int, cx, cy float64, carried bool) bool {
+	if carried {
+		return f.light.LitCarriedAt(tx, ty, cx, cy)
+	}
+
+	return f.light.Lit(tx, ty)
 }
 
 // LitAt is whether a tile is lit above the sky now (false with no light).

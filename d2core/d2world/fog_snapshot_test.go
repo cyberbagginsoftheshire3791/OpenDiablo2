@@ -291,3 +291,126 @@ func TestFogDialsAreNotSaved(t *testing.T) {
 	g.Update(b2aFogW, b2aFogH, []Eye{{ID: "s:1", X: 8.5, Y: 14.5}})
 	require.Equal(t, FogExplored, g.At(13, 14), "5 tiles off, past the restored fog's own day sight of 3: remembered, not seen")
 }
+
+// TestTheGridsLayoutIsPinned (the F3 review's B1): the documented layout,
+// pinned to exact strings -- tile (x,y) at bit y*W+x, lowest bit first,
+// padding zero. A 5 x 3 grid fully revealed is bytes FF 7F ("/38="); tiles
+// (0,0), (4,0), (1,1), (4,2) alone are bits 0, 4, 6, 14: bytes 51 40
+// ("UUA="). A round trip alone cannot see a layout that is wrong both ways.
+//
+// Negative controls (strigoi-harness-runs\wt-fog3\nc\): Snapshot drops the
+// last tile (n := f.w*f.h - 1, the reviewer's m42) and this fails, "a
+// revealed 5 x 3 grid is \"/38A\"" (ncb1-m42); Snapshot and Restore both
+// transposed (the reviewer's m1) and it fails, "tile [4 0] is not explored"
+// (ncb1-m1).
+func TestTheGridsLayoutIsPinned(t *testing.T) {
+	all := NewFog(DefaultFogDials(), &openSight{})
+	all.Update(5, 3, nil)
+	all.RevealAll()
+
+	if got := all.Snapshot("m").Explored; got != "/38=" {
+		t.Errorf("a revealed 5 x 3 grid is %q; want \"/38=\" (every tile, the last included)", got)
+	}
+
+	some := NewFog(DefaultFogDials(), &openSight{})
+	some.Update(5, 3, nil)
+
+	if err := some.Restore(FogSnapshot{Map: "m", W: 5, H: 3, Explored: "UUA="}, 5, 3, "m"); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[[2]int]bool{{0, 0}: true, {4, 0}: true, {1, 1}: true, {4, 2}: true}
+
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 5; x++ {
+			if e, _ := some.FogAt(x, y); e != want[[2]int{x, y}] {
+				t.Errorf("tile [%d %d] explored %v from \"UUA=\"; want %v", x, y, e, want[[2]int{x, y}])
+			}
+		}
+	}
+
+	if n, _ := some.Counts(); n != 4 {
+		t.Errorf("\"UUA=\" restores %d tiles; want 4", n)
+	}
+
+	if got := some.Snapshot("m").Explored; got != "UUA=" {
+		t.Errorf("the four tiles snapshot as %q; want \"UUA=\"", got)
+	}
+}
+
+// TestAMidTileTorchSaveResumesToTheSameGrid (the F3 review's A1, its probe
+// TestReviewProbeMidTileTorchResume): at deep night, his torch carried and
+// lit, he walks east in small steps. At EVERY frame of the walk the game is
+// saved and resumed: a new fog, the grid restored, one frame standing where
+// he stands -- and the uninterrupted game runs one more frame standing there.
+// The two grids are one (S_R = S_U). Fog sees by his torch from the centre of
+// his tile, so what it lights for him is a function of his tile alone.
+//
+// Negative control (strigoi-harness-runs\wt-fog3\nc\): fog.go and
+// light_view.go as 4984fde0 had them (the carried disc keyed by tile, lit
+// from his exact point) and this fails, "at x=20.95 S_R != S_U: uninterrupted
+// 101 explored, resumed 110" (nca1-before-the-fix).
+func TestAMidTileTorchSaveResumesToTheSameGrid(t *testing.T) {
+	c, l := deepNightNewMoon(t)
+
+	defer c.Close()
+	defer l.Close()
+
+	l.Add(SourceTorch, true, 0, 0)
+
+	const mapID = "abab"
+
+	view := NewLightView(l)
+	f := NewFog(DefaultFogDials(), &openSight{})
+	f.SetLight(view)
+
+	stand := func(g *Fog, v *LightView, x float64) {
+		v.SetCarriedAt(x, 20.5)
+		g.Update(48, 48, []Eye{{ID: "s:1", X: x, Y: 20.5}})
+	}
+
+	frames, bad := 0, 0
+
+	// He walks east from (16.5,20.5) to (20.95,20.5) in steps of 0.05.
+	for i := 0; i <= 89; i++ {
+		x := 16.5 + 0.05*float64(i)
+		stand(f, view, x)
+
+		snap := f.Snapshot(mapID) // S_T
+
+		view2 := NewLightView(l)
+		g := NewFog(DefaultFogDials(), &openSight{})
+		g.SetLight(view2)
+
+		if err := g.Restore(snap, 48, 48, mapID); err != nil {
+			t.Fatal(err)
+		}
+
+		stand(f, view, x)  // uninterrupted: one more frame standing there
+		stand(g, view2, x) // resumed: the first frame, standing there
+
+		frames++
+
+		if u, r := f.Snapshot(mapID), g.Snapshot(mapID); u != r {
+			bad++
+
+			if bad <= 3 {
+				ue, _ := f.Counts()
+				re, _ := g.Counts()
+				t.Errorf("at x=%.2f S_R != S_U: uninterrupted %d explored, resumed %d", x, ue, re)
+			}
+		}
+	}
+
+	if frames != 90 {
+		t.Fatalf("the walk ran %d frames, want 90", frames)
+	}
+
+	if bad > 0 {
+		t.Fatalf("%d of %d mid-walk resumes remembered other ground than the game that ran on", bad, frames)
+	}
+
+	if f.LitSeen() == 0 {
+		t.Fatal("the control: his torch lit no ground past his dark radius; the test proves nothing")
+	}
+}
