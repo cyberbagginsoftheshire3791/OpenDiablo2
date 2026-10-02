@@ -313,6 +313,11 @@ type GameControls struct {
 	FreeCam                bool
 	isSinglePlayer         bool
 
+	// heldOnSquad is set when a left press selects a squad (its model was
+	// under the cursor) and cleared by the next left press or release: the
+	// hold that press begins is a select for as long as it lasts (BUG-120).
+	heldOnSquad bool
+
 	// combat and light are M4.4c-2a's seam into d2player, threaded the way
 	// clock was for M4.4a and squads for c-1. The key handlers are the only
 	// readers: F commits the Action, L works the carried source, E closes the
@@ -650,7 +655,16 @@ func (g *GameControls) OnMouseButtonRepeat(event d2interface.MouseEvent) bool {
 		// with this guard disabled the same hold walks him. (Until 24 Sep a
 		// paused held click never made repeatDue true, so nothing reached
 		// this line -- BUG-7.)
-		if g.squadAtScreen(event.X(), event.Y()) != "" {
+		//
+		// AND A HOLD THAT BEGAN AS A SELECT STAYS ONE (BUG-120, 2 Oct 2026).
+		// The hit test alone re-asks "is a model under the cursor?" on every
+		// repeat, and the scene can slide under a still cursor: press-and-hold
+		// on a model while he is still walking, and the camera follows him, so
+		// by the first repeat (0.25 s) the model has moved off the cursor and
+		// the hold walked him to the ground there. heldOnSquad latches the
+		// press's select for the whole hold. Asserted by act 9b (the hold on
+		// a model while he walks); with the latch disabled it re-routes him.
+		if g.heldOnSquad || g.squadAtScreen(event.X(), event.Y()) != "" {
 			return true
 		}
 
@@ -724,12 +738,22 @@ func (g *GameControls) OnMouseMove(event d2interface.MouseMoveEvent) bool {
 
 // OnMouseButtonUp handles mouse button presses
 func (g *GameControls) OnMouseButtonUp(event d2interface.MouseEvent) bool {
+	if event.Button() == d2enum.MouseButtonLeft {
+		g.heldOnSquad = false // the hold is over (BUG-120)
+	}
+
 	return false
 }
 
 // OnMouseButtonDown handles mouse button presses
 func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 	mx, my := event.X(), event.Y()
+
+	// A new left press begins a new hold; only the squad select below marks
+	// it as one (BUG-120).
+	if event.Button() == d2enum.MouseButtonLeft {
+		g.heldOnSquad = false
+	}
 
 	if g.dead() {
 		return true
@@ -810,6 +834,8 @@ func (g *GameControls) OnMouseButtonDown(event d2interface.MouseEvent) bool {
 		// gameControls bind at the same input priority (brief §3.11).
 		if squadID := g.squadAtScreen(mx, my); squadID != "" {
 			g.selectSquad(squadID)
+			g.heldOnSquad = true
+
 			return true
 		}
 

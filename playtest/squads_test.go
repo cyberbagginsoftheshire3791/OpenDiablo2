@@ -38,6 +38,8 @@ import (
 //  8. a script can HOLD a mouse button at all -- strigoi_click's hold_frames;
 //  9. c-1's squad guard on the HELD path: a 40-frame hold on a second squad's
 //     model selects it and walks nobody (BUG-7, closed 24 Sep 2026);
+//     9b. and a hold that began on the model while he is still walking stays
+//     a select as the scene slides under the cursor (BUG-120, 2 Oct 2026);
 //  7. a TABLE-SPAWNED enemy gets a bar -- the gate is keyed on the spawn row,
 //     not the stand-in monstats code the sprite comes from.
 //
@@ -599,8 +601,11 @@ func TestSquadsOnScreen(t *testing.T) {
 	holdScreenX, holdScreenY := pair(player, "screen")
 	// +90 px (and the tap's -60 below) are the 1.0 view's, at the view's
 	// scale (F5, 2 Oct 2026), so acts 8 and 9 run on the ground they always
-	// have. Unscaled at 0.5 they ended him elsewhere, and there act 9's held
-	// guard did not hold at either zoom (BUG-120).
+	// have. Unscaled at 0.5 his last walk here was longer, and act 9 caught
+	// him still on it -- its settle read path_len, which is 0 for a walk's
+	// whole last leg -- so the hold walked him (BUG-120, fixed 2 Oct 2026:
+	// act 9 now waits for him to stand, and act 9b holds on purpose on a
+	// model while he walks).
 	act8Scale := viewScale(t, s)
 	holdX, holdY := int(holdScreenX+90*act8Scale), int(holdScreenY)
 	holdFromX, holdFromY := mustNum(t, player, "x"), mustNum(t, player, "y")
@@ -657,12 +662,17 @@ func TestSquadsOnScreen(t *testing.T) {
 	})
 
 	// Let act 8's last walk finish first: a hero still walking would move
-	// through this act's no-walk assertion on his own.
+	// through this act's no-walk assertion on his own. FINISHED IS STANDING
+	// AT HIS TARGET, not path_len 0 (BUG-120): the leg he is walking is not
+	// in the path, so path_len reads 0 for the whole of a walk's last leg. On
+	// act 8's longer, unscaled walk that settled here with him still walking;
+	// the camera followed him, slid the model off the held cursor before the
+	// first repeat, and the hold walked him (wt-b120\diag-2-game.log).
 	settled := false
 
 	for i := 0; i < 60 && !settled; i++ {
 		s.call("strigoi_step", map[string]any{"frames": 10})
-		settled = mustNum(t, sub(s.call("strigoi_get_player", map[string]any{}), "state"), "path_len") == 0
+		settled = heroStanding(t, s.call("strigoi_get_player", map[string]any{}))
 	}
 
 	if !settled {
@@ -712,6 +722,8 @@ func TestSquadsOnScreen(t *testing.T) {
 
 	assertNoWalk(t, "act 9 (held)", s.call("strigoi_get_player", map[string]any{}), h9x, h9y)
 
+	actHeldSelectWhileWalking(t, s, s9entity, mustStr(t, sq9[1], "squad"))
+
 	s.call("strigoi_set_system_field", map[string]any{
 		"system": "meters", "field": "squad_remove", "value": mustStr(t, sq9[1], "squad"),
 	})
@@ -739,6 +751,126 @@ func TestSquadsOnScreen(t *testing.T) {
 	}
 
 	assertRimOnGrass(t, s, str(player, "id"), contrastFloor)
+}
+
+// actHeldSelectWhileWalking is ACT 9b, BUG-120's own shape on purpose: a
+// press-and-hold on a squad's model while the hero is still WALKING. The press
+// selects the squad and does not stop his walk; the camera follows him, so the
+// model slides out from under the still cursor, and by the 0.5 s repeat it is
+// no longer there. The hold began as a select and must stay one: his walk
+// still ends where the tap sent it. Before the fix the repeat's hit test
+// missed and re-routed him to the ground the model had slid off.
+//
+// Negative control (2 Oct 2026): GameControls.heldOnSquad never set, and this
+// fails -- the hold re-routed his walk (wt-b120\nc-latch-off.txt).
+func actHeldSelectWhileWalking(t *testing.T, s *session, model, squad string) {
+	t.Helper()
+
+	scale := viewScale(t, s)
+	p := s.call("strigoi_get_player", map[string]any{})
+	px, py := pair(p, "screen")
+
+	// A walk screen-left, AWAY from the model (deployed screen-right of him),
+	// so the camera carries the model rightwards off the cursor. The tap on
+	// ground also closes the sheet act 9's select opened.
+	s.call("strigoi_click", map[string]any{"x": int(px - 200*scale), "y": int(py), "button": "left"})
+	s.call("strigoi_step", map[string]any{"frames": 2})
+
+	if flag(t, uiState(s), "sheet_open") {
+		t.Fatal("act 9b: the tap on open ground did not close the sheet -- it did not take the walk branch")
+	}
+
+	walking := s.call("strigoi_get_player", map[string]any{})
+	d0x, d0y := walkDest(walking)
+
+	if left := math.Hypot(d0x-mustNum(t, walking, "x"), d0y-mustNum(t, walking, "y")); left < 1.0 {
+		t.Fatalf("act 9b: the tap left only %.2f tiles to walk -- the hold would not land on a walking hero", left)
+	}
+
+	m := s.call("strigoi_get_entity", map[string]any{"handle": handleFor(t, s, model)})
+	mx, my := pair(m, "screen")
+
+	held := s.call("strigoi_click", map[string]any{
+		"x": int(mx), "y": int(my), "button": "left", "hold_frames": 40,
+	})
+	if applied := mustStr(t, held, "applied"); !strings.Contains(applied, "held 40 frame(s)") {
+		t.Fatalf("act 9b: strigoi_click did not report a held press: %q", applied)
+	}
+
+	after := s.call("strigoi_get_player", map[string]any{})
+	slid := s.call("strigoi_get_entity", map[string]any{"handle": handleFor(t, s, model)})
+	sx, sy := pair(slid, "screen")
+
+	// The press selected it: the sheet the tap closed is open again.
+	ui := uiState(s)
+	if !flag(t, ui, "sheet_open") || mustStr(t, ui, "selected_squad") != squad {
+		t.Fatalf("act 9b: the held press on %s's model did not select it (sheet_open %v, selected %q)",
+			squad, ui["sheet_open"], str(ui, "selected_squad"))
+	}
+
+	// The scene did slide: by the hold's end the model is well off the point
+	// the press found it at, so a repeat that re-asked the hit test missed.
+	if moved := math.Hypot(sx-mx, sy-my); moved < 20*scale {
+		t.Fatalf("act 9b: the model moved only %.1f px on screen during the hold -- the camera did not "+
+			"carry it off the cursor, so this act is not BUG-120's shape", moved)
+	}
+
+	d1x, d1y := walkDest(after)
+	t.Logf("act 9b: walking to %.2f,%.2f, held on %s's model at screen %.0f,%.0f (at %.0f,%.0f by the hold's end); "+
+		"he walks to %.2f,%.2f after", d0x, d0y, squad, mx, my, sx, sy, d1x, d1y)
+
+	if math.Hypot(d1x-d0x, d1y-d0y) > squadWalkEpsilon {
+		t.Fatalf("act 9b (held while walking): the hold RE-ROUTED his walk from %.2f,%.2f to %.2f,%.2f. "+
+			"A hold that began as a select must stay one when the model slides off the cursor (BUG-120).",
+			d0x, d0y, d1x, d1y)
+	}
+
+	settled := false
+
+	for i := 0; i < 60 && !settled; i++ {
+		s.call("strigoi_step", map[string]any{"frames": 10})
+		settled = heroStanding(t, s.call("strigoi_get_player", map[string]any{}))
+	}
+
+	if !settled {
+		t.Fatal("act 9b: the hero never finished the tap's walk")
+	}
+
+	t.Logf("act 9b PASS: a hold begun on a model while he walked selected it and left his walk alone")
+}
+
+// heroStanding reports whether a strigoi_get_player result is a hero who has
+// finished walking: no waypoints left AND standing on the point he steps
+// toward. path_len alone is not that -- the leg he is on is not in the path
+// (BUG-120).
+func heroStanding(t *testing.T, p map[string]any) bool {
+	t.Helper()
+
+	st := sub(p, "state")
+	if mustNum(t, st, "path_len") != 0 {
+		return false
+	}
+
+	tx, ty := pair(st, "target")
+
+	return math.Hypot(tx-mustNum(t, p, "x"), ty-mustNum(t, p, "y")) <= squadWalkEpsilon
+}
+
+// walkDest is where a strigoi_get_player result's walk ends: its last
+// waypoint, or the point it steps toward when none is left.
+func walkDest(p map[string]any) (x, y float64) {
+	st := sub(p, "state")
+
+	if w := asList(st["waypoints"]); len(w) > 0 {
+		if last, ok := w[len(w)-1].([]any); ok && len(last) == 2 {
+			x, _ = last[0].(float64)
+			y, _ = last[1].(float64)
+
+			return x, y
+		}
+	}
+
+	return pair(st, "target")
 }
 
 // enemyBars counts the overhead bars the "ui" provider marks as an enemy's.
