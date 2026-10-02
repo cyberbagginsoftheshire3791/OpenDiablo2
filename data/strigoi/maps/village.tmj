@@ -4770,6 +4770,11 @@
      "point": true,
      "properties": [
       {
+       "name": "household",
+       "type": "string",
+       "value": "the headman's house"
+      },
+      {
        "name": "monstat",
        "type": "string",
        "value": "warriv1"
@@ -4788,6 +4793,11 @@
      "visible": true,
      "point": true,
      "properties": [
+      {
+       "name": "household",
+       "type": "string",
+       "value": "the well house"
+      },
       {
        "name": "monstat",
        "type": "string",
@@ -4808,6 +4818,11 @@
      "point": true,
      "properties": [
       {
+       "name": "household",
+       "type": "string",
+       "value": "the smith's house"
+      },
+      {
        "name": "monstat",
        "type": "string",
        "value": "charsi"
@@ -4827,6 +4842,11 @@
      "point": true,
      "properties": [
       {
+       "name": "household",
+       "type": "string",
+       "value": "the church"
+      },
+      {
        "name": "monstat",
        "type": "string",
        "value": "akara"
@@ -4845,6 +4865,259 @@
      "visible": true,
      "point": false,
      "gid": 19
+    },
+    {
+     "id": 15,
+     "name": "the church",
+     "type": "household",
+     "x": 1320,
+     "y": 1320,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true,
+     "properties": [
+      {
+       "name": "church",
+       "type": "bool",
+       "value": true
+      },
+      {
+       "name": "incense",
+       "type": "int",
+       "value": 3
+      },
+      {
+       "name": "stakes",
+       "type": "int",
+       "value": 2
+      }
+     ]
+    },
+    {
+     "id": 16,
+     "name": "the headman's house",
+     "type": "household",
+     "x": 2280,
+     "y": 1720,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true,
+     "properties": [
+      {
+       "name": "incense",
+       "type": "int",
+       "value": 3
+      },
+      {
+       "name": "members",
+       "type": "string",
+       "value": "woman,child"
+      },
+      {
+       "name": "stakes",
+       "type": "int",
+       "value": 2
+      }
+     ]
+    },
+    {
+     "id": 17,
+     "name": "the well house",
+     "type": "household",
+     "x": 2200,
+     "y": 2200,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true,
+     "properties": [
+      {
+       "name": "incense",
+       "type": "int",
+       "value": 3
+      },
+      {
+       "name": "members",
+       "type": "string",
+       "value": "old,child"
+      },
+      {
+       "name": "stakes",
+       "type": "int",
+       "value": 2
+      }
+     ]
+    },
+    {
+     "id": 18,
+     "name": "the west house",
+     "type": "household",
+     "x": 1400,
+     "y": 2200,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true,
+     "properties": [
+      {
+       "name": "incense",
+       "type": "int",
+       "value": 3
+      },
+      {
+       "name": "members",
+       "type": "string",
+       "value": "man,woman,child"
+      },
+      {
+       "name": "stakes",
+       "type": "int",
+       "value": 2
+      }
+     ]
+    },
+    {
+     "id": 19,
+     "name": "the smith's house",
+     "type": "household",
+     "x": 1640,
+     "y": 2520,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true,
+     "properties": [
+      {
+       "name": "incense",
+       "type": "int",
+       "value": 3
+      },
+      {
+       "name": "members",
+       "type": "string",
+       "value": "woman,child,child"
+      },
+      {
+       "name": "stakes",
+       "type": "int",
+       "value": 2
+      }
+     ]
+    },
+    {
+     "id": 20,
+     "name": "the north-east house",
+     "type": "household",
+     "x": 2440,
+     "y": 1320,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true,
+     "properties": [
+      {
+       "name": "incense",
+       "type": "int",
+       "value": 3
+      },
+      {
+       "name": "members",
+       "type": "string",
+       "value": "woman,old,youth"
+      },
+      {
+       "name": "stakes",
+       "type": "int",
+       "value": 2
+      }
+     ]
+    },
+    {
+     "id": 21,
+     "name": "the north house",
+     "type": "household",
+     "x": 1960,
+     "y": 1320,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true,
+     "properties": [
+      {
+       "name": "incense",
+       "type": "int",
+       "value": 3
+      },
+      {
+       "name": "members",
+       "type": "string",
+       "value": "man,woman,youth,child"
+      },
+      {
+       "name": "stakes",
+       "type": "int",
+       "value": 2
+      }
+     ]
+    },
+    {
+     "id": 22,
+     "name": "the hotar",
+     "type": "hotar",
+     "x": 1800,
+     "y": 3240,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true
+    },
+    {
+     "id": 23,
+     "name": "the gate post",
+     "type": "watch_post",
+     "x": 1960,
+     "y": 2760,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true,
+     "properties": [
+      {
+       "name": "post",
+       "type": "string",
+       "value": "gate"
+      }
+     ]
+    },
+    {
+     "id": 24,
+     "name": "the corner post",
+     "type": "watch_post",
+     "x": 2680,
+     "y": 1080,
+     "width": 0,
+     "height": 0,
+     "rotation": 0,
+     "visible": true,
+     "point": true,
+     "properties": [
+      {
+       "name": "post",
+       "type": "string",
+       "value": "corner"
+      }
+     ]
     }
    ],
    "opacity": 1,
@@ -4855,7 +5128,7 @@
   }
  ],
  "nextlayerid": 4,
- "nextobjectid": 15,
+ "nextobjectid": 25,
  "orientation": "isometric",
  "properties": [
   {
