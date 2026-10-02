@@ -335,6 +335,17 @@ func perturbRows() []sweepRow {
 			b, _ := asList(blockOf(t, f, "combat")["blow_log"])[0].(map[string]any)
 			b["damage"] = json.Number(fmt.Sprint(mustNumber(t, b["damage"]) + 1))
 		}, want: wantDiverge, moves: []string{"system combat"}},
+		// Version 5 (pursuit-budget): the chase's from_watch, flipped -- a
+		// world chase made a script's, or the other way (written only when
+		// true, so "false" is the key taken out).
+		{block: "pursuit", name: "perturb pursuit: the chase's from_watch flipped", edit: func(t *testing.T, f map[string]any) {
+			c, _ := asList(blockOf(t, f, "pursuit")["chases"])[0].(map[string]any)
+			if c["from_watch"] == true {
+				delete(c, "from_watch")
+			} else {
+				c["from_watch"] = true
+			}
+		}, want: wantDiverge, moves: []string{"system pursuit"}},
 		{block: "sidecar", name: "perturb sidecar.journal: two entries' order swapped", edit: func(t *testing.T, f map[string]any) {
 			w := blockOf(t, blockOf(t, blockOf(t, f, "sidecar"), "journal"), "written")
 			w["b1_taken"], w["b2_corps"] = w["b2_corps"], w["b1_taken"]

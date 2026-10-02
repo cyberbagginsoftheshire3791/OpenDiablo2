@@ -46,6 +46,16 @@ func TestSaveResumeFieldSweep(t *testing.T) {
 	var paths [][]any
 	fieldPaths(decodeNumbers(t, ev.fileT), nil, true, &paths)
 
+	// A key written only when true is a leaf this walk never meets in a file
+	// where it is false: each such key is put in, true, as its own leaf
+	// (version 5: pursuit.chases[].from_watch).
+	absentTrue := [][]any{{"pursuit", "chases", 0, "from_watch"}}
+	for _, p := range absentTrue {
+		if !hasLeaf(paths, p) {
+			paths = append(paths, p)
+		}
+	}
+
 	tally := map[string]int{}
 	allowed := map[string]bool{}
 	began := time.Now()
@@ -221,6 +231,14 @@ func fieldPerturb(file map[string]any, p []any) (string, bool) {
 	}
 	key, _ := last.(string)
 
+	if m, ok := parent.(map[string]any); ok {
+		if _, has := m[key]; !has && key != "" {
+			m[key] = true
+
+			return "absent->true", true
+		}
+	}
+
 	// The watch clock is perturbed BEHIND: ahead of the clock the first
 	// frame's keepWatch credits nothing either way, so +0.37 cannot show.
 	if fieldPathString(p) == "scene.watch_clock" {
@@ -266,4 +284,15 @@ func fieldPerturb(file map[string]any, p []any) (string, bool) {
 		return "", false
 	}
 	return "", false
+}
+
+// hasLeaf is whether paths holds p.
+func hasLeaf(paths [][]any, p []any) bool {
+	for _, q := range paths {
+		if fieldPathString(q) == fieldPathString(p) {
+			return true
+		}
+	}
+
+	return false
 }

@@ -2048,7 +2048,9 @@ in the surface. An evening kept by any one 0.16.5 alone is refused as another
 harness's. The world file is version 5 (`pursuit-budget`'s
 `pursuit.chases[].from_watch`), and the village's map SHA moved (F4's gate
 watchtower), so a version-4 save, and any kept evening from before, is set
-aside or refused.
+aside or refused. One thing new in the merge: the `pursuit` provider's
+chase rows report `from_watch` (the version-5 field, saved and restored and
+until now reported nowhere -- BUG-117's rule), in the digest's world part.
 **0.16.5 (M4.6 B6, `save-b6`, 2 Oct 2026)**: the load report (`strigoi_start_game`'s and
 `strigoi_get_game_info`'s `load`) says `rule` -- the d2save rule that refused
 the world file (`block-missing`, `map`, `generation`, `rng-stream`, ... for

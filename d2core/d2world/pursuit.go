@@ -706,6 +706,13 @@ func (p *Pursuit) HarnessState() map[string]interface{} {
 			"solved_at_x":     c.solvedAtX,
 			"solved_at_y":     c.solvedAtY,
 			"solved_distance": c.solvedDistance,
+
+			// Version 5 (pursuit-budget): a WORLD chase, which
+			// GiveUpOnTheForgotten ends when its watch forgets. Saved and
+			// restored, so reported (integrate-3: the B6 review's rule,
+			// BUG-117 -- a field the file restores and no provider reports
+			// is one a resume can lose unseen).
+			"from_watch": c.fromWatch,
 		})
 	}
 

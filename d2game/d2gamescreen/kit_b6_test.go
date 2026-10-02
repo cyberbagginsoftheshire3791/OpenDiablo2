@@ -120,6 +120,19 @@ func TestTheKitProviderReportsWhatHeCarries(t *testing.T) {
 		require.Equal(t, before, asTheSidecar(c.name+", undone"))
 	}
 
+	// Fog of war F4 lets him HOLD the bow (Q9: +2 sight; the F4 review's B2,
+	// a 2-5 bash). Held, it is an instance in his main hand like any other,
+	// and reported as the sidecar writes it (integrate-3).
+	main := v.kit.Worn[d2items.SlotMain]
+	v.kit.Worn[d2items.SlotMain] = &d2items.Instance{Item: "composite-bow", Make: d2items.MakeIssue, Condition: d2items.Sound}
+
+	held := asTheSidecar("the bow held")
+	require.NotEqual(t, before, held, "a held bow is reported")
+	require.Equal(t, "composite-bow", held["worn"].(map[string]interface{})["main"].(map[string]interface{})["item"])
+
+	v.kit.Worn[d2items.SlotMain] = main
+	require.Equal(t, before, asTheSidecar("the blade back"))
+
 	v.kit = nil
 	require.Equal(t, false, p.HarnessState()["bound"])
 }
