@@ -189,6 +189,46 @@ func playerProfile() Profile {
 	return Profile{Row: "placeholder-melee", DamageMin: 12, DamageMax: 20}
 }
 
+// bareHandProfile is his blow with a kit on him and nothing in his hand that
+// fights (BUG-118, Josh's ruling 3 Oct 2026): a 2-5 blunt bash with no
+// reaction, the same shape F4 gave the held bow (Kit.MainBite's Bash). Before,
+// an empty hand fell through to playerProfile, 12-20 -- a fist was a sword.
+// Kit.MainBite still answers ok == false for an empty hand: the riposte gates
+// read that as "no blade", and items_test.go's TestEquipRules pins it.
+func bareHandProfile() Profile {
+	return Profile{Row: "bare-hand", DamageMin: 2, DamageMax: 5, DamageClass: string(d2items.Blunt)}
+}
+
+// playerStrike is the one answer to "what does his next blow roll?": the
+// resolver rolls from it and the combat provider's player row reports it, so
+// the two cannot drift (project rule 4 -- BUG-118's provider reported 12-20
+// whatever he held).
+//
+//   - a weapon in his hand: its bite (make and condition applied), on the
+//     placeholder row's label;
+//   - a kit and an empty hand (or nothing in it that fights): the bare-hand
+//     bash;
+//   - no kit at all: the M4.5 placeholder. In a shipped game the kit is nil
+//     only while the loadout choice is open, and that holds the world, so no
+//     blow is struck there; resolver unit tests that bind no kits fight on it.
+func (c *Combat) playerStrike(id string) (profile Profile, vsMail float64, weapon string) {
+	profile = playerProfile()
+
+	k := c.kitOf(id)
+	if k == nil {
+		return profile, 0, ""
+	}
+
+	b, ok := k.MainBite()
+	if !ok {
+		return bareHandProfile(), 0, ""
+	}
+
+	profile.DamageMin, profile.DamageMax, profile.DamageClass = b.Min, b.Max, string(b.Class)
+
+	return profile, b.VsMail, b.Item
+}
+
 // defaultEnemyProfile is what something the spawn tables never placed fights
 // as. It is not defensive: d2app/harness_spawn.go and the debug terminal both
 // put NPCs on the map without going through the tables, and EVERY playtest
@@ -734,23 +774,21 @@ func (c *Combat) resolveBlow(round int, attackerID, targetID string, attackerIsP
 		return -1, false
 	}
 
-	profile := playerProfile()
-	if !attackerIsPlayer {
+	// T2: the player strikes with what is in his hand (playerStrike, which the
+	// combat provider reports from too). An enemy strikes with its row.
+	var (
+		profile Profile
+		vsMail  float64
+		weapon  string
+	)
+
+	if attackerIsPlayer {
+		profile, vsMail, weapon = c.playerStrike(attackerID)
+	} else {
 		profile = c.profileOf(attackerID)
 	}
 
-	// T2: the player strikes with what is in his hand. The kılıç bites 12-20,
-	// the placeholder's own range, so the starting kit moves no number; a
-	// knife or an axe does. No kit, or an empty hand, keeps the placeholder.
-	class, vsMail, weapon := profile.DamageClass, 0.0, ""
-	if attackerIsPlayer {
-		if k := c.kitOf(attackerID); k != nil {
-			if b, ok := k.MainBite(); ok {
-				profile.DamageMin, profile.DamageMax = b.Min, b.Max
-				class, vsMail, weapon = string(b.Class), b.VsMail, b.Item
-			}
-		}
-	}
+	class := profile.DamageClass
 
 	if class == "" {
 		class = string(d2items.Cut)

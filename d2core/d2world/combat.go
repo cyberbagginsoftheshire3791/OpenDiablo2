@@ -2328,7 +2328,9 @@ func (c *Combat) HarnessState() map[string]interface{} {
 	if e.target != nil {
 		px, py := e.target.QuarryAt()
 
-		melee := playerProfile()
+		// What his next blow rolls, from the resolver's own answer (BUG-118:
+		// this read playerProfile, 12-20, whatever he held).
+		melee, _, _ := c.playerStrike(e.target.QuarryID())
 
 		row := map[string]interface{}{
 			"id":       e.target.QuarryID(),
@@ -2341,7 +2343,8 @@ func (c *Combat) HarnessState() map[string]interface{} {
 			// (M4.5 ask 1, signed as a LABEL; E3 fills in the numbers). It is
 			// reported so that a script asserting on a damage draw checks it
 			// against the profile the system says it used, rather than
-			// against a constant the script also chose.
+			// against a constant the script also chose. "bare-hand" when he
+			// carries a kit with nothing in his hand that fights (BUG-118).
 			"profile":    melee.Row,
 			"damage_min": melee.DamageMin,
 			"damage_max": melee.DamageMax,

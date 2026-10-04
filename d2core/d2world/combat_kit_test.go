@@ -140,7 +140,7 @@ func TestKitWeaponSetsHisBite(t *testing.T) {
 	f.c.SetKits(fakeKits{"p:1": kit})
 
 	// The knife is on his belt, not in his hand: with the sabre in the pack he
-	// strikes bare -- no bite, so the placeholder stands.
+	// strikes bare -- no weapon, a 2-5 bash (BUG-118: TestEmptyHandsStrikeAsABash).
 	f.add(t, "e:1", 4000, Profile{})
 	f.open(t)
 	f.round()
@@ -237,4 +237,96 @@ func TestKitRiposteNeedsABladeAndATrueGraze(t *testing.T) {
 	answered, blocked := riposted(shippedKit(t, "sword-and-board"), BandHit)
 	require.True(t, blocked, "the shield turned the hit")
 	assert.False(t, answered, "a blocked hit reads as a graze but was not a poor blow")
+}
+
+// TestEmptyHandsStrikeAsABash is BUG-118 (Josh's ruling, 3 Oct 2026): with a
+// kit on him and nothing in his hand, every blow he strikes is a 2-5 blunt
+// bash, and the combat provider's player row says 2-5 -- the resolver and the
+// provider read one answer (playerStrike). Its control is the same fight with
+// the sound kılıç in his hand: 12-20 cut, as before, on both.
+func TestEmptyHandsStrikeAsABash(t *testing.T) {
+	// strikes runs eight rounds on each of a dozen seeds and returns every blow
+	// he struck, and the player row's damage range as the provider reports it.
+	strikes := func(t *testing.T, bare bool) (rows []map[string]interface{}, reported [][2]int, rowName string) {
+		t.Helper()
+
+		for seed := int64(1); seed <= 12; seed++ {
+			f := newResolverFight(t, 1462+seed)
+			f.set(t, "forced_band", BandHit)
+
+			kit := shippedKit(t, "torch-and-blade")
+			if bare {
+				require.NoError(t, kit.Unequip(d2items.SlotMain, false, false))
+			}
+
+			f.c.SetKits(fakeKits{"p:1": kit})
+			f.add(t, "e:1", 4000, Profile{})
+			f.open(t)
+
+			for i := 0; i < 8; i++ {
+				f.round()
+
+				for _, row := range f.actions(t) {
+					if row["attacker"] == "p:1" {
+						rows = append(rows, row)
+					}
+				}
+			}
+
+			parts, ok := f.c.HarnessState()["participants"].([]map[string]interface{})
+			require.True(t, ok)
+			require.Equal(t, "player", parts[0]["side"])
+
+			reported = append(reported, [2]int{parts[0]["damage_min"].(int), parts[0]["damage_max"].(int)})
+			rowName = parts[0]["profile"].(string)
+		}
+
+		return rows, reported, rowName
+	}
+
+	t.Run("nothing in his hand", func(t *testing.T) {
+		rows, reported, name := strikes(t, true)
+		require.Greater(t, len(rows), 50, "he must actually have struck, many times, or the range was never checked")
+
+		lo, hi := 99, 0
+
+		for _, row := range rows {
+			base := row["base"].(int)
+			assert.Equal(t, "blunt", row["damage_class"], "a bare hand bashes")
+			assert.Equal(t, "", row["weapon"], "an empty hand has no weapon")
+			assert.True(t, base >= 2 && base <= 5, "a bare hand strikes 2-5, drew %d", base)
+
+			if base < lo {
+				lo = base
+			}
+
+			if base > hi {
+				hi = base
+			}
+		}
+
+		assert.Equal(t, [2]int{2, 5}, [2]int{lo, hi}, "over this many blows both ends of 2-5 are drawn")
+
+		for _, r := range reported {
+			assert.Equal(t, [2]int{2, 5}, r, "the provider reports the bash he strikes with")
+		}
+
+		assert.Equal(t, "bare-hand", name)
+	})
+
+	t.Run("the sound kılıç in his hand", func(t *testing.T) {
+		rows, reported, _ := strikes(t, false)
+		require.Greater(t, len(rows), 50)
+
+		for _, row := range rows {
+			base := row["base"].(int)
+			assert.Equal(t, "cut", row["damage_class"])
+			assert.Equal(t, "kilic", row["weapon"])
+			assert.True(t, base >= 12 && base <= 20, "a sound kılıç bites 12-20, drew %d", base)
+		}
+
+		for _, r := range reported {
+			assert.Equal(t, [2]int{12, 20}, r)
+		}
+	})
 }
