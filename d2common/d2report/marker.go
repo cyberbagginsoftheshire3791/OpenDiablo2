@@ -1,0 +1,321 @@
+package d2report
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime/debug"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2logfile"
+)
+
+// Marker is a run in progress: RunningDir()\<pid>.json, written at start-up,
+// held open for the whole run and removed on a clean exit. Found at a later
+// start-up, its run ended some other way.
+//
+// ONE MARKER PER PROCESS, AND THE OPEN FILE IS THE LIVENESS TEST. The folder
+// is shared by every game this user starts -- his own, and a hand-started
+// harness game beside it -- so a single running.json would be overwritten by
+// the second launch and removed by the first clean exit. Each run keeps its
+// own marker OPEN; on Windows a file another process holds open (Go opens
+// without FILE_SHARE_DELETE) cannot be renamed, so a start-up that can rename
+// a marker has proved its owner is gone -- whatever ended it -- and one that
+// cannot leaves it alone. No pid is trusted on Windows, so a reused pid cannot
+// fool it. Elsewhere the pid is asked (alive_other.go).
+type Marker struct {
+	PID     int    `json:"pid"`
+	Started string `json:"started"`
+	Version string `json:"version"`
+	Exe     string `json:"exe,omitempty"`
+
+	// Harness is a -harness run. A harness start-up reports only harness
+	// markers and a player's only his own: a playtest killed by its script
+	// is not his game ending badly.
+	Harness bool `json:"harness"`
+
+	// CrashOutput is the file the Go runtime writes a FATAL error into
+	// (runtime/debug.SetCrashOutput): a panic on a goroutine no recover
+	// covers, a concurrent map write, a stack overflow. Empty unless one
+	// happened.
+	CrashOutput string `json:"crash_output,omitempty"`
+
+	// Crashed is the crash folder HandlePanic wrote, set as the run died.
+	Crashed string `json:"crashed,omitempty"`
+}
+
+// Previous is a run found ended without a clean exit.
+type Previous struct {
+	Marker  Marker `json:"marker"`
+	Dir     string `json:"dir"`     // its report folder
+	Crashed bool   `json:"crashed"` // a crash (caught or fatal), not just an unclean end
+}
+
+// UncleanSuffix ends the folder of a run that did not close cleanly;
+// HarnessSuffix follows it for a -harness run's.
+const (
+	UncleanSuffix = "-unclean"
+	HarnessSuffix = "-harness"
+)
+
+//nolint:gochecknoglobals // one process, one run
+var (
+	runMu       sync.Mutex
+	runMarker   *Marker
+	runFile     *os.File
+	runPath     string
+	runCrashOut string
+)
+
+// StartRun looks for runs of the same kind (harness or not) that ended
+// without a clean exit, writes a report for each, then writes this run's own
+// marker and points the runtime's fatal-error output at a file beside it. It
+// returns the earlier runs it found, newest first. Call EndRun on every clean
+// exit (Exit does).
+func StartRun(version string, harness bool) []Previous {
+	_ = os.MkdirAll(RunningDir(), 0o750)
+
+	prev := scanPrevious(harness, time.Now())
+
+	pid := os.Getpid()
+	m := &Marker{
+		PID:     pid,
+		Started: time.Now().Format(time.RFC3339),
+		Version: version,
+		Harness: harness,
+	}
+
+	if exe, err := os.Executable(); err == nil {
+		m.Exe = exe
+	}
+
+	crashPath := filepath.Join(RunningDir(), strconv.Itoa(pid)+".crash")
+	if f, err := os.Create(crashPath); err == nil {
+		if debug.SetCrashOutput(f, debug.CrashOptions{}) == nil {
+			m.CrashOutput = crashPath
+		}
+
+		_ = f.Close()
+	}
+
+	path := filepath.Join(RunningDir(), strconv.Itoa(pid)+".json")
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o600)
+	if err != nil {
+		return prev
+	}
+
+	runMu.Lock()
+	runMarker, runFile, runPath, runCrashOut = m, f, path, m.CrashOutput
+	runMu.Unlock()
+
+	writeMarker()
+
+	return prev
+}
+
+// writeMarker rewrites the open marker in place. Caller need not hold runMu.
+func writeMarker() {
+	runMu.Lock()
+	defer runMu.Unlock()
+
+	if runFile == nil || runMarker == nil {
+		return
+	}
+
+	data, err := json.MarshalIndent(runMarker, "", "  ")
+	if err != nil {
+		return
+	}
+
+	_ = runFile.Truncate(0)
+	_, _ = runFile.WriteAt(append(data, '\n'), 0)
+	_ = runFile.Sync()
+}
+
+// markCrashed records this run's crash folder in its marker, which stays.
+func markCrashed(dir string) {
+	runMu.Lock()
+	if runMarker != nil {
+		runMarker.Crashed = dir
+		if dir == "" {
+			runMarker.Crashed = "(the crash folder could not be written)"
+		}
+	}
+	runMu.Unlock()
+
+	writeMarker()
+}
+
+func currentMarker() *Marker {
+	runMu.Lock()
+	defer runMu.Unlock()
+
+	if runMarker == nil {
+		return nil
+	}
+
+	m := *runMarker
+
+	return &m
+}
+
+// EndRun is a clean exit: the marker and the fatal-error file go. Safe to call
+// more than once, and before StartRun.
+func EndRun() {
+	runMu.Lock()
+	defer runMu.Unlock()
+
+	if runFile == nil {
+		return
+	}
+
+	_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
+	_ = runFile.Close()
+	_ = os.Remove(runPath)
+
+	if runCrashOut != "" {
+		_ = os.Remove(runCrashOut)
+	}
+
+	runFile, runMarker, runPath, runCrashOut = nil, nil, "", ""
+}
+
+// Exit is a clean exit with this code: EndRun, then os.Exit.
+func Exit(code int) {
+	EndRun()
+	os.Exit(code)
+}
+
+// scanPrevious reports every marker of this kind whose owner is gone.
+func scanPrevious(harness bool, now time.Time) []Previous {
+	entries, err := os.ReadDir(RunningDir())
+	if err != nil {
+		return nil
+	}
+
+	var found []Previous
+
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+
+		path := filepath.Join(RunningDir(), name)
+
+		data, err := os.ReadFile(path) //nolint:gosec // our own folder
+		if err != nil {
+			continue
+		}
+
+		var m Marker
+		if json.Unmarshal(data, &m) != nil {
+			// Torn (the power went mid-write): unreadable is not "not ours".
+			// Its pid is its name; its kind is unknown, so it is claimed only
+			// by the kind that cannot be fooled by it -- a player's start-up.
+			if harness {
+				continue
+			}
+
+			m.PID, _ = strconv.Atoi(strings.TrimSuffix(name, ".json"))
+		}
+
+		if m.Harness != harness {
+			continue
+		}
+
+		claimed, ok := claim(path, m)
+		if !ok {
+			continue // its owner is still running
+		}
+
+		p := report(m, data, now)
+		_ = os.Remove(claimed)
+
+		if m.CrashOutput != "" {
+			_ = os.Remove(m.CrashOutput)
+		}
+
+		found = append(found, p)
+	}
+
+	sort.Slice(found, func(i, j int) bool { return found[i].Marker.Started > found[j].Marker.Started })
+
+	return found
+}
+
+// report writes the folder for one ended run.
+func report(m Marker, raw []byte, now time.Time) Previous {
+	var fatal []byte
+	if m.CrashOutput != "" {
+		fatal, _ = os.ReadFile(m.CrashOutput)
+	}
+
+	// A panic HandlePanic caught has its folder already; say so and add
+	// nothing. A fatal error the runtime wrote has a stack and no folder.
+	if m.Crashed != "" && len(fatal) == 0 {
+		return Previous{Marker: m, Dir: m.Crashed, Crashed: true}
+	}
+
+	p := Previous{Marker: m, Crashed: len(fatal) > 0 || m.Crashed != ""}
+
+	suffix := UncleanSuffix
+	if m.Harness {
+		suffix += HarnessSuffix
+	}
+
+	dir, err := newDir(CrashesDir(), now, suffix)
+	if err != nil {
+		return p
+	}
+
+	p.Dir = dir
+
+	_ = os.WriteFile(filepath.Join(dir, MarkerFile), raw, 0o600)
+	_ = writeLines(filepath.Join(dir, LogTailFile), Tail(d2logfile.LogFilePath(), CrashLogLines))
+
+	reason := "the run ended without a clean exit: a crash nothing caught, a freeze ended " +
+		"from Task Manager, or the power going"
+	if len(fatal) > 0 {
+		reason = "the run crashed: the Go runtime wrote a fatal error (stack.txt)"
+
+		_ = os.WriteFile(filepath.Join(dir, StackFile), fatal, 0o600)
+	}
+
+	_ = writeJSON(filepath.Join(dir, StateFile), map[string]interface{}{
+		"reason":          reason,
+		"previous_run":    m,
+		"detected_at":     now.Format(time.RFC3339),
+		"detected_by_pid": os.Getpid(),
+		"crashed":         p.Crashed,
+	})
+
+	return p
+}
+
+// Notice is the one line the main menu shows for runs StartRun found, "" for
+// none.
+func Notice(prev []Previous) string {
+	switch {
+	case len(prev) == 0:
+		return ""
+	case len(prev) == 1 && prev[0].Dir == "":
+		if prev[0].Crashed {
+			return "The last run crashed -- no report could be written"
+		}
+
+		return "The last run did not close cleanly -- no report could be written"
+	case len(prev) == 1 && prev[0].Crashed:
+		return "The last run crashed -- a report was saved to " + prev[0].Dir
+	case len(prev) == 1:
+		return "The last run did not close cleanly -- a report was saved to " + prev[0].Dir
+	}
+
+	return fmt.Sprintf("%d earlier runs did not close cleanly -- reports were saved to %s", len(prev), CrashesDir())
+}
