@@ -97,6 +97,7 @@ func (ui *UIManager) OnMouseButtonUp(event d2interface.MouseEvent) bool {
 		ui.cursorButtons |= CursorButtonLeft
 		// activate previously pressed widget if cursor is still hovering
 		w := ui.pressedWidget
+		ui.pressedWidget = nil
 
 		if w != nil && w.Contains(ui.CursorX, ui.CursorY) && w.GetVisible() && w.GetEnabled() {
 			w.Activate()

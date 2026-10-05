@@ -1,6 +1,8 @@
 package d2ui
 
 import (
+	"image/color"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -17,15 +19,20 @@ var _ ClickableWidget = &TextBox{}
 // TextBox represents a text input box
 type TextBox struct {
 	*BaseWidget
-	textLabel    *Label
-	lineBar      *Label
-	text         string
-	filter       string
-	bgSprite     *Sprite
-	enabled      bool
-	isFocused    bool
-	isNumberOnly bool
-	maxValue     int
+	textLabel                         *Label
+	lineBar                           *Label
+	text                              string
+	filter                            string
+	bgSprite                          *Sprite
+	menuSurface                       d2interface.Surface
+	menuTextSurface, menuCaretSurface d2interface.Surface
+	menuText                          string
+	menuTextFit                       float64
+	menuTextWidth                     int
+	enabled                           bool
+	isFocused                         bool
+	isNumberOnly                      bool
+	maxValue                          int
 
 	*d2util.Logger
 }
@@ -37,6 +44,27 @@ func (ui *UIManager) NewTextbox() *TextBox {
 		ui.Error(err.Error())
 		return nil
 	}
+	return ui.newTextbox(bgSprite, nil)
+}
+
+// NewMenuTextbox keeps the text input behavior and draws an original plain face.
+func (ui *UIManager) NewMenuTextbox() *TextBox {
+	s := ui.renderer.NewSurface(180, 28)
+	s.DrawRect(180, 28, color.RGBA{R: 15, G: 19, B: 18, A: 255})
+	s.PushTranslation(0, 27)
+	s.DrawRect(180, 1, color.RGBA{R: 170, G: 143, B: 90, A: 255})
+	s.Pop()
+	tb := ui.newTextbox(nil, s)
+	// The textbox owns input; its two hidden labels only supply ink.
+	for _, l := range []*Label{tb.textLabel, tb.lineBar} {
+		if err := ui.inputManager.UnbindHandler(l); err != nil {
+			ui.Error(err.Error())
+		}
+	}
+	return tb
+}
+
+func (ui *UIManager) newTextbox(bgSprite *Sprite, menuSurface d2interface.Surface) *TextBox {
 
 	base := NewBaseWidget(ui)
 
@@ -44,6 +72,7 @@ func (ui *UIManager) NewTextbox() *TextBox {
 		BaseWidget:   base,
 		filter:       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
 		bgSprite:     bgSprite,
+		menuSurface:  menuSurface,
 		textLabel:    ui.NewLabel(d2resource.FontFormal11, d2resource.PaletteUnits),
 		lineBar:      ui.NewLabel(d2resource.FontFormal11, d2resource.PaletteUnits),
 		enabled:      true,
@@ -69,12 +98,47 @@ func (v *TextBox) Render(target d2interface.Surface) {
 		return
 	}
 
-	v.bgSprite.Render(target)
+	if v.menuSurface != nil {
+		target.PushTranslation(v.x, v.y)
+		target.Render(v.menuSurface)
+		target.Pop()
+		v.renderMenuText(target)
+		return
+	} else {
+		v.bgSprite.Render(target)
+	}
 	v.textLabel.Render(target)
 
 	// nolint:gomnd // byte expressions
 	if (time.Now().UnixNano()/1e6)&(1<<8) > 0 {
 		v.lineBar.Render(target)
+	}
+}
+
+func (v *TextBox) renderMenuText(target d2interface.Surface) {
+	if v.menuTextSurface == nil || v.menuText != v.textLabel.GetText() {
+		tw, th := v.textLabel.GetSize()
+		cw, ch := v.lineBar.GetSize()
+		v.menuTextSurface = target.Renderer().NewSurface(tw, th)
+		v.menuCaretSurface = target.Renderer().NewSurface(cw, ch)
+		v.textLabel.SetPosition(0, 0)
+		v.lineBar.SetPosition(0, 0)
+		v.textLabel.Render(v.menuTextSurface)
+		v.lineBar.Render(v.menuCaretSurface)
+		v.menuText = v.textLabel.GetText()
+		v.menuTextWidth = tw
+		v.menuTextFit = math.Min(1, math.Min(168/float64(tw+cw), 22/float64(max(th, ch))))
+	}
+	target.PushTranslation(v.x+6, v.y+3)
+	target.PushScale(v.menuTextFit, v.menuTextFit)
+	target.Render(v.menuTextSurface)
+	target.PopN(2)
+	// Keep the caret inside the same fitted line without changing stored text.
+	if v.isFocused && (time.Now().UnixNano()/1e6)&(1<<8) > 0 {
+		target.PushTranslation(v.x+6+int(math.Ceil(float64(v.menuTextWidth)*v.menuTextFit)), v.y+3)
+		target.PushScale(v.menuTextFit, v.menuTextFit)
+		target.Render(v.menuCaretSurface)
+		target.PopN(2)
 	}
 }
 
@@ -115,6 +179,9 @@ func (v *TextBox) OnKeyChars(event d2interface.KeyCharsEvent) bool {
 
 // OnKeyRepeat handles key repeat events
 func (v *TextBox) OnKeyRepeat(event d2interface.KeyEvent) bool {
+	if !v.isFocused || !v.visible || !v.enabled {
+		return false
+	}
 	if event.Key() == d2enum.KeyBackspace && debounceEvents(event.Duration()) {
 		if len(v.text) >= 1 {
 			v.text = v.text[:len(v.text)-1]
@@ -176,6 +243,10 @@ func (v *TextBox) SetText(newText string) {
 	}
 
 	v.text = result
+	if v.menuSurface != nil {
+		v.textLabel.SetText(result)
+		return
+	}
 
 	for {
 		tw, _ := v.textLabel.GetTextMetrics(result)
@@ -194,6 +265,9 @@ func (v *TextBox) SetText(newText string) {
 
 // GetSize returns the size of the text box
 func (v *TextBox) GetSize() (width, height int) {
+	if v.menuSurface != nil {
+		return v.menuSurface.GetSize()
+	}
 	return v.bgSprite.GetCurrentFrameSize()
 }
 
@@ -208,7 +282,9 @@ func (v *TextBox) SetPosition(x, y int) {
 
 	v.textLabel.SetPosition(v.x+6, v.y+3)
 	v.lineBar.SetPosition(v.x+6+lw, v.y+3)
-	v.bgSprite.SetPosition(v.x, v.y+26)
+	if v.bgSprite != nil {
+		v.bgSprite.SetPosition(v.x, v.y+26)
+	}
 }
 
 // GetEnabled returns the enabled state of the text box

@@ -33,6 +33,8 @@ const (
 	ScreenModeMultiplayer
 	ScreenModeTCPIP
 	ScreenModeServerIP
+	ScreenModeTools
+	ScreenModeProjectCredits
 )
 
 const (
@@ -168,6 +170,7 @@ type MainMenu struct {
 	tcpJoinGameEntry    *d2ui.TextBox
 	screenMode          mainMenuScreenMode
 	leftButtonHeld      bool
+	nativeMenu          *strigoiMenu
 
 	asset         *d2asset.AssetManager
 	inputManager  d2interface.InputManager
@@ -185,6 +188,10 @@ type MainMenu struct {
 
 // OnLoad is called to load the resources for the main menu
 func (v *MainMenu) OnLoad(loading d2screen.LoadingState) {
+	if !v.asset.Classic() {
+		v.loadStrigoiMenu(loading)
+		return
+	}
 	v.audioProvider.PlayBGM(d2resource.BGMTitle)
 	loading.Progress(twentyPercent)
 
@@ -501,6 +508,9 @@ func (v *MainMenu) onCinematicsButtonClicked() {
 // key-up reached the stale menu's "exit on Escape" branch and the process
 // exited with code 0 and no message.
 func (v *MainMenu) OnUnload() error {
+	if v.nativeMenu != nil {
+		v.unloadStrigoiMenu()
+	}
 	d2harness.Unregister(mainMenuProvider{v}) // the "ui" provider dies with the screen
 
 	if err := v.inputManager.UnbindHandler(v); err != nil {
@@ -512,6 +522,10 @@ func (v *MainMenu) OnUnload() error {
 
 // Render renders the main menu
 func (v *MainMenu) Render(screen d2interface.Surface) {
+	if v.nativeMenu != nil {
+		v.renderStrigoiMenu(screen)
+		return
+	}
 	v.renderBackgrounds(screen)
 	v.renderLogos(screen)
 	v.renderLabels(screen)
@@ -566,6 +580,9 @@ func (v *MainMenu) renderLabels(screen d2interface.Surface) {
 
 // Advance runs the update logic on the main menu
 func (v *MainMenu) Advance(tickTime float64) error {
+	if v.nativeMenu != nil {
+		return nil
+	}
 	switch v.screenMode {
 	case ScreenModeMainMenu, ScreenModeTrademark, ScreenModeMultiplayer:
 		if err := v.diabloLogoLeftBack.Advance(tickTime); err != nil {
@@ -606,6 +623,9 @@ func (v *MainMenu) onEscapePressed(event d2interface.KeyEvent, mode mainMenuScre
 
 // OnKeyUp is called when a key is released
 func (v *MainMenu) OnKeyUp(event d2interface.KeyEvent) bool {
+	if v.nativeMenu != nil {
+		return v.strigoiMenuKey(event)
+	}
 	preventKeyEventPropagation := false
 
 	switch v.screenMode {
@@ -639,6 +659,10 @@ func (v *MainMenu) OnKeyUp(event d2interface.KeyEvent) bool {
 
 // SetScreenMode sets the screen mode (which sub-menu the screen is on)
 func (v *MainMenu) SetScreenMode(screenMode mainMenuScreenMode) {
+	if v.nativeMenu != nil {
+		v.setStrigoiMenuMode(screenMode)
+		return
+	}
 	v.screenMode = screenMode
 	isMainMenu := screenMode == ScreenModeMainMenu
 	isMultiplayer := screenMode == ScreenModeMultiplayer

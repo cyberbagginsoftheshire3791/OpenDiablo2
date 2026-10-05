@@ -1238,6 +1238,14 @@ func menuButton(t *testing.T, s *session, name string) map[string]any {
 	}
 
 	b := sub(sub(ui, "main_menu_buttons"), name)
+	if len(b) > 0 && !flag(t, b, "visible") {
+		tools := sub(sub(ui, "main_menu_buttons"), "tools")
+		if len(tools) > 0 && flag(t, tools, "visible") {
+			s.call("strigoi_click", map[string]any{"x": mustNum(t, tools, "x") + mustNum(t, tools, "w")/2, "y": mustNum(t, tools, "y") + mustNum(t, tools, "h")/2, "button": "left"})
+			s.call("strigoi_step", map[string]any{"frames": 3})
+			b = sub(sub(uiState(s), "main_menu_buttons"), name)
+		}
+	}
 	if len(b) == 0 {
 		t.Fatalf("the main menu reports no %s button: %v", name, ui)
 	}

@@ -1146,6 +1146,10 @@ this doc fails until it agrees.
   that stand out from the stone of their row across the button's face. Control
   first under `-classic`. It reads pixels because the bug was invisible to
   every field: the labels were set and drawn, in the stone's own grey.
+  The native Strigoi menu opens directly with five actions; its labels must
+  fit inside their controls as well as show contrast. `TestStrigoiMenuNavigation`
+  in this file clicks through Credits, Tools and network pages, checks targets
+  do not overlap, and verifies Escape returns to the parent without quitting.
 * `strigoi_game_test.go` — the thirty-ninth: the game launched with NO switches
   builds the village, draws the hero from Strigoi's sheets, uses Strigoi's font
   set and string table, and a first hour reads no Diablo II tile, class-art,
@@ -1974,17 +1978,23 @@ register when the game screen is constructed and close on unload.
 **`ui` on the main menu** (BUG-27, 28 Sep 2026) — while the main menu is the
 screen, IT is the `ui` system (`d2gamescreen/main_menu_harness.go`; registered
 at the end of `MainMenu.OnLoad`, removed in `OnUnload`): `screen`
-(`"main_menu"`), `main_menu_page` (`trademark` -- the splash every new menu
-opens on, which draws no buttons -- then `main_menu`, `multiplayer`, `tcp_ip`,
-`server_ip`) and `main_menu_buttons` by name (`single_player`,
+(`"main_menu"`), `main_menu_page` (`trademark` -- the classic splash,
+which draws no buttons -- or `main_menu`, `multiplayer`, `tcp_ip`,
+`server_ip`, native `tools` or `credits`) and `main_menu_buttons` by name (`single_player`,
 `other_multiplayer`, `project_website`, `map_engine_test`, `world_editor`,
 `credits`, `cinematics`, `exit`), each `{x, y, w, h, visible, text, label_x,
-label_y, label_w, label_h}` in screen pixels -- the label rect is where the
+label_y, label_w, label_h}` in logical UI pixels -- the label rect is where the
 button drew its label when up. Since 0.12.6 (28 Sep, the second editor review)
 also `main_menu_error`: the line the menu was opened with, `""` for none -- why
 the last thing that sent the game back to the menu failed (a game that could not
 start, a map the World Editor refused), so a script can tell the harness's
 refusal from any other way back.
+The native front menu starts directly and exposes its submenu buttons too:
+`tools`, `back`, `tcp_ip`, `network_back`, `host`, `join`, `tcp_back`,
+`join_confirm`, `join_back`; `cinematics` is absent. `main_menu_error` keeps
+the complete diagnostic even when the visible error summary is shortened.
+See [the front-menu notes](strigoi-menu.md). `game_info.screen` remains a
+navigation hint; it does not track mouse-driven screen transitions.
 
 **`fog`** (fog of war F1, 1 Oct 2026; harness 0.16.0; docs/fog.md) -- every
 game screen registers it, fog on or off (`d2gamescreen/game_fog.go`):

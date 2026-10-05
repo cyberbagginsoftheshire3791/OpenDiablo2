@@ -48,6 +48,19 @@ func (p mainMenuProvider) HarnessState() map[string]interface{} {
 			"label_w": label.Dx(), "label_h": label.Dy(),
 		}
 	}
+	if v.nativeMenu != nil {
+		for name, b := range v.nativeMenu.buttons {
+			x, y := b.GetPosition()
+			w, h := b.GetSize()
+			label := b.LabelRect()
+			buttons[name] = map[string]interface{}{
+				"x": x, "y": y, "w": w, "h": h,
+				"visible": b.GetVisible(), "text": b.Text(),
+				"label_x": x + label.Min.X, "label_y": y + label.Min.Y,
+				"label_w": label.Dx(), "label_h": label.Dy(),
+			}
+		}
+	}
 
 	// The line the menu was opened with, if any: why the last thing that sent
 	// the game back here failed -- a game that could not start, or a map the
@@ -68,7 +81,7 @@ func (p mainMenuProvider) HarnessState() map[string]interface{} {
 
 // mainMenuPageName names the menu's page: "trademark" (the splash a click
 // leaves, which draws no buttons), "main_menu", "multiplayer", "tcp_ip",
-// "server_ip" or "unknown".
+// "server_ip", native "tools"/"credits", or "unknown".
 func mainMenuPageName(mode mainMenuScreenMode) string {
 	switch mode {
 	case ScreenModeTrademark:
@@ -81,6 +94,10 @@ func mainMenuPageName(mode mainMenuScreenMode) string {
 		return "tcp_ip"
 	case ScreenModeServerIP:
 		return "server_ip"
+	case ScreenModeTools:
+		return "tools"
+	case ScreenModeProjectCredits:
+		return "credits"
 	default:
 		return "unknown"
 	}

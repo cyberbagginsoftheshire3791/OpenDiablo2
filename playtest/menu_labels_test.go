@@ -43,6 +43,62 @@ func TestMainMenuLabelsRead(t *testing.T) {
 	}
 }
 
+// TestStrigoiMenuNavigation uses rendered button positions and actual input,
+// rather than navigating straight to destination screens through the harness.
+func TestStrigoiMenuNavigation(t *testing.T) {
+	s := startWith(t) // native-only, including during a classic game sweep
+	if bad := mainMenuLabelInk(t, s, "strigoi"); len(bad) != 0 {
+		t.Fatalf("menu ink: %v", bad)
+	}
+	state := uiState(s)
+	buttons := sub(state, "main_menu_buttons")
+	var boxes []image.Rectangle
+	for _, name := range []string{"single_player", "other_multiplayer", "credits", "tools", "exit"} {
+		b := sub(buttons, name)
+		r := image.Rect(int(mustNum(t, b, "x")), int(mustNum(t, b, "y")), int(mustNum(t, b, "x")+mustNum(t, b, "w")), int(mustNum(t, b, "y")+mustNum(t, b, "h")))
+		for _, prev := range boxes {
+			if !r.Intersect(prev).Empty() {
+				t.Fatalf("menu targets overlap: %v %v", r, prev)
+			}
+		}
+		boxes = append(boxes, r)
+	}
+	click := func(name, want string) {
+		t.Helper()
+		b := sub(sub(uiState(s), "main_menu_buttons"), name)
+		if !flag(t, b, "visible") {
+			t.Fatalf("%s is hidden", name)
+		}
+		s.call("strigoi_click", map[string]any{"x": mustNum(t, b, "x") + mustNum(t, b, "w")/2, "y": mustNum(t, b, "y") + mustNum(t, b, "h")/2, "button": "left"})
+		s.call("strigoi_step", map[string]any{"frames": 3})
+		if got := mustStr(t, uiState(s), "main_menu_page"); got != want {
+			t.Fatalf("%s opened %q, want %q", name, got, want)
+		}
+	}
+	click("credits", "credits")
+	s.call("strigoi_screenshot", map[string]any{"name": "strigoi-menu-credits-v1"})
+	click("back", "main_menu")
+	click("other_multiplayer", "multiplayer")
+	click("tcp_ip", "tcp_ip")
+	click("join", "server_ip")
+	s.call("strigoi_screenshot", map[string]any{"name": "strigoi-menu-network-v1"})
+	s.call("strigoi_key", map[string]any{"key": "escape"})
+	if got := mustStr(t, uiState(s), "main_menu_page"); got != "tcp_ip" {
+		t.Fatalf("join Escape: %s", got)
+	}
+	click("tcp_back", "multiplayer")
+	click("network_back", "main_menu")
+	click("tools", "tools")
+	s.call("strigoi_screenshot", map[string]any{"name": "strigoi-menu-tools-v1"})
+	click("back", "main_menu")
+	s.call("strigoi_key", map[string]any{"key": "escape"})
+	if got := mustStr(t, uiState(s), "main_menu_page"); got != "main_menu" {
+		t.Fatalf("main Escape left menu: %s", got)
+	}
+	s.call("strigoi_move_cursor", map[string]any{"x": 750, "y": 560})
+	s.call("strigoi_screenshot", map[string]any{"name": "strigoi-menu-main-v1"})
+}
+
 // What counts as a label's ink, and how much of it a label needs.
 //
 // The first version measured against the label rect's own median and went
@@ -134,8 +190,12 @@ func mainMenuLabelInk(t *testing.T, s *session, game string) []string {
 	}
 
 	var bad, measured []string
+	expected := mainMenuButtons
+	if game != "classic" {
+		expected = []string{"single_player", "other_multiplayer", "credits", "tools", "exit"}
+	}
 
-	for _, name := range mainMenuButtons {
+	for _, name := range expected {
 		b := sub(buttons, name)
 		if len(b) == 0 {
 			t.Fatalf("%s: the menu reports no %q button: %v", game, name, keysOf(buttons))
@@ -152,6 +212,9 @@ func mainMenuLabelInk(t *testing.T, s *session, game string) []string {
 
 		if label.Intersect(button.Inset(labelFaceInsetY)).Empty() {
 			t.Fatalf("%s: the %s button's label rect %v is empty or off the button %v", game, name, label, button)
+		}
+		if game != "classic" && !label.In(button.Inset(labelFaceInsetY)) {
+			t.Fatalf("%s: the %s label %v does not fit its target %v", game, name, label, button)
 		}
 
 		ink := labelInk(img, label, button)

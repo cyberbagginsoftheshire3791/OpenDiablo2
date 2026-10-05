@@ -811,6 +811,7 @@ type Button struct {
 	// measures the label's ink in that rect (BUG-27).
 	text      string
 	labelRect image.Rectangle
+	menuStyle bool
 }
 
 // NewButton creates an instance of Button
@@ -1119,6 +1120,12 @@ func (v *Button) Render(target d2interface.Surface) {
 		target.Render(v.toggledSurface)
 	default:
 		target.Render(v.normalSurface)
+	}
+	if v.menuStyle && v.enabled && v.isHovered() {
+		target.PushTranslation(0, 0)
+		target.DrawRect(3, v.height, d2util.Color(0xd4ae6bff))
+		target.DrawRect(v.width, 1, d2util.Color(0xd4ae6bff))
+		target.Pop()
 	}
 }
 
