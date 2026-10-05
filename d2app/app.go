@@ -535,7 +535,7 @@ func (a *App) render(target d2interface.Surface) {
 
 	// F8's frame is read here, before its box is drawn (feedback.go).
 	if a.feedback != nil {
-		a.feedback.render(target)
+		a.feedback.drawOver(target)
 	}
 
 	if err := a.terminal.Render(target); err != nil {

@@ -23,7 +23,7 @@ func strigoiHelp() []string {
 		"U searches the dead man at your feet, for what he carries.",
 		"Q opens your journal: what you have learned, and your tasks.",
 		"Click a villager to talk: 1-9 to answer, Esc to walk away.",
-		"H shows or hides this help.   Esc opens the game menu.",
+		"H shows or hides this help.   Esc opens the game menu.   F8 leaves us a note.",
 		"Esc, then SAVE GAME: saved where you stand. Every dawn you see saves too.",
 		"The red mark over your life globe: in combat. You can't save until it goes.",
 	}

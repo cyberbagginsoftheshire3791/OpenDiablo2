@@ -320,10 +320,11 @@ func (f *feedbackOverlay) showNotice(text string) {
 	}
 }
 
-// render runs after everything the frame draws but the console and the
-// harness's reads: it first freezes the frame F8 asked for -- before the box
+// drawOver runs after everything the frame draws but the console and the
+// harness's reads (it is not called render: d2screen's BUG-109 gate test reads
+// d2app's functions by name, and "render" is App.render's): it first freezes the frame F8 asked for -- before the box
 // is on it -- then draws the box and the notices.
-func (f *feedbackOverlay) render(target d2interface.Surface) {
+func (f *feedbackOverlay) drawOver(target d2interface.Surface) {
 	if f.pendingShot {
 		f.pendingShot = false
 		f.freeze(target)

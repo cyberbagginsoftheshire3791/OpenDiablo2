@@ -35,7 +35,8 @@ func TestStrigoiHelpNamesTheKeys(t *testing.T) {
 	// M4.6 B5: the menu's save, and the dawn's. The combat status (30 Sep
 	// 2026): the marker, and that he cannot save while it shows.
 	for _, verb := range []string{"strike", "torch", "right button lights or douses", "kit", "talents", "talk", "Esc", "Q opens your journal",
-		"SAVE GAME", "Every dawn", "in combat", "can't save"} {
+		"SAVE GAME", "Every dawn", "in combat", "can't save",
+		"F8 leaves us a note"} { // Level 1 (5 Oct 2026): F8 is feedback, anywhere
 		if !strings.Contains(all, verb) {
 			t.Errorf("the help never mentions %q", verb)
 		}

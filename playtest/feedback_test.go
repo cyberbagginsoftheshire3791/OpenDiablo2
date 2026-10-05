@@ -185,8 +185,32 @@ func decodePNG(t *testing.T, path string) image.Image {
 	return img
 }
 
-// feedbackPanel is where the box draws its panel (d2app/feedback.go).
-var feedbackPanel = image.Rect(110, 240, 690, 340)
+// feedbackPanel is where the box draws its panel, and feedbackRule the brass
+// rule along the foot of its text box (d2app/feedback.go: the box at 120,272,
+// 560x28).
+var (
+	feedbackPanel = image.Rect(110, 240, 690, 340)
+	feedbackRule  = image.Rect(130, 299, 670, 300)
+)
+
+// pixelDiff is the mean, over a rectangle, of each pixel's largest channel
+// difference between two frames.
+func pixelDiff(a, b image.Image, r image.Rectangle) float64 {
+	sum, n := 0.0, 0
+
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			ar, ag, ab, _ := a.At(x, y).RGBA()
+			br, bg, bb, _ := b.At(x, y).RGBA()
+			d := math.Max(math.Abs(float64(ar>>8)-float64(br>>8)),
+				math.Max(math.Abs(float64(ag>>8)-float64(bg>>8)), math.Abs(float64(ab>>8)-float64(bb>>8))))
+			sum += d
+			n++
+		}
+	}
+
+	return sum / float64(n)
+}
 
 // TestFeedbackF8 is F8 in a game: the frame frozen before the box, the world
 // held while he types, the three files and the log line, and Escape writing
@@ -288,14 +312,20 @@ func TestFeedbackF8(t *testing.T) {
 	}
 
 	// THE FRAME IS THE ONE HE SAW, NOT THE BOX: where the panel draws, the
-	// saved shot matches the frame before F8 and not the frame with the box up.
-	mBefore, mShot, mLive := rectMean(before, feedbackPanel), rectMean(shot, feedbackPanel), rectMean(live, feedbackPanel)
-	if d := meanDelta(mBefore, mShot); d > 3 {
-		t.Fatalf("shot.png's panel area differs from the frame before F8 by %.1f (before %v, shot %v)", d, mBefore, mShot)
+	// saved shot is the frame before F8 pixel for pixel (the world is paused),
+	// and the text box's brass rule -- on the frame with the box up -- is not
+	// in it.
+	if d := pixelDiff(before, shot, feedbackPanel); d > 2 {
+		t.Fatalf("shot.png's panel area differs from the frame before F8 by %.2f per pixel", d)
 	}
 
-	if d := meanDelta(mLive, mShot); d < 10 {
-		t.Fatalf("instrument: the box's panel barely changes the frame (%.1f; live %v, shot %v) -- the comparison above proves nothing", d, mLive, mShot)
+	ruleLive, ruleShot := rectMean(live, feedbackRule), rectMean(shot, feedbackRule)
+	if d := meanDelta(ruleLive, ruleShot); d < 60 {
+		t.Fatalf("instrument: the box's rule is not on the live frame or is on the shot (live %v, shot %v)", ruleLive, ruleShot)
+	}
+
+	if d := pixelDiff(live, shot, feedbackPanel); d < 5 {
+		t.Fatalf("instrument: the frame with the box up is the shot (%.2f per pixel) -- the comparison above proves nothing", d)
 	}
 
 	state := readStateJSON(t, dir)

@@ -58,11 +58,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\josht\Projects\stri
 ```
 
 lists every feedback and crash folder newer than the script's last run (its
-state file is `strigoi-harness-runs\collect-feedback.state.json`) and prints
-each note, its screen/day/clock, and each crash's first lines of stack.
-`-Since 2026-10-05` (or any date/time) lists from then instead; `-All` lists
-everything; `-IncludeHarness` adds the `-unclean-harness` folders; `-NoSave`
-does not move the "last run" stamp. `shot.png` is beside each note -- open it.
+state file is `strigoi-harness-runs\collect-feedback.state.json`, one stamp
+per reports root) and prints each note, its screen/day/clock/tile, and each
+crash's first lines of stack and log. `-Since 2026-10-05` (or any date/time)
+lists from then instead; `-All` lists everything (neither moves the stamp);
+`-IncludeHarness` adds the `-unclean-harness` folders; `-NoSave` does not move
+the stamp; `-Root <dir>` reads another root (a playtest home). `shot.png` is
+beside each note -- open it.
 
 From a harness game, the `feedback` provider (`strigoi_get_system_state
 feedback`) reports the box, the last folder saved and the menu's notice.
