@@ -51,6 +51,14 @@ func TestWideMenuTextboxKeepsTheNoteAndShowsItsTail(t *testing.T) {
 		t.Fatalf("the shown tail is %d+%d px wide, past the face's %d", tw, cw, 560-12)
 	}
 
+	// And it is the LONGEST tail that fits: one more character would not.
+	stored := []rune(tb.GetText())
+	more := string(stored[len(stored)-len([]rune(shown))-1:])
+
+	if mw, _ := tb.textLabel.GetTextMetrics(more); mw+cw <= 560-12 {
+		t.Fatalf("the shown tail %q could show one more character (%d+%d px fits %d)", shown, mw, cw, 560-12)
+	}
+
 	frame := ui.renderer.NewSurface(800, 600).(*menuRenderSurface)
 	tb.Draw(frame)
 

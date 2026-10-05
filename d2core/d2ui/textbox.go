@@ -362,16 +362,26 @@ func (v *TextBox) shownTail(text string) string {
 	cw, _ := v.lineBar.GetSize()
 	room := fw - 12 - cw
 
+	// The width only shrinks as characters come off the front, so the first
+	// start that fits is found by halving: a 400-character note costs nine
+	// measurements a keystroke, not four hundred.
 	r := []rune(text)
-	for len(r) > 0 {
-		if tw, _ := v.textLabel.GetTextMetrics(string(r)); tw <= room {
-			break
-		}
-
-		r = r[1:]
+	fits := func(i int) bool {
+		tw, _ := v.textLabel.GetTextMetrics(string(r[i:]))
+		return tw <= room
 	}
 
-	return string(r)
+	lo, hi := 0, len(r)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		if fits(mid) {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+
+	return string(r[lo:])
 }
 
 // GetSize returns the size of the text box
