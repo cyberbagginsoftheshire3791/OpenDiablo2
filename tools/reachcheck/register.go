@@ -128,6 +128,11 @@ const (
 	// the authored map's ground height.
 	pkgGeom     = "d2common/d2geom"
 	pkgMapTiled = "d2core/d2map/d2maptiled"
+	// pkgReport and pkgUI joined at Level 1 (5 Oct 2026): F8's notes, the
+	// crash reports and the running marker, and the native text box F8 types
+	// into.
+	pkgReport = "d2common/d2report"
+	pkgUI     = "d2core/d2ui"
 )
 
 // Register is the allowlist. It is hand-maintained on purpose: deadcode's
@@ -1655,6 +1660,39 @@ var Register = []Entry{
 		"The edit that places a household, a hotar or a watch post: the raid's R3a wrote the village's proposal with it (and its unit test), and no screen calls it until the People tab.", "the raid's R3c (the editor's People tab)"},
 	{sym(pkgMapEdit, "Doc.SetProperty"), BucketDefer, VerdictDead,
 		"The edit that sets an npc's household (and any point object's property): R3a wrote the four speakers' households with it; no screen calls it until the People tab.", "the raid's R3c (the editor's People tab)"},
+	// LEVEL 1, F8 FEEDBACK AND CRASH REPORTS (ruled by Josh, 5 Oct 2026;
+	// docs/feedback.md). Each is a wire row: if one went dark F8 would do
+	// nothing, a crash would leave nothing behind, or the next launch would
+	// not say the last one ended badly -- and the playtests, which drive the
+	// harness build, would not show the shipped game had lost it.
+	{sym(pkgReport, "StartRun"), BucketWire, VerdictLive,
+		"This run's running marker, and a report for every earlier run of its kind that ended without a clean exit. App.Run calls it first thing.", ""},
+	{sym(pkgReport, "EndRun"), BucketWire, VerdictLive,
+		"A clean exit removes the marker: main.go calls it when the window has closed. If it went dark every launch would call the last one a crash.", ""},
+	{sym(pkgReport, "Exit"), BucketWire, VerdictLive,
+		"The clean exits that end the process themselves -- the menu's QUIT, the console's quit, the network's ends -- remove the marker first.", ""},
+	{sym(pkgReport, "HandlePanic"), BucketWire, VerdictLive,
+		"The crash folder (stack, log tail, state) and the marker told the run crashed. App.crashGuard and main's recover call it.", ""},
+	{sym(pkgReport, "WriteFeedback"), BucketWire, VerdictLive,
+		"F8's note, frame and state on disk. feedbackOverlay.save calls it on Enter.", ""},
+	{sym(pkgReport, "Notice"), BucketWire, VerdictLive,
+		"The main menu's line for runs StartRun found ended badly. App.initialize hands it to the overlay.", ""},
+	{sym(pkgApp, "App.crashGuard"), BucketWire, VerdictLive,
+		"The crash report for ebiten's game goroutine, which main's recover never sees: App.advance and App.update defer it. If it went dark a game-loop panic would leave nothing, as before Level 1.", ""},
+	{sym(pkgApp, "feedbackOverlay.openBox"), BucketWire, VerdictLive,
+		"F8 opens the box, freezes the frame and holds the game (OnKeyDown at PriorityTop).", ""},
+	{sym(pkgApp, "feedbackOverlay.save"), BucketWire, VerdictLive,
+		"Enter in the box saves the note (OnKeyDown).", ""},
+	{sym(pkgApp, "feedbackOverlay.freeze"), BucketWire, VerdictLive,
+		"The frame read back before the box is drawn (drawOver, from App.render).", ""},
+	{sym(pkgScreen, "Game.SetFeedbackHold"), BucketWire, VerdictLive,
+		"The box holds a single-player world as the escape menu does (screenLive). feedbackOverlay.openBox and closeBox call it.", ""},
+	{sym(pkgScreen, "Game.FeedbackState"), BucketWire, VerdictLive,
+		"What a note's and a crash's state.json say of the game. App.reportState calls it.", ""},
+	{sym(pkgPlayer, "GameControls.FeedbackState"), BucketWire, VerdictLive,
+		"The HUD's half of that state: the view's scale and what is open. Game.FeedbackState calls it.", ""},
+	{sym(pkgUI, "UIManager.NewMenuTextboxWide"), BucketWire, VerdictLive,
+		"The native menu's text box, wide and detached, that F8 types into. newFeedbackOverlay calls it.", ""},
 }
 
 // RegisterMarkdown renders the register as a table, so the register lives in
