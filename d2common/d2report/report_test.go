@@ -344,5 +344,8 @@ func TestNoticeWords(t *testing.T) {
 	assert.Equal(t, "", Notice(nil))
 	assert.Equal(t, "2 earlier runs did not close cleanly -- reports were saved to "+filepath.Join(`C:\R`, "crashes"),
 		Notice([]Previous{{Dir: "a"}, {Dir: "b", Crashed: true}}))
-	assert.Equal(t, "The last run crashed -- no report could be written", Notice([]Previous{{Crashed: true}}))
+	assert.Equal(t, "The last run crashed -- its report could not be written; the next launch will try again",
+		Notice([]Previous{{Crashed: true}}))
+	assert.Equal(t, "2 earlier runs did not close cleanly -- not every report could be written; the next launch will try again",
+		Notice([]Previous{{Dir: "a"}, {Crashed: true}}))
 }

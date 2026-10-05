@@ -170,13 +170,20 @@ func tailOf(path string, n int) []string {
 	return lines
 }
 
+// writeFile is os.WriteFile, the one way the reports write a file -- a seam
+// so a test can refuse one file of a report and watch what the report does
+// then (QA-002). Nothing else ever sets it.
+//
+//nolint:gochecknoglobals // a test seam
+var writeFile = os.WriteFile
+
 func writeJSON(path string, v interface{}) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(path, append(data, '\n'), 0o600)
+	return writeFile(path, append(data, '\n'), 0o600)
 }
 
 func writeLines(path string, lines []string) error {
@@ -185,7 +192,7 @@ func writeLines(path string, lines []string) error {
 		text += "\n"
 	}
 
-	return os.WriteFile(path, []byte(text), 0o600)
+	return writeFile(path, []byte(text), 0o600)
 }
 
 // Feedback is one F8 note.
@@ -219,14 +226,14 @@ func WriteFeedback(fb Feedback) (string, error) {
 		return "", err
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, NoteFile), []byte(fb.Note+"\n"), 0o600); err != nil {
+	if err := writeFile(filepath.Join(dir, NoteFile), []byte(fb.Note+"\n"), 0o600); err != nil {
 		return dir, err
 	}
 
 	var firstErr error
 
 	if fb.Shot != nil {
-		if err := os.WriteFile(filepath.Join(dir, ShotFile), fb.Shot, 0o600); err != nil {
+		if err := writeFile(filepath.Join(dir, ShotFile), fb.Shot, 0o600); err != nil {
 			firstErr = err
 		}
 	}
@@ -321,9 +328,17 @@ func allStacks() []byte {
 // that just broke -- costs state.json and nothing else; state.json then says
 // why it is short ("state_error").
 func WriteCrash(reason interface{}, where string, stack []byte) (dir string) {
+	dir, _ = writeCrash(reason, where, stack)
+
+	return dir
+}
+
+// writeCrash is WriteCrash, saying also whether every file was written: a
+// folder short of one is not "a report was saved" (QA-002).
+func writeCrash(reason interface{}, where string, stack []byte) (dir string, whole bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			dir = ""
+			whole = false
 		}
 	}()
 
@@ -331,15 +346,27 @@ func WriteCrash(reason interface{}, where string, stack []byte) (dir string) {
 
 	d, err := newDir(CrashesDir(), now, "")
 	if err != nil {
-		return ""
+		return "", false
 	}
 
-	guard := func(f func()) {
-		defer func() { _ = recover() }()
-		f()
+	dir = d
+	whole = true
+
+	// guard runs one file's write; a write refused or a panic in it makes the
+	// folder short.
+	guard := func(f func() error) {
+		defer func() {
+			if r := recover(); r != nil {
+				whole = false
+			}
+		}()
+
+		if f() != nil {
+			whole = false
+		}
 	}
 
-	guard(func() {
+	guard(func() error {
 		var b strings.Builder
 
 		fmt.Fprintf(&b, "panic: %v\ngoroutine: %s\ntime: %s\npid: %d\n\n", reason, where, now.Format(time.RFC3339), os.Getpid())
@@ -353,14 +380,14 @@ func WriteCrash(reason interface{}, where string, stack []byte) (dir string) {
 		b.WriteString("--- all goroutines ---\n")
 		b.Write(allStacks())
 
-		_ = os.WriteFile(filepath.Join(d, StackFile), []byte(b.String()), 0o600)
+		return writeFile(filepath.Join(d, StackFile), []byte(b.String()), 0o600)
 	})
 
-	guard(func() {
-		_ = writeLines(filepath.Join(d, LogTailFile), Tail(d2logfile.LogFilePath(), CrashLogLines))
+	guard(func() error {
+		return writeLines(filepath.Join(d, LogTailFile), Tail(d2logfile.LogFilePath(), CrashLogLines))
 	})
 
-	guard(func() {
+	guard(func() error {
 		state := map[string]interface{}{
 			"panic":     fmt.Sprint(reason),
 			"goroutine": where,
@@ -387,26 +414,34 @@ func WriteCrash(reason interface{}, where string, stack []byte) (dir string) {
 			// A value json cannot take (a func, a NaN): keep the plain fields.
 			delete(state, "game")
 			state["state_error"] = fmt.Sprintf("state did not encode: %v", err)
-			_ = writeJSON(filepath.Join(d, StateFile), map[string]interface{}{
+
+			return writeJSON(filepath.Join(d, StateFile), map[string]interface{}{
 				"panic": state["panic"], "goroutine": where, "time": state["time"],
 				"pid": state["pid"], "state_error": state["state_error"],
 			})
 		}
+
+		return nil
 	})
 
-	return d
+	return dir, whole
 }
 
 // HandlePanic is what a recover() hands a panic to: the crash folder, the
 // marker told this run crashed (so the next launch says so and names the
 // folder instead of writing a second, emptier report), and the folder named in
 // the log. It returns the folder. The caller exits afterwards.
+//
+// A folder that could not be written whole is not named in the marker
+// (QA-002): the next launch reports the run as a crash from the log tail --
+// which holds the panic and its stack, logged before this is called -- instead
+// of saying a report was saved to a folder without its stack.
 func HandlePanic(reason interface{}, where string, stack []byte) string {
-	dir := WriteCrash(reason, where, stack)
+	dir, whole := writeCrash(reason, where, stack)
 
 	func() {
 		defer func() { _ = recover() }()
-		markCrashed(dir)
+		markCrashed(dir, whole && dir != "", reason)
 	}()
 
 	return dir
