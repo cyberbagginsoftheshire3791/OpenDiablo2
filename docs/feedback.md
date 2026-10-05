@@ -31,6 +31,12 @@ Manager, or the power went -- the next launch notices that too:
 
 > The last run did not close cleanly -- a report was saved to ...
 
+If the report itself cannot be written (the disk is full, the folder is
+blocked), the line says so -- "its report could not be written; the next
+launch will try again" -- and the evidence (the run's marker and any fatal
+stack) is kept in `running\` until a launch can write the report whole. A
+report is never half-written and called saved.
+
 Nothing to do; the line goes away once you leave the menu for a game. (It
 comes back on the next launch only if that run also ends badly.)
 
