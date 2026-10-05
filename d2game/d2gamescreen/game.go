@@ -685,10 +685,16 @@ type Game struct {
 	lastRegionType       d2enum.RegionIdType
 	ticksSinceLevelCheck float64
 	escapeMenu           *d2player.EscapeMenu
-	soundEngine          *d2audio.SoundEngine
-	soundEnv             d2audio.SoundEnvironment
-	guiManager           *d2gui.GuiManager
-	keyMap               *d2player.KeyMap
+
+	// feedbackHeld is F8's note box being open over this game (5 Oct 2026,
+	// d2app/feedback.go): screenLive reads it, so it holds a single-player
+	// world exactly as the escape menu does.
+	feedbackHeld bool
+
+	soundEngine *d2audio.SoundEngine
+	soundEnv    d2audio.SoundEnvironment
+	guiManager  *d2gui.GuiManager
+	keyMap      *d2player.KeyMap
 
 	// The simulated world's own systems (M4.1, M4.2). They advance from the
 	// same delta this screen receives — the harness's when it is stepping —
@@ -1162,6 +1168,11 @@ func (v *Game) worldRunning() bool { return v.WorldHeldBy() == "" }
 // clock, a round's minutes at a time.
 func (v *Game) WorldHeldBy() string {
 	if !v.screenLive() {
+		// F8's note box (5 Oct 2026) holds the world as the menu does.
+		if v.feedbackHeld {
+			return d2player.WorldHeldByFeedback
+		}
+
 		return d2player.WorldHeldByMenu
 	}
 
@@ -1208,11 +1219,12 @@ func (v *Game) WorldHeldBy() string {
 }
 
 // screenLive is the escape menu's half of worldRunning: the menu pauses a
-// single-player world and nothing else does.
+// single-player world, and so does F8's note box (5 Oct 2026: he is telling
+// us what happened, and the night must not go on without him while he types).
 func (v *Game) screenLive() bool {
 	menuClosed := v.escapeMenu != nil && !v.escapeMenu.IsOpen()
 
-	return menuClosed || len(v.gameClient.Players) != 1
+	return (menuClosed && !v.feedbackHeld) || len(v.gameClient.Players) != 1
 }
 
 // advanceTheMap is the frame's map and what follows him on it.
@@ -1259,7 +1271,9 @@ func (v *Game) stepTheMap(elapsed float64) {
 		return
 	}
 
-	if (v.escapeMenu != nil && !v.escapeMenu.IsOpen()) || len(v.gameClient.Players) != 1 {
+	// screenLive is this condition, word for word, plus F8's hold: the note
+	// box freezes the whole screen as the menu does.
+	if v.screenLive() {
 		v.gameClient.MapEngine.Advance(elapsed)
 	}
 }

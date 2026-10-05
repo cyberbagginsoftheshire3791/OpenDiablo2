@@ -285,6 +285,7 @@ var b3GameClasses = map[string]string{
 	"lastRegionType":       "D: the zone-change banner's edge: presentation, re-read within a second",
 	"ticksSinceLevelCheck": "D: the zone-change banner's clock: presentation",
 	"escapeMenu":           "W: the escape menu",
+	"feedbackHeld":         "D: F8's note box is open over the game (Level 1, d2app/feedback.go); it holds the world as the menu does, so no autosave falls inside it, and the box is the process's, never in a file",
 	"soundEngine":          "W: the sound engine",
 	"soundEnv":             "W: the sound environment",
 	"guiManager":           "W: the UI",

@@ -5,6 +5,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 	"github.com/OpenDiablo2/OpenDiablo2/d2game/d2gamescreen"
 )
 
@@ -33,6 +34,8 @@ func (a *App) initTerminalCommands() {
 			a.Fatalf("failed to bind action %q: %v", cmd.name, err.Error())
 		}
 	}
+
+	a.harnessTerminalCommands() // crashtest, in a -harness game only (harness_crash.go)
 }
 
 func (a *App) dumpHeap([]string) error {
@@ -145,7 +148,7 @@ func (a *App) quitGame([]string) error {
 // close the game first.
 //
 // nolint:gochecknoglobals // a seam for a unit test
-var exitProcess = os.Exit
+var exitProcess = d2report.Exit // a clean exit: the run's marker goes (d2report)
 
 func (a *App) enterGuiPlayground([]string) error {
 	a.screen.SetNextScreen(d2gamescreen.CreateGuiTestMain(a.renderer, a.guiManager, *a.Options.LogLevel, a.asset))

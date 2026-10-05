@@ -164,7 +164,7 @@ and the screenshot-evidence scripts (`TestAuthoredMap`, `TestCorpses`, the art
 scripts, `TestAFightHeIsNotIn*`, the menu/fonts/words/journal/writings/kit
 screens) -- their evidence frames now show the shipped view.
 
-**The 55 playtest scripts.** That count, the harness version below and the
+**The 56 playtest scripts.** That count, the harness version below and the
 tool count are all TYPED HERE and DERIVED in `docs_counts_test.go` (repo root,
 no build tag, so a plain `go test ./...` catches drift). Change the code and
 this doc fails until it agrees.
@@ -1014,6 +1014,29 @@ this doc fails until it agrees.
   negative controls (no chase trigger, no grace, clock fights counted, the
   marker never drawn, the autosave ignoring combat, the reaction not a
   trigger) and every log are in `strigoi-harness-runs\wt-combat\`.
+* `feedback_test.go` — the fifty-sixth, LEVEL 1: F8 FEEDBACK AND CRASH REPORTS
+  (5 Oct 2026; docs/feedback.md). `TestFeedbackF8`, in a game: F8 opens the
+  box (`feedback` provider: `open`, `held_game`, `shot_taken`), the world is
+  held by `"feedback"` (600 stepped frames move no world minute, after a
+  positive control showing they do; `strigoi_step_world` refused
+  `WORLD_HELD`), Q under the box does not open the journal (and, the box
+  shut, does), the typed note and Enter write `feedback\<stamp>\` under the
+  test's home -- `note.txt`, an 800x600 `shot.png` whose panel area matches
+  the frame BEFORE F8 and not the frame with the box up, `state.json` (screen,
+  game day/clock/tile/view scale/fog/open panels, frame, version, a log tail)
+  -- and one `FEEDBACK dir= text=` log line; Escape cancels, writes nothing,
+  and does not open the escape menu. `TestFeedbackF8OnTheMenu` and
+  `TestFeedbackF8OnClassicMenu`: the same on the native menu and -classic's
+  (state `screen` `main_menu`, no game, the menu not moved). `TestCrashReports`
+  forces each way a run ends badly with the harness-only console verb
+  `crashtest`: an update panic and a draw panic each write their own
+  `crashes\<stamp>\` (stack naming `harnessForcedCrash`, the log tail's PANIC
+  line, state) and exit 1, and the next launch's menu names the folder
+  (`start_notice`, `start_drawn`, the strip on the frame); a panic on a bare
+  goroutine (exit 2, uncaught) is reported by the next launch as
+  `<stamp>-unclean-harness` with the runtime's stack; a kill is "did not close
+  cleanly" with no stack; a clean quit leaves no notice and only the live
+  game's marker in `running\`.
 * `fog_test.go` — the fifty-second, fog of war F1 (1 Oct 2026; docs/fog.md),
   launched with `-fog -zoom 0.5`, unaided (nothing spawned, watched or
   pursued). Act 1, noon: the `fog` provider sees his disc (100+ tiles, none
@@ -1238,7 +1261,7 @@ spin to `TIMEOUT_LOADING` at the client's 60 s timeout instead. Commit the turn
 (`strigoi_key f/l/e`, or `set_system_field combat commit`) or set
 `combat.player_control=policy`, then step again.
 
-## The tools (37; harness 0.16.8)
+## The tools (37; harness 0.16.9)
 
 > **The per-tool sections below were written exhaustively at M3.4 (33 tools,
 > harness 0.6.0) and have NOT been rewritten since; three tools were added
@@ -1338,7 +1361,7 @@ commit its provider registers — `meters` did at M4.2, `spawns` at M4.3b,
 `combat` at M4.5 step 1.
 
 Registered today — **`clock`**, **`light`**, **`meters`**, **`pursuit`**,
-**`spawns`**, **`combat`**, **`seek`** (the raid's R2), **`households`** (the raid's R3a), **`fog`** and **`ui`**, all while a game screen is live -- and
+**`spawns`**, **`combat`**, **`seek`** (the raid's R2), **`households`** (the raid's R3a), **`fog`** and **`ui`**, all while a game screen is live -- and, for the whole process, **`feedback`** (Level 1, 5 Oct 2026: F8's box and the menu's crash notice), and
 the systems the game screen owns and registers once the hero binds, among
 them **`journal`** (J1, 24 Sep 2026; read-only: what is written, the tasks,
 the pages, the events raised, unread counts, `open`) and **`scene`** (M4.6 B1,
@@ -2123,6 +2146,20 @@ the load report says `ended_actions` (BUG-92: a held action this build's art
 no longer fits is ended as it would have ended, not refused), and a held
 action at a point no play can have is refused (BUG-91). And since BUG-94 the
 dusk minute's `clock_strip_hours_to_dusk` is 24, not 0.
+**0.16.9 (Level 1, F8 feedback and crash reports, `feedback`, 5 Oct 2026)**:
+a `feedback` provider -- F8's box (`key`, `open`, `text`, `shot_taken`,
+`held_game`, `opened`, `saved`, `cancelled`, `last_dir`, `last_note`,
+`last_error`, `notice`), the main menu's line for an earlier run that ended
+badly (`start_notice`, `start_dir`, `start_drawn`), where the reports go
+(`reports_root`, `feedback_dir`, `crashes_dir`) and the `screen` in front; none
+of it in the digest (`HarnessDigest` gives nil parts). The `ui` provider's
+`world_held_by` may say `feedback`, which `strigoi_step_world` refuses
+`WORLD_HELD`. In a `-harness` game only, the console verb
+`crashtest update|draw|goroutine` panics on purpose (run it with
+`strigoi_run_console`; the process ends). The launcher sets
+`STRIGOI_REPORT_HOME` to the test's home, so notes, crash folders and running
+markers are the test's own. docs/feedback.md.
+
 **0.16.8 (the raid's R3a, `raid-r3a`, 2 Oct 2026)**: a `households`
 provider (above) -- the village's houses, hotar and watch posts from the map,
 and each house's stock, settable as `incense` and `stakes` -- in the digest's

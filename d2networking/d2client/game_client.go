@@ -2,7 +2,6 @@ package d2client
 
 import (
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 
@@ -16,6 +15,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapengine"
@@ -192,10 +192,10 @@ func (g *GameClient) OnPacketReceived(packet d2netpacket.NetPacket) error {
 	case d2netpackettype.ServerClosed:
 		// https://github.com/OpenDiablo2/OpenDiablo2/issues/802
 		g.Infof("Server has been closed")
-		os.Exit(0)
+		d2report.Exit(0)
 	case d2netpackettype.ServerFull:
 		g.Infof("Server is full") // need to be verified
-		os.Exit(0)
+		d2report.Exit(0)
 	case d2netpackettype.JoinRefused:
 		if err := g.handleJoinRefusedPacket(packet); err != nil {
 			return err

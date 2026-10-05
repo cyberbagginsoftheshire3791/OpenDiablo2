@@ -11,6 +11,10 @@ const (
 	WorldHeldByFight   = "fight"       // a paced fight: the clock moves a round at a time (T1)
 	WorldHeldByJournal = "journal"     // he is reading his journal (J1)
 	WorldHeldByClose   = "closing"     // the window's close is settling, then saving (the combat-status review, B1)
+
+	// WorldHeldByFeedback is F8's note box (5 Oct 2026): held as the menu
+	// holds it, single-player only.
+	WorldHeldByFeedback = "feedback"
 )
 
 // WorldHolder is the game screen's answer to "what holds the world?".

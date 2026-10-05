@@ -33,6 +33,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 )
 
 const (
@@ -167,7 +169,12 @@ func startWith(t *testing.T, flags ...string) *session {
 		// os.UserConfigDir is %APPDATA% on Windows: the hero saves
 		// (OpenDiablo2\Saves) and config.json follow it, so this test's heroes
 		// are its own. The last entry wins when a key repeats.
-		s.cmd.Env = append(os.Environ(), "APPDATA="+home, "XDG_CONFIG_HOME="+home)
+		//
+		// And the reports (Level 1, 5 Oct 2026): F8's notes, crash folders and
+		// the running markers go under the test's home too. %LOCALAPPDATA% is
+		// shared, and a script that kills its game would otherwise leave a
+		// marker there for Josh's next launch to call a crash.
+		s.cmd.Env = append(os.Environ(), "APPDATA="+home, "XDG_CONFIG_HOME="+home, d2report.HomeEnv+"="+home)
 
 		// Keep the game's own output: a script that dies with a transport
 		// error usually died because the game panicked, and the panic is here.

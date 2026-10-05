@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2app"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2logfile"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 )
 
 // GitBranch is set by the CI build process to the name of the branch
@@ -35,11 +37,18 @@ func main() {
 		log.Printf("OpenDiablo2 %s (%s) starting; log at %s", GitBranch, GitCommit, d2logfile.LogFilePath())
 	}
 
-	// A panic on the game loop would leave nothing on a double-clicked build.
-	// Write the panic and its stack to the tee'd log, then exit non-zero.
+	// A panic on THIS goroutine -- start-up, before ebiten's loop takes over --
+	// would leave nothing on a double-clicked build. Write it and its stack to
+	// the tee'd log and a crash folder (d2report), then exit non-zero.
+	//
+	// THIS NEVER SAW A PANIC IN THE GAME LOOP (Level 1, 5 Oct 2026): ebiten
+	// runs Update and Draw on a goroutine of its own, whose panics do not come
+	// back here. d2app's crashGuard covers that goroutine (d2app/crash.go).
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("OpenDiablo2 PANIC: %v\n%s", r, debug.Stack())
+			stack := debug.Stack()
+			log.Printf("OpenDiablo2 PANIC: %v\n%s", r, stack)
+			log.Printf("CRASH report=%s", d2report.HandlePanic(r, "main", stack))
 			os.Exit(1)
 		}
 	}()
@@ -47,9 +56,14 @@ func main() {
 	instance := d2app.Create(GitBranch, GitCommit)
 
 	// A loop error used to end the process in silence (M3.4 finding: a
-	// playtest script watched the game vanish with no trace). Say why.
+	// playtest script watched the game vanish with no trace). Say why, and
+	// report it as a crash: the run did not end the way a player ends it.
 	if err := instance.Run(); err != nil {
 		log.Printf("OpenDiablo2 exited with error: %v", err)
+		log.Printf("CRASH report=%s", d2report.HandlePanic(fmt.Errorf("the game loop ended with an error: %w", err), "main", nil))
 		os.Exit(1)
 	}
+
+	// The window closed: a clean exit (the run's marker goes).
+	d2report.EndRun()
 }

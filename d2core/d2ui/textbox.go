@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
@@ -34,6 +35,12 @@ type TextBox struct {
 	isNumberOnly                      bool
 	maxValue                          int
 
+	// A wide box (NewMenuTextboxWide, the F8 note, 5 Oct 2026): any printable
+	// character, up to maxLen of them (0 is the original 15), the line's
+	// tail shown when it outgrows the face.
+	maxLen       int
+	anyPrintable bool
+
 	*d2util.Logger
 }
 
@@ -49,12 +56,7 @@ func (ui *UIManager) NewTextbox() *TextBox {
 
 // NewMenuTextbox keeps the text input behavior and draws an original plain face.
 func (ui *UIManager) NewMenuTextbox() *TextBox {
-	s := ui.renderer.NewSurface(180, 28)
-	s.DrawRect(180, 28, color.RGBA{R: 15, G: 19, B: 18, A: 255})
-	s.PushTranslation(0, 27)
-	s.DrawRect(180, 1, color.RGBA{R: 170, G: 143, B: 90, A: 255})
-	s.Pop()
-	tb := ui.newTextbox(nil, s)
+	tb := ui.newTextbox(nil, ui.menuFace(180, 28))
 	// The textbox owns input; its two hidden labels only supply ink.
 	for _, l := range []*Label{tb.textLabel, tb.lineBar} {
 		if err := ui.inputManager.UnbindHandler(l); err != nil {
@@ -62,6 +64,76 @@ func (ui *UIManager) NewMenuTextbox() *TextBox {
 		}
 	}
 	return tb
+}
+
+// menuFace is the native menu's plain text-box face: a dark field with a
+// brass rule along its foot.
+func (ui *UIManager) menuFace(w, h int) d2interface.Surface {
+	s := ui.renderer.NewSurface(w, h)
+	s.DrawRect(w, h, color.RGBA{R: 15, G: 19, B: 18, A: 255})
+	s.PushTranslation(0, h-1)
+	s.DrawRect(w, 1, color.RGBA{R: 170, G: 143, B: 90, A: 255})
+	s.Pop()
+
+	return s
+}
+
+// NewMenuTextboxWide is the native menu's text box at another width, for a
+// line of free text: it takes any printable character, holds up to maxLen of
+// them, and shows the tail of the line once it outgrows the face (F8's note,
+// 5 Oct 2026).
+//
+// IT IS DETACHED: bound to no input and never drawn by the UI manager (it
+// stays invisible to it). Its owner draws it with Draw and feeds it with
+// TypeChars and Backspace -- the F8 box is drawn after the frame it freezes
+// is read back, and takes its keys ahead of everything, which a box the UI
+// manager drew and the input manager fed could not be.
+func (ui *UIManager) NewMenuTextboxWide(width, maxLen int) *TextBox {
+	tb := ui.newTextbox(nil, ui.menuFace(width, 28))
+	tb.maxLen = maxLen
+	tb.anyPrintable = true
+
+	for _, h := range []d2interface.InputEventHandler{tb, tb.textLabel, tb.lineBar} {
+		if err := ui.inputManager.UnbindHandler(h); err != nil {
+			ui.Error(err.Error())
+		}
+	}
+
+	tb.SetVisible(false)
+
+	return tb
+}
+
+// Draw draws the box where its owner wants it, visible or not (a detached
+// box, NewMenuTextboxWide).
+func (v *TextBox) Draw(target d2interface.Surface) {
+	if v.menuSurface == nil {
+		return
+	}
+
+	target.PushTranslation(v.x, v.y)
+	target.Render(v.menuSurface)
+	target.Pop()
+	v.renderMenuText(target)
+}
+
+// TypeChars adds typed characters, as a key-chars event would.
+func (v *TextBox) TypeChars(chars string) {
+	if !v.enabled {
+		return
+	}
+
+	v.SetText(v.text + chars)
+}
+
+// Backspace takes the last character off.
+func (v *TextBox) Backspace() {
+	r := []rune(v.text)
+	if len(r) == 0 {
+		return
+	}
+
+	v.SetText(string(r[:len(r)-1]))
 }
 
 func (ui *UIManager) newTextbox(bgSprite *Sprite, menuSurface d2interface.Surface) *TextBox {
@@ -127,7 +199,8 @@ func (v *TextBox) renderMenuText(target d2interface.Surface) {
 		v.lineBar.Render(v.menuCaretSurface)
 		v.menuText = v.textLabel.GetText()
 		v.menuTextWidth = tw
-		v.menuTextFit = math.Min(1, math.Min(168/float64(tw+cw), 22/float64(max(th, ch))))
+		fw, fh := v.menuSurface.GetSize()
+		v.menuTextFit = math.Min(1, math.Min(float64(fw-12)/float64(tw+cw), float64(fh-6)/float64(max(th, ch))))
 	}
 	target.PushTranslation(v.x+6, v.y+3)
 	target.PushScale(v.menuTextFit, v.menuTextFit)
@@ -231,20 +304,25 @@ func (v *TextBox) SetText(newText string) {
 	result := ""
 
 	for _, c := range newText {
-		if !strings.Contains(v.filter, string(c)) {
+		if !v.accepts(c) {
 			continue
 		}
 
 		result += string(c)
 	}
 
-	if len(result) > 15 {
-		result = result[0:15]
+	limit := v.maxLen
+	if limit <= 0 {
+		limit = 15
+	}
+
+	if r := []rune(result); len(r) > limit {
+		result = string(r[:limit])
 	}
 
 	v.text = result
 	if v.menuSurface != nil {
-		v.textLabel.SetText(result)
+		v.textLabel.SetText(v.shownTail(result))
 		return
 	}
 
@@ -261,6 +339,39 @@ func (v *TextBox) SetText(newText string) {
 
 		break
 	}
+}
+
+// accepts is the filter: the filter's characters, or any printable one for a
+// wide box.
+func (v *TextBox) accepts(c rune) bool {
+	if v.anyPrintable {
+		return unicode.IsPrint(c)
+	}
+
+	return strings.Contains(v.filter, string(c))
+}
+
+// shownTail is the part of a wide box's line that fits its face: the end,
+// where he is typing. A 15-character box shows it all, fitted (renderMenuText).
+func (v *TextBox) shownTail(text string) string {
+	if v.maxLen <= 0 || v.menuSurface == nil {
+		return text
+	}
+
+	fw, _ := v.menuSurface.GetSize()
+	cw, _ := v.lineBar.GetSize()
+	room := fw - 12 - cw
+
+	r := []rune(text)
+	for len(r) > 0 {
+		if tw, _ := v.textLabel.GetTextMetrics(string(r)); tw <= room {
+			break
+		}
+
+		r = r[1:]
+	}
+
+	return string(r)
 }
 
 // GetSize returns the size of the text box

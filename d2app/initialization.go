@@ -7,6 +7,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2loader/asset/types"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2fileformats/d2animdata"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2config"
@@ -57,6 +58,13 @@ func (a *App) initialize() error {
 	}
 
 	a.ui.Initialize()
+
+	// F8, after the fonts and the UI are up (feedback.go); and the menu's line
+	// for an earlier run that ended badly.
+	a.feedback = newFeedbackOverlay(a)
+	if len(a.runPrev) > 0 {
+		a.feedback.setStartNotice(d2report.Notice(a.runPrev), a.runPrev[0].Dir)
+	}
 
 	return nil
 }

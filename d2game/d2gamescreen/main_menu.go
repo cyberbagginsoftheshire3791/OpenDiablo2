@@ -13,6 +13,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
@@ -490,7 +491,7 @@ func (v *MainMenu) onGithubButtonClicked() {
 }
 
 func (v *MainMenu) onExitButtonClicked() {
-	os.Exit(0)
+	d2report.Exit(0) // a clean exit: the run's marker goes (Level 1)
 }
 
 func (v *MainMenu) onCreditsButtonClicked() {

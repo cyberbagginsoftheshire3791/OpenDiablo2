@@ -2,7 +2,6 @@ package d2gamescreen
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math/d2vector"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2resource"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
@@ -485,7 +485,7 @@ func (met *MapEngineTest) OnKeyRepeat(event d2interface.KeyEvent) bool {
 // OnKeyDown defines the actions of the Map Engine Test screen when a key is pressed
 func (met *MapEngineTest) OnKeyDown(event d2interface.KeyEvent) bool {
 	if event.Key() == d2enum.KeyEscape {
-		os.Exit(0)
+		d2report.Exit(0)
 		return true
 	}
 

@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/gif"
 	"image/png"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2interface"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2math"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	ebiten2 "github.com/OpenDiablo2/OpenDiablo2/d2core/d2audio/ebiten"
@@ -104,6 +106,11 @@ type App struct {
 	// play was saved and unloaded, and no frame runs after it -- the window
 	// is closing, or the harness's graceful quit is about to end the process.
 	closed bool
+
+	// feedback is F8's box and the menu's line about a run that ended badly
+	// (feedback.go); runPrev the runs StartRun found so (d2report).
+	feedback *feedbackOverlay
+	runPrev  []d2report.Previous
 }
 
 // Options is used to store all of the app options that can be set with arguments
@@ -370,6 +377,17 @@ func (a *App) LoadConfig() (*d2config.Configuration, error) {
 
 // Run executes the application and kicks off the entire game process
 func (a *App) Run() (err error) {
+	// Level 1 (5 Oct 2026): this run's marker, and the report for any earlier
+	// run of the same kind that ended without a clean exit (d2report). Before
+	// anything can fail, so a run that dies in its first second is caught too.
+	a.runPrev = d2report.StartRun(a.gitBranch+" "+a.gitCommit, a.harnessEnabled())
+	d2report.SetStateFunc(a.reportState)
+
+	for _, p := range a.runPrev {
+		log.Printf("UNCLEAN previous run pid=%d started=%s crashed=%v report=%s",
+			p.Marker.PID, p.Marker.Started, p.Crashed, p.Dir)
+	}
+
 	// Throwaway playtest heroes' folders earlier games left behind (second 28
 	// Sep review); and this game's own, whenever the window closes.
 	a.clearStalePlaytests()
@@ -515,6 +533,11 @@ func (a *App) render(target d2interface.Surface) {
 		return
 	}
 
+	// F8's frame is read here, before its box is drawn (feedback.go).
+	if a.feedback != nil {
+		a.feedback.render(target)
+	}
+
 	if err := a.terminal.Render(target); err != nil {
 		return
 	}
@@ -523,6 +546,10 @@ func (a *App) render(target d2interface.Surface) {
 }
 
 func (a *App) advance() error {
+	// A panic here is on ebiten's game goroutine, which main's recover never
+	// sees (crash.go).
+	defer a.crashGuard("update")
+
 	// M4.6 B5: nothing runs after the close hook (close.go).
 	if a.closed {
 		return nil
@@ -572,6 +599,8 @@ func (a *App) advanceOnce(elapsedUnscaled, elapsed, elapsedLastScreenAdvance, cu
 }
 
 func (a *App) update(target d2interface.Surface) error {
+	defer a.crashGuard("draw") // crash.go
+
 	// M4.6 B5: an unloaded game screen is never drawn (close.go).
 	if a.closed {
 		return nil

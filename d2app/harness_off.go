@@ -19,6 +19,10 @@ func (a *App) harnessRegisterFlags() {}
 
 func (a *App) harnessStart() {}
 
+func (a *App) harnessEnabled() bool { return false }
+
+func (a *App) harnessTerminalCommands() {}
+
 func (a *App) harnessDrainUpdate() {}
 
 func (a *App) harnessStepDeltas() (elapsedUnscaled, elapsed, elapsedScreen, current float64, held bool) {

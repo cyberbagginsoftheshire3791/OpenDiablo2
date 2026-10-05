@@ -22,6 +22,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2enum"
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2hero"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2items"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2map/d2mapentity"
@@ -777,7 +778,7 @@ func (a *App) harnessAddSessionTools(srv *mcp.Server) {
 		go func() {
 			time.Sleep(harnessQuitDelay)
 			clearOwnPlaytests() // a playtest's hero folder, if one is open (second 28 Sep review)
-			os.Exit(0)
+			d2report.Exit(0)    // a clean exit: the run's marker goes (Level 1)
 		}()
 
 		if out.Close != nil {

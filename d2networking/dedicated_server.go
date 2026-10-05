@@ -1,8 +1,7 @@
 package d2networking
 
 import (
-	"os"
-
+	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2report"
 	"github.com/OpenDiablo2/OpenDiablo2/d2common/d2util"
 	"github.com/OpenDiablo2/OpenDiablo2/d2core/d2asset"
 	"github.com/OpenDiablo2/OpenDiablo2/d2networking/d2server"
@@ -55,7 +54,7 @@ func StartDedicatedServer(
 			server.Stop()
 			log <- "Exiting..."
 
-			os.Exit(0)
+			d2report.Exit(0)
 		}
 	}
 }
